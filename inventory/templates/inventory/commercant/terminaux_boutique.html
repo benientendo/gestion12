@@ -1,0 +1,385 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Terminaux MAUI - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-mobile-alt"></i> Gestion des Terminaux MAUI</h1>
+                    <p class="text-muted">Boutique : {{ boutique.nom }} - {{ boutique.ville }}</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary me-2">
+                        <i class="fas fa-arrow-left"></i> Retour Dashboard
+                    </a>
+                    <a href="{% url 'inventory:ajouter_client_maui_boutique' boutique.id %}" class="btn btn-success">
+                        <i class="fas fa-plus"></i> Ajouter Terminal
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistiques rapides -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>{{ terminaux.count }}</h4>
+                            <p class="mb-0">Terminal{{ terminaux.count|pluralize }}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-mobile-alt fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>{{ terminaux|length|add:"-1"|default:"0" }}</h4>
+                            <p class="mb-0">Actifs</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-check-circle fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>0</h4>
+                            <p class="mb-0">Inactifs</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-exclamation-triangle fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>{{ boutique.nom|length }}</h4>
+                            <p class="mb-0">Boutique</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-store fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Liste des terminaux -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="fas fa-list"></i> Liste des Terminaux MAUI
+                        <span class="badge bg-primary ms-2">{{ terminaux.count }}</span>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if terminaux %}
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th><i class="fas fa-mobile-alt"></i> Nom Terminal</th>
+                                        <th><i class="fas fa-barcode"></i> Numéro de Série</th>
+                                        <th><i class="fas fa-user"></i> Propriétaire</th>
+                                        <th><i class="fas fa-calendar"></i> Date Création</th>
+                                        <th><i class="fas fa-clock"></i> Dernière Activité</th>
+                                        <th><i class="fas fa-wifi"></i> Statut</th>
+                                        <th><i class="fas fa-code-branch"></i> Version MAUI</th>
+                                        <th><i class="fas fa-cogs"></i> Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for terminal in terminaux %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ terminal.nom_terminal|default:"Terminal MAUI" }}</strong>
+                                            {% if terminal.description %}
+                                                <br><small class="text-muted">{{ terminal.description }}</small>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <code>{{ terminal.numero_serie }}</code>
+                                        </td>
+                                        <td>
+                                            {% if terminal.compte_proprietaire %}
+                                                <i class="fas fa-user"></i> {{ terminal.compte_proprietaire.username }}
+                                            {% else %}
+                                                <span class="text-muted">Non assigné</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <small>{{ terminal.date_creation|date:"d/m/Y H:i" }}</small>
+                                        </td>
+                                        <td>
+                                            {% if terminal.derniere_activite %}
+                                                <small>{{ terminal.derniere_activite|date:"d/m/Y H:i" }}</small>
+                                            {% else %}
+                                                <span class="text-muted">Jamais</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if terminal.est_actif %}
+                                                <span class="badge bg-success">
+                                                    <i class="fas fa-check"></i> Actif
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-danger">
+                                                    <i class="fas fa-times"></i> Inactif
+                                                </span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if terminal.version_app_maui %}
+                                                <span class="badge bg-info">v{{ terminal.version_app_maui }}</span>
+                                            {% else %}
+                                                <span class="text-muted">Inconnue</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <div class="btn-group" role="group">
+                                                <button type="button" class="btn btn-sm btn-outline-primary" 
+                                                        data-bs-toggle="modal" data-bs-target="#detailModal{{ terminal.id }}"
+                                                        title="Voir détails">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                                <button type="button" class="btn btn-sm btn-outline-warning"
+                                                        title="Modifier">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                {% if terminal.est_actif %}
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                            title="Désactiver">
+                                                        <i class="fas fa-pause"></i>
+                                                    </button>
+                                                {% else %}
+                                                    <button type="button" class="btn btn-sm btn-outline-success"
+                                                            title="Activer">
+                                                        <i class="fas fa-play"></i>
+                                                    </button>
+                                                {% endif %}
+                                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                                        title="Supprimer">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <!-- Aucun terminal -->
+                        <div class="text-center py-5">
+                            <div class="mb-4">
+                                <i class="fas fa-mobile-alt fa-4x text-muted"></i>
+                            </div>
+                            <h4 class="text-muted">Aucun terminal MAUI configuré</h4>
+                            <p class="text-muted mb-4">
+                                Cette boutique n'a pas encore de terminal MAUI configuré.<br>
+                                Ajoutez votre premier terminal pour commencer à utiliser l'application mobile.
+                            </p>
+                            <a href="{% url 'inventory:ajouter_client_maui_boutique' boutique.id %}" class="btn btn-success btn-lg">
+                                <i class="fas fa-plus"></i> Ajouter le Premier Terminal
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals de détails pour chaque terminal -->
+{% for terminal in terminaux %}
+<div class="modal fade" id="detailModal{{ terminal.id }}" tabindex="-1" aria-labelledby="detailModalLabel{{ terminal.id }}" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detailModalLabel{{ terminal.id }}">
+                    <i class="fas fa-mobile-alt"></i> Détails du Terminal
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-info-circle"></i> Informations Générales</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Nom Terminal:</strong></td>
+                                <td>{{ terminal.nom_terminal|default:"Terminal MAUI" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Numéro de Série:</strong></td>
+                                <td><code>{{ terminal.numero_serie }}</code></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Propriétaire:</strong></td>
+                                <td>
+                                    {% if terminal.compte_proprietaire %}
+                                        {{ terminal.compte_proprietaire.username }}
+                                    {% else %}
+                                        <span class="text-muted">Non assigné</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Statut:</strong></td>
+                                <td>
+                                    {% if terminal.est_actif %}
+                                        <span class="badge bg-success">Actif</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Inactif</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-clock"></i> Activité</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Date Création:</strong></td>
+                                <td>{{ terminal.date_creation|date:"d/m/Y H:i" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Dernière MAJ:</strong></td>
+                                <td>{{ terminal.date_mise_a_jour|date:"d/m/Y H:i" }}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Dernière Activité:</strong></td>
+                                <td>
+                                    {% if terminal.derniere_activite %}
+                                        {{ terminal.derniere_activite|date:"d/m/Y H:i" }}
+                                    {% else %}
+                                        <span class="text-muted">Jamais</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Dernière Connexion:</strong></td>
+                                <td>
+                                    {% if terminal.derniere_connexion %}
+                                        {{ terminal.derniere_connexion|date:"d/m/Y H:i" }}
+                                    {% else %}
+                                        <span class="text-muted">Jamais</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                
+                {% if terminal.description %}
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6><i class="fas fa-comment"></i> Description</h6>
+                        <p class="text-muted">{{ terminal.description }}</p>
+                    </div>
+                </div>
+                {% endif %}
+                
+                {% if terminal.notes %}
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6><i class="fas fa-sticky-note"></i> Notes</h6>
+                        <p class="text-muted">{{ terminal.notes }}</p>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-network-wired"></i> Connexion</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Dernière IP:</strong></td>
+                                <td>
+                                    {% if terminal.derniere_adresse_ip %}
+                                        <code>{{ terminal.derniere_adresse_ip }}</code>
+                                    {% else %}
+                                        <span class="text-muted">Inconnue</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Version MAUI:</strong></td>
+                                <td>
+                                    {% if terminal.version_app_maui %}
+                                        <span class="badge bg-info">v{{ terminal.version_app_maui }}</span>
+                                    {% else %}
+                                        <span class="text-muted">Inconnue</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-key"></i> Sécurité</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Clé API:</strong></td>
+                                <td>
+                                    <code class="text-truncate d-inline-block" style="max-width: 150px;">
+                                        {{ terminal.cle_api|slice:":8" }}...
+                                    </code>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Fermer
+                </button>
+                <button type="button" class="btn btn-primary">
+                    <i class="fas fa-edit"></i> Modifier
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialisation des tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'))
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl)
+    });
+});
+</script>
+{% endblock %}

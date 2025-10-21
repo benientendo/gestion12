@@ -1,0 +1,214 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Supprimer {{ commercant.nom_entreprise }} - Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .danger-zone {
+        border: 2px solid #dc3545;
+        border-radius: 10px;
+        background: #fff5f5;
+    }
+    .warning-icon {
+        color: #dc3545;
+        font-size: 4rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-user-times text-danger"></i> Supprimer le Commerçant</h1>
+                    <p class="text-muted">Suppression définitive du compte commerçant</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:admin_details_commercant' commercant.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour aux détails
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Zone de danger -->
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="danger-zone p-4">
+                <div class="text-center mb-4">
+                    <i class="fas fa-exclamation-triangle warning-icon"></i>
+                    <h2 class="text-danger mt-3">Action Irréversible</h2>
+                    <p class="lead">Vous êtes sur le point de supprimer définitivement ce commerçant.</p>
+                </div>
+
+                <!-- Informations du commerçant -->
+                <div class="card mb-4">
+                    <div class="card-header bg-danger text-white">
+                        <h5><i class="fas fa-info-circle"></i> Commerçant à Supprimer</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Entreprise:</strong><br>
+                                <span class="text-muted">{{ commercant.nom_entreprise }}</span>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Utilisateur:</strong><br>
+                                <span class="text-muted">{{ commercant.user.username }} ({{ commercant.user.get_full_name }})</span>
+                            </div>
+                        </div>
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <strong>Email:</strong><br>
+                                <span class="text-muted">{{ commercant.user.email }}</span>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Créé le:</strong><br>
+                                <span class="text-muted">{{ commercant.date_creation|date:"d/m/Y" }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Avertissements -->
+                <div class="alert alert-danger">
+                    <h5><i class="fas fa-exclamation-triangle"></i> Conséquences de la suppression :</h5>
+                    <ul class="mb-0">
+                        <li><strong>{{ commercant.boutiques.count }} boutique(s)</strong> seront supprimées définitivement</li>
+                        <li>Tous les <strong>articles, catégories et ventes</strong> de ces boutiques seront perdus</li>
+                        <li>Les <strong>clients MAUI</strong> associés seront déconnectés</li>
+                        <li>L'<strong>historique complet</strong> sera effacé</li>
+                        <li>Le <strong>compte utilisateur</strong> sera supprimé</li>
+                    </ul>
+                </div>
+
+                <!-- Statistiques -->
+                {% if commercant.boutiques.exists %}
+                <div class="card mb-4">
+                    <div class="card-header bg-warning">
+                        <h6><i class="fas fa-chart-bar"></i> Données qui seront supprimées</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-3">
+                                <h4 class="text-danger">{{ commercant.boutiques.count }}</h4>
+                                <small>Boutiques</small>
+                            </div>
+                            <div class="col-3">
+                                <h4 class="text-danger">{{ total_articles|default:0 }}</h4>
+                                <small>Articles</small>
+                            </div>
+                            <div class="col-3">
+                                <h4 class="text-danger">{{ total_ventes|default:0 }}</h4>
+                                <small>Ventes</small>
+                            </div>
+                            <div class="col-3">
+                                <h4 class="text-danger">{{ total_clients|default:0 }}</h4>
+                                <small>Clients MAUI</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Liste des boutiques -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h6><i class="fas fa-store"></i> Boutiques qui seront supprimées</h6>
+                    </div>
+                    <div class="card-body">
+                        {% for boutique in commercant.boutiques.all %}
+                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
+                            <div>
+                                <strong>{{ boutique.nom }}</strong><br>
+                                <small class="text-muted">{{ boutique.get_type_commerce_display }} - {{ boutique.ville }}</small>
+                            </div>
+                            <div class="text-end">
+                                <span class="badge bg-danger">À supprimer</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Confirmation -->
+                <div class="card">
+                    <div class="card-header bg-dark text-white">
+                        <h6><i class="fas fa-shield-alt"></i> Confirmation Requise</h6>
+                    </div>
+                    <div class="card-body">
+                        <form method="post">
+                            {% csrf_token %}
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="confirm-understanding" required>
+                                <label class="form-check-label" for="confirm-understanding">
+                                    Je comprends que cette action est <strong>irréversible</strong> et que toutes les données seront perdues définitivement.
+                                </label>
+                            </div>
+                            
+                            <div class="form-check mb-4">
+                                <input class="form-check-input" type="checkbox" id="confirm-deletion" required>
+                                <label class="form-check-label" for="confirm-deletion">
+                                    Je confirme vouloir supprimer le commerçant <strong>{{ commercant.nom_entreprise }}</strong> et toutes ses données.
+                                </label>
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-danger" id="delete-btn" disabled>
+                                    <i class="fas fa-trash"></i> Supprimer Définitivement
+                                </button>
+                                <a href="{% url 'inventory:admin_details_commercant' commercant.id %}" class="btn btn-success">
+                                    <i class="fas fa-times"></i> Annuler la Suppression
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const confirmUnderstanding = document.getElementById('confirm-understanding');
+        const confirmDeletion = document.getElementById('confirm-deletion');
+        const deleteBtn = document.getElementById('delete-btn');
+        const form = document.querySelector('form');
+        
+        // Activer/désactiver le bouton de suppression
+        function toggleDeleteButton() {
+            deleteBtn.disabled = !(confirmUnderstanding.checked && confirmDeletion.checked);
+        }
+        
+        confirmUnderstanding.addEventListener('change', toggleDeleteButton);
+        confirmDeletion.addEventListener('change', toggleDeleteButton);
+        
+        // Confirmation finale
+        form.addEventListener('submit', function(e) {
+            const entreprise = '{{ commercant.nom_entreprise }}';
+            const boutiquesCount = {{ commercant.boutiques.count }};
+            
+            let message = `ATTENTION: Vous allez supprimer définitivement le commerçant "${entreprise}"`;
+            if (boutiquesCount > 0) {
+                message += ` et ses ${boutiquesCount} boutique(s) avec toutes leurs données.`;
+            }
+            message += '\n\nCette action est IRRÉVERSIBLE.\n\nTapez "SUPPRIMER" pour confirmer:';
+            
+            const confirmation = prompt(message);
+            if (confirmation !== 'SUPPRIMER') {
+                e.preventDefault();
+                alert('Suppression annulée. Vous devez taper exactement "SUPPRIMER" pour confirmer.');
+            }
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,264 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Ajouter un Commerçant - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-user-plus"></i> Ajouter un Commerçant</h1>
+                    <p class="text-muted">Créer un nouveau compte commerçant sur la plateforme</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:admin_gestion_commercants' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour à la liste
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Formulaire -->
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-user-cog"></i> Informations du Commerçant</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <!-- Informations utilisateur -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary border-bottom pb-2">
+                                    <i class="fas fa-user"></i> Compte Utilisateur
+                                </h6>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.username.id_for_label }}" class="form-label">{{ form.username.label }}</label>
+                                {{ form.username }}
+                                {% if form.username.errors %}
+                                    <div class="text-danger small">{{ form.username.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.email.id_for_label }}" class="form-label">{{ form.email.label }}</label>
+                                {{ form.email }}
+                                {% if form.email.errors %}
+                                    <div class="text-danger small">{{ form.email.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.prenom.id_for_label }}" class="form-label">{{ form.prenom.label }}</label>
+                                {{ form.prenom }}
+                                {% if form.prenom.errors %}
+                                    <div class="text-danger small">{{ form.prenom.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.nom.id_for_label }}" class="form-label">{{ form.nom.label }}</label>
+                                {{ form.nom }}
+                                {% if form.nom.errors %}
+                                    <div class="text-danger small">{{ form.nom.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label for="{{ form.password.id_for_label }}" class="form-label">{{ form.password.label }}</label>
+                                {{ form.password }}
+                                {% if form.password.errors %}
+                                    <div class="text-danger small">{{ form.password.errors }}</div>
+                                {% endif %}
+                                <div class="form-text">Le mot de passe doit contenir au moins 8 caractères.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.confirm_password.id_for_label }}" class="form-label">{{ form.confirm_password.label }}</label>
+                                {{ form.confirm_password }}
+                                {% if form.confirm_password.errors %}
+                                    <div class="text-danger small">{{ form.confirm_password.errors }}</div>
+                                {% endif %}
+                                <div class="form-text">Confirmez le mot de passe saisi ci-dessus.</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Informations entreprise -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary border-bottom pb-2">
+                                    <i class="fas fa-building"></i> Informations Entreprise
+                                </h6>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.nom_entreprise.id_for_label }}" class="form-label">{{ form.nom_entreprise.label }} *</label>
+                                {{ form.nom_entreprise }}
+                                {% if form.nom_entreprise.errors %}
+                                    <div class="text-danger small">{{ form.nom_entreprise.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.nom_responsable.id_for_label }}" class="form-label">{{ form.nom_responsable.label }} *</label>
+                                {{ form.nom_responsable }}
+                                {% if form.nom_responsable.errors %}
+                                    <div class="text-danger small">{{ form.nom_responsable.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.email.id_for_label }}" class="form-label">{{ form.email.label }} *</label>
+                                {{ form.email }}
+                                {% if form.email.errors %}
+                                    <div class="text-danger small">{{ form.email.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.telephone.id_for_label }}" class="form-label">{{ form.telephone.label }}</label>
+                                {{ form.telephone }}
+                                {% if form.telephone.errors %}
+                                    <div class="text-danger small">{{ form.telephone.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <label for="{{ form.adresse.id_for_label }}" class="form-label">{{ form.adresse.label }}</label>
+                                {{ form.adresse }}
+                                {% if form.adresse.errors %}
+                                    <div class="text-danger small">{{ form.adresse.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.numero_registre_commerce.id_for_label }}" class="form-label">{{ form.numero_registre_commerce.label }}</label>
+                                {{ form.numero_registre_commerce }}
+                                {% if form.numero_registre_commerce.errors %}
+                                    <div class="text-danger small">{{ form.numero_registre_commerce.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.numero_fiscal.id_for_label }}" class="form-label">{{ form.numero_fiscal.label }}</label>
+                                {{ form.numero_fiscal }}
+                                {% if form.numero_fiscal.errors %}
+                                    <div class="text-danger small">{{ form.numero_fiscal.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <!-- Paramètres -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary border-bottom pb-2">
+                                    <i class="fas fa-cogs"></i> Paramètres
+                                </h6>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="{{ form.type_abonnement.id_for_label }}" class="form-label">{{ form.type_abonnement.label }} *</label>
+                                {{ form.type_abonnement }}
+                                {% if form.type_abonnement.errors %}
+                                    <div class="text-danger small">{{ form.type_abonnement.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4">
+                                <label for="{{ form.max_boutiques.id_for_label }}" class="form-label">{{ form.max_boutiques.label }}</label>
+                                {{ form.max_boutiques }}
+                                {% if form.max_boutiques.errors %}
+                                    <div class="text-danger small">{{ form.max_boutiques.errors }}</div>
+                                {% endif %}
+                                <div class="form-text">Nombre maximum de boutiques autorisées</div>
+                            </div>
+                            <div class="col-md-4 d-flex align-items-center">
+                                <div class="form-check">
+                                    {{ form.est_actif }}
+                                    <label class="form-check-label" for="{{ form.est_actif.id_for_label }}">
+                                        {{ form.est_actif.label }}
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <label for="{{ form.notes_admin.id_for_label }}" class="form-label">{{ form.notes_admin.label }}</label>
+                                {{ form.notes_admin }}
+                                {% if form.notes_admin.errors %}
+                                    <div class="text-danger small">{{ form.notes_admin.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <!-- Boutons -->
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="fas fa-save"></i> Créer le Commerçant
+                                    </button>
+                                    <a href="{% url 'inventory:admin_gestion_commercants' %}" class="btn btn-secondary">
+                                        <i class="fas fa-times"></i> Annuler
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Validation côté client
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        const siretField = document.querySelector('#id_siret');
+        
+        // Validation SIRET
+        if (siretField) {
+            siretField.addEventListener('input', function() {
+                const siret = this.value.replace(/\s/g, '');
+                if (siret.length > 0 && siret.length !== 14) {
+                    this.setCustomValidity('Le SIRET doit contenir exactement 14 chiffres');
+                } else {
+                    this.setCustomValidity('');
+                }
+            });
+        }
+        
+        // Confirmation avant soumission
+        form.addEventListener('submit', function(e) {
+            const username = document.querySelector('#id_username').value;
+            const entreprise = document.querySelector('#id_nom_entreprise').value;
+            
+            if (!confirm(`Créer le commerçant "${entreprise}" avec le nom d'utilisateur "${username}" ?`)) {
+                e.preventDefault();
+            }
+        });
+    });
+</script>
+{% endblock %}

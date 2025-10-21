@@ -1,0 +1,193 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}{{ commercant.nom_entreprise }} - Détails Commerçant{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-user-tie"></i> {{ commercant.nom_entreprise }}</h1>
+                    <p class="text-muted">Détails du commerçant et gestion des boutiques</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:admin_gestion_commercants' %}" class="btn btn-outline-secondary me-2">
+                        <i class="fas fa-arrow-left"></i> Retour à la liste
+                    </a>
+                    <a href="{% url 'inventory:admin_modifier_commercant' commercant.id %}" class="btn btn-primary">
+                        <i class="fas fa-edit"></i> Modifier
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Informations du commerçant -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-info-circle"></i> Informations Générales</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <strong>Nom d'utilisateur:</strong><br>
+                        <span class="text-muted">{{ commercant.user.username }}</span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Nom complet:</strong><br>
+                        <span class="text-muted">{{ commercant.user.get_full_name|default:"Non renseigné" }}</span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Email:</strong><br>
+                        <span class="text-muted">{{ commercant.user.email|default:"Non renseigné" }}</span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Téléphone:</strong><br>
+                        <span class="text-muted">{{ commercant.telephone|default:"Non renseigné" }}</span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>SIRET:</strong><br>
+                        <span class="text-muted">{{ commercant.siret|default:"Non renseigné" }}</span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Statut:</strong><br>
+                        {% if commercant.est_actif %}
+                            <span class="badge bg-success">Actif</span>
+                        {% else %}
+                            <span class="badge bg-danger">Inactif</span>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Créé le:</strong><br>
+                        <span class="text-muted">{{ commercant.date_creation|date:"d/m/Y à H:i" }}</span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Dernière modification:</strong><br>
+                        <span class="text-muted">{{ commercant.date_mise_a_jour|date:"d/m/Y à H:i" }}</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Statistiques -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-bar"></i> Statistiques</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <h3 class="text-primary">{{ total_boutiques }}</h3>
+                            <small>Boutiques</small>
+                        </div>
+                        <div class="col-6">
+                            <h3 class="text-success">{{ boutiques_actives }}</h3>
+                            <small>Actives</small>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="progress">
+                            <div class="progress-bar" role="progressbar" 
+                                 style="width: {% widthratio total_boutiques commercant.max_boutiques 100 %}%">
+                                {{ total_boutiques }} / {{ commercant.max_boutiques }}
+                            </div>
+                        </div>
+                        <small class="text-muted">Utilisation des boutiques autorisées</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Liste des boutiques -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-store"></i> Boutiques ({{ total_boutiques }})</h5>
+                </div>
+                <div class="card-body">
+                    {% if boutiques %}
+                        <div class="row">
+                            {% for boutique in boutiques %}
+                            <div class="col-md-6 mb-3">
+                                <div class="card border-start border-4 {% if boutique.est_active %}border-success{% else %}border-danger{% endif %}">
+                                    <div class="card-body">
+                                        <h6 class="card-title">{{ boutique.nom }}</h6>
+                                        <p class="card-text">
+                                            <small class="text-muted">
+                                                <i class="fas fa-tag"></i> {{ boutique.get_type_commerce_display }}<br>
+                                                <i class="fas fa-map-marker-alt"></i> {{ boutique.ville }}, {{ boutique.code_postal }}<br>
+                                                <i class="fas fa-calendar"></i> {{ boutique.date_creation|date:"d/m/Y" }}
+                                            </small>
+                                        </p>
+                                        
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                {% if boutique.est_active %}
+                                                    <span class="badge bg-success">Active</span>
+                                                {% else %}
+                                                    <span class="badge bg-danger">Inactive</span>
+                                                {% endif %}
+                                                
+                                                {% if boutique.client_maui %}
+                                                    <span class="badge bg-info">MAUI</span>
+                                                {% endif %}
+                                            </div>
+                                            
+                                            <div class="btn-group btn-group-sm">
+                                                <button class="btn btn-outline-primary btn-sm" title="Voir détails">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-store fa-3x text-muted mb-3"></i>
+                            <h5>Aucune boutique</h5>
+                            <p class="text-muted">Ce commerçant n'a pas encore créé de boutique.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Adresse du siège -->
+            {% if commercant.adresse_siege %}
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5><i class="fas fa-building"></i> Adresse du Siège</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-0">{{ commercant.adresse_siege }}</p>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Notes admin -->
+            {% if commercant.notes_admin %}
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5><i class="fas fa-sticky-note"></i> Notes Administrateur</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-0">{{ commercant.notes_admin }}</p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

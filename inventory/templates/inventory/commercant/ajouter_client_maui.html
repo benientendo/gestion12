@@ -1,0 +1,220 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Ajouter Terminal MAUI - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-mobile-alt"></i> Ajouter Terminal MAUI</h1>
+                    <p class="text-muted">Configuration d'un terminal pour {{ boutique.nom }}</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour à la Boutique
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Informations boutique -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <strong>Boutique :</strong> {{ boutique.nom }} ({{ boutique.get_type_commerce_display }}) - {{ boutique.ville }}
+                <br>
+                <strong>Code Boutique :</strong> {{ boutique.code }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Formulaire -->
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-mobile-alt"></i> Configuration du Terminal MAUI</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <!-- Informations du terminal -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary border-bottom pb-2">
+                                    <i class="fas fa-tablet-alt"></i> Informations du Terminal
+                                </h6>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label for="nom_terminal" class="form-label">Nom du Terminal *</label>
+                                <input type="text" class="form-control" id="nom_terminal" name="nom_terminal" 
+                                       value="" required>
+                                <div class="form-text">Nom d'identification du terminal (ex: "Terminal Principal", "Caisse 1")</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="numero_serie" class="form-label">Numéro de Série *</label>
+                                <input type="text" class="form-control" id="numero_serie" name="numero_serie" 
+                                       value="" required>
+                                <div class="form-text">Identifiant unique du terminal</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Paramètres -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary border-bottom pb-2">
+                                    <i class="fas fa-cogs"></i> Paramètres
+                                </h6>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="est_actif" name="est_actif" checked>
+                                    <label class="form-check-label" for="est_actif">
+                                        Terminal actif
+                                    </label>
+                                </div>
+                                <div class="form-text">Le terminal peut se connecter et effectuer des ventes</div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="nom_utilisateur" class="form-label">Nom de l'Utilisateur</label>
+                                <input type="text" class="form-control" id="nom_utilisateur" name="nom_utilisateur" 
+                                       value="">
+                                <div class="form-text">Nom de la personne utilisant ce terminal</div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <label for="description" class="form-label">Description</label>
+                                <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                                <div class="form-text">Description optionnelle du terminal</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Informations techniques -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary border-bottom pb-2">
+                                    <i class="fas fa-code"></i> Informations Techniques
+                                </h6>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Clé API</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="cle_api" readonly 
+                                           value="Sera générée automatiquement">
+                                    <button class="btn btn-outline-secondary" type="button" onclick="genererCleAPI()">
+                                        <i class="fas fa-sync"></i> Générer
+                                    </button>
+                                </div>
+                                <div class="form-text">Clé d'authentification unique pour l'API</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Boutique Associée</label>
+                                <input type="text" class="form-control" value="{{ boutique.nom }}" readonly>
+                                <div class="form-text">Ce terminal sera lié à cette boutique uniquement</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Boutons -->
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-success">
+                                        <i class="fas fa-save"></i> Créer le Terminal
+                                    </button>
+                                    <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-secondary">
+                                        <i class="fas fa-times"></i> Annuler
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aide -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h6><i class="fas fa-lightbulb"></i> Conseils pour la Configuration</h6>
+                    <ul class="mb-0">
+                        <li><strong>Nom du terminal :</strong> Choisissez un nom descriptif et unique</li>
+                        <li><strong>Numéro de série :</strong> Utilisez l'identifiant physique du terminal ou créez-en un unique</li>
+                        <li><strong>Sécurité :</strong> La clé API sera générée automatiquement et doit rester confidentielle</li>
+                        <li><strong>Liaison :</strong> Ce terminal sera exclusivement lié à cette boutique</li>
+                        <li><strong>Activation :</strong> Vous pouvez désactiver temporairement un terminal sans le supprimer</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        const numeroSerieField = document.querySelector('#numero_serie');
+        const nomTerminalField = document.querySelector('#nom_terminal');
+        
+        // Validation du numéro de série
+        numeroSerieField.addEventListener('input', function() {
+            const numeroSerie = this.value.trim();
+            if (numeroSerie.length > 0 && numeroSerie.length < 6) {
+                this.setCustomValidity('Le numéro de série doit contenir au moins 6 caractères');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+        
+        // Auto-génération du nom du terminal basé sur la boutique
+        if (!nomTerminalField.value) {
+            nomTerminalField.value = 'Terminal {{ boutique.nom }}';
+        }
+        
+        // Confirmation avant soumission
+        form.addEventListener('submit', function(e) {
+            const nomTerminal = nomTerminalField.value;
+            const numeroSerie = numeroSerieField.value;
+            
+            if (!confirm(`Créer le terminal "${nomTerminal}" avec le numéro de série "${numeroSerie}" ?`)) {
+                e.preventDefault();
+            }
+        });
+    });
+    
+    function genererCleAPI() {
+        // Générer une clé API aléatoire pour prévisualisation
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let cle = '';
+        for (let i = 0; i < 32; i++) {
+            cle += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        document.getElementById('cle_api').value = cle;
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "inventory/base.html" %}
+
+{% block page_title %}
+    {% if categorie %}
+        Modifier la Catégorie
+    {% else %}
+        Ajouter une Catégorie
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0">
+                        {% if categorie %}
+                            Modifier la Catégorie
+                        {% else %}
+                            Ajouter une Catégorie
+                        {% endif %}
+                    </h4>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        {% for field in form %}
+                        <div class="mb-3">
+                            <label class="form-label">{{ field.label }}</label>
+                            {{ field }}
+                            {% if field.errors %}
+                                <div class="text-danger">
+                                    {% for error in field.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">
+                                {% if categorie %}
+                                    Modifier
+                                {% else %}
+                                    Ajouter
+                                {% endif %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

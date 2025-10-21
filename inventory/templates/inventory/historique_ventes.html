@@ -1,0 +1,437 @@
+{% extends "inventory/base.html" %}
+
+{% block page_title %}Historique des Ventes{% endblock %}
+
+{% block content %}
+<!-- Dashboard Cards -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-primary shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Total Ventes</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.total_ventes }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-cash-coin fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-success shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Montant Total</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.montant_total|floatformat:2 }} CDF</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="fas fa-coins fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-6 col-md-12 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-info">Répartition par mode de paiement</h6>
+            </div>
+            <div class="card-body py-2">
+                <div class="row">
+                    {% for mode in stats.ventes_par_mode %}
+                    <div class="col-md-4 text-center">
+                        <div class="mb-1">
+                            <span class="badge bg-{{ mode.mode_paiement|lower }} p-2">
+                                {% if mode.mode_paiement == 'CASH' %}
+                                    <i class="bi bi-cash me-1"></i>Espèces
+                                {% elif mode.mode_paiement == 'CARD' %}
+                                    <i class="bi bi-credit-card me-1"></i>Carte
+                                {% elif mode.mode_paiement == 'MOBILE' %}
+                                    <i class="bi bi-phone me-1"></i>Mobile
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="small text-muted">{{ mode.count }} ventes</div>
+                        <div class="font-weight-bold">{{ mode.total|floatformat:2 }} CDF</div>
+                    </div>
+                    {% empty %}
+                    <div class="col-12 text-center py-3">
+                        <span class="text-muted">Aucune donnée disponible</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filtres -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3">
+        <h6 class="m-0 font-weight-bold text-primary">Filtres</h6>
+    </div>
+    <div class="card-body">
+        <form method="get" action="{% url 'inventory:historique_ventes' %}" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Date de début</label>
+                <input type="date" class="form-control" name="date_debut" value="{{ date_debut }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Date de fin</label>
+                <input type="date" class="form-control" name="date_fin" value="{{ date_fin }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Mode de paiement</label>
+                <select class="form-select" name="mode_paiement">
+                    <option value="TOUS" {% if mode_paiement_selected == 'TOUS' %}selected{% endif %}>Tous les modes</option>
+                    {% for code, nom in modes_paiement.items %}
+                    <option value="{{ code }}" {% if mode_paiement_selected == code %}selected{% endif %}>{{ nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="bi bi-search me-1"></i>Filtrer
+                </button>
+                <a href="{% url 'inventory:historique_ventes' %}" class="btn btn-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Réinitialiser
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+        <h6 class="m-0 font-weight-bold text-primary">Historique Détaillé des Ventes</h6>
+        <div>
+            <a href="{% url 'inventory:ventes' %}" class="btn btn-sm btn-success">
+                <i class="bi bi-plus-circle me-1"></i>Nouvelle Vente
+            </a>
+            <button class="btn btn-sm btn-info" id="exportButton" disabled>
+                <i class="bi bi-file-earmark-excel me-1"></i>Exporter
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-bordered table-striped table-hover" id="dataTable" width="100%" cellspacing="0">
+                <thead class="thead-light">
+                    <tr>
+                        <th>N° Facture</th>
+                        <th>Date</th>
+                        <th>Montant</th>
+                        <th>Mode de paiement</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vente in page_obj %}
+                    <tr>
+                        <td><strong>{{ vente.numero_facture }}</strong></td>
+                        <td>{{ vente.date_vente|date:"d/m/Y H:i" }}</td>
+                        <td><span class="text-primary fw-bold">{{ vente.montant_total|floatformat:2 }} CDF</span></td>
+                        <td>
+                            <span class="badge 
+                                {% if vente.mode_paiement == 'CASH' %}bg-success
+                                {% elif vente.mode_paiement == 'CARD' %}bg-primary
+                                {% else %}bg-info{% endif %}">
+                                {% if vente.mode_paiement == 'CASH' %}
+                                    <i class="bi bi-cash me-1"></i>Espèces
+                                {% elif vente.mode_paiement == 'CARD' %}
+                                    <i class="bi bi-credit-card me-1"></i>Carte
+                                {% elif vente.mode_paiement == 'MOBILE' %}
+                                    <i class="bi bi-phone me-1"></i>Mobile
+                                {% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge {% if vente.paye %}bg-success{% else %}bg-warning{% endif %}">
+                                {% if vente.paye %}Payé{% else %}En attente{% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            <div class="d-flex">
+                                <button class="btn btn-sm btn-info me-1" onclick="voirDetailsVente('{{ vente.id }}')">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                                <button class="btn btn-sm btn-primary me-1" onclick="imprimerFacture('{{ vente.id }}')">
+                                    <i class="bi bi-printer"></i>
+                                </button>
+                                {% if not vente.paye %}
+                                <button class="btn btn-sm btn-success me-1" onclick="marquerCommePaye('{{ vente.id }}')">
+                                    <i class="bi bi-check-circle"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center py-4">
+                            <div class="text-muted">
+                                <i class="bi bi-info-circle me-1"></i>Aucune vente trouvée pour ces critères.
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <nav aria-label="Page navigation" class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if date_debut %}&date_debut={{ date_debut }}{% endif %}{% if date_fin %}&date_fin={{ date_fin }}{% endif %}{% if mode_paiement_selected != 'TOUS' %}&mode_paiement={{ mode_paiement_selected }}{% endif %}" aria-label="Previous">
+                        <span aria-hidden="true">&laquo;</span>
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <a class="page-link" href="#" tabindex="-1" aria-disabled="true">&laquo;</a>
+                </li>
+                {% endif %}
+                
+                {% for i in page_obj.paginator.page_range %}
+                    {% if page_obj.number == i %}
+                    <li class="page-item active"><a class="page-link" href="#">{{ i }}</a></li>
+                    {% else %}
+                    <li class="page-item"><a class="page-link" href="?page={{ i }}{% if date_debut %}&date_debut={{ date_debut }}{% endif %}{% if date_fin %}&date_fin={{ date_fin }}{% endif %}{% if mode_paiement_selected != 'TOUS' %}&mode_paiement={{ mode_paiement_selected }}{% endif %}">{{ i }}</a></li>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if date_debut %}&date_debut={{ date_debut }}{% endif %}{% if date_fin %}&date_fin={{ date_fin }}{% endif %}{% if mode_paiement_selected != 'TOUS' %}&mode_paiement={{ mode_paiement_selected }}{% endif %}" aria-label="Next">
+                        <span aria-hidden="true">&raquo;</span>
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <a class="page-link" href="#" tabindex="-1" aria-disabled="true">&raquo;</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Modal Détails Vente -->
+<div class="modal fade" id="detailsVenteModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="bi bi-info-circle me-2"></i>Détails de la Vente</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="detailsVenteContent">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Chargement...</span>
+                        </div>
+                        <p class="mt-2">Chargement des détails...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                <button type="button" class="btn btn-primary" id="imprimerDetailsBtn">
+                    <i class="bi bi-printer me-1"></i>Imprimer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Fonction pour voir les détails d'une vente
+    function voirDetailsVente(id) {
+        // Ouverture du modal
+        var detailsModal = new bootstrap.Modal(document.getElementById('detailsVenteModal'));
+        detailsModal.show();
+        
+        // Chargement des détails (à implémenter avec l'API)
+        fetch(`/api/ventes/${id}/`)
+            .then(response => response.json())
+            .then(data => {
+                const detailsContent = document.getElementById('detailsVenteContent');
+                
+                // Construction du contenu du modal avec les détails de la vente
+                let htmlContent = `
+                    <div class="mb-4">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <h6 class="font-weight-bold">Facture N° ${data.numero_facture}</h6>
+                                <p class="text-muted mb-1">Date: ${new Date(data.date_vente).toLocaleString('fr-FR')}</p>
+                                <p class="mb-0">
+                                    <span class="badge ${data.paye ? 'bg-success' : 'bg-warning'}">
+                                        ${data.paye ? 'Payé' : 'En attente'}
+                                    </span>
+                                </p>
+                            </div>
+                            <div class="col-md-6 text-md-end">
+                                <h5 class="text-primary">${parseFloat(data.montant_total).toFixed(2)} CDF</h5>
+                                <p class="mb-0">
+                                    <span class="badge 
+                                        ${data.mode_paiement === 'CASH' ? 'bg-success' : 
+                                          data.mode_paiement === 'CARD' ? 'bg-primary' : 'bg-info'}">
+                                        ${data.mode_paiement === 'CASH' ? 'Espèces' : 
+                                          data.mode_paiement === 'CARD' ? 'Carte bancaire' : 'Paiement mobile'}
+                                    </span>
+                                </p>
+                            </div>
+                        </div>
+                        <hr>
+                        <h6 class="font-weight-bold mb-3">Articles vendus</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Article</th>
+                                        <th class="text-center">Quantité</th>
+                                        <th class="text-end">Prix Unitaire</th>
+                                        <th class="text-end">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>`;
+                
+                // Ajout des lignes pour chaque article vendu
+                if (data.lignes && data.lignes.length > 0) {
+                    data.lignes.forEach(ligne => {
+                        htmlContent += `
+                            <tr>
+                                <td>${ligne.article_nom || 'Article #' + ligne.article}</td>
+                                <td class="text-center">${ligne.quantite}</td>
+                                <td class="text-end">${parseFloat(ligne.prix_unitaire).toFixed(2)} CDF</td>
+                                <td class="text-end">${parseFloat(ligne.montant_ligne).toFixed(2)} CDF</td>
+                            </tr>`;
+                    });
+                } else {
+                    htmlContent += `
+                        <tr>
+                            <td colspan="4" class="text-center">Aucun détail disponible</td>
+                        </tr>`;
+                }
+                
+                htmlContent += `
+                                </tbody>
+                                <tfoot class="table-light">
+                                    <tr>
+                                        <th colspan="3" class="text-end">Total</th>
+                                        <th class="text-end">${parseFloat(data.montant_total).toFixed(2)} CDF</th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>`;
+                
+                detailsContent.innerHTML = htmlContent;
+            })
+            .catch(error => {
+                document.getElementById('detailsVenteContent').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Erreur lors du chargement des détails. Veuillez réessayer.
+                    </div>`;
+                console.error('Erreur:', error);
+            });
+    }
+    
+    // Fonction pour imprimer une facture
+    function imprimerFacture(id) {
+        alert('Fonctionnalité d\'impression à implémenter');
+    }
+    
+    // Fonction pour marquer une vente comme payée
+    function marquerCommePaye(id) {
+        if (confirm('Marquer cette vente comme payée ?')) {
+            fetch(`/api/ventes/${id}/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    paye: true
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Erreur lors de la mise à jour du statut de paiement');
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Erreur lors de la mise à jour du statut de paiement');
+            });
+        }
+    }
+    
+    // Fonction pour récupérer le CSRF token depuis les cookies
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    
+    // Initialisation au chargement de la page
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialisation de DataTable pour le tableau
+        if (typeof $.fn.DataTable !== 'undefined') {
+            $('#dataTable').DataTable({
+                "paging": false,  // Pas besoin de pagination car on utilise celle de Django
+                "ordering": true,
+                "info": false,
+                "searching": false,  // Pas besoin de recherche car on a des filtres
+                "language": {
+                    "emptyTable": "Aucune vente trouvée",
+                    "zeroRecords": "Aucune vente correspondant à votre recherche"
+                }
+            });
+        }
+        
+        // Gestion du bouton d'impression des détails
+        document.getElementById('imprimerDetailsBtn').addEventListener('click', function() {
+            const contenu = document.getElementById('detailsVenteContent').innerHTML;
+            const fenetre = window.open('', '', 'height=600,width=800');
+            fenetre.document.write('<html><head><title>Détails de la vente</title>');
+            fenetre.document.write('<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">');
+            fenetre.document.write('</head><body>');
+            fenetre.document.write('<div class="container py-4">');
+            fenetre.document.write('<h4 class="mb-4 text-center">Détails de la vente</h4>');
+            fenetre.document.write(contenu);
+            fenetre.document.write('</div></body></html>');
+            fenetre.document.close();
+            fenetre.onload = function() {
+                fenetre.focus();
+                fenetre.print();
+                fenetre.close();
+            };
+        });
+    });
+</script>
+{% endblock %}

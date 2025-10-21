@@ -1,0 +1,248 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Mes Boutiques - {{ commercant.nom_entreprise }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .boutique-card {
+        transition: transform 0.2s;
+        border-left: 4px solid #28a745;
+        cursor: pointer;
+    }
+    .boutique-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .boutique-inactive {
+        border-left-color: #dc3545;
+        opacity: 0.7;
+    }
+    .stats-overview {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    .boutique-actions {
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+    .boutique-card:hover .boutique-actions {
+        opacity: 1;
+    }
+    .add-boutique-card {
+        border: 2px dashed #007bff;
+        background: #f8f9ff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 200px;
+        transition: all 0.2s;
+    }
+    .add-boutique-card:hover {
+        background: #e7f1ff;
+        border-color: #0056b3;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête Commerçant -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="stats-overview">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h1><i class="fas fa-store"></i> {{ commercant.nom_entreprise }}</h1>
+                        <p class="mb-0">Bienvenue dans votre espace de gestion multi-boutiques</p>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <h3>{{ total_boutiques }}</h3>
+                                <small>Boutiques</small>
+                            </div>
+                            <div class="col-4">
+                                <h3>{{ boutiques_avec_clients }}</h3>
+                                <small>Connectées</small>
+                            </div>
+                            <div class="col-4">
+                                <h3>{{ chiffre_affaires_30j|floatformat:0 }} CDF</h3>
+                                <small>CA 30j</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message d'information -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <strong>Comment ça marche :</strong> 
+                Cliquez sur une boutique pour accéder à ses articles, ventes et statistiques. 
+                Chaque boutique peut avoir son propre terminal MAUI pour les ventes.
+            </div>
+        </div>
+    </div>
+
+    <!-- Liste des boutiques -->
+    <div class="row">
+        {% for boutique in boutiques %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card boutique-card h-100 {% if not boutique.est_active %}boutique-inactive{% endif %}" 
+                 onclick="window.location.href='{% url 'inventory:commercant_detail_boutique' boutique.id %}'">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="card-title mb-1">{{ boutique.nom }}</h5>
+                            <span class="badge bg-primary">{{ boutique.get_type_commerce_display }}</span>
+                        </div>
+                        <div class="boutique-actions">
+                            <div class="dropdown" onclick="event.stopPropagation();">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                    <i class="fas fa-ellipsis-v"></i>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li><a class="dropdown-item" href="{% url 'inventory:entrer_boutique' boutique.id %}">
+                                        <i class="fas fa-sign-in-alt"></i> Entrer dans la boutique
+                                    </a></li>
+                                    <li><a class="dropdown-item" href="{% url 'inventory:modifier_boutique' boutique.id %}">
+                                        <i class="fas fa-edit"></i> Modifier
+                                    </a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item text-danger" href="{% url 'inventory:supprimer_boutique' boutique.id %}">
+                                        <i class="fas fa-trash"></i> Supprimer
+                                    </a></li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            <i class="fas fa-map-marker-alt"></i> {{ boutique.ville }}, {{ boutique.code_postal }}<br>
+                            <i class="fas fa-calendar"></i> Créée le {{ boutique.date_creation|date:"d/m/Y" }}
+                        </small>
+                    </div>
+                    
+                    <!-- Statut du client MAUI -->
+                    <div class="mb-3">
+                        {% if boutique.clients.exists %}
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-success me-2">
+                                    <i class="fas fa-mobile-alt"></i> {{ boutique.clients.count }} MAUI
+                                </span>
+                                <small class="text-muted">{{ boutique.clients.first.nom_terminal|default:"Terminal" }}</small>
+                            </div>
+                        {% else %}
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-warning me-2">
+                                    <i class="fas fa-mobile-alt"></i> Pas de MAUI
+                                </span>
+                                <a href="{% url 'inventory:ajouter_client_maui_boutique' boutique.id %}" 
+                                   class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation();">
+                                    Ajouter
+                                </a>
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Actions principales -->
+                    <div class="d-grid gap-2">
+                        <a href="{% url 'inventory:entrer_boutique' boutique.id %}" 
+                           class="btn btn-primary btn-sm" onclick="event.stopPropagation();">
+                            <i class="fas fa-sign-in-alt"></i> Entrer dans la boutique
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Statut footer -->
+                <div class="card-footer bg-transparent">
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <small class="text-muted">Articles</small><br>
+                            <strong>{{ boutique.articles.count|default:0 }}</strong>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted">Terminaux</small><br>
+                            <strong>{{ boutique.clients.count|default:0 }}</strong>
+                        </div>
+                        <div class="col-4">
+                            {% if boutique.est_active %}
+                                <small class="text-success">Active</small><br>
+                                <i class="fas fa-check-circle text-success"></i>
+                            {% else %}
+                                <small class="text-danger">Inactive</small><br>
+                                <i class="fas fa-times-circle text-danger"></i>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        
+        <!-- Carte pour ajouter une nouvelle boutique -->
+        {% if peut_ajouter_boutique %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card add-boutique-card h-100" onclick="window.location.href='{% url 'inventory:commercant_creer_boutique' %}'">
+                <div class="text-center">
+                    <i class="fas fa-plus fa-3x text-primary mb-3"></i>
+                    <h5 class="text-primary">Ajouter une boutique</h5>
+                    <p class="text-muted">Créez une nouvelle boutique pour étendre votre activité</p>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <div class="alert alert-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                Vous avez atteint la limite de {{ commercant.max_boutiques }} boutiques. 
+                Contactez l'administrateur pour augmenter cette limite.
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Section vide si aucune boutique -->
+    {% if not boutiques %}
+    <div class="row">
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="fas fa-store fa-4x text-muted mb-4"></i>
+                <h3>Aucune boutique créée</h3>
+                <p class="text-muted mb-4">Commencez par créer votre première boutique pour gérer vos articles et ventes.</p>
+                {% if peut_ajouter_boutique %}
+                <a href="{% url 'inventory:commercant_creer_boutique' %}" class="btn btn-primary btn-lg">
+                    <i class="fas fa-plus"></i> Créer ma première boutique
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Confirmation avant suppression
+    document.addEventListener('DOMContentLoaded', function() {
+        const deleteLinks = document.querySelectorAll('a[href*="supprimer"]');
+        deleteLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                if (!confirm('Êtes-vous sûr de vouloir supprimer cette boutique ? Cette action est irréversible.')) {
+                    e.preventDefault();
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,328 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}{{ boutique.nom }} - Gestion{% endblock %}
+
+{% block extra_css %}
+<style>
+    .module-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+        cursor: pointer;
+        border: none;
+        border-radius: 15px;
+    }
+    .module-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    }
+    .module-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+    }
+    .stats-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px;
+    }
+    .quick-action {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 10px;
+        transition: background 0.2s;
+    }
+    .quick-action:hover {
+        background: #e9ecef;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-store"></i> {{ boutique.nom }}</h1>
+                    <p class="text-muted">
+                        <i class="fas fa-map-marker-alt"></i> {{ boutique.ville }}, {{ boutique.code_postal }} • 
+                        <i class="fas fa-tag"></i> {{ boutique.get_type_commerce_display }}
+                    </p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:commercant_dashboard' %}" class="btn btn-outline-secondary me-2">
+                        <i class="fas fa-arrow-left"></i> Retour Dashboard
+                    </a>
+                    <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-info">
+                        <i class="fas fa-info-circle"></i> Détails Boutique
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistiques rapides -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="stats-card p-4">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h2>{{ total_articles }}</h2>
+                        <p class="mb-0">Articles</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h2>{{ total_categories }}</h2>
+                        <p class="mb-0">Catégories</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h2>{{ total_ventes }}</h2>
+                        <p class="mb-0">Ventes</p>
+                    </div>
+                    <div class="col-md-3">
+                        <h2>{{ chiffre_affaires|floatformat:0 }} CDF</h2>
+                        <p class="mb-0">Chiffre d'Affaires</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Modules principaux -->
+        <div class="col-md-8">
+            <h3 class="mb-4">Modules de Gestion</h3>
+            
+            <div class="row">
+                <!-- Articles -->
+                <div class="col-md-6 mb-4">
+                    <div class="card module-card h-100 text-center p-4" onclick="window.location.href='{% url 'inventory:articles' %}?boutique={{ boutique.id }}'">
+                        <div class="card-body">
+                            <i class="fas fa-box module-icon text-primary"></i>
+                            <h4>Articles</h4>
+                            <p class="text-muted">Gérer le catalogue de produits</p>
+                            <div class="row text-center mt-3">
+                                <div class="col-6">
+                                    <strong>{{ total_articles }}</strong><br>
+                                    <small>Total</small>
+                                </div>
+                                <div class="col-6">
+                                    <strong>{{ articles_stock_bas }}</strong><br>
+                                    <small>Stock bas</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Catégories -->
+                <div class="col-md-6 mb-4">
+                    <div class="card module-card h-100 text-center p-4" onclick="window.location.href='{% url 'inventory:categories' %}?boutique={{ boutique.id }}'">
+                        <div class="card-body">
+                            <i class="fas fa-tags module-icon text-success"></i>
+                            <h4>Catégories</h4>
+                            <p class="text-muted">Organiser les produits</p>
+                            <div class="row text-center mt-3">
+                                <div class="col-6">
+                                    <strong>{{ total_categories }}</strong><br>
+                                    <small>Total</small>
+                                </div>
+                                <div class="col-6">
+                                    <strong>{{ categories_actives }}</strong><br>
+                                    <small>Actives</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ventes -->
+                <div class="col-md-6 mb-4">
+                    <div class="card module-card h-100 text-center p-4" onclick="window.location.href='{% url 'inventory:ventes' %}?boutique={{ boutique.id }}'">
+                        <div class="card-body">
+                            <i class="fas fa-shopping-cart module-icon text-warning"></i>
+                            <h4>Ventes</h4>
+                            <p class="text-muted">Historique et statistiques</p>
+                            <div class="row text-center mt-3">
+                                <div class="col-6">
+                                    <strong>{{ ventes_aujourd_hui }}</strong><br>
+                                    <small>Aujourd'hui</small>
+                                </div>
+                                <div class="col-6">
+                                    <strong>{{ ca_aujourd_hui|floatformat:0 }} CDF</strong><br>
+                                    <small>CA jour</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stocks -->
+                <div class="col-md-6 mb-4">
+                    <div class="card module-card h-100 text-center p-4" onclick="window.location.href='#'">
+                        <div class="card-body">
+                            <i class="fas fa-warehouse module-icon text-info"></i>
+                            <h4>Stocks</h4>
+                            <p class="text-muted">Mouvements et inventaire</p>
+                            <div class="row text-center mt-3">
+                                <div class="col-6">
+                                    <strong>{{ mouvements_recents }}</strong><br>
+                                    <small>Mouvements</small>
+                                </div>
+                                <div class="col-6">
+                                    <strong>{{ articles_stock_bas }}</strong><br>
+                                    <small>Alertes</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions rapides et informations -->
+        <div class="col-md-4">
+            <h3 class="mb-4">Actions Rapides</h3>
+            
+            <!-- Actions -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="quick-action" onclick="window.location.href='{% url 'inventory:ajouter_article' %}?boutique={{ boutique.id }}'">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-plus-circle text-primary me-3"></i>
+                            <div>
+                                <strong>Ajouter un Article</strong><br>
+                                <small class="text-muted">Nouveau produit au catalogue</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="quick-action" onclick="window.location.href='{% url 'inventory:ajouter_categorie' %}?boutique={{ boutique.id }}'">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-tag text-success me-3"></i>
+                            <div>
+                                <strong>Nouvelle Catégorie</strong><br>
+                                <small class="text-muted">Organiser les produits</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="quick-action" onclick="window.location.href='#'">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-chart-line text-warning me-3"></i>
+                            <div>
+                                <strong>Rapport de Ventes</strong><br>
+                                <small class="text-muted">Statistiques détaillées</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="quick-action" onclick="window.location.href='#'">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-file-export text-info me-3"></i>
+                            <div>
+                                <strong>Exporter Données</strong><br>
+                                <small class="text-muted">CSV, PDF, Excel</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Client MAUI -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-mobile-alt"></i> Terminal MAUI</h5>
+                </div>
+                <div class="card-body">
+                    {% if boutique.client_maui %}
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="me-3">
+                                {% if boutique.client_maui.est_actif %}
+                                    <i class="fas fa-circle text-success"></i>
+                                {% else %}
+                                    <i class="fas fa-circle text-danger"></i>
+                                {% endif %}
+                            </div>
+                            <div>
+                                <strong>{{ boutique.client_maui.nom_terminal }}</strong><br>
+                                <small class="text-muted">{{ boutique.client_maui.numero_serie }}</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <small class="text-muted">Dernière activité:</small><br>
+                            <strong>{{ boutique.client_maui.derniere_activite|date:"d/m/Y H:i"|default:"Jamais" }}</strong>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-cog"></i> Configurer
+                            </button>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-3">
+                            <i class="fas fa-mobile-alt fa-2x text-muted mb-2"></i>
+                            <p class="text-muted mb-2">Aucun terminal configuré</p>
+                            <a href="{% url 'inventory:ajouter_client_maui_boutique' boutique.id %}" class="btn btn-success btn-sm">
+                                <i class="fas fa-plus"></i> Ajouter Terminal
+                            </a>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Activité récente -->
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-clock"></i> Activité Récente</h5>
+                </div>
+                <div class="card-body">
+                    {% if activite_recente %}
+                        {% for activite in activite_recente %}
+                        <div class="d-flex align-items-center mb-2">
+                            <div class="me-3">
+                                <i class="fas fa-{{ activite.icon }} text-{{ activite.color }}"></i>
+                            </div>
+                            <div>
+                                <small>{{ activite.description }}</small><br>
+                                <small class="text-muted">{{ activite.date|date:"d/m H:i" }}</small>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center py-3">
+                            <i class="fas fa-clock fa-2x text-muted mb-2"></i>
+                            <p class="text-muted mb-0">Aucune activité récente</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Animation des cartes au survol
+        const moduleCards = document.querySelectorAll('.module-card');
+        moduleCards.forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateY(-5px)';
+            });
+            
+            card.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateY(0)';
+            });
+        });
+        
+        // Actualisation automatique des statistiques toutes les 30 secondes
+        setInterval(function() {
+            // Ici on pourrait ajouter un appel AJAX pour actualiser les stats
+            console.log('Actualisation des statistiques...');
+        }, 30000);
+    });
+</script>
+{% endblock %}

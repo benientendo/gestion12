@@ -1,0 +1,601 @@
+{% extends "inventory/base.html" %}
+{% load static %}
+
+{% block title %}Articles - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .boutique-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px;
+        margin-bottom: 20px;
+    }
+    .stats-card {
+        transition: transform 0.2s;
+        border: none;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .stats-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .article-actions {
+        white-space: nowrap;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- En-tête Boutique -->
+<div class="boutique-header p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h1><i class="fas fa-box me-2"></i>Articles - {{ boutique.nom }}</h1>
+            <p class="mb-0 opacity-75">
+                <i class="fas fa-map-marker-alt me-1"></i>{{ boutique.ville }} • 
+                <i class="fas fa-tag me-1"></i>{{ boutique.get_type_commerce_display }} • 
+                <i class="fas fa-calendar me-1"></i>{{ "aujourd'hui"|date:"d/m/Y" }}
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'inventory:dashboard_boutique' boutique.id %}" class="btn btn-light me-2">
+                <i class="fas fa-arrow-left"></i> Retour Dashboard
+            </a>
+            <a href="{% url 'inventory:categories' %}?boutique={{ boutique.id }}" class="btn btn-outline-light">
+                <i class="fas fa-tags"></i> Gérer Catégories
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Statistiques -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stats-card border-0 h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-box fa-3x text-primary mb-3"></i>
+                <h3 class="text-primary">{{ articles|length }}</h3>
+                <p class="text-muted mb-0">Articles Total</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stats-card border-0 h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-tags fa-3x text-success mb-3"></i>
+                <h3 class="text-success">{{ categories|length }}</h3>
+                <p class="text-muted mb-0">Catégories</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stats-card border-0 h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i>
+                <h3 class="text-warning">
+                    {% with stock_bas=0 %}
+                        {% for article in articles %}
+                            {% if article.quantite_stock <= 5 %}
+                                {% with stock_bas=stock_bas|add:1 %}{% endwith %}
+                            {% endif %}
+                        {% endfor %}
+                        {{ stock_bas }}
+                    {% endwith %}
+                </h3>
+                <p class="text-muted mb-0">Stock Bas</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stats-card border-0 h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-coins fa-3x text-info mb-3"></i>
+                <h3 class="text-info">
+                    {% with valeur_stock=0 %}
+                        {% for article in articles %}
+                            {% with valeur_stock=valeur_stock|add:article.prix_vente %}{% endwith %}
+                        {% endfor %}
+                        {{ valeur_stock|floatformat:0 }} CDF
+                    {% endwith %}
+                </h3>
+                <p class="text-muted mb-0">Valeur Stock</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">Liste des Articles</h6>
+                <div class="btn-group">
+                    <a href="{% url 'inventory:ajouter_article' %}?boutique={{ boutique.id }}" class="btn btn-primary me-2">
+                        <i class="fas fa-plus"></i> Ajouter Article
+                    </a>
+                    <button class="btn btn-success me-2" data-bs-toggle="modal" data-bs-target="#importerArticlesModal">
+                        <i class="fas fa-upload"></i> Importer
+                    </button>
+                    <a href="{% url 'inventory:generer_qr_codes_pdf' %}?boutique={{ boutique.id }}" class="btn btn-danger" target="_blank">
+                        <i class="fas fa-file-pdf"></i> PDF Codes QR
+                    </a>
+                </div>
+            </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped table-hover" id="dataTable" width="100%" cellspacing="0">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Nom</th>
+                                    <th>Catégorie</th>
+                                    <th>Prix Vente</th>
+                                    <th>Stock Actuel</th>
+                                    <th>Stock Min</th>
+                                    <th>Statut</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for article in articles %}
+                                <tr>
+                                    <td><strong class="text-primary">{{ article.code_barre|default:article.code }}</strong></td>
+                                    <td>
+                                        <strong>{{ article.nom }}</strong>
+                                        {% if article.description %}
+                                        <br><small class="text-muted">{{ article.description|truncatechars:30 }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="badge bg-primary">{{ article.categorie.nom }}</span></td>
+                                    <td><strong class="text-success">{{ article.prix_vente }} CDF</strong></td>
+                                    <td>
+                                        <span class="badge {% if article.stock_actuel <= article.stock_minimum %}bg-danger{% elif article.stock_actuel <= 10 %}bg-warning{% else %}bg-success{% endif %}">
+                                            {{ article.stock_actuel|default:article.quantite_stock }}
+                                        </span>
+                                    </td>
+                                    <td><span class="text-muted">{{ article.stock_minimum|default:5 }}</span></td>
+                                    <td>
+                                        {% if article.stock_actuel <= article.stock_minimum %}
+                                            <span class="badge bg-danger"><i class="fas fa-exclamation-triangle"></i> Critique</span>
+                                        {% elif article.stock_actuel <= 10 %}
+                                            <span class="badge bg-warning"><i class="fas fa-exclamation"></i> Bas</span>
+                                        {% else %}
+                                            <span class="badge bg-success"><i class="fas fa-check"></i> OK</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="article-actions">
+                                        <div class="btn-group" role="group">
+                                            <button class="btn btn-sm btn-info" onclick="voirDetails('{{ article.id }}')" title="Voir détails">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-warning" onclick="modifierArticle('{{ article.id }}')" title="Modifier">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-danger" onclick="supprimerArticle('{{ article.id }}')" title="Supprimer">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="8" class="text-center py-4">
+                                        <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
+                                        <h5 class="text-muted">Aucun article trouvé</h5>
+                                        <p class="text-muted">Commencez par ajouter des articles à votre boutique.</p>
+                                        <a href="{% url 'inventory:ajouter_article' %}?boutique={{ boutique.id }}" class="btn btn-primary">
+                                            <i class="fas fa-plus"></i> Ajouter le Premier Article
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <!-- Pagination -->
+                    <nav aria-label="Page navigation" class="mt-4">
+                        <ul class="pagination justify-content-center">
+                            <li class="page-item disabled">
+                                <a class="page-link" href="#" tabindex="-1" aria-disabled="true">Précédent</a>
+                            </li>
+                            <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                            <li class="page-item"><a class="page-link" href="#">2</a></li>
+                            <li class="page-item"><a class="page-link" href="#">3</a></li>
+                            <li class="page-item">
+                                <a class="page-link" href="#">Suivant</a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajouter Article -->
+<div class="modal fade" id="ajouterArticleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Ajouter un Article</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="articleForm" method="POST" action="{% url 'inventory:ajouter_article' %}">
+                    {% csrf_token %}
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Code Article</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-upc"></i></span>
+                                <input type="text" class="form-control" name="code" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nom</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-tag"></i></span>
+                                <input type="text" class="form-control" name="nom" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Catégorie</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-folder"></i></span>
+                                <select class="form-select" name="categorie" required>
+                                    <option value="" disabled selected>Sélectionnez une catégorie</option>
+                                    {% for categorie in categories %}
+                                    <option value="{{ categorie.id }}">{{ categorie.nom }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Prix de Vente</label>
+                            <div class="input-group">
+                                <span class="input-group-text">CDF</span>
+                                <input type="number" step="0.01" class="form-control" name="prix_vente" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Quantité en stock</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-box-seam"></i></span>
+                                <input type="number" class="form-control" name="quantite_stock" required value="0">
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Seuil d'alerte stock</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-exclamation-triangle"></i></span>
+                                <input type="number" class="form-control" name="seuil_alerte" value="10">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" name="description" rows="3"></textarea>
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-1"></i>Enregistrer</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Éditer Article -->
+<div class="modal fade" id="editerArticleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-white">
+                <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>Modifier un Article</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editArticleForm" data-fetch="true" data-method="PUT" data-reload="true">
+                    {% csrf_token %}
+                    <input type="hidden" name="id" id="edit_id">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Code Article</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-upc"></i></span>
+                                <input type="text" class="form-control" name="code" id="edit_code" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nom</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-tag"></i></span>
+                                <input type="text" class="form-control" name="nom" id="edit_nom" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Catégorie</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-folder"></i></span>
+                                <select class="form-select" name="categorie" id="edit_categorie" required>
+                                    {% for categorie in categories %}
+                                    <option value="{{ categorie.id }}">{{ categorie.nom }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Prix de Vente</label>
+                            <div class="input-group">
+                                <span class="input-group-text">CDF</span>
+                                <input type="number" step="0.01" class="form-control" name="prix_vente" id="edit_prix_vente" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Quantité en stock</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-box-seam"></i></span>
+                                <input type="number" class="form-control" name="quantite_stock" id="edit_quantite_stock" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Seuil d'alerte stock</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-exclamation-triangle"></i></span>
+                                <input type="number" class="form-control" name="seuil_alerte" id="edit_seuil_alerte">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" name="description" id="edit_description" rows="3"></textarea>
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                        <button type="submit" class="btn btn-warning"><i class="bi bi-save me-1"></i>Mettre à jour</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Détails Article -->
+<div class="modal fade" id="detailsArticleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="bi bi-info-circle me-2"></i>Détails de l'Article</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 id="detailsNom" class="card-title mb-0"></h5>
+                            <span id="detailsStock" class="badge bg-success"></span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Code:</strong> <span id="detailsCode"></span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Catégorie:</strong> <span id="detailsCategorie"></span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Prix:</strong> <span id="detailsPrix" class="text-primary fw-bold"></span>
+                        </div>
+                        <hr>
+                        <h6>Description:</h6>
+                        <p id="detailsDescription" class="card-text"></p>
+                    </div>
+                </div>
+                <div class="text-center mt-3">
+                    <img id="detailsQRCode" src="" alt="Code QR" class="img-fluid border rounded" style="max-width: 150px">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Importer Articles -->
+<div class="modal fade" id="importerArticlesModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Importer des Articles</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="importForm" enctype="multipart/form-data" data-fetch="true" method="POST" action="/api/articles/import/" data-reload="true">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="formFile" class="form-label">Sélectionnez un fichier CSV ou Excel</label>
+                        <input class="form-control" type="file" id="formFile" name="file" required accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Le fichier doit contenir les colonnes suivantes : code, nom, categorie, prix_vente, quantite_stock
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                        <button type="submit" class="btn btn-success"><i class="bi bi-upload me-1"></i>Importer</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Fonctions pour les actions des articles
+function voirDetails(id) {
+    // Afficher un indicateur de chargement
+    document.getElementById('detailsNom').textContent = 'Chargement...';
+    document.getElementById('detailsCode').textContent = '';
+    document.getElementById('detailsCategorie').textContent = '';
+    document.getElementById('detailsPrix').textContent = '';
+    document.getElementById('detailsStock').textContent = '';
+    document.getElementById('detailsDescription').textContent = '';
+    document.getElementById('detailsQRCode').src = '';
+    
+    // Afficher le modal
+    const detailsModal = new bootstrap.Modal(document.getElementById('detailsArticleModal'));
+    detailsModal.show();
+    
+    // Charger les données de l'article
+    fetch(`/api/articles/${id}/`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Erreur lors de la récupération des détails');
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Remplir les détails dans le modal
+            document.getElementById('detailsNom').textContent = data.nom;
+            document.getElementById('detailsCode').textContent = data.code;
+            document.getElementById('detailsCategorie').textContent = data.categorie.nom;
+            document.getElementById('detailsPrix').textContent = `${data.prix_vente} CDF`;
+            
+            // Afficher le stock avec une couleur appropriée
+            const stockElement = document.getElementById('detailsStock');
+            stockElement.textContent = data.quantite_stock;
+            if (data.quantite_stock < 5) {
+                stockElement.className = 'badge bg-danger';
+            } else if (data.quantite_stock < 10) {
+                stockElement.className = 'badge bg-warning';
+            } else {
+                stockElement.className = 'badge bg-success';
+            }
+            
+            document.getElementById('detailsDescription').textContent = data.description || 'Aucune description';
+            
+            // Afficher le code QR s'il existe
+            if (data.qr_code) {
+                document.getElementById('detailsQRCode').src = data.qr_code;
+            }
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            showAlert('Erreur lors de la récupération des détails de l\'article', 'danger');
+        });
+}
+
+function editerArticle(id) {
+    // Afficher un indicateur de chargement dans le formulaire
+    document.getElementById('edit_id').value = id;
+    document.getElementById('edit_code').value = 'Chargement...';
+    
+    // Afficher le modal
+    const editModal = new bootstrap.Modal(document.getElementById('editerArticleModal'));
+    editModal.show();
+    
+    // Récupérer les données de l'article pour le formulaire d'édition
+    fetch(`/api/articles/${id}/`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Erreur lors de la récupération des données');
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Remplir le formulaire avec les données
+            const form = document.getElementById('editArticleForm');
+            form.action = `/api/articles/${id}/`;
+            form.elements['id'].value = data.id;
+            form.elements['code'].value = data.code;
+            form.elements['nom'].value = data.nom;
+            form.elements['categorie'].value = data.categorie.id;
+            form.elements['prix_vente'].value = data.prix_vente;
+            form.elements['quantite_stock'].value = data.quantite_stock;
+            form.elements['seuil_alerte'].value = data.seuil_alerte || 10;
+            form.elements['description'].value = data.description || '';
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            showAlert('Erreur lors de la récupération des données de l\'article', 'danger');
+            editModal.hide();
+        });
+}
+
+function supprimerArticle(id) {
+    // Confirmer la suppression avec le modal global de confirmation
+    const confirmModal = new bootstrap.Modal(document.getElementById('confirmSupprimerModal'));
+    
+    // Configurer le bouton de confirmation
+    document.getElementById('confirmSupprimerBtn').onclick = function() {
+        // Envoyer la requête de suppression
+        fetch(`/api/articles/${id}/`, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Erreur lors de la suppression');
+            }
+            // Fermer le modal et afficher un message de succès
+            confirmModal.hide();
+            showAlert('Article supprimé avec succès', 'success');
+            
+            // Recharger la page après un court délai
+            setTimeout(() => location.reload(), 1000);
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            showAlert('Erreur lors de la suppression de l\'article', 'danger');
+        });
+    };
+    
+    // Afficher le modal de confirmation
+    confirmModal.show();
+}
+
+// Initialisation des tooltips et popovers lors du chargement de la page
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialisation du DataTable pour le tableau des articles
+    if (typeof $.fn.DataTable !== 'undefined') {
+        $('#dataTable').DataTable({
+            language: {
+                url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/fr-FR.json'
+            },
+            pageLength: 10,
+            responsive: true
+        });
+    }
+});
+
+// Fonctions pour les actions sur les articles
+function voirDetails(articleId) {
+    alert('Fonctionnalité "Voir détails" à implémenter pour l\'article ' + articleId);
+}
+
+function modifierArticle(articleId) {
+    alert('Fonctionnalité "Modifier article" à implémenter pour l\'article ' + articleId);
+}
+
+function supprimerArticle(articleId) {
+    if (confirm('Êtes-vous sûr de vouloir supprimer cet article ?')) {
+        alert('Fonctionnalité "Supprimer article" à implémenter pour l\'article ' + articleId);
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,184 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Ajouter Article - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-plus-circle"></i> Ajouter un Article</h1>
+                    <p class="text-muted">Boutique : {{ boutique.nom }} - {{ boutique.ville }}</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary me-2">
+                        <i class="fas fa-arrow-left"></i> Retour Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <!-- Formulaire d'ajout d'article -->
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-box"></i> Informations de l'Article</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.nom.id_for_label }}" class="form-label">
+                                    <i class="fas fa-tag"></i> Nom de l'article *
+                                </label>
+                                {{ form.nom }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.code.id_for_label }}" class="form-label">
+                                    <i class="fas fa-barcode"></i> Code-barres *
+                                </label>
+                                {{ form.code }}
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.prix_vente.id_for_label }}" class="form-label">
+                                    <i class="fas fa-money-bill"></i> Prix de vente (CDF) *
+                                </label>
+                                {{ form.prix_vente }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.prix_achat.id_for_label }}" class="form-label">
+                                    <i class="fas fa-money-bill-wave"></i> Prix d'achat (CDF) *
+                                </label>
+                                {{ form.prix_achat }}
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.quantite_stock.id_for_label }}" class="form-label">
+                                    <i class="fas fa-boxes"></i> Quantité en stock
+                                </label>
+                                {{ form.quantite_stock }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.categorie.id_for_label }}" class="form-label">
+                                    <i class="fas fa-folder"></i> Catégorie
+                                </label>
+                                {{ form.categorie }}
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">
+                                <i class="fas fa-align-left"></i> Description
+                            </label>
+                            {{ form.description }}
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.image.id_for_label }}" class="form-label">
+                                    <i class="fas fa-image"></i> Image du produit
+                                </label>
+                                {{ form.image }}
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <div class="form-check mt-4">
+                                    {{ form.est_actif }}
+                                    <label class="form-check-label" for="{{ form.est_actif.id_for_label }}">
+                                        Article actif (visible dans la boutique)
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-secondary me-md-2">
+                                <i class="fas fa-times"></i> Annuler
+                            </a>
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-save"></i> Ajouter l'Article
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <!-- Informations boutique -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-store"></i> Boutique</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <strong>Nom:</strong><br>
+                        <span class="text-muted">{{ boutique.nom }}</span>
+                    </div>
+                    <div class="mb-2">
+                        <strong>Type:</strong><br>
+                        <span class="badge bg-primary">{{ boutique.get_type_commerce_display }}</span>
+                    </div>
+                    <div class="mb-2">
+                        <strong>Localisation:</strong><br>
+                        <span class="text-muted">{{ boutique.ville }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Catégories disponibles -->
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-tags"></i> Catégories Disponibles</h5>
+                </div>
+                <div class="card-body">
+                    {% if categories %}
+                        {% for categorie in categories %}
+                        <span class="badge bg-info me-1 mb-1">{{ categorie.nom }}</span>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted mb-0">Aucune catégorie créée</p>
+                        <small>
+                            <a href="{% url 'inventory:categories' %}?boutique={{ boutique.id }}" class="text-decoration-none">
+                                Créer des catégories
+                            </a>
+                        </small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.form-control, .form-select {
+    border-radius: 8px;
+    border: 1px solid #ddd;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #28a745;
+    box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25);
+}
+
+.card {
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.btn {
+    border-radius: 8px;
+}
+</style>
+{% endblock %}

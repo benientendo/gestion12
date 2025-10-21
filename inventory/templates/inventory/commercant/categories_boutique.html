@@ -1,0 +1,242 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Catégories - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-tags"></i> Gestion des Catégories</h1>
+                    <p class="text-muted">Boutique : {{ boutique.nom }} - {{ boutique.ville }}</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary me-2">
+                        <i class="fas fa-arrow-left"></i> Retour Dashboard
+                    </a>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#ajouterCategorieModal">
+                        <i class="fas fa-plus"></i> Ajouter Catégorie
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistiques rapides -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>{{ total_categories }}</h4>
+                            <p class="mb-0">Catégories Total</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-tags fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>{{ boutique.articles.count }}</h4>
+                            <p class="mb-0">Articles Total</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-box fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4>{{ boutique.articles.count|default:0 }}</h4>
+                            <p class="mb-0">Articles Actifs</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="fas fa-check-circle fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Liste des catégories -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-list"></i> Liste des Catégories</h5>
+                </div>
+                <div class="card-body">
+                    {% if categories %}
+                    <div class="row">
+                        {% for stat in categories_stats %}
+                        <div class="col-md-6 col-lg-4 mb-4">
+                            <div class="card h-100 border-left-primary">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start mb-3">
+                                        <div>
+                                            <h5 class="card-title mb-1">{{ stat.categorie.nom }}</h5>
+                                            <span class="badge bg-primary">{{ stat.nb_articles }} article{{ stat.nb_articles|pluralize }}</span>
+                                        </div>
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                <i class="fas fa-ellipsis-v"></i>
+                                            </button>
+                                            <ul class="dropdown-menu">
+                                                <li><button class="dropdown-item" type="button" 
+                                                           data-bs-toggle="modal" 
+                                                           data-bs-target="#modifierCategorieModal{{ stat.categorie.id }}">
+                                                    <i class="fas fa-edit"></i> Modifier
+                                                </button></li>
+                                                <li><hr class="dropdown-divider"></li>
+                                                <li><a class="dropdown-item text-danger" 
+                                                       href="#"
+                                                       onclick="confirmerSuppression('{{ stat.categorie.nom }}', {{ stat.categorie.id }})">
+                                                    <i class="fas fa-trash"></i> Supprimer
+                                                </a></li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                    
+                                    {% if stat.categorie.description %}
+                                    <div class="mb-3">
+                                        <p class="text-muted mb-0">{{ stat.categorie.description|truncatechars:100 }}</p>
+                                    </div>
+                                    {% endif %}
+                                    
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <small class="text-muted">
+                                            <i class="fas fa-calendar"></i> {{ stat.categorie.date_creation|date:"d/m/Y" }}
+                                        </small>
+                                        <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}?categorie={{ stat.categorie.id }}" 
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="fas fa-eye"></i> Voir articles
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-tags fa-3x text-muted mb-3"></i>
+                        <h5>Aucune catégorie trouvée</h5>
+                        <p class="text-muted">Cette boutique n'a pas encore de catégories.</p>
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#ajouterCategorieModal">
+                            <i class="fas fa-plus"></i> Créer la première catégorie
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajouter Catégorie -->
+<div class="modal fade" id="ajouterCategorieModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Ajouter une Catégorie</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'inventory:ajouter_categorie' %}">
+                {% csrf_token %}
+                <input type="hidden" name="boutique" value="{{ boutique.id }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="nom" class="form-label">Nom de la catégorie *</label>
+                        <input type="text" class="form-control" id="nom" name="nom" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description</label>
+                        <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-plus"></i> Ajouter
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modals Modifier Catégorie -->
+{% for stat in categories_stats %}
+<div class="modal fade" id="modifierCategorieModal{{ stat.categorie.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Modifier la Catégorie</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'inventory:modifier_categorie' stat.categorie.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="boutique" value="{{ boutique.id }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="nom{{ stat.categorie.id }}" class="form-label">Nom de la catégorie *</label>
+                        <input type="text" class="form-control" id="nom{{ stat.categorie.id }}" 
+                               name="nom" value="{{ stat.categorie.nom }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="description{{ stat.categorie.id }}" class="form-label">Description</label>
+                        <textarea class="form-control" id="description{{ stat.categorie.id }}" 
+                                  name="description" rows="3">{{ stat.categorie.description }}</textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Modifier
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<script>
+function confirmerSuppression(nomCategorie, categorieId) {
+    if (confirm(`Êtes-vous sûr de vouloir supprimer la catégorie "${nomCategorie}" ?\n\nCette action est irréversible.`)) {
+        window.location.href = `/categories/supprimer/${categorieId}/?boutique={{ boutique.id }}`;
+    }
+}
+</script>
+
+<style>
+.card {
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.border-left-primary {
+    border-left: 4px solid #007bff;
+}
+
+.btn {
+    border-radius: 8px;
+}
+</style>
+{% endblock %}

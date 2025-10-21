@@ -1,0 +1,243 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Ajouter une Boutique - {{ commercant.nom_entreprise }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-store-alt"></i> Ajouter une Boutique</h1>
+                    <p class="text-muted">Créer une nouvelle boutique pour {{ commercant.nom_entreprise }}</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:commercant_dashboard' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour au Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Informations sur les limites -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <strong>Limite de boutiques :</strong> 
+                Vous avez actuellement {{ commercant.boutiques.count }} boutique(s) sur {{ commercant.max_boutiques }} autorisée(s).
+                {% if commercant.boutiques.count >= commercant.max_boutiques %}
+                    <span class="text-danger">Vous avez atteint votre limite. Contactez l'administrateur pour l'augmenter.</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Formulaire -->
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-store"></i> Informations de la Boutique</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <!-- Informations de base -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary border-bottom pb-2">
+                                    <i class="fas fa-info-circle"></i> Informations Générales
+                                </h6>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label for="{{ form.nom.id_for_label }}" class="form-label">{{ form.nom.label }} *</label>
+                                {{ form.nom }}
+                                {% if form.nom.errors %}
+                                    <div class="text-danger small">{{ form.nom.errors }}</div>
+                                {% endif %}
+                                <div class="form-text">Nom commercial de votre boutique</div>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="{{ form.type_commerce.id_for_label }}" class="form-label">{{ form.type_commerce.label }} *</label>
+                                {{ form.type_commerce }}
+                                {% if form.type_commerce.errors %}
+                                    <div class="text-danger small">{{ form.type_commerce.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <!-- Adresse -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary border-bottom pb-2">
+                                    <i class="fas fa-map-marker-alt"></i> Adresse
+                                </h6>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <label for="{{ form.adresse.id_for_label }}" class="form-label">{{ form.adresse.label }} *</label>
+                                {{ form.adresse }}
+                                {% if form.adresse.errors %}
+                                    <div class="text-danger small">{{ form.adresse.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label for="{{ form.ville.id_for_label }}" class="form-label">{{ form.ville.label }} *</label>
+                                {{ form.ville }}
+                                {% if form.ville.errors %}
+                                    <div class="text-danger small">{{ form.ville.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4">
+                                <label for="{{ form.code_postal.id_for_label }}" class="form-label">{{ form.code_postal.label }} *</label>
+                                {{ form.code_postal }}
+                                {% if form.code_postal.errors %}
+                                    <div class="text-danger small">{{ form.code_postal.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <!-- Contact -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary border-bottom pb-2">
+                                    <i class="fas fa-phone"></i> Contact
+                                </h6>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.telephone.id_for_label }}" class="form-label">{{ form.telephone.label }}</label>
+                                {{ form.telephone }}
+                                {% if form.telephone.errors %}
+                                    <div class="text-danger small">{{ form.telephone.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.email.id_for_label }}" class="form-label">{{ form.email.label }}</label>
+                                {{ form.email }}
+                                {% if form.email.errors %}
+                                    <div class="text-danger small">{{ form.email.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <!-- Paramètres -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="text-primary border-bottom pb-2">
+                                    <i class="fas fa-cogs"></i> Paramètres
+                                </h6>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6 d-flex align-items-center">
+                                <div class="form-check">
+                                    {{ form.est_active }}
+                                    <label class="form-check-label" for="{{ form.est_active.id_for_label }}">
+                                        {{ form.est_active.label }}
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <label for="{{ form.description.id_for_label }}" class="form-label">{{ form.description.label }}</label>
+                                {{ form.description }}
+                                {% if form.description.errors %}
+                                    <div class="text-danger small">{{ form.description.errors }}</div>
+                                {% endif %}
+                                <div class="form-text">Description optionnelle de votre boutique</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Boutons -->
+                        <div class="row">
+                            <div class="col-12">
+                                <div class="d-flex gap-2">
+                                    <button type="submit" class="btn btn-success" {% if commercant.boutiques.count >= commercant.max_boutiques %}disabled{% endif %}>
+                                        <i class="fas fa-save"></i> Créer la Boutique
+                                    </button>
+                                    <a href="{% url 'inventory:commercant_dashboard' %}" class="btn btn-secondary">
+                                        <i class="fas fa-times"></i> Annuler
+                                    </a>
+                                </div>
+                                {% if commercant.boutiques.count >= commercant.max_boutiques %}
+                                    <small class="text-danger">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                        Vous avez atteint votre limite de boutiques. Contactez l'administrateur.
+                                    </small>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aide -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h6><i class="fas fa-lightbulb"></i> Conseils</h6>
+                    <ul class="mb-0">
+                        <li>Choisissez un nom de boutique clair et reconnaissable</li>
+                        <li>Vérifiez que l'adresse est complète et correcte</li>
+                        <li>Vous pourrez ajouter un terminal MAUI après la création</li>
+                        <li>Les articles et catégories seront spécifiques à cette boutique</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.querySelector('form');
+        const codePostalField = document.querySelector('#id_code_postal');
+        
+        // Validation code postal
+        if (codePostalField) {
+            codePostalField.addEventListener('input', function() {
+                const codePostal = this.value;
+                if (codePostal.length > 0 && (codePostal.length !== 5 || !/^\d+$/.test(codePostal))) {
+                    this.setCustomValidity('Le code postal doit contenir exactement 5 chiffres');
+                } else {
+                    this.setCustomValidity('');
+                }
+            });
+        }
+        
+        // Confirmation avant soumission
+        form.addEventListener('submit', function(e) {
+            const nomBoutique = document.querySelector('#id_nom').value;
+            const ville = document.querySelector('#id_ville').value;
+            
+            if (!confirm(`Créer la boutique "${nomBoutique}" à ${ville} ?`)) {
+                e.preventDefault();
+            }
+        });
+    });
+</script>
+{% endblock %}

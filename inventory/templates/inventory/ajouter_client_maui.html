@@ -1,0 +1,147 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Ajouter un Client MAUI{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-plus"></i> Ajouter un Nouveau Client MAUI</h4>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="nom_boutique" class="form-label">Nom de la Boutique *</label>
+                                    <input type="text" class="form-control" id="nom_boutique" name="nom_boutique" required>
+                                    <div class="form-text">Ex: Pharmacie Centrale, Boutique du Coin</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="proprietaire" class="form-label">Propriétaire/Responsable *</label>
+                                    <input type="text" class="form-control" id="proprietaire" name="proprietaire" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="numero_serie" class="form-label">Numéro de Série *</label>
+                                    <input type="text" class="form-control" id="numero_serie" name="numero_serie" required>
+                                    <div class="form-text">Numéro unique pour l'authentification MAUI</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="type_commerce" class="form-label">Type de Commerce</label>
+                                    <select class="form-control" id="type_commerce" name="type_commerce">
+                                        {% for value, label in types_commerce %}
+                                            <option value="{{ value }}">{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="adresse" class="form-label">Adresse</label>
+                            <textarea class="form-control" id="adresse" name="adresse" rows="2"></textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="telephone" class="form-label">Téléphone</label>
+                                    <input type="tel" class="form-control" id="telephone" name="telephone">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="email" class="form-label">Email</label>
+                                    <input type="email" class="form-control" id="email" name="email">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="notes" class="form-label">Notes</label>
+                            <textarea class="form-control" id="notes" name="notes" rows="3" placeholder="Notes ou commentaires sur ce client..."></textarea>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'inventory:gestion_clients_maui' %}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Retour
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Enregistrer le Client
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Aide -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h6><i class="fas fa-info-circle"></i> Aide</h6>
+                </div>
+                <div class="card-body">
+                    <h6>Comment configurer un client MAUI ?</h6>
+                    <ol>
+                        <li><strong>Numéro de série :</strong> Choisissez un identifiant unique (ex: PHARM001, BOUT002)</li>
+                        <li><strong>Configuration MAUI :</strong> Utilisez ce numéro de série dans l'application mobile</li>
+                        <li><strong>Authentification :</strong> Le client utilisera ce numéro pour se connecter</li>
+                        <li><strong>Suivi :</strong> Vous pourrez suivre toutes ses activités depuis le dashboard</li>
+                    </ol>
+                    
+                    <div class="alert alert-info mt-3">
+                        <i class="fas fa-lightbulb"></i> 
+                        <strong>Conseil :</strong> Utilisez un numéro de série facile à retenir mais unique, 
+                        comme le type de commerce suivi d'un numéro (PHARM001, BOUT002, etc.)
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Générer automatiquement un numéro de série basé sur le nom de la boutique
+    document.getElementById('nom_boutique').addEventListener('input', function() {
+        const nom = this.value.toUpperCase();
+        const typeCommerce = document.getElementById('type_commerce').value;
+        
+        if (nom.length > 0) {
+            let prefix = '';
+            switch(typeCommerce) {
+                case 'PHARMACIE': prefix = 'PHARM'; break;
+                case 'BOUTIQUE': prefix = 'BOUT'; break;
+                case 'ALIMENTATION': prefix = 'ALIM'; break;
+                case 'SUPERMARCHE': prefix = 'SUPER'; break;
+                case 'KIOSQUE': prefix = 'KIOSK'; break;
+                default: prefix = 'CLIENT'; break;
+            }
+            
+            // Prendre les 3 premières lettres du nom et ajouter un numéro aléatoire
+            const nomShort = nom.replace(/[^A-Z]/g, '').substring(0, 3);
+            const randomNum = Math.floor(Math.random() * 999) + 1;
+            const suggestion = prefix + nomShort + String(randomNum).padStart(3, '0');
+            
+            // Suggérer seulement si le champ est vide
+            if (document.getElementById('numero_serie').value === '') {
+                document.getElementById('numero_serie').value = suggestion;
+            }
+        }
+    });
+</script>
+{% endblock %}

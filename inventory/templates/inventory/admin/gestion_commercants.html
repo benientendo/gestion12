@@ -1,0 +1,218 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Gestion des Commerçants - Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .commercant-card {
+        transition: transform 0.2s;
+        border-left: 4px solid #007bff;
+    }
+    .commercant-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .status-active {
+        border-left-color: #28a745;
+    }
+    .status-inactive {
+        border-left-color: #dc3545;
+        opacity: 0.7;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-users"></i> Gestion des Commerçants</h1>
+                    <p class="text-muted">Administrer les comptes commerçants de la plateforme</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:admin_dashboard' %}" class="btn btn-outline-secondary me-2">
+                        <i class="fas fa-arrow-left"></i> Retour Dashboard
+                    </a>
+                    <a href="{% url 'inventory:admin_ajouter_commercant' %}" class="btn btn-success">
+                        <i class="fas fa-plus"></i> Nouveau Commerçant
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Liste des commerçants -->
+    <div class="row">
+        {% for commercant in commercants %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card commercant-card h-100 {% if commercant.est_actif %}status-active{% else %}status-inactive{% endif %}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="card-title mb-1">{{ commercant.nom_entreprise }}</h5>
+                            <small class="text-muted">{{ commercant.user.get_full_name }}</small>
+                        </div>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="{% url 'inventory:admin_details_commercant' commercant.id %}">
+                                    <i class="fas fa-eye"></i> Détails
+                                </a></li>
+                                <li><a class="dropdown-item" href="{% url 'inventory:admin_modifier_commercant' commercant.id %}">
+                                    <i class="fas fa-edit"></i> Modifier
+                                </a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-danger" href="{% url 'inventory:admin_supprimer_commercant' commercant.id %}">
+                                    <i class="fas fa-trash"></i> Supprimer
+                                </a></li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            <i class="fas fa-envelope"></i> {{ commercant.email_contact|default:commercant.user.email }}<br>
+                            <i class="fas fa-phone"></i> {{ commercant.telephone|default:"Non renseigné" }}<br>
+                            <i class="fas fa-calendar"></i> Créé le {{ commercant.date_creation|date:"d/m/Y" }}
+                        </small>
+                    </div>
+                    
+                    <!-- Statut -->
+                    <div class="mb-3">
+                        {% if commercant.est_actif %}
+                            <span class="badge bg-success">
+                                <i class="fas fa-check-circle"></i> Actif
+                            </span>
+                        {% else %}
+                            <span class="badge bg-danger">
+                                <i class="fas fa-times-circle"></i> Inactif
+                            </span>
+                        {% endif %}
+                        
+                        {% if commercant.siret %}
+                            <span class="badge bg-info ms-1">SIRET</span>
+                        {% endif %}
+                    </div>
+                    
+                    <!-- Actions -->
+                    <div class="d-grid gap-2">
+                        <a href="{% url 'inventory:admin_details_commercant' commercant.id %}" class="btn btn-primary btn-sm">
+                            <i class="fas fa-eye"></i> Voir les détails
+                        </a>
+                        <button class="btn btn-sm {% if commercant.est_actif %}btn-warning{% else %}btn-success{% endif %} toggle-status" 
+                                data-commercant-id="{{ commercant.id }}">
+                            <i class="fas fa-power-off"></i> 
+                            {% if commercant.est_actif %}Désactiver{% else %}Activer{% endif %}
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Footer avec statistiques -->
+                <div class="card-footer bg-transparent">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <small class="text-muted">Boutiques</small><br>
+                            <strong>{{ commercant.nombre_boutiques_count|default:0 }}</strong>
+                        </div>
+                        <div class="col-6">
+                            <small class="text-muted">Limite</small><br>
+                            <strong>{{ commercant.max_boutiques }}</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="fas fa-users fa-4x text-muted mb-4"></i>
+                <h3>Aucun commerçant</h3>
+                <p class="text-muted mb-4">Commencez par créer le premier compte commerçant.</p>
+                <a href="{% url 'inventory:admin_ajouter_commercant' %}" class="btn btn-success btn-lg">
+                    <i class="fas fa-plus"></i> Créer le premier commerçant
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="Navigation des commerçants">
+                <ul class="pagination justify-content-center">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page=1">Première</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Précédente</a>
+                        </li>
+                    {% endif %}
+                    
+                    <li class="page-item active">
+                        <span class="page-link">
+                            Page {{ page_obj.number }} sur {{ page_obj.paginator.num_pages }}
+                        </span>
+                    </li>
+                    
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}">Suivante</a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Dernière</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Gestion du toggle de statut via AJAX
+    document.addEventListener('DOMContentLoaded', function() {
+        const toggleButtons = document.querySelectorAll('.toggle-status');
+        
+        toggleButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const commercantId = this.dataset.commercantId;
+                const isActive = this.classList.contains('btn-warning');
+                
+                if (confirm(`Êtes-vous sûr de vouloir ${isActive ? 'désactiver' : 'activer'} ce commerçant ?`)) {
+                    fetch(`/admin/commercants/${commercantId}/toggle-status/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                            'Content-Type': 'application/json'
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        } else {
+                            alert('Erreur: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erreur:', error);
+                        alert('Une erreur est survenue');
+                    });
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

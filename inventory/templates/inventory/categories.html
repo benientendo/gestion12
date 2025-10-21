@@ -1,0 +1,393 @@
+{% extends "inventory/base.html" %}
+{% load static %}
+
+{% block title %}Catégories - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .boutique-header {
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: white;
+        border-radius: 15px;
+        margin-bottom: 20px;
+    }
+    .stats-card {
+        transition: transform 0.2s;
+        border: none;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .stats-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    .category-card {
+        border-left: 4px solid #28a745;
+        transition: all 0.2s;
+    }
+    .category-card:hover {
+        border-left-color: #20c997;
+        transform: translateY(-2px);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- En-tête Boutique -->
+<div class="boutique-header p-4 mb-4">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h1><i class="fas fa-tags me-2"></i>Catégories - {{ boutique.nom }}</h1>
+            <p class="mb-0 opacity-75">
+                <i class="fas fa-map-marker-alt me-1"></i>{{ boutique.ville }} • 
+                <i class="fas fa-tag me-1"></i>{{ boutique.get_type_commerce_display }} • 
+                <i class="fas fa-calendar me-1"></i>{{ "aujourd'hui"|date:"d/m/Y" }}
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-light me-2">
+                <i class="fas fa-arrow-left"></i> Retour Dashboard
+            </a>
+            <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-outline-light">
+                <i class="fas fa-box"></i> Gérer Articles
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Statistiques -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stats-card border-0 h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-tags fa-3x text-success mb-3"></i>
+                <h3 class="text-success">{{ categories|length }}</h3>
+                <p class="text-muted mb-0">Catégories Total</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stats-card border-0 h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-box fa-3x text-primary mb-3"></i>
+                <h3 class="text-primary">
+                    {% with total_articles=0 %}
+                        {% for categorie in categories %}
+                            {% with total_articles=total_articles|add:categorie.articles.count %}{% endwith %}
+                        {% endfor %}
+                        {{ total_articles }}
+                    {% endwith %}
+                </h3>
+                <p class="text-muted mb-0">Articles Associés</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stats-card border-0 h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-chart-pie fa-3x text-info mb-3"></i>
+                <h3 class="text-info">
+                    {% if categories %}
+                        {{ categories|length|floatformat:0 }}
+                    {% else %}
+                        0
+                    {% endif %}
+                </h3>
+                <p class="text-muted mb-0">Catégories Actives</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card stats-card border-0 h-100">
+            <div class="card-body text-center">
+                <i class="fas fa-plus-circle fa-3x text-warning mb-3"></i>
+                <h3 class="text-warning">
+                    <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#ajouterCategorieModal">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </h3>
+                <p class="text-muted mb-0">Ajouter Nouvelle</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Content Row -->
+<div class="row">
+    <div class="col-lg-8 mb-4">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex justify-content-between align-items-center">
+                <h6 class="m-0 font-weight-bold text-primary">Liste des Catégories</h6>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#ajouterCategorieModal">
+                    <i class="bi bi-plus-lg"></i> Ajouter Catégorie
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover" id="dataTable" width="100%" cellspacing="0">
+                        <thead class="thead-light">
+                            <tr>
+                                <th>Nom</th>
+                                <th>Description</th>
+                                <th>Articles</th>
+                                <th>Créée le</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for categorie in categories %}
+                            <tr class="category-card">
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="bg-success rounded-circle p-2 me-3">
+                                            <i class="fas fa-tag text-white"></i>
+                                        </div>
+                                        <div>
+                                            <strong class="text-success">{{ categorie.nom }}</strong>
+                                            {% if categorie.description %}
+                                            <br><small class="text-muted">{{ categorie.description|truncatechars:40 }}</small>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if categorie.description %}
+                                        {{ categorie.description|truncatechars:80 }}
+                                    {% else %}
+                                        <em class="text-muted">Aucune description</em>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-primary fs-6">
+                                        {{ categorie.articles.count }} article{{ categorie.articles.count|pluralize }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <small class="text-muted">
+                                        {% if categorie.date_creation %}
+                                            {{ categorie.date_creation|date:"d/m/Y" }}
+                                        {% else %}
+                                            Non définie
+                                        {% endif %}
+                                    </small>
+                                </td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        <button class="btn btn-sm btn-info" onclick="voirDetailsCategorie('{{ categorie.id }}')" title="Voir détails">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <a href="/categories/editer/{{ categorie.id }}/?boutique={{ boutique.id }}" class="btn btn-sm btn-warning" title="Modifier">
+                                            <i class="fas fa-edit"></i>
+                                        </a>
+                                        <button class="btn btn-sm btn-danger" data-id="{{ categorie.id }}" data-bs-toggle="modal" data-bs-target="#confirmSupprimerModal" title="Supprimer">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-4">
+                                    <i class="fas fa-tags fa-3x text-muted mb-3"></i>
+                                    <h5 class="text-muted">Aucune catégorie trouvée</h5>
+                                    <p class="text-muted">Commencez par créer des catégories pour organiser vos articles.</p>
+                                    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#ajouterCategorieModal">
+                                        <i class="fas fa-plus"></i> Créer la Première Catégorie
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Informations</h6>
+            </div>
+            <div class="card-body">
+                <p>Les catégories permettent d'organiser vos articles de manière efficace. Vous pouvez créer, modifier et supprimer des catégories selon vos besoins.</p>
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    La suppression d'une catégorie contenant des articles peut affecter votre inventaire.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajouter Catégorie -->
+<div class="modal fade" id="ajouterCategorieModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Ajouter une Catégorie</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="categorieForm" method="POST" action="{% url 'inventory:categories' %}?boutique={{ boutique.id }}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.nom.label }}</label>
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-tag"></i></span>
+                            {{ form.nom }}
+                        </div>
+                        {% if form.nom.errors %}
+                            <div class="text-danger small">{{ form.nom.errors }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{{ form.description.label }}</label>
+                        {{ form.description }}
+                        {% if form.description.errors %}
+                            <div class="text-danger small">{{ form.description.errors }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i>Enregistrer</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Confirmation Suppression -->
+<div class="modal fade" id="confirmSupprimerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Confirmer la suppression</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Êtes-vous sûr de vouloir supprimer cette catégorie ? Cette action est irréversible.</p>
+                <div class="alert alert-warning">
+                    <i class="bi bi-info-circle me-2"></i>
+                    La suppression d'une catégorie contenant des articles peut affecter votre inventaire.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" id="confirmSupprimerBtn" class="btn btn-danger"><i class="bi bi-trash me-1"></i>Supprimer</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Gestion du modal de confirmation de suppression
+document.addEventListener('DOMContentLoaded', function() {
+    // Variable pour stocker l'ID de la catégorie à supprimer
+    let categorieIdToDelete = null;
+    
+    // Capturer l'ID de la catégorie lors de l'ouverture du modal
+    document.querySelectorAll('[data-bs-target="#confirmSupprimerModal"]').forEach(btn => {
+        btn.addEventListener('click', function() {
+            categorieIdToDelete = this.getAttribute('data-id');
+        });
+    });
+    
+    // Configurer le bouton de confirmation de suppression
+    document.getElementById('confirmSupprimerBtn').addEventListener('click', function() {
+        if (categorieIdToDelete) {
+            supprimerCategorie(categorieIdToDelete);
+        }
+    });
+    
+    // Initialisation des DataTables si disponible
+    if (typeof $.fn.DataTable !== 'undefined') {
+        $('#dataTable').DataTable({
+            language: {
+                url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/fr-FR.json'
+            },
+            pageLength: 10,
+            responsive: true
+        });
+    }
+});
+
+// Fonction pour supprimer une catégorie
+function supprimerCategorie(id) {
+    // Afficher un indicateur de chargement dans le modal
+    const confirmBtn = document.getElementById('confirmSupprimerBtn');
+    const originalText = confirmBtn.innerHTML;
+    confirmBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Suppression...';
+    confirmBtn.disabled = true;
+    
+    // Envoyer la requête de suppression
+    fetch(`/categories/supprimer/${id}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        if (response.ok) {
+            // Fermer le modal et afficher un message de succès
+            const modal = bootstrap.Modal.getInstance(document.getElementById('confirmSupprimerModal'));
+            modal.hide();
+            
+            // Afficher un message de succès
+            showAlert('Catégorie supprimée avec succès', 'success');
+            
+            // Recharger la page après un court délai
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            throw new Error('Erreur lors de la suppression');
+        }
+    })
+    .catch(error => {
+        console.error('Erreur:', error);
+        showAlert('Erreur lors de la suppression de la catégorie', 'danger');
+        
+        // Rétablir le bouton de suppression
+        confirmBtn.innerHTML = originalText;
+        confirmBtn.disabled = false;
+    });
+}
+
+// Fonction pour afficher des alertes
+function showAlert(message, type = 'info') {
+    const alertsContainer = document.querySelector('.alerts-container') || createAlertsContainer();
+    
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type} alert-dismissible fade show`;
+    alert.role = 'alert';
+    alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    alertsContainer.appendChild(alert);
+    
+    // Auto-fermeture après 5 secondes
+    setTimeout(() => {
+        const bsAlert = new bootstrap.Alert(alert);
+        bsAlert.close();
+    }, 5000);
+}
+
+// Créer un conteneur pour les alertes s'il n'existe pas
+function createAlertsContainer() {
+    const container = document.createElement('div');
+    container.className = 'alerts-container position-fixed top-0 end-0 p-3';
+    container.style.zIndex = '1050';
+    document.body.appendChild(container);
+    return container;
+}
+
+// Fonction pour voir les détails d'une catégorie
+function voirDetailsCategorie(categorieId) {
+    alert('Fonctionnalité "Voir détails" à implémenter pour la catégorie ' + categorieId);
+}
+</script>
+{% endblock %}

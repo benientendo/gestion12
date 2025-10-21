@@ -1,0 +1,8 @@
+# Ajoute Django REST Framework et SimpleJWT
+djangorestframework
+djangorestframework-simplejwt
+requests
+
+# Génération de PDF
+reportlab
+Pillow

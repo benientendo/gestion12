@@ -1,0 +1,200 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Dashboard Administrateur{% endblock %}
+
+{% block extra_css %}
+<style>
+    .admin-card {
+        transition: transform 0.2s;
+        border-left: 4px solid #007bff;
+    }
+    .admin-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .stats-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    .stats-card h3 {
+        font-size: 2.5rem;
+        font-weight: bold;
+    }
+    .admin-nav {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête Admin -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="admin-nav">
+                <h1><i class="fas fa-crown text-warning"></i> Dashboard Administrateur</h1>
+                <p class="text-muted mb-0">Gestion globale de la plateforme multi-commerçants</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistiques principales -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card stats-card text-center">
+                <div class="card-body">
+                    <i class="fas fa-users fa-2x mb-2"></i>
+                    <h3>{{ total_commercants }}</h3>
+                    <p class="mb-0">Commerçants</p>
+                    <small>{{ commercants_actifs }} actifs</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white text-center">
+                <div class="card-body">
+                    <i class="fas fa-store fa-2x mb-2"></i>
+                    <h3>{{ total_boutiques }}</h3>
+                    <p class="mb-0">Boutiques</p>
+                    <small>{{ boutiques_actives }} actives</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white text-center">
+                <div class="card-body">
+                    <i class="fas fa-mobile-alt fa-2x mb-2"></i>
+                    <h3>{{ total_clients_maui }}</h3>
+                    <p class="mb-0">Clients MAUI</p>
+                    <small>{{ clients_actifs }} actifs</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white text-center">
+                <div class="card-body">
+                    <i class="fas fa-chart-line fa-2x mb-2"></i>
+                    <h3>100%</h3>
+                    <p class="mb-0">Système</p>
+                    <small>Opérationnel</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions rapides -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card admin-card">
+                <div class="card-header">
+                    <h5><i class="fas fa-user-plus"></i> Gestion des Commerçants</h5>
+                </div>
+                <div class="card-body">
+                    <p>Créer, modifier et gérer les comptes commerçants de la plateforme.</p>
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'inventory:admin_gestion_commercants' %}" class="btn btn-primary">
+                            <i class="fas fa-list"></i> Voir tous
+                        </a>
+                        <a href="{% url 'inventory:admin_ajouter_commercant' %}" class="btn btn-success">
+                            <i class="fas fa-plus"></i> Ajouter
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card admin-card">
+                <div class="card-header">
+                    <h5><i class="fas fa-store-alt"></i> Gestion des Boutiques</h5>
+                </div>
+                <div class="card-body">
+                    <p>Superviser toutes les boutiques de tous les commerçants.</p>
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'inventory:admin_gestion_boutiques' %}" class="btn btn-primary">
+                            <i class="fas fa-list"></i> Voir toutes
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Commerçants récents -->
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6><i class="fas fa-user-clock"></i> Commerçants Récents</h6>
+                </div>
+                <div class="card-body">
+                    {% if commercants_recents %}
+                        {% for commercant in commercants_recents %}
+                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
+                            <div>
+                                <strong>{{ commercant.nom_entreprise }}</strong><br>
+                                <small class="text-muted">{{ commercant.user.username }} - {{ commercant.date_creation|date:"d/m/Y" }}</small>
+                            </div>
+                            <div>
+                                {% if commercant.est_actif %}
+                                    <span class="badge bg-success">Actif</span>
+                                {% else %}
+                                    <span class="badge bg-danger">Inactif</span>
+                                {% endif %}
+                                <a href="{% url 'inventory:admin_details_commercant' commercant.id %}" class="btn btn-sm btn-outline-primary ms-2">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted text-center">Aucun commerçant récent</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6><i class="fas fa-store-alt"></i> Boutiques Récentes</h6>
+                </div>
+                <div class="card-body">
+                    {% if boutiques_recentes %}
+                        {% for boutique in boutiques_recentes %}
+                        <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
+                            <div>
+                                <strong>{{ boutique.nom }}</strong><br>
+                                <small class="text-muted">{{ boutique.commercant.nom_entreprise }} - {{ boutique.date_creation|date:"d/m/Y" }}</small>
+                            </div>
+                            <div>
+                                {% if boutique.est_active %}
+                                    <span class="badge bg-success">Active</span>
+                                {% else %}
+                                    <span class="badge bg-danger">Inactive</span>
+                                {% endif %}
+                                <span class="badge bg-info">{{ boutique.get_type_commerce_display }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted text-center">Aucune boutique récente</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Auto-refresh des statistiques toutes les 5 minutes
+    setInterval(function() {
+        location.reload();
+    }, 300000);
+</script>
+{% endblock %}

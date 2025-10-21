@@ -1,0 +1,321 @@
+{% extends 'inventory/base.html' %}
+
+{% block title %}Tableau de Bord - Gestion de Magazin{% endblock %}
+
+{% block page_title %}Tableau de Bord{% endblock %}
+
+{% block content %}
+<!-- Dashboard Statistics Cards -->
+<div class="row">
+    <!-- Statistiques -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-primary shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Catégories</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ categories_count }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-tags fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-success shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Articles</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ articles_count }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-box-seam fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-info shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Ventes</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ ventes_count }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-cart fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="card border-left-warning shadow h-100 py-2">
+            <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                    <div class="col mr-2">
+                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Stock Faible</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ low_stock_count|default:0 }}</div>
+                    </div>
+                    <div class="col-auto">
+                        <i class="bi bi-exclamation-triangle fa-2x text-gray-300"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Activity Overview -->
+<div class="row mb-4">
+    <div class="col-lg-8 mb-4">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">Statistiques des ventes</h6>
+                <div class="dropdown no-arrow">
+                    <a class="dropdown-toggle" href="#" role="button" id="dropdownMenuLink" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="bi bi-three-dots-vertical text-gray-400"></i>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-end shadow animated--fade-in" aria-labelledby="dropdownMenuLink">
+                        <div class="dropdown-header">Options:</div>
+                        <a class="dropdown-item" href="#">Ce mois</a>
+                        <a class="dropdown-item" href="#">Cette année</a>
+                        <div class="dropdown-divider"></div>
+                        <a class="dropdown-item" href="#">Exporter</a>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="chart-area">
+                    <div class="d-flex justify-content-center align-items-center" style="height: 300px;">
+                        <p class="text-muted">Graphique des ventes (sera implémenté avec Chart.js)</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4 mb-4">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Répartition par catégorie</h6>
+            </div>
+            <div class="card-body">
+                <div class="chart-pie mb-4">
+                    <div class="d-flex justify-content-center align-items-center" style="height: 300px;">
+                        <p class="text-muted">Graphique camembert (sera implémenté avec Chart.js)</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity Section -->
+<div class="row">
+    <!-- Articles récents -->
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">Articles Récents</h6>
+                <a href="{% url 'inventory:ajouter_article' %}" class="btn btn-primary btn-sm">
+                    <i class="bi bi-plus-lg"></i> Ajouter
+                </a>
+            </div>
+            <div class="card-body">
+                {% if latest_articles %}
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover" width="100%" cellspacing="0">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Nom</th>
+                                    <th>Prix</th>
+                                    <th>Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for article in latest_articles %}
+                                <tr>
+                                    <td><strong>{{ article.code }}</strong></td>
+                                    <td>{{ article.nom }}</td>
+                                    <td><span class="text-primary font-weight-bold">{{ article.prix_vente }} CDF</span></td>
+                                    <td>
+                                        <span class="badge {% if article.quantite_stock < 5 %}bg-danger{% elif article.quantite_stock < 10 %}bg-warning{% else %}bg-success{% endif %}">
+                                            {{ article.quantite_stock }}
+                                        </span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-3 text-center">
+                        <a href="{% url 'inventory:articles' %}" class="btn btn-link text-primary">
+                            Voir tous les articles <i class="bi bi-arrow-right"></i>
+                        </a>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-box-seam text-gray-300" style="font-size: 3rem;"></i>
+                        <p class="text-muted mt-2">Aucun article n'a été ajouté.</p>
+                        <a href="{% url 'inventory:ajouter_article' %}" class="btn btn-primary btn-sm mt-2">
+                            <i class="bi bi-plus-lg"></i> Ajouter votre premier article
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Ventes récentes -->
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary">Ventes Récentes</h6>
+                <a href="{% url 'inventory:ventes' %}" class="btn btn-success btn-sm">
+                    <i class="bi bi-plus-lg"></i> Nouvelle Vente
+                </a>
+            </div>
+            <div class="card-body">
+                {% if latest_ventes %}
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover" width="100%" cellspacing="0">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>N° Facture</th>
+                                    <th>Date</th>
+                                    <th>Montant</th>
+                                    <th>Statut</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for vente in latest_ventes %}
+                                <tr>
+                                    <td><strong>{{ vente.numero_facture }}</strong></td>
+                                    <td><small>{{ vente.date_vente|date:"d/m/Y H:i" }}</small></td>
+                                    <td><span class="text-success font-weight-bold">{{ vente.montant_total }} CDF</span></td>
+                                    <td>
+                                        {% if vente.paye %}
+                                            <span class="badge bg-success">Payé</span>
+                                        {% else %}
+                                            <span class="badge bg-danger">Non payé</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-3 text-center">
+                        <a href="{% url 'inventory:ventes' %}" class="btn btn-link text-primary">
+                            Voir toutes les ventes <i class="bi bi-arrow-right"></i>
+                        </a>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-cart text-gray-300" style="font-size: 3rem;"></i>
+                        <p class="text-muted mt-2">Aucune vente n'a été enregistrée.</p>
+                        <a href="{% url 'inventory:ventes' %}" class="btn btn-success btn-sm mt-2">
+                            <i class="bi bi-plus-lg"></i> Enregistrer votre première vente
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alerts & Information Cards -->
+<div class="row">
+    <div class="col-lg-6 mb-4">
+        <div class="card bg-light mb-4">
+            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                <h6 class="m-0 font-weight-bold text-primary"><i class="bi bi-info-circle me-2"></i>Informations</h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-lg-6 mb-3">
+                        <div class="card bg-primary text-white shadow">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <i class="bi bi-file-earmark-pdf me-2"></i>Codes QR
+                                    </div>
+                                    <a href="{% url 'inventory:generer_qr_codes_pdf' %}" class="btn btn-sm btn-light" target="_blank">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6 mb-3">
+                        <div class="card bg-success text-white shadow">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <i class="bi bi-bar-chart me-2"></i>Rapport
+                                    </div>
+                                    <a href="#" class="btn btn-sm btn-light">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-6 mb-4">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary"><i class="bi bi-exclamation-triangle me-2"></i>Alertes Stock</h6>
+            </div>
+            <div class="card-body">
+                {% if low_stock_articles %}
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Article</th>
+                                    <th>Stock</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for article in low_stock_articles %}
+                                <tr>
+                                    <td>{{ article.nom }}</td>
+                                    <td>
+                                        <span class="badge bg-danger">{{ article.quantite_stock }}</span>
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'inventory:articles' %}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-3">
+                        <i class="bi bi-check-circle text-success" style="font-size: 2rem;"></i>
+                        <p class="text-success mt-2">Aucun article en stock faible</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
