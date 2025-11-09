@@ -1,0 +1,34 @@
+{
+  "name": "GestionMagazin",
+  "description": "Application de gestion multi-boutiques avec système de ventes et inventaire",
+  "addons": [
+    "postgresql:postgresql-starter-512"
+  ],
+  "env": {
+    "SECRET_KEY": {
+      "description": "Clé secrète Django (générer une nouvelle)",
+      "generator": "secret"
+    },
+    "DEBUG": {
+      "description": "Mode debug Django (False en production)",
+      "value": "False"
+    },
+    "ALLOWED_HOSTS": {
+      "description": "Hôtes autorisés (séparés par des virgules)",
+      "value": ".scalingo.io,localhost"
+    },
+    "DJANGO_SETTINGS_MODULE": {
+      "description": "Module de configuration Django",
+      "value": "gestion_magazin.settings"
+    }
+  },
+  "formation": {
+    "web": {
+      "amount": 1,
+      "size": "S"
+    }
+  },
+  "scripts": {
+    "postdeploy": "python manage.py migrate --noinput && python manage.py collectstatic --noinput"
+  }
+}

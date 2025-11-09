@@ -73,16 +73,16 @@ def commercant_required(view_func):
     """Décorateur pour vérifier que l'utilisateur est un commerçant"""
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
-            return redirect('login_commercant')
+            return redirect('inventory:login_commercant')
         
         try:
             commercant = request.user.profil_commercant
             if not commercant.est_actif:
                 messages.error(request, "Votre compte commerçant est désactivé.")
-                return redirect('login_commercant')
+                return redirect('inventory:login_commercant')
         except Commercant.DoesNotExist:
             messages.error(request, "Vous n'avez pas de profil commerçant.")
-            return redirect('login_commercant')
+            return redirect('inventory:login_commercant')
         
         return view_func(request, *args, **kwargs)
     return wrapper
@@ -113,11 +113,11 @@ def login_commercant(request):
                 commercant = user.profil_commercant
                 if commercant.est_actif:
                     login(request, user)
-                    return redirect('dashboard_commercant')
+                    return redirect('inventory:commercant_dashboard')
                 else:
-                    messages.error(request, "Votre compte est désactivé.")
+                    messages.error(request, "Votre compte commerçant est désactivé. Veuillez contacter l'administrateur pour réactiver votre compte.")
             except Commercant.DoesNotExist:
-                messages.error(request, "Vous n'avez pas de profil commerçant.")
+                messages.error(request, "Vous n'avez pas de profil commerçant. Veuillez contacter l'administrateur.")
         else:
             messages.error(request, "Nom d'utilisateur ou mot de passe incorrect.")
     
@@ -128,7 +128,7 @@ def logout_commercant(request):
     """Déconnexion du commerçant"""
     logout(request)
     messages.success(request, "Vous avez été déconnecté avec succès.")
-    return redirect('login_commercant')
+    return redirect('inventory:login_commercant')
 
 # ===== TABLEAU DE BORD COMMERÇANT =====
 
@@ -457,7 +457,7 @@ def creer_terminal(request, boutique_id):
                 
                 messages.success(request, f"Terminal '{nom_terminal}' créé avec succès!")
                 messages.info(request, f"Clé API générée: {terminal.cle_api}")
-                return redirect('terminaux_boutique', boutique_id=boutique.id)
+                return redirect('inventory:commercant_terminaux_boutique', boutique_id=boutique.id)
         else:
             messages.error(request, "Nom du terminal et numéro de série sont requis.")
     
@@ -585,10 +585,23 @@ def entrer_boutique(request, boutique_id):
         nb_ventes_aujourd_hui = 0
         ca_aujourd_hui = 0
     
+    # Ventes du mois en cours
+    try:
+        premier_jour_mois = timezone.now().date().replace(day=1)
+        ventes_mois = Vente.objects.filter(
+            client_maui__boutique=boutique,
+            date_vente__date__gte=premier_jour_mois,
+            paye=True
+        )
+        nb_ventes_mois = ventes_mois.count()
+        ca_mois = ventes_mois.aggregate(total=Sum('montant_total'))['total'] or 0
+    except (ValueError, TypeError):
+        nb_ventes_mois = 0
+        ca_mois = 0
+    
     # Variables supplémentaires pour le template dashboard.html
     total_articles = nb_articles
     total_categories = boutique.categories.count()
-    ca_mois = ca_aujourd_hui  # Simplification pour l'instant
     ca_jour = ca_aujourd_hui
     
     # Articles en stock faible
@@ -778,6 +791,133 @@ def exporter_ca_quotidien_pdf(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+def exporter_ca_mensuel_pdf(request, boutique_id):
+    """Exporter le chiffre d'affaires mensuel en PDF"""
+    from django.http import HttpResponse
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+    from datetime import datetime
+    from calendar import monthrange
+    import io
+    import locale
+    
+    boutique = request.boutique
+    
+    # Récupérer le mois et l'année depuis les paramètres GET (optionnel)
+    try:
+        annee = int(request.GET.get('annee', timezone.now().year))
+        mois = int(request.GET.get('mois', timezone.now().month))
+    except (ValueError, TypeError):
+        annee = timezone.now().year
+        mois = timezone.now().month
+    
+    # Créer le buffer pour le PDF
+    buffer = io.BytesIO()
+    
+    # Créer le document PDF
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+    
+    # Noms des mois en français
+    mois_noms = {
+        1: 'Janvier', 2: 'Février', 3: 'Mars', 4: 'Avril',
+        5: 'Mai', 6: 'Juin', 7: 'Juillet', 8: 'Août',
+        9: 'Septembre', 10: 'Octobre', 11: 'Novembre', 12: 'Décembre'
+    }
+    nom_mois = mois_noms.get(mois, 'Mois')
+    
+    # Titre avec le nom du mois
+    title = Paragraph(
+        f"Rapport CA Mensuel - {nom_mois} {annee}<br/>{boutique.nom}", 
+        styles['Title']
+    )
+    story.append(title)
+    story.append(Spacer(1, 20))
+    
+    # Informations boutique
+    info_text = f"""
+    <b>Boutique:</b> {boutique.nom}<br/>
+    <b>Type:</b> {boutique.get_type_commerce_display()}<br/>
+    <b>Adresse:</b> {boutique.adresse}, {boutique.ville}<br/>
+    <b>Période:</b> {nom_mois} {annee}<br/>
+    <b>Date d'export:</b> {datetime.now().strftime('%d/%m/%Y à %H:%M')}<br/>
+    """
+    info = Paragraph(info_text, styles['Normal'])
+    story.append(info)
+    story.append(Spacer(1, 20))
+    
+    # Calculer le premier et dernier jour du mois
+    premier_jour = datetime(annee, mois, 1).date()
+    dernier_jour_num = monthrange(annee, mois)[1]
+    dernier_jour = datetime(annee, mois, dernier_jour_num).date()
+    
+    # Créer les données du tableau
+    data = [['Date', 'Nb Ventes', 'Chiffre d\'Affaires (CDF)']]
+    
+    current_date = premier_jour
+    total_ca = 0
+    total_ventes = 0
+    
+    # Parcourir tous les jours du mois
+    while current_date <= dernier_jour:
+        try:
+            ventes_jour = Vente.objects.filter(
+                client_maui__boutique=boutique,
+                date_vente__date=current_date,
+                paye=True
+            )
+            nb_ventes = ventes_jour.count()
+            ca_jour = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
+        except (ValueError, TypeError):
+            nb_ventes = 0
+            ca_jour = 0
+        
+        data.append([
+            current_date.strftime('%d/%m/%Y'),
+            str(nb_ventes),
+            f"{ca_jour:,.0f}"
+        ])
+        
+        total_ventes += nb_ventes
+        total_ca += ca_jour
+        current_date += timedelta(days=1)
+    
+    # Ajouter ligne de total
+    data.append(['TOTAL', str(total_ventes), f"{total_ca:,.0f}"])
+    
+    # Créer le tableau
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -2), colors.beige),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    
+    story.append(table)
+    
+    # Construire le PDF
+    doc.build(story)
+    
+    # Préparer la réponse
+    buffer.seek(0)
+    response = HttpResponse(buffer, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="CA_Mensuel_{nom_mois}_{annee}_{boutique.nom}.pdf"'
+    
+    return response
+
+@login_required
+@commercant_required
+@boutique_access_required
 def ajouter_article_boutique(request, boutique_id):
     """Ajouter un article à une boutique spécifique (interface commerçant)"""
     boutique = request.boutique
@@ -939,3 +1079,112 @@ def generer_pdf_qr_codes(request, boutique_id):
     response['Content-Disposition'] = f'attachment; filename="QR_Codes_{boutique.nom}_{datetime.now().strftime("%Y%m%d")}.pdf"'
     
     return response
+
+@login_required
+@commercant_required
+@boutique_access_required
+def modifier_terminal(request, boutique_id, terminal_id):
+    """Modifier un terminal MAUI"""
+    boutique = request.boutique
+    terminal = get_object_or_404(Client, id=terminal_id, boutique=boutique)
+    
+    if request.method == 'POST':
+        terminal.nom_terminal = request.POST.get('nom_terminal', terminal.nom_terminal)
+        terminal.description = request.POST.get('description', '')
+        terminal.notes = request.POST.get('notes', '')
+        terminal.save()
+        
+        messages.success(request, f"Terminal '{terminal.nom_terminal}' modifié avec succès!")
+        return redirect('inventory:commercant_terminaux_boutique', boutique_id=boutique.id)
+    
+    context = {
+        'boutique': boutique,
+        'terminal': terminal
+    }
+    
+    return render(request, 'inventory/commercant/modifier_terminal.html', context)
+
+@login_required
+@commercant_required
+@boutique_access_required
+def toggle_terminal(request, boutique_id, terminal_id):
+    """Activer/Désactiver un terminal MAUI"""
+    boutique = request.boutique
+    terminal = get_object_or_404(Client, id=terminal_id, boutique=boutique)
+    
+    terminal.est_actif = not terminal.est_actif
+    terminal.save()
+    
+    statut = "activé" if terminal.est_actif else "désactivé"
+    messages.success(request, f"Terminal '{terminal.nom_terminal}' {statut} avec succès!")
+    
+    return redirect('inventory:commercant_terminaux_boutique', boutique_id=boutique.id)
+
+@login_required
+@commercant_required
+@boutique_access_required
+def supprimer_terminal(request, boutique_id, terminal_id):
+    """Supprimer un terminal MAUI"""
+    boutique = request.boutique
+    terminal = get_object_or_404(Client, id=terminal_id, boutique=boutique)
+    
+    if request.method == 'POST':
+        nom_terminal = terminal.nom_terminal
+        terminal.delete()
+        messages.success(request, f"Terminal '{nom_terminal}' supprimé avec succès!")
+        return redirect('inventory:commercant_terminaux_boutique', boutique_id=boutique.id)
+    
+    context = {
+        'boutique': boutique,
+        'terminal': terminal
+    }
+    
+    return render(request, 'inventory/commercant/supprimer_terminal.html', context)
+
+@login_required
+@commercant_required
+@boutique_access_required
+def ventes_boutique(request, boutique_id):
+    """Afficher les ventes d'une boutique spécifique"""
+    boutique = request.boutique
+    
+    # ⭐ ISOLATION: Récupérer UNIQUEMENT les ventes de CETTE boutique
+    ventes = Vente.objects.filter(
+        boutique=boutique  # Filtrage direct par boutique
+    ).select_related('client_maui', 'boutique').prefetch_related('lignes__article').order_by('-date_vente')
+    
+    # Filtres optionnels
+    date_debut = request.GET.get('date_debut')
+    date_fin = request.GET.get('date_fin')
+    
+    if date_debut:
+        try:
+            date_debut_obj = datetime.strptime(date_debut, '%Y-%m-%d')
+            ventes = ventes.filter(date_vente__gte=date_debut_obj)
+        except ValueError:
+            pass
+    
+    if date_fin:
+        try:
+            date_fin_obj = datetime.strptime(date_fin, '%Y-%m-%d') + timedelta(days=1)
+            ventes = ventes.filter(date_vente__lt=date_fin_obj)
+        except ValueError:
+            pass
+    
+    # Statistiques
+    from django.db.models import Sum, Count
+    stats = ventes.aggregate(
+        total_ventes=Count('id'),
+        chiffre_affaires=Sum('montant_total')
+    )
+    
+    context = {
+        'boutique': boutique,
+        'ventes': ventes,
+        'total_ventes': stats['total_ventes'] or 0,
+        'chiffre_affaires': stats['chiffre_affaires'] or 0,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+    }
+    
+    return render(request, 'inventory/commercant/ventes_boutique.html', context)

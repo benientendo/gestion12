@@ -1,0 +1,210 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Ventes - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .vente-card {
+        border-left: 4px solid #0d6efd;
+        margin-bottom: 15px;
+        transition: all 0.2s;
+    }
+    .vente-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transform: translateX(5px);
+    }
+    .vente-header {
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+    }
+    .montant-principal {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #198754;
+    }
+    .info-label {
+        font-size: 0.85rem;
+        color: #6c757d;
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête Simple -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3><i class="fas fa-receipt"></i> Historique des Ventes</h3>
+            <p class="text-muted mb-0">{{ boutique.nom }} - {{ boutique.ville }}</p>
+        </div>
+        <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Retour
+        </a>
+    </div>
+
+    <!-- Statistiques Compactes -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h2 class="text-primary mb-0">{{ total_ventes }}</h2>
+                    <small class="text-muted">Ventes</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h2 class="text-success mb-0">{{ chiffre_affaires|floatformat:0 }}</h2>
+                    <small class="text-muted">CDF</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtres Compacts -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-2">
+                <div class="col-md-4">
+                    <input type="date" class="form-control" name="date_debut" value="{{ date_debut }}" placeholder="Date début">
+                </div>
+                <div class="col-md-4">
+                    <input type="date" class="form-control" name="date_fin" value="{{ date_fin }}" placeholder="Date fin">
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-search"></i> Filtrer
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Liste des ventes en cartes -->
+    {% if ventes %}
+        {% for vente in ventes %}
+        <div class="card vente-card">
+            <div class="card-header vente-header d-flex justify-content-between align-items-center">
+                <div>
+                    <strong class="text-primary">{{ vente.numero_facture }}</strong>
+                    <span class="ms-3 text-muted">{{ vente.date_vente|date:"d/m/Y à H:i" }}</span>
+                </div>
+                <div>
+                    {% if vente.paye %}
+                        <span class="badge bg-success">Payé</span>
+                    {% else %}
+                        <span class="badge bg-warning text-dark">En attente</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-2">
+                            <span class="info-label">TERMINAL:</span>
+                            {% if vente.client_maui %}
+                                <span class="badge bg-info">{{ vente.client_maui.nom_terminal }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Manuel</span>
+                            {% endif %}
+                        </div>
+                        <div class="mb-2">
+                            <span class="info-label">ARTICLES:</span>
+                            <span class="badge bg-primary">{{ vente.lignes.count }} article(s)</span>
+                        </div>
+                        <div>
+                            <span class="info-label">MODE PAIEMENT:</span>
+                            <span>{{ vente.get_mode_paiement_display }}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <div class="mb-3">
+                            <div class="montant-principal">{{ vente.montant_total|floatformat:0 }} CDF</div>
+                        </div>
+                        <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#venteModal{{ vente.id }}">
+                            <i class="fas fa-eye"></i> Détails
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Détails Vente -->
+        <div class="modal fade" id="venteModal{{ vente.id }}" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title">Détails Vente #{{ vente.numero_facture }}</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <!-- Informations -->
+                        <div class="mb-3">
+                            <p><strong>Date:</strong> {{ vente.date_vente|date:"d/m/Y à H:i" }}</p>
+                            <p><strong>Terminal:</strong> {{ vente.client_maui.nom_terminal|default:"Manuel" }}</p>
+                            <p><strong>Mode:</strong> {{ vente.get_mode_paiement_display }}</p>
+                        </div>
+
+                        <!-- Articles -->
+                        <h6 class="mb-3">Articles ({{ vente.lignes.count }})</h6>
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Article</th>
+                                    <th class="text-center">Qté</th>
+                                    <th class="text-end">Prix</th>
+                                    <th class="text-end">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ligne in vente.lignes.all %}
+                                <tr>
+                                    <td>{{ ligne.article.nom }}</td>
+                                    <td class="text-center">{{ ligne.quantite }}</td>
+                                    <td class="text-end">{{ ligne.prix_unitaire|floatformat:0 }}</td>
+                                    <td class="text-end">{{ ligne.sous_total|floatformat:0 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr class="fw-bold">
+                                    <td colspan="3" class="text-end">TOTAL:</td>
+                                    <td class="text-end text-success">{{ vente.montant_total|floatformat:0 }} CDF</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+            {% else %}
+                <div class="p-5 text-center">
+                    <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
+                    <h5 class="text-muted">Aucune vente trouvée</h5>
+                    <p class="text-muted mb-3">
+                        {% if date_debut or date_fin %}
+                            Aucune vente ne correspond aux critères de recherche.
+                            <br>Essayez de modifier les filtres de date.
+                        {% else %}
+                            Cette boutique n'a pas encore enregistré de ventes.
+                            <br>Les ventes effectuées via le terminal MAUI apparaîtront ici.
+                        {% endif %}
+                    </p>
+                    {% if date_debut or date_fin %}
+                        <a href="{% url 'inventory:commercant_ventes_boutique' boutique.id %}" class="btn btn-primary">
+                            <i class="fas fa-redo"></i> Voir toutes les ventes
+                        </a>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

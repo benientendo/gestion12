@@ -110,17 +110,43 @@ def authentifier_client_maui(request):
             est_active=True
         )
         
-        logger.info(f"Client MAUI authentifié: {client.nom_boutique} ({numero_serie})")
+        logger.info(f"Client MAUI authentifié: {client.nom_terminal} ({numero_serie})")
         
-        return Response({
+        # Préparer les informations de réponse avec boutique
+        response_data = {
             'success': True,
             'token_session': token_session,
             'client_id': client.id,
-            'nom_boutique': client.nom_boutique,
-            'proprietaire': client.proprietaire,
-            'type_commerce': client.type_commerce,
-            'message': 'Authentification réussie'
-        }, status=status.HTTP_200_OK)
+            'message': 'Authentification réussie',
+            
+            # ⭐ AJOUT: Informations utilisateur
+            'user': {
+                'id': client.compte_proprietaire.id if client.compte_proprietaire else None,
+                'username': client.compte_proprietaire.username if client.compte_proprietaire else None
+            },
+            
+            # ⭐ AJOUT: Informations complètes du terminal (client_maui)
+            'client_maui': None  # Par défaut
+        }
+        
+        # ⭐ AJOUT: Si le terminal a une boutique, inclure toutes les infos
+        if client.boutique:
+            response_data['client_maui'] = {
+                'id': client.id,
+                'numero_serie': client.numero_serie,
+                'nom_terminal': client.nom_terminal,
+                'boutique_id': client.boutique.id,
+                'boutique': {
+                    'id': client.boutique.id,
+                    'nom': client.boutique.nom,
+                    'code': client.boutique.code_boutique,
+                    'commercant': client.boutique.commercant.nom_entreprise if hasattr(client.boutique, 'commercant') else '',
+                    'type_commerce': client.boutique.type_commerce,
+                    'devise': client.boutique.devise
+                }
+            }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
         
     except Client.DoesNotExist:
         logger.warning(f"Tentative d'authentification avec numéro de série invalide: {numero_serie}")

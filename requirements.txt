@@ -1,8 +1,26 @@
-# Ajoute Django REST Framework et SimpleJWT
-djangorestframework
-djangorestframework-simplejwt
-requests
+# Django Framework
+Django==5.2
 
-# Génération de PDF
-reportlab
-Pillow
+# Database
+psycopg2-binary==2.9.9
+dj-database-url==2.1.0
+
+# Web Server
+gunicorn==21.2.0
+whitenoise==6.6.0
+
+# Django REST Framework et JWT
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
+
+# Génération de PDF et QR Codes
+reportlab==4.0.7
+Pillow==10.1.0
+qrcode==7.4.2
+
+# Utilitaires
+requests==2.31.0
+python-decouple==3.8
+
+# Variables d'environnement
+python-dotenv==1.0.0

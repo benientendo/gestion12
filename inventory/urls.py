@@ -52,6 +52,7 @@ urlpatterns = [
     path('superadmin/commercants/<int:commercant_id>/supprimer/', admin_views.supprimer_commercant, name='admin_supprimer_commercant'),
     path('superadmin/commercants/<int:commercant_id>/toggle-status/', admin_views.toggle_commercant_status, name='admin_toggle_commercant_status'),
     path('superadmin/boutiques/', admin_views.gestion_boutiques_admin, name='admin_gestion_boutiques'),
+    path('superadmin/diagnostic-api/', admin_views.diagnostic_api, name='admin_diagnostic_api'),
     
     # ===== INTERFACE COMMERÇANT =====
     path('commercant/login/', views_commercant.login_commercant, name='login_commercant'),
@@ -66,10 +67,15 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/articles/', views_commercant.articles_boutique, name='commercant_articles_boutique'),
     path('commercant/boutiques/<int:boutique_id>/terminaux/', views_commercant.terminaux_boutique, name='commercant_terminaux_boutique'),
     path('commercant/boutiques/<int:boutique_id>/terminaux/creer/', views_commercant.creer_terminal, name='commercant_creer_terminal'),
+    path('commercant/boutiques/<int:boutique_id>/terminaux/<int:terminal_id>/modifier/', views_commercant.modifier_terminal, name='modifier_terminal'),
+    path('commercant/boutiques/<int:boutique_id>/terminaux/<int:terminal_id>/toggle/', views_commercant.toggle_terminal, name='toggle_terminal'),
+    path('commercant/boutiques/<int:boutique_id>/terminaux/<int:terminal_id>/supprimer/', views_commercant.supprimer_terminal, name='supprimer_terminal'),
     path('commercant/boutiques/<int:boutique_id>/client-maui/ajouter/', views_commercant.ajouter_client_maui_boutique, name='ajouter_client_maui_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/ajouter/', views_commercant.ajouter_article_boutique, name='ajouter_article_boutique'),
     path('commercant/boutiques/<int:boutique_id>/categories/', views_commercant.categories_boutique, name='commercant_categories_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/ventes/', views_commercant.ventes_boutique, name='commercant_ventes_boutique'),
     path('commercant/boutiques/<int:boutique_id>/qr-codes-pdf/', views_commercant.generer_pdf_qr_codes, name='generer_pdf_qr_codes'),
     path('commercant/boutiques/<int:boutique_id>/export-ca-pdf/', views_commercant.exporter_ca_quotidien_pdf, name='exporter_ca_quotidien_pdf'),
+    path('commercant/boutiques/<int:boutique_id>/export-ca-mensuel-pdf/', views_commercant.exporter_ca_mensuel_pdf, name='exporter_ca_mensuel_pdf'),
     path('commercant/api/boutique/<int:boutique_id>/stats/', views_commercant.api_stats_boutique, name='commercant_api_stats_boutique'),
 ]

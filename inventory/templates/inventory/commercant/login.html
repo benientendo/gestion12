@@ -1,0 +1,160 @@
+{% extends 'inventory/base.html' %}
+
+{% block title %}Connexion Commerçant | Gestion de Magazin{% endblock %}
+
+{% block page_title %}Espace Commerçant{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0 text-center">
+                    <i class="fas fa-store"></i> Connexion Commerçant
+                </h4>
+            </div>
+            <div class="card-body p-4">
+                <p class="text-muted text-center mb-4">
+                    Connectez-vous pour gérer vos boutiques et vos ventes
+                </p>
+                
+                {% if messages %}
+                    {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show {% if message.tags == 'error' %}border-danger{% endif %}" role="alert" style="{% if message.tags == 'error' %}background-color: #f8d7da; border: 2px solid #dc3545; color: #721c24;{% endif %}">
+                        <strong>
+                            {% if message.tags == 'error' %}
+                                <i class="fas fa-exclamation-triangle"></i> Erreur :
+                            {% elif message.tags == 'warning' %}
+                                <i class="fas fa-exclamation-circle"></i> Attention :
+                            {% elif message.tags == 'success' %}
+                                <i class="fas fa-check-circle"></i> Succès :
+                            {% else %}
+                                <i class="fas fa-info-circle"></i>
+                            {% endif %}
+                        </strong>
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+                
+                <form method="post" action="{% url 'inventory:login_commercant' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="username" class="form-label">
+                            <i class="fas fa-user"></i> Nom d'utilisateur
+                        </label>
+                        <input type="text" 
+                               class="form-control form-control-lg" 
+                               id="username" 
+                               name="username" 
+                               placeholder="Entrez votre nom d'utilisateur"
+                               required 
+                               autofocus>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">
+                            <i class="fas fa-lock"></i> Mot de passe
+                        </label>
+                        <input type="password" 
+                               class="form-control form-control-lg" 
+                               id="password" 
+                               name="password" 
+                               placeholder="Entrez votre mot de passe"
+                               required>
+                    </div>
+                    
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-sign-in-alt"></i> Se connecter
+                        </button>
+                    </div>
+                    
+                    {% if next %}
+                    <input type="hidden" name="next" value="{{ next }}">
+                    {% endif %}
+                </form>
+                
+                <hr class="my-4">
+                
+                <div class="text-center">
+                    <p class="text-muted mb-2">
+                        <i class="fas fa-info-circle"></i> Vous n'êtes pas commerçant ?
+                    </p>
+                    <a href="{% url 'inventory:login' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Connexion Standard
+                    </a>
+                </div>
+            </div>
+            <div class="card-footer text-muted text-center">
+                <small>
+                    <i class="fas fa-shield-alt"></i> Connexion sécurisée
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .card {
+        border: none;
+        border-radius: 15px;
+    }
+    
+    .card-header {
+        border-radius: 15px 15px 0 0 !important;
+        padding: 1.5rem;
+    }
+    
+    .form-control-lg {
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+    }
+    
+    .btn-lg {
+        border-radius: 10px;
+        padding: 0.75rem;
+        font-weight: 600;
+    }
+    
+    /* Style amélioré pour les messages d'erreur */
+    .alert-error {
+        background-color: #f8d7da !important;
+        border: 2px solid #dc3545 !important;
+        color: #721c24 !important;
+        font-weight: 500;
+        box-shadow: 0 4px 6px rgba(220, 53, 69, 0.2);
+        animation: shake 0.5s;
+    }
+    
+    .alert-error strong {
+        color: #dc3545;
+        font-size: 1.1em;
+    }
+    
+    .alert-error i {
+        font-size: 1.2em;
+        margin-right: 5px;
+    }
+    
+    /* Animation de secousse pour attirer l'attention */
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+        20%, 40%, 60%, 80% { transform: translateX(5px); }
+    }
+    
+    /* Style pour les autres types de messages */
+    .alert-success {
+        background-color: #d4edda !important;
+        border: 2px solid #28a745 !important;
+        color: #155724 !important;
+    }
+    
+    .alert-warning {
+        background-color: #fff3cd !important;
+        border: 2px solid #ffc107 !important;
+        color: #856404 !important;
+    }
+</style>
+{% endblock %}

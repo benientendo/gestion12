@@ -1,0 +1,8 @@
+FEAT: Implementation complete API multi-boutiques v2
+
+- Nouvelle API v2 avec filtrage par boutique_id
+- Authentification MAUI multi-boutiques securisee
+- Isolation complete des donnees par boutique
+- Tests automatiques valides 100%
+- Documentation complete pour equipe MAUI
+- Architecture multi-boutiques operationnelle

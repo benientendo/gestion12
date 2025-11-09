@@ -168,6 +168,10 @@ class Vente(models.Model):
         ('MOBILE', 'Paiement mobile')
     ])
     
+    # ⭐ ISOLATION: Lien direct avec la boutique
+    boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='ventes',
+                                null=True, blank=True, help_text="Boutique à laquelle cette vente appartient")
+    
     # Association avec le client MAUI qui a effectué la vente
     client_maui = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name='ventes')
     adresse_ip_client = models.GenericIPAddressField(null=True, blank=True, help_text="Adresse IP du client MAUI")
@@ -211,26 +215,57 @@ class ScanRecent(models.Model):
 
 
 class MouvementStock(models.Model):
-    """Mouvements de stock."""
+    """Mouvements de stock avec traçabilité complète."""
     
     TYPES = [
         ('ENTREE', 'Entrée de stock'),
         ('SORTIE', 'Sortie de stock'),
         ('AJUSTEMENT', 'Ajustement'),
-        ('VENTE', 'Vente')
+        ('VENTE', 'Vente'),
+        ('RETOUR', 'Retour client')
     ]
     
+    # Champs existants
     article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='mouvements')
     type_mouvement = models.CharField(max_length=20, choices=TYPES)
-    quantite = models.IntegerField()
+    quantite = models.IntegerField(help_text="Négatif pour sortie, positif pour entrée")
     date_mouvement = models.DateTimeField(auto_now_add=True)
     commentaire = models.TextField(blank=True)
+    
+    # ⭐ NOUVEAUX CHAMPS pour meilleure traçabilité
+    stock_avant = models.IntegerField(
+        null=True, 
+        blank=True, 
+        help_text="Stock avant le mouvement"
+    )
+    stock_apres = models.IntegerField(
+        null=True, 
+        blank=True, 
+        help_text="Stock après le mouvement"
+    )
+    reference_document = models.CharField(
+        max_length=100, 
+        blank=True, 
+        help_text="Numéro de facture, bon de livraison, etc."
+    )
+    utilisateur = models.CharField(
+        max_length=100, 
+        blank=True, 
+        help_text="Nom d'utilisateur ou device_serial"
+    )
     
     def __str__(self):
         return f"{self.type_mouvement} - {self.article.nom} ({self.quantite})"
     
     class Meta:
         ordering = ['-date_mouvement']
+        verbose_name = "Mouvement de stock"
+        verbose_name_plural = "Mouvements de stock"
+        indexes = [
+            models.Index(fields=['article', 'date_mouvement'], name='mouvement_article_date_idx'),
+            models.Index(fields=['type_mouvement'], name='mouvement_type_idx'),
+            models.Index(fields=['reference_document'], name='mouvement_ref_idx'),
+        ]
 
 
 # ===== MODÈLES MULTI-COMMERÇANTS =====

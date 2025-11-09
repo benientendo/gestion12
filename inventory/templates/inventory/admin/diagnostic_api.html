@@ -1,0 +1,401 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Diagnostic API - Synchronisation Articles{% endblock %}
+
+{% block extra_css %}
+<style>
+    .diagnostic-card {
+        border-left: 4px solid #007bff;
+        margin-bottom: 1.5rem;
+    }
+    .endpoint-test {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 5px;
+        margin-bottom: 1rem;
+    }
+    .status-ok {
+        color: #28a745;
+    }
+    .status-error {
+        color: #dc3545;
+    }
+    .code-block {
+        background: #2d2d2d;
+        color: #f8f8f2;
+        padding: 1rem;
+        border-radius: 5px;
+        overflow-x: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+    }
+    .test-button {
+        margin-top: 0.5rem;
+    }
+    .response-area {
+        margin-top: 1rem;
+        display: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-stethoscope"></i> Diagnostic API - Synchronisation Articles</h1>
+                    <p class="text-muted">Tester la synchronisation des catalogues d'articles avec l'application MAUI</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:admin_dashboard' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sélection Boutique -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card diagnostic-card">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fas fa-store"></i> Sélectionner une boutique</h5>
+                    <select id="boutiqueSelect" class="form-select">
+                        <option value="">-- Choisir une boutique --</option>
+                        {% for boutique in boutiques %}
+                            <option value="{{ boutique.id }}" 
+                                    data-nom="{{ boutique.nom }}"
+                                    data-terminaux="{{ boutique.clients.count }}">
+                                {{ boutique.nom }} - {{ boutique.get_type_commerce_display }} ({{ boutique.ville }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <div id="boutiqueInfo" class="mt-3" style="display: none;">
+                        <div class="alert alert-info">
+                            <strong>Boutique sélectionnée:</strong> <span id="boutiqueNom"></span><br>
+                            <strong>ID:</strong> <span id="boutiqueId"></span><br>
+                            <strong>Terminaux MAUI:</strong> <span id="boutiqueTerminaux"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card diagnostic-card">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fas fa-info-circle"></i> Informations Système</h5>
+                    <table class="table table-sm">
+                        <tr>
+                            <td><strong>Serveur:</strong></td>
+                            <td><span id="serverUrl">{{ request.scheme }}://{{ request.get_host }}</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>API v2:</strong></td>
+                            <td><span class="badge bg-success">Active</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>API v2 Simple:</strong></td>
+                            <td><span class="badge bg-success">Active</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Total Boutiques:</strong></td>
+                            <td>{{ boutiques.count }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tests API -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card diagnostic-card">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fas fa-flask"></i> Tests des Endpoints API</h5>
+                    
+                    <!-- Test 1: Status API -->
+                    <div class="endpoint-test">
+                        <h6><i class="fas fa-heartbeat"></i> Test 1: Status API v2 Simple</h6>
+                        <p class="text-muted mb-2">Vérifier que l'API est accessible</p>
+                        <div class="code-block">
+                            GET <span id="endpoint1">/api/v2/simple/status/</span>
+                        </div>
+                        <button class="btn btn-primary btn-sm test-button" onclick="testEndpoint1()">
+                            <i class="fas fa-play"></i> Tester
+                        </button>
+                        <div id="response1" class="response-area">
+                            <h6 class="mt-3">Réponse:</h6>
+                            <pre class="code-block" id="response1Content"></pre>
+                        </div>
+                    </div>
+
+                    <!-- Test 2: Liste Boutiques -->
+                    <div class="endpoint-test">
+                        <h6><i class="fas fa-store"></i> Test 2: Liste des Boutiques</h6>
+                        <p class="text-muted mb-2">Récupérer toutes les boutiques disponibles</p>
+                        <div class="code-block">
+                            GET <span id="endpoint2">/api/v2/simple/boutiques/</span>
+                        </div>
+                        <button class="btn btn-primary btn-sm test-button" onclick="testEndpoint2()">
+                            <i class="fas fa-play"></i> Tester
+                        </button>
+                        <div id="response2" class="response-area">
+                            <h6 class="mt-3">Réponse:</h6>
+                            <pre class="code-block" id="response2Content"></pre>
+                        </div>
+                    </div>
+
+                    <!-- Test 3: Articles par Boutique -->
+                    <div class="endpoint-test">
+                        <h6><i class="fas fa-box"></i> Test 3: Articles de la Boutique</h6>
+                        <p class="text-muted mb-2">Récupérer les articles d'une boutique spécifique</p>
+                        <div class="code-block">
+                            GET <span id="endpoint3">/api/v2/simple/articles/?boutique_id=<span class="text-warning">BOUTIQUE_ID</span></span>
+                        </div>
+                        <button class="btn btn-primary btn-sm test-button" onclick="testEndpoint3()" id="testBtn3" disabled>
+                            <i class="fas fa-play"></i> Tester
+                        </button>
+                        <div class="alert alert-warning mt-2" id="warningBoutique">
+                            <i class="fas fa-exclamation-triangle"></i> Veuillez d'abord sélectionner une boutique ci-dessus
+                        </div>
+                        <div id="response3" class="response-area">
+                            <h6 class="mt-3">Réponse:</h6>
+                            <pre class="code-block" id="response3Content"></pre>
+                        </div>
+                    </div>
+
+                    <!-- Test 4: Catégories par Boutique -->
+                    <div class="endpoint-test">
+                        <h6><i class="fas fa-tags"></i> Test 4: Catégories de la Boutique</h6>
+                        <p class="text-muted mb-2">Récupérer les catégories d'une boutique spécifique</p>
+                        <div class="code-block">
+                            GET <span id="endpoint4">/api/v2/simple/categories/?boutique_id=<span class="text-warning">BOUTIQUE_ID</span></span>
+                        </div>
+                        <button class="btn btn-primary btn-sm test-button" onclick="testEndpoint4()" id="testBtn4" disabled>
+                            <i class="fas fa-play"></i> Tester
+                        </button>
+                        <div id="response4" class="response-area">
+                            <h6 class="mt-3">Réponse:</h6>
+                            <pre class="code-block" id="response4Content"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Guide de Résolution -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card diagnostic-card" style="border-left-color: #ffc107;">
+                <div class="card-body">
+                    <h5 class="card-title"><i class="fas fa-lightbulb"></i> Guide de Résolution des Problèmes</h5>
+                    
+                    <div class="accordion" id="troubleshootingAccordion">
+                        <!-- Problème 1 -->
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#problem1">
+                                    <i class="fas fa-exclamation-circle text-danger me-2"></i>
+                                    Les articles ne s'affichent pas dans MAUI
+                                </button>
+                            </h2>
+                            <div id="problem1" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <h6>Causes possibles:</h6>
+                                    <ul>
+                                        <li><strong>boutique_id manquant:</strong> L'application MAUI n'envoie pas le paramètre boutique_id</li>
+                                        <li><strong>Mauvaise URL:</strong> L'application utilise l'ancienne API au lieu de v2</li>
+                                        <li><strong>Aucun article:</strong> La boutique n'a pas d'articles actifs</li>
+                                    </ul>
+                                    <h6>Solutions:</h6>
+                                    <ol>
+                                        <li>Vérifier que MAUI envoie: <code>GET /api/v2/simple/articles/?boutique_id=X</code></li>
+                                        <li>Vérifier que la boutique a des articles actifs (Test 3 ci-dessus)</li>
+                                        <li>Vérifier les logs du serveur Django pour voir les requêtes reçues</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Problème 2 -->
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#problem2">
+                                    <i class="fas fa-exclamation-circle text-warning me-2"></i>
+                                    Les articles d'une autre boutique s'affichent
+                                </button>
+                            </h2>
+                            <div id="problem2" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <h6>Causes possibles:</h6>
+                                    <ul>
+                                        <li><strong>Mauvais boutique_id:</strong> MAUI envoie un ID incorrect</li>
+                                        <li><strong>Cache MAUI:</strong> Les données sont en cache et pas mises à jour</li>
+                                    </ul>
+                                    <h6>Solutions:</h6>
+                                    <ol>
+                                        <li>Vérifier que MAUI récupère le bon boutique_id lors de l'authentification</li>
+                                        <li>Forcer MAUI à vider son cache et re-synchroniser</li>
+                                        <li>Vérifier que le terminal MAUI est bien associé à la bonne boutique</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Problème 3 -->
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#problem3">
+                                    <i class="fas fa-exclamation-circle text-info me-2"></i>
+                                    Configuration MAUI pour API v2
+                                </button>
+                            </h2>
+                            <div id="problem3" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                                <div class="accordion-body">
+                                    <h6>Configuration requise dans MAUI:</h6>
+                                    <pre class="code-block">// BaseUrl dans MAUI
+private const string BaseUrl = "{{ request.scheme }}://{{ request.get_host }}";
+
+// Endpoints à utiliser
+GET /api/v2/simple/articles/?boutique_id={boutiqueId}
+GET /api/v2/simple/categories/?boutique_id={boutiqueId}
+POST /api/v2/simple/ventes/
+
+// Récupérer boutique_id lors de l'authentification
+POST /api/v2/auth/maui/
+{
+    "numero_serie": "MAUI-XXX"
+}
+
+// Réponse contient:
+{
+    "boutique_id": 2,
+    "boutique": { ... }
+}</pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const serverUrl = document.getElementById('serverUrl').textContent;
+    let selectedBoutiqueId = null;
+
+    // Gestion de la sélection de boutique
+    document.getElementById('boutiqueSelect').addEventListener('change', function() {
+        const select = this;
+        selectedBoutiqueId = select.value;
+        
+        if (selectedBoutiqueId) {
+            const option = select.options[select.selectedIndex];
+            document.getElementById('boutiqueNom').textContent = option.dataset.nom;
+            document.getElementById('boutiqueId').textContent = selectedBoutiqueId;
+            document.getElementById('boutiqueTerminaux').textContent = option.dataset.terminaux;
+            document.getElementById('boutiqueInfo').style.display = 'block';
+            
+            // Activer les tests nécessitant une boutique
+            document.getElementById('testBtn3').disabled = false;
+            document.getElementById('testBtn4').disabled = false;
+            document.getElementById('warningBoutique').style.display = 'none';
+            
+            // Mettre à jour les endpoints
+            document.getElementById('endpoint3').innerHTML = 
+                `/api/v2/simple/articles/?boutique_id=<span class="text-success">${selectedBoutiqueId}</span>`;
+            document.getElementById('endpoint4').innerHTML = 
+                `/api/v2/simple/categories/?boutique_id=<span class="text-success">${selectedBoutiqueId}</span>`;
+        } else {
+            document.getElementById('boutiqueInfo').style.display = 'none';
+            document.getElementById('testBtn3').disabled = true;
+            document.getElementById('testBtn4').disabled = true;
+            document.getElementById('warningBoutique').style.display = 'block';
+        }
+    });
+
+    // Fonction utilitaire pour afficher les réponses
+    function displayResponse(responseId, data, isError = false) {
+        const responseDiv = document.getElementById(responseId);
+        const contentDiv = document.getElementById(responseId + 'Content');
+        
+        responseDiv.style.display = 'block';
+        contentDiv.textContent = JSON.stringify(data, null, 2);
+        contentDiv.style.color = isError ? '#dc3545' : '#28a745';
+    }
+
+    // Test 1: Status API
+    async function testEndpoint1() {
+        try {
+            const response = await fetch(`${serverUrl}/api/v2/simple/status/`);
+            const data = await response.json();
+            displayResponse('response1', data, !response.ok);
+        } catch (error) {
+            displayResponse('response1', { error: error.message }, true);
+        }
+    }
+
+    // Test 2: Liste Boutiques
+    async function testEndpoint2() {
+        try {
+            const response = await fetch(`${serverUrl}/api/v2/simple/boutiques/`);
+            const data = await response.json();
+            displayResponse('response2', data, !response.ok);
+        } catch (error) {
+            displayResponse('response2', { error: error.message }, true);
+        }
+    }
+
+    // Test 3: Articles
+    async function testEndpoint3() {
+        if (!selectedBoutiqueId) {
+            alert('Veuillez sélectionner une boutique');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${serverUrl}/api/v2/simple/articles/?boutique_id=${selectedBoutiqueId}`);
+            const data = await response.json();
+            displayResponse('response3', data, !response.ok);
+        } catch (error) {
+            displayResponse('response3', { error: error.message }, true);
+        }
+    }
+
+    // Test 4: Catégories
+    async function testEndpoint4() {
+        if (!selectedBoutiqueId) {
+            alert('Veuillez sélectionner une boutique');
+            return;
+        }
+        
+        try {
+            const response = await fetch(`${serverUrl}/api/v2/simple/categories/?boutique_id=${selectedBoutiqueId}`);
+            const data = await response.json();
+            displayResponse('response4', data, !response.ok);
+        } catch (error) {
+            displayResponse('response4', { error: error.message }, true);
+        }
+    }
+
+    // Initialisation des tooltips Bootstrap
+    document.addEventListener('DOMContentLoaded', function() {
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
+</script>
+{% endblock %}

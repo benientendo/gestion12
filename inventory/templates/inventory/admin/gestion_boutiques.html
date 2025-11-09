@@ -1,0 +1,287 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Gestion des Boutiques - Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .boutique-card {
+        transition: transform 0.2s;
+        border-left: 4px solid #007bff;
+    }
+    .boutique-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .status-active {
+        border-left-color: #28a745;
+    }
+    .status-inactive {
+        border-left-color: #dc3545;
+        opacity: 0.7;
+    }
+    .filter-section {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-store"></i> Gestion des Boutiques</h1>
+                    <p class="text-muted">Superviser toutes les boutiques de la plateforme</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:admin_dashboard' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtres -->
+    <div class="filter-section">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label for="commercant" class="form-label">
+                    <i class="fas fa-user"></i> Filtrer par commerçant
+                </label>
+                <select name="commercant" id="commercant" class="form-select">
+                    <option value="">Tous les commerçants</option>
+                    {% for commercant in commercants %}
+                        <option value="{{ commercant.id }}" {% if commercant_selectionne == commercant.id|stringformat:"s" %}selected{% endif %}>
+                            {{ commercant.nom_entreprise }} ({{ commercant.user.get_full_name }})
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-md-4">
+                <label for="type" class="form-label">
+                    <i class="fas fa-tag"></i> Type de commerce
+                </label>
+                <select name="type" id="type" class="form-select">
+                    <option value="">Tous les types</option>
+                    {% for code, label in types_commerce %}
+                        <option value="{{ code }}" {% if type_selectionne == code %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-md-4 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="fas fa-filter"></i> Filtrer
+                </button>
+                <a href="{% url 'inventory:admin_gestion_boutiques' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-times"></i> Réinitialiser
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Liste des boutiques -->
+    <div class="row">
+        {% for boutique in boutiques %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card boutique-card h-100 {% if boutique.est_active %}status-active{% else %}status-inactive{% endif %}">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h5 class="card-title mb-1">{{ boutique.nom }}</h5>
+                            <small class="text-muted">
+                                <i class="fas fa-user"></i> {{ boutique.commercant.nom_entreprise }}
+                            </small>
+                        </div>
+                        <div>
+                            {% if boutique.est_active %}
+                                <span class="badge bg-success">
+                                    <i class="fas fa-check-circle"></i> Active
+                                </span>
+                            {% else %}
+                                <span class="badge bg-danger">
+                                    <i class="fas fa-times-circle"></i> Inactive
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <!-- Informations boutique -->
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            <i class="fas fa-tag"></i> {{ boutique.get_type_commerce_display }}<br>
+                            <i class="fas fa-map-marker-alt"></i> {{ boutique.ville|default:"Non renseignée" }}<br>
+                            {% if boutique.telephone %}
+                                <i class="fas fa-phone"></i> {{ boutique.telephone }}<br>
+                            {% endif %}
+                            <i class="fas fa-calendar"></i> Créée le {{ boutique.date_creation|date:"d/m/Y" }}
+                        </small>
+                    </div>
+                    
+                    <!-- Code boutique -->
+                    {% if boutique.code %}
+                    <div class="mb-3">
+                        <span class="badge bg-info">
+                            <i class="fas fa-barcode"></i> {{ boutique.code }}
+                        </span>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Actions -->
+                    <div class="d-grid gap-2">
+                        <a href="{% url 'inventory:admin_details_commercant' boutique.commercant.id %}" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-user"></i> Voir le commerçant
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Footer avec statistiques -->
+                <div class="card-footer bg-transparent">
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <small class="text-muted">Articles</small><br>
+                            <strong>{{ boutique.articles.count|default:0 }}</strong>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted">Terminaux</small><br>
+                            <strong>{{ boutique.clients.count|default:0 }}</strong>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted">Catégories</small><br>
+                            <strong>{{ boutique.categories.count|default:0 }}</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="fas fa-store fa-4x text-muted mb-4"></i>
+                <h3>Aucune boutique trouvée</h3>
+                <p class="text-muted mb-4">
+                    {% if commercant_selectionne or type_selectionne %}
+                        Aucune boutique ne correspond aux filtres sélectionnés.
+                    {% else %}
+                        Aucune boutique n'a encore été créée sur la plateforme.
+                    {% endif %}
+                </p>
+                {% if commercant_selectionne or type_selectionne %}
+                    <a href="{% url 'inventory:admin_gestion_boutiques' %}" class="btn btn-primary">
+                        <i class="fas fa-times"></i> Réinitialiser les filtres
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="Navigation des boutiques">
+                <ul class="pagination justify-content-center">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page=1{% if commercant_selectionne %}&commercant={{ commercant_selectionne }}{% endif %}{% if type_selectionne %}&type={{ type_selectionne }}{% endif %}">
+                                Première
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if commercant_selectionne %}&commercant={{ commercant_selectionne }}{% endif %}{% if type_selectionne %}&type={{ type_selectionne }}{% endif %}">
+                                Précédente
+                            </a>
+                        </li>
+                    {% endif %}
+                    
+                    <li class="page-item active">
+                        <span class="page-link">
+                            Page {{ page_obj.number }} sur {{ page_obj.paginator.num_pages }}
+                        </span>
+                    </li>
+                    
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if commercant_selectionne %}&commercant={{ commercant_selectionne }}{% endif %}{% if type_selectionne %}&type={{ type_selectionne }}{% endif %}">
+                                Suivante
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if commercant_selectionne %}&commercant={{ commercant_selectionne }}{% endif %}{% if type_selectionne %}&type={{ type_selectionne }}{% endif %}">
+                                Dernière
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Statistiques globales -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="fas fa-chart-bar"></i> Statistiques globales
+                    </h5>
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <div class="p-3">
+                                <h3 class="text-primary">{{ page_obj.paginator.count }}</h3>
+                                <small class="text-muted">Total boutiques</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="p-3">
+                                <h3 class="text-success">{{ commercants.count }}</h3>
+                                <small class="text-muted">Commerçants</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="p-3">
+                                <h3 class="text-info">{{ types_commerce|length }}</h3>
+                                <small class="text-muted">Types de commerce</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="p-3">
+                                <h3 class="text-warning">
+                                    {% widthratio page_obj.paginator.count 1 1 %}
+                                </h3>
+                                <small class="text-muted">Affichées</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Auto-submit du formulaire de filtre lors de la sélection
+        const filterSelects = document.querySelectorAll('#commercant, #type');
+        filterSelects.forEach(select => {
+            select.addEventListener('change', function() {
+                this.form.submit();
+            });
+        });
+    });
+</script>
+{% endblock %}

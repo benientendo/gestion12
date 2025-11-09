@@ -169,22 +169,19 @@
                                                         title="Voir détails">
                                                     <i class="fas fa-eye"></i>
                                                 </button>
-                                                <button type="button" class="btn btn-sm btn-outline-warning"
-                                                        title="Modifier">
+                                                <a href="{% url 'inventory:modifier_terminal' boutique.id terminal.id %}" 
+                                                   class="btn btn-sm btn-outline-warning"
+                                                   title="Modifier">
                                                     <i class="fas fa-edit"></i>
-                                                </button>
-                                                {% if terminal.est_actif %}
-                                                    <button type="button" class="btn btn-sm btn-outline-secondary"
-                                                            title="Désactiver">
-                                                        <i class="fas fa-pause"></i>
-                                                    </button>
-                                                {% else %}
-                                                    <button type="button" class="btn btn-sm btn-outline-success"
-                                                            title="Activer">
-                                                        <i class="fas fa-play"></i>
-                                                    </button>
-                                                {% endif %}
+                                                </a>
+                                                <a href="{% url 'inventory:toggle_terminal' boutique.id terminal.id %}" 
+                                                   class="btn btn-sm btn-outline-{% if terminal.est_actif %}secondary{% else %}success{% endif %}"
+                                                   title="{% if terminal.est_actif %}Désactiver{% else %}Activer{% endif %}"
+                                                   onclick="return confirm('Voulez-vous vraiment {% if terminal.est_actif %}désactiver{% else %}activer{% endif %} ce terminal ?');">
+                                                    <i class="fas fa-{% if terminal.est_actif %}pause{% else %}play{% endif %}"></i>
+                                                </a>
                                                 <button type="button" class="btn btn-sm btn-outline-danger"
+                                                        data-bs-toggle="modal" data-bs-target="#deleteModal{{ terminal.id }}"
                                                         title="Supprimer">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
@@ -361,9 +358,45 @@
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                     <i class="fas fa-times"></i> Fermer
                 </button>
-                <button type="button" class="btn btn-primary">
+                <a href="{% url 'inventory:modifier_terminal' boutique.id terminal.id %}" class="btn btn-primary">
                     <i class="fas fa-edit"></i> Modifier
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de confirmation de suppression -->
+<div class="modal fade" id="deleteModal{{ terminal.id }}" tabindex="-1" aria-labelledby="deleteModalLabel{{ terminal.id }}" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteModalLabel{{ terminal.id }}">
+                    <i class="fas fa-exclamation-triangle"></i> Confirmer la Suppression
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3">Êtes-vous sûr de vouloir supprimer ce terminal MAUI ?</p>
+                <div class="alert alert-warning">
+                    <strong><i class="fas fa-mobile-alt"></i> Terminal :</strong> {{ terminal.nom_terminal|default:"Terminal MAUI" }}<br>
+                    <strong><i class="fas fa-barcode"></i> Numéro de série :</strong> <code>{{ terminal.numero_serie }}</code>
+                </div>
+                <p class="text-danger mb-0">
+                    <i class="fas fa-exclamation-circle"></i> <strong>Attention :</strong> Cette action est irréversible. 
+                    Toutes les données associées à ce terminal seront perdues.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Annuler
                 </button>
+                <form method="POST" action="{% url 'inventory:supprimer_terminal' boutique.id terminal.id %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash"></i> Supprimer Définitivement
+                    </button>
+                </form>
             </div>
         </div>
     </div>

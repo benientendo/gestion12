@@ -1,0 +1,1141 @@
+"""
+API v2 Multi-Boutiques SIMPLIFIÉE (Sans Authentification)
+========================================================
+
+Version simplifiée pour tests et développement initial.
+L'authentification sera ajoutée plus tard.
+"""
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from django.db.models import Sum, Q
+from django.db import transaction  # ⭐ NOUVEAU : Pour les transactions atomiques
+from django.conf import settings
+import json
+import logging
+
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock
+from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer
+
+logger = logging.getLogger(__name__)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def api_status_v2_simple(request):
+    """
+    Endpoint de diagnostic pour l'API v2 simplifiée
+    """
+    return Response({
+        'api_version': 'v2-simple',
+        'status': 'active',
+        'message': 'API v2 Multi-Boutiques SIMPLIFIÉE (sans authentification)',
+        'authentication': 'disabled',
+        'endpoints': {
+            'status': '/api/v2/simple/status/',
+            'articles': '/api/v2/simple/articles/?boutique_id=X',
+            'categories': '/api/v2/simple/categories/?boutique_id=X',
+            'ventes': '/api/v2/simple/ventes/',
+            'boutiques': '/api/v2/simple/boutiques/',
+            'terminal_info': '/api/v2/simple/terminal/<numero_serie>/'
+        },
+        'note': 'Aucune authentification requise - Version de développement'
+    })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def boutiques_list_simple(request):
+    """
+    Liste de toutes les boutiques disponibles
+    """
+    try:
+        boutiques = Boutique.objects.filter(est_active=True)
+        
+        boutiques_data = []
+        for boutique in boutiques:
+            # Compter les terminaux et articles
+            nb_terminaux = boutique.clients.filter(est_actif=True).count()
+            nb_articles = boutique.articles.filter(est_actif=True).count()
+            
+            boutiques_data.append({
+                'id': boutique.id,
+                'nom': boutique.nom,
+                'type_commerce': boutique.type_commerce,
+                'ville': boutique.ville,
+                'adresse': boutique.adresse,
+                'devise': boutique.devise,
+                'nb_terminaux': nb_terminaux,
+                'nb_articles': nb_articles,
+                'est_active': boutique.est_active
+            })
+        
+        return Response({
+            'success': True,
+            'count': len(boutiques_data),
+            'boutiques': boutiques_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des boutiques: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def terminal_info_simple(request, numero_serie):
+    """
+    Informations sur un terminal MAUI par son numéro de série
+    """
+    try:
+        terminal = Client.objects.select_related('boutique').get(
+            numero_serie=numero_serie
+        )
+        
+        return Response({
+            'success': True,
+            'terminal': {
+                'id': terminal.id,
+                'numero_serie': terminal.numero_serie,
+                'nom_terminal': terminal.nom_terminal,
+                'est_actif': terminal.est_actif,
+                'version_app_maui': terminal.version_app_maui,
+                'derniere_activite': terminal.derniere_activite.isoformat() if terminal.derniere_activite else None
+            },
+            'boutique': {
+                'id': terminal.boutique.id,
+                'nom': terminal.boutique.nom,
+                'type_commerce': terminal.boutique.type_commerce,
+                'ville': terminal.boutique.ville,
+                'devise': terminal.boutique.devise
+            } if terminal.boutique else None
+        })
+        
+    except Client.DoesNotExist:
+        return Response({
+            'error': 'Terminal non trouvé',
+            'code': 'TERMINAL_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du terminal: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def articles_by_serial_simple(request, numero_serie):
+    """
+    Liste des articles d'une boutique via le numéro de série du terminal (SANS AUTHENTIFICATION)
+    Endpoint ultra-simple pour MAUI
+    """
+    try:
+        # Récupérer le terminal par son numéro de série
+        terminal = Client.objects.select_related('boutique').filter(
+            numero_serie=numero_serie,
+            est_actif=True
+        ).first()
+        
+        if not terminal:
+            return Response({
+                'success': False,
+                'error': 'Terminal non trouvé ou inactif',
+                'code': 'TERMINAL_NOT_FOUND',
+                'numero_serie': numero_serie
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        if not terminal.boutique:
+            return Response({
+                'success': False,
+                'error': 'Terminal non associé à une boutique',
+                'code': 'NO_BOUTIQUE',
+                'numero_serie': numero_serie
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        boutique = terminal.boutique
+        
+        # Récupérer les articles de cette boutique
+        articles = Article.objects.filter(
+            boutique=boutique,
+            est_actif=True
+        ).select_related('categorie').order_by('nom')
+        
+        # Sérialiser les articles
+        articles_data = ArticleSerializer(articles, many=True).data
+        
+        logger.info(f"✅ Articles récupérés pour terminal {numero_serie}: {articles.count()} articles")
+        
+        return Response({
+            'success': True,
+            'count': articles.count(),
+            'boutique_id': boutique.id,
+            'boutique_nom': boutique.nom,
+            'terminal': {
+                'numero_serie': terminal.numero_serie,
+                'nom_terminal': terminal.nom_terminal
+            },
+            'articles': articles_data
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur récupération articles pour {numero_serie}: {str(e)}")
+        return Response({
+            'success': False,
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def articles_list_simple(request):
+    """
+    Liste des articles d'une boutique (sans authentification)
+    Supporte 2 modes:
+    1. Par boutique_id: /api/v2/simple/articles/?boutique_id=2
+    2. Par numéro de série (header): X-Device-Serial ou Device-Serial
+    """
+    boutique_id = request.GET.get('boutique_id')
+    
+    # Si pas de boutique_id, essayer de récupérer via le numéro de série dans les headers
+    if not boutique_id:
+        # Chercher le numéro de série dans les headers
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.headers.get('Serial-Number') or
+            request.META.get('HTTP_X_DEVICE_SERIAL') or
+            request.META.get('HTTP_DEVICE_SERIAL')
+        )
+        
+        if numero_serie:
+            logger.info(f"🔍 Tentative de récupération articles via numéro de série: {numero_serie}")
+            
+            # Récupérer le terminal et sa boutique
+            try:
+                terminal = Client.objects.select_related('boutique').filter(
+                    numero_serie=numero_serie,
+                    est_actif=True
+                ).first()
+                
+                if terminal and terminal.boutique:
+                    boutique_id = terminal.boutique.id
+                    logger.info(f"✅ Terminal trouvé: {terminal.nom_terminal} → Boutique ID: {boutique_id}")
+                else:
+                    logger.warning(f"⚠️ Terminal non trouvé ou sans boutique: {numero_serie}")
+            except Exception as e:
+                logger.error(f"❌ Erreur recherche terminal: {str(e)}")
+    
+    if not boutique_id:
+        return Response({
+            'error': 'Paramètre boutique_id requis OU numéro de série dans les headers',
+            'code': 'MISSING_BOUTIQUE_ID',
+            'examples': {
+                'method1': '/api/v2/simple/articles/?boutique_id=2',
+                'method2': 'Header: X-Device-Serial: VOTRE_NUMERO_SERIE'
+            }
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Vérifier que la boutique existe
+        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        
+        # Récupérer les articles de cette boutique
+        articles = Article.objects.filter(
+            boutique=boutique,
+            est_actif=True
+        ).select_related('categorie').order_by('nom')
+        
+        # Sérialiser les articles
+        articles_data = ArticleSerializer(articles, many=True).data
+        
+        return Response({
+            'success': True,
+            'count': articles.count(),
+            'boutique_id': boutique.id,
+            'boutique_nom': boutique.nom,
+            'articles': articles_data
+        })
+        
+    except Boutique.DoesNotExist:
+        return Response({
+            'error': 'Boutique non trouvée',
+            'code': 'BOUTIQUE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des articles: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def categories_list_simple(request):
+    """
+    Liste des catégories d'une boutique (sans authentification)
+    Supporte 2 modes:
+    1. Par boutique_id: /api/v2/simple/categories/?boutique_id=2
+    2. Par numéro de série (header): X-Device-Serial ou Device-Serial
+    """
+    boutique_id = request.GET.get('boutique_id')
+    
+    # Si pas de boutique_id, essayer de récupérer via le numéro de série dans les headers
+    if not boutique_id:
+        # Chercher le numéro de série dans les headers
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.headers.get('Serial-Number') or
+            request.META.get('HTTP_X_DEVICE_SERIAL') or
+            request.META.get('HTTP_DEVICE_SERIAL')
+        )
+        
+        if numero_serie:
+            logger.info(f"🔍 Tentative de récupération catégories via numéro de série: {numero_serie}")
+            
+            # Récupérer le terminal et sa boutique
+            try:
+                terminal = Client.objects.select_related('boutique').filter(
+                    numero_serie=numero_serie,
+                    est_actif=True
+                ).first()
+                
+                if terminal and terminal.boutique:
+                    boutique_id = terminal.boutique.id
+                    logger.info(f"✅ Terminal trouvé: {terminal.nom_terminal} → Boutique ID: {boutique_id}")
+                else:
+                    logger.warning(f"⚠️ Terminal non trouvé ou sans boutique: {numero_serie}")
+            except Exception as e:
+                logger.error(f"❌ Erreur recherche terminal: {str(e)}")
+    
+    if not boutique_id:
+        return Response({
+            'error': 'Paramètre boutique_id requis OU numéro de série dans les headers',
+            'code': 'MISSING_BOUTIQUE_ID',
+            'examples': {
+                'method1': '/api/v2/simple/categories/?boutique_id=2',
+                'method2': 'Header: X-Device-Serial: VOTRE_NUMERO_SERIE'
+            }
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Vérifier que la boutique existe
+        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        
+        # Récupérer les catégories de cette boutique
+        categories = Categorie.objects.filter(
+            boutique=boutique
+        ).order_by('nom')
+        
+        # Sérialiser les catégories
+        categories_data = CategorieSerializer(categories, many=True).data
+        
+        return Response({
+            'success': True,
+            'count': categories.count(),
+            'boutique_id': boutique.id,
+            'boutique_nom': boutique.nom,
+            'categories': categories_data
+        })
+        
+    except Boutique.DoesNotExist:
+        return Response({
+            'error': 'Boutique non trouvée',
+            'code': 'BOUTIQUE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des catégories: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_vente_simple(request):
+    """
+    Créer une vente (sans authentification)
+    Supporte 2 modes:
+    1. Par boutique_id + numero_serie dans le body
+    2. Par numéro de série dans le header X-Device-Serial
+    """
+    # Logs de debug
+    logger.info(f"🔍 Création vente - Headers: {dict(request.headers)}")
+    logger.info(f"🔍 Création vente - Body: {request.data}")
+    
+    boutique_id = request.data.get('boutique_id')
+    numero_serie = request.data.get('numero_serie')
+    
+    # Si pas de numéro de série dans le body, chercher dans les headers
+    if not numero_serie:
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.headers.get('Serial-Number') or
+            request.META.get('HTTP_X_DEVICE_SERIAL') or
+            request.META.get('HTTP_DEVICE_SERIAL')
+        )
+        logger.info(f"🔍 Numéro série détecté dans headers: {numero_serie}")
+    else:
+        logger.info(f"🔍 Numéro série dans body: {numero_serie}")
+    
+    if not numero_serie:
+        logger.warning(f"⚠️ Aucun numéro de série trouvé - Headers: {list(request.headers.keys())}")
+        return Response({
+            'error': 'Paramètre numero_serie requis (body ou header)',
+            'code': 'MISSING_SERIAL',
+            'examples': {
+                'method1': 'Body: {"numero_serie": "XXX", ...}',
+                'method2': 'Header: X-Device-Serial: XXX'
+            },
+            'debug': {
+                'headers_received': list(request.headers.keys()),
+                'body_keys': list(request.data.keys())
+            }
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Si pas de boutique_id, le récupérer via le terminal
+    if not boutique_id:
+        try:
+            terminal = Client.objects.select_related('boutique').filter(
+                numero_serie=numero_serie,
+                est_actif=True
+            ).first()
+            
+            if terminal and terminal.boutique:
+                boutique_id = terminal.boutique.id
+                logger.info(f"✅ Boutique détectée automatiquement: {boutique_id} pour terminal {numero_serie}")
+            else:
+                return Response({
+                    'error': 'Terminal non trouvé ou sans boutique',
+                    'code': 'TERMINAL_NOT_FOUND'
+                }, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"❌ Erreur détection boutique: {str(e)}")
+    
+    if not boutique_id:
+        return Response({
+            'error': 'Impossible de déterminer la boutique',
+            'code': 'MISSING_BOUTIQUE_ID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Vérifier que la boutique existe
+        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        
+        # Vérifier que le terminal existe et appartient à cette boutique
+        terminal = Client.objects.filter(
+            numero_serie=numero_serie,
+            boutique=boutique,
+            est_actif=True
+        ).first()
+        
+        if not terminal:
+            return Response({
+                'error': 'Terminal non trouvé pour cette boutique',
+                'code': 'TERMINAL_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Préparer les données de vente
+        vente_data = request.data.copy()
+        
+        # Générer numéro de facture si absent
+        numero_facture = vente_data.get('numero_facture')
+        if not numero_facture:
+            from datetime import datetime
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+            numero_facture = f"VENTE-{boutique.id}-{timestamp}"
+            logger.info(f"📝 Numéro de facture généré automatiquement: {numero_facture}")
+        
+        # ⭐ TRANSACTION ATOMIQUE : Tout ou rien
+        with transaction.atomic():
+            # ⭐ CRÉER LA VENTE AVEC ISOLATION PAR BOUTIQUE
+            vente = Vente.objects.create(
+                numero_facture=numero_facture,
+                montant_total=0,  # Sera calculé avec les lignes
+                mode_paiement=vente_data.get('mode_paiement', 'CASH'),
+                paye=vente_data.get('paye', True),
+                boutique=boutique,  # ⭐ ISOLATION: Lien direct avec la boutique
+                client_maui=terminal,
+                adresse_ip_client=request.META.get('REMOTE_ADDR'),
+                version_app_maui=terminal.version_app_maui
+            )
+            logger.info(f"✅ Vente créée avec boutique: {boutique.nom} (ID: {boutique.id})")
+            
+            montant_total = 0
+            lignes_creees = []
+            
+            # Traiter chaque ligne de vente
+            for ligne_data in vente_data.get('lignes', []):
+                article_id = ligne_data.get('article_id')
+                quantite = ligne_data.get('quantite', 1)
+                
+                # Vérifier que l'article appartient à la boutique
+                try:
+                    article = Article.objects.get(
+                        id=article_id,
+                        boutique=boutique,
+                        est_actif=True
+                    )
+                except Article.DoesNotExist:
+                    # La transaction sera automatiquement annulée
+                    raise Exception(f'Article {article_id} non trouvé dans cette boutique')
+                
+                # Vérifier le stock disponible
+                if article.quantite_stock < quantite:
+                    # La transaction sera automatiquement annulée
+                    raise Exception(f'Stock insuffisant pour {article.nom}')
+                
+                # Créer la ligne de vente
+                prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
+                ligne_vente = LigneVente.objects.create(
+                    vente=vente,
+                    article=article,
+                    quantite=quantite,
+                    prix_unitaire=prix_unitaire
+                )
+                
+                # Mettre à jour le stock
+                stock_avant = article.quantite_stock  # ⭐ Capturer AVANT la modification
+                article.quantite_stock -= quantite
+                article.save(update_fields=['quantite_stock'])
+                
+                # Créer un mouvement de stock avec traçabilité complète
+                MouvementStock.objects.create(
+                    article=article,
+                    type_mouvement='VENTE',
+                    quantite=-quantite,
+                    stock_avant=stock_avant,  # ⭐ NOUVEAU
+                    stock_apres=article.quantite_stock,  # ⭐ NOUVEAU
+                    reference_document=vente.numero_facture,  # ⭐ NOUVEAU
+                    utilisateur=terminal.nom_terminal,  # ⭐ NOUVEAU
+                    commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
+                )
+                
+                montant_total += prix_unitaire * quantite
+                lignes_creees.append({
+                    'article_nom': article.nom,
+                    'quantite': quantite,
+                    'prix_unitaire': prix_unitaire,
+                    'sous_total': prix_unitaire * quantite
+                })
+            
+            # Mettre à jour le montant total de la vente
+            logger.info(f"💰 Montant total calculé: {montant_total} CDF")
+            vente.montant_total = montant_total
+            vente.save(update_fields=['montant_total'])
+            logger.info(f"✅ Montant sauvegardé dans la base: {vente.montant_total} CDF")
+            
+            # Vérification de sécurité - Recharger depuis la base
+            vente.refresh_from_db()
+            logger.info(f"🔍 Vérification après reload: {vente.montant_total} CDF")
+        
+        return Response({
+            'success': True,
+            'vente': {
+                'id': vente.id,
+                'numero_facture': vente.numero_facture,
+                'montant_total': montant_total,
+                'mode_paiement': vente.mode_paiement,
+                'date_vente': vente.date_vente.isoformat(),
+                'lignes': lignes_creees
+            },
+            'boutique_id': boutique.id,
+            'terminal_id': terminal.id
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"❌ Erreur lors de la création de la vente: {str(e)}")
+        logger.error(f"❌ Traceback complet:\n{error_details}")
+        logger.error(f"❌ Données reçues: {request.data}")
+        
+        return Response({
+            'error': f'Erreur lors de la création de la vente: {str(e)}',
+            'code': 'INTERNAL_ERROR',
+            'details': str(e) if settings.DEBUG else None
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def historique_ventes_simple(request):
+    """
+    Récupérer l'historique des ventes d'une boutique (sans authentification)
+    Supporte filtrage par date et pagination
+    """
+    boutique_id = request.GET.get('boutique_id')
+    
+    # Si pas de boutique_id, essayer de récupérer via le numéro de série dans les headers
+    if not boutique_id:
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.headers.get('Serial-Number') or
+            request.META.get('HTTP_X_DEVICE_SERIAL') or
+            request.META.get('HTTP_DEVICE_SERIAL')
+        )
+        
+        if numero_serie:
+            try:
+                terminal = Client.objects.select_related('boutique').filter(
+                    numero_serie=numero_serie,
+                    est_actif=True
+                ).first()
+                
+                if terminal and terminal.boutique:
+                    boutique_id = terminal.boutique.id
+                    logger.info(f"✅ Boutique détectée pour historique: {boutique_id}")
+            except Exception as e:
+                logger.error(f"❌ Erreur détection boutique: {str(e)}")
+    
+    if not boutique_id:
+        return Response({
+            'error': 'Paramètre boutique_id requis OU numéro de série dans les headers',
+            'code': 'MISSING_BOUTIQUE_ID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        
+        # Filtres optionnels
+        date_debut = request.GET.get('date_debut')
+        date_fin = request.GET.get('date_fin')
+        limit = int(request.GET.get('limit', 50))
+        
+        # ⭐ ISOLATION: Récupérer UNIQUEMENT les ventes de cette boutique
+        ventes = Vente.objects.filter(
+            boutique=boutique  # ⭐ Filtrage direct par boutique
+        ).select_related('client_maui', 'boutique').prefetch_related('lignes__article')
+        
+        logger.info(f"🔍 Filtrage ventes par boutique ID: {boutique.id}")
+        
+        # Filtrer par date si fourni
+        if date_debut:
+            from datetime import datetime
+            ventes = ventes.filter(date_vente__gte=datetime.fromisoformat(date_debut))
+        if date_fin:
+            from datetime import datetime
+            ventes = ventes.filter(date_vente__lte=datetime.fromisoformat(date_fin))
+        
+        ventes = ventes.order_by('-date_vente')[:limit]
+        
+        # Calculer les statistiques
+        from django.db.models import Sum, Count
+        stats = ventes.aggregate(
+            total_ventes=Count('id'),
+            chiffre_affaires=Sum('montant_total')
+        )
+        
+        # Sérialiser les ventes
+        ventes_data = []
+        for vente in ventes:
+            lignes = []
+            for ligne in vente.lignes.all():
+                lignes.append({
+                    'article_nom': ligne.article.nom,
+                    'article_code': ligne.article.code,
+                    'quantite': ligne.quantite,
+                    'prix_unitaire': str(ligne.prix_unitaire),
+                    'sous_total': str(ligne.prix_unitaire * ligne.quantite)
+                })
+            
+            ventes_data.append({
+                'id': vente.id,
+                'numero_facture': vente.numero_facture,
+                'date_vente': vente.date_vente.isoformat(),
+                'montant_total': str(vente.montant_total),
+                'mode_paiement': vente.mode_paiement,
+                'paye': vente.paye,
+                'terminal': vente.client_maui.nom_terminal if vente.client_maui else None,
+                'lignes': lignes
+            })
+        
+        return Response({
+            'success': True,
+            'boutique_id': boutique.id,
+            'boutique_nom': boutique.nom,
+            'statistiques': {
+                'total_ventes': stats['total_ventes'] or 0,
+                'chiffre_affaires': str(stats['chiffre_affaires'] or 0)
+            },
+            'ventes': ventes_data,
+            'count': len(ventes_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Erreur récupération historique: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def statistiques_boutique_simple(request):
+    """
+    Récupérer les statistiques d'une boutique (CA, ventes, stock)
+    """
+    boutique_id = request.GET.get('boutique_id')
+    
+    # Si pas de boutique_id, essayer via header
+    if not boutique_id:
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.META.get('HTTP_X_DEVICE_SERIAL')
+        )
+        
+        if numero_serie:
+            try:
+                terminal = Client.objects.select_related('boutique').filter(
+                    numero_serie=numero_serie,
+                    est_actif=True
+                ).first()
+                
+                if terminal and terminal.boutique:
+                    boutique_id = terminal.boutique.id
+            except Exception:
+                pass
+    
+    if not boutique_id:
+        return Response({
+            'error': 'Paramètre boutique_id requis',
+            'code': 'MISSING_BOUTIQUE_ID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        from datetime import datetime, timedelta
+        from django.db.models import Sum, Count
+        
+        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        
+        # Statistiques générales
+        total_articles = Article.objects.filter(boutique=boutique, est_actif=True).count()
+        total_categories = Categorie.objects.filter(boutique=boutique).count()
+        
+        # Ventes du jour
+        aujourd_hui = datetime.now().date()
+        ventes_jour = Vente.objects.filter(
+            client_maui__boutique=boutique,
+            date_vente__date=aujourd_hui
+        ).aggregate(
+            nombre=Count('id'),
+            ca=Sum('montant_total')
+        )
+        
+        # Ventes du mois
+        debut_mois = aujourd_hui.replace(day=1)
+        ventes_mois = Vente.objects.filter(
+            client_maui__boutique=boutique,
+            date_vente__date__gte=debut_mois
+        ).aggregate(
+            nombre=Count('id'),
+            ca=Sum('montant_total')
+        )
+        
+        # Articles en stock bas
+        articles_stock_bas = Article.objects.filter(
+            boutique=boutique,
+            est_actif=True,
+            quantite_stock__lte=boutique.alerte_stock_bas
+        ).count()
+        
+        return Response({
+            'success': True,
+            'boutique': {
+                'id': boutique.id,
+                'nom': boutique.nom,
+                'type': boutique.type_boutique,
+                'ville': boutique.ville
+            },
+            'statistiques': {
+                'articles': {
+                    'total': total_articles,
+                    'stock_bas': articles_stock_bas
+                },
+                'categories': {
+                    'total': total_categories
+                },
+                'ventes_jour': {
+                    'nombre': ventes_jour['nombre'] or 0,
+                    'chiffre_affaires': str(ventes_jour['ca'] or 0)
+                },
+                'ventes_mois': {
+                    'nombre': ventes_mois['nombre'] or 0,
+                    'chiffre_affaires': str(ventes_mois['ca'] or 0)
+                }
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Erreur statistiques: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([AllowAny])
+def update_stock_simple(request, article_id):
+    """
+    Mettre à jour le stock d'un article (sans authentification)
+    """
+    boutique_id = request.data.get('boutique_id')
+    nouvelle_quantite = request.data.get('quantite_stock')
+    
+    if not boutique_id:
+        return Response({
+            'error': 'Paramètre boutique_id requis',
+            'code': 'MISSING_BOUTIQUE_ID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if nouvelle_quantite is None:
+        return Response({
+            'error': 'Paramètre quantite_stock requis',
+            'code': 'MISSING_QUANTITY'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Vérifier que la boutique existe
+        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        
+        # Vérifier que l'article appartient à cette boutique
+        article = get_object_or_404(Article, id=article_id, boutique=boutique)
+        
+        # Sauvegarder l'ancienne quantité
+        ancienne_quantite = article.quantite_stock
+        
+        # Mettre à jour le stock
+        article.quantite_stock = nouvelle_quantite
+        article.save(update_fields=['quantite_stock'])
+        
+        # Créer un mouvement de stock avec traçabilité complète
+        difference = nouvelle_quantite - ancienne_quantite
+        type_mouvement = 'AJUSTEMENT' if difference != 0 else 'AJUSTEMENT'
+        
+        MouvementStock.objects.create(
+            article=article,
+            type_mouvement=type_mouvement,
+            quantite=difference,
+            stock_avant=ancienne_quantite,  # ⭐ NOUVEAU
+            stock_apres=nouvelle_quantite,  # ⭐ NOUVEAU
+            reference_document=f"AJUST-{article.id}",  # ⭐ NOUVEAU
+            utilisateur="API",  # ⭐ NOUVEAU
+            commentaire=f"Ajustement stock API - Prix achat: {article.prix_achat} CDF"
+        )
+        
+        return Response({
+            'success': True,
+            'article': {
+                'id': article.id,
+                'nom': article.nom,
+                'code': article.code,
+                'ancienne_quantite': ancienne_quantite,
+                'nouvelle_quantite': nouvelle_quantite,
+                'difference': difference
+            },
+            'boutique_id': boutique.id
+        })
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du stock: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def sync_ventes_simple(request):
+    """
+    Synchronisation de plusieurs ventes depuis MAUI (sans authentification)
+    Accepte un tableau de ventes à créer
+    
+    Format attendu:
+    [
+        {
+            "numero_facture": "VENTE-001",
+            "mode_paiement": "CASH",
+            "paye": true,
+            "lignes": [
+                {
+                    "article_id": 6,
+                    "quantite": 1,
+                    "prix_unitaire": 40000
+                }
+            ]
+        }
+    ]
+    """
+    try:
+        # Récupérer le numéro de série du terminal depuis les headers
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.headers.get('Serial-Number') or
+            request.META.get('HTTP_X_DEVICE_SERIAL') or
+            request.META.get('HTTP_DEVICE_SERIAL')
+        )
+        
+        if not numero_serie:
+            logger.warning("⚠️ Tentative de synchronisation sans numéro de série")
+            return Response({
+                'error': 'Numéro de série du terminal requis dans les headers',
+                'code': 'MISSING_SERIAL',
+                'header_required': 'X-Device-Serial'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Récupérer le terminal et sa boutique
+        try:
+            terminal = Client.objects.select_related('boutique').get(
+                numero_serie=numero_serie,
+                est_actif=True
+            )
+            boutique = terminal.boutique
+            
+            if not boutique:
+                logger.error(f"❌ Terminal {numero_serie} sans boutique associée")
+                return Response({
+                    'error': 'Terminal non associé à une boutique',
+                    'code': 'NO_BOUTIQUE'
+                }, status=status.HTTP_400_BAD_REQUEST)
+                
+            logger.info(f"🔄 Synchronisation ventes pour boutique: {boutique.nom} (Terminal: {terminal.nom_terminal})")
+            
+        except Client.DoesNotExist:
+            logger.error(f"❌ Terminal non trouvé: {numero_serie}")
+            return Response({
+                'error': 'Terminal non trouvé ou inactif',
+                'code': 'TERMINAL_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Récupérer les données des ventes
+        ventes_data = request.data
+        
+        if not isinstance(ventes_data, list):
+            return Response({
+                'error': 'Format invalide: un tableau de ventes est attendu',
+                'code': 'INVALID_FORMAT'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not ventes_data:
+            return Response({
+                'error': 'Aucune vente à synchroniser',
+                'code': 'EMPTY_DATA'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info(f"📦 Nombre de ventes à synchroniser: {len(ventes_data)}")
+        
+        # Traiter chaque vente
+        ventes_creees = []
+        ventes_erreurs = []
+        
+        for index, vente_data in enumerate(ventes_data):
+            try:
+                # ⭐ TRANSACTION ATOMIQUE : Chaque vente est tout ou rien
+                with transaction.atomic():
+                    logger.info(f"🔄 Traitement vente {index + 1}/{len(ventes_data)}")
+                    
+                    # ⭐ VALIDATION CRITIQUE: Vérifier le boutique_id si fourni
+                    boutique_id_recu = vente_data.get('boutique_id')
+                
+                if boutique_id_recu:
+                    # Si boutique_id est fourni, vérifier qu'il correspond à la boutique du terminal
+                    if int(boutique_id_recu) != boutique.id:
+                        logger.error(f"❌ SÉCURITÉ: Tentative d'accès à une autre boutique!")
+                        logger.error(f"   Terminal boutique: {boutique.id}, Demandé: {boutique_id_recu}")
+                        ventes_erreurs.append({
+                            'numero_facture': vente_data.get('numero_facture', f'vente_{index}'),
+                            'erreur': 'Accès refusé: boutique non autorisée',
+                            'code': 'BOUTIQUE_MISMATCH'
+                        })
+                        continue
+                    logger.info(f"✅ Boutique ID validé: {boutique_id_recu}")
+                else:
+                    logger.info(f"ℹ️ Boutique ID non fourni, utilisation de la boutique du terminal: {boutique.id}")
+                
+                # Générer le numéro de facture si absent
+                numero_facture = vente_data.get('numero_facture')
+                if not numero_facture:
+                    from datetime import datetime
+                    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                    numero_facture = f"VENTE-{boutique.id}-{timestamp}-{index}"
+                    logger.info(f"📝 Numéro de facture généré: {numero_facture}")
+                
+                # ⭐ ISOLATION: Vérifier si la vente existe déjà DANS CETTE BOUTIQUE
+                vente_existante = Vente.objects.filter(
+                    numero_facture=numero_facture,
+                    client_maui=terminal
+                ).first()
+                
+                if vente_existante:
+                    logger.warning(f"⚠️ Vente {numero_facture} existe déjà dans boutique {boutique.id}")
+                    ventes_erreurs.append({
+                        'numero_facture': numero_facture,
+                        'erreur': 'Vente déjà existante',
+                        'status': 'already_exists'
+                    })
+                    continue
+                
+                # ⭐ CRÉER LA VENTE AVEC ISOLATION STRICTE
+                vente = Vente.objects.create(
+                    numero_facture=numero_facture,
+                    montant_total=0,  # Sera calculé avec les lignes
+                    mode_paiement=vente_data.get('mode_paiement', 'CASH'),
+                    paye=vente_data.get('paye', True),
+                    boutique=boutique,  # ⭐ ISOLATION: Lien direct avec la boutique
+                    client_maui=terminal,
+                    adresse_ip_client=request.META.get('REMOTE_ADDR'),
+                    version_app_maui=terminal.version_app_maui
+                )
+                logger.info(f"✅ Vente créée: {numero_facture} (ID: {vente.id}) → Boutique {boutique.nom} (ID: {boutique.id})")
+                
+                montant_total = 0
+                lignes_creees = []
+                
+                # Traiter chaque ligne de vente
+                for ligne_data in vente_data.get('lignes', []):
+                    article_id = ligne_data.get('article_id')
+                    quantite = ligne_data.get('quantite', 1)
+                    
+                    # Vérifier que l'article appartient à la boutique
+                    try:
+                        article = Article.objects.get(
+                            id=article_id,
+                            boutique=boutique,
+                            est_actif=True
+                        )
+                    except Article.DoesNotExist:
+                        vente.delete()
+                        raise Exception(f'Article {article_id} non trouvé dans cette boutique')
+                    
+                    # Vérifier le stock disponible
+                    if article.quantite_stock < quantite:
+                        vente.delete()
+                        raise Exception(f'Stock insuffisant pour {article.nom}')
+                    
+                    # Créer la ligne de vente
+                    prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
+                    ligne_vente = LigneVente.objects.create(
+                        vente=vente,
+                        article=article,
+                        quantite=quantite,
+                        prix_unitaire=prix_unitaire
+                    )
+                    
+                    # Mettre à jour le stock
+                    stock_avant = article.quantite_stock  # ⭐ Capturer AVANT la modification
+                    article.quantite_stock -= quantite
+                    article.save(update_fields=['quantite_stock'])
+                    
+                    # Créer un mouvement de stock avec traçabilité complète
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='VENTE',
+                        quantite=-quantite,
+                        stock_avant=stock_avant,  # ⭐ NOUVEAU
+                        stock_apres=article.quantite_stock,  # ⭐ NOUVEAU
+                        reference_document=vente.numero_facture,  # ⭐ NOUVEAU
+                        utilisateur=terminal.nom_terminal,  # ⭐ NOUVEAU
+                        commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
+                    )
+                    
+                    montant_total += prix_unitaire * quantite
+                    lignes_creees.append({
+                        'article_nom': article.nom,
+                        'quantite': quantite,
+                        'prix_unitaire': str(prix_unitaire),
+                        'sous_total': str(prix_unitaire * quantite)
+                    })
+                
+                # Mettre à jour le montant total de la vente
+                logger.info(f"💰 SYNC - Montant total calculé: {montant_total} CDF")
+                vente.montant_total = montant_total
+                vente.save(update_fields=['montant_total'])
+                logger.info(f"✅ SYNC - Montant sauvegardé: {vente.montant_total} CDF")
+                
+                ventes_creees.append({
+                    'numero_facture': vente.numero_facture,
+                    'status': 'created',
+                    'id': vente.id,
+                    'boutique_id': boutique.id,
+                    'boutique_nom': boutique.nom,
+                    'montant_total': str(vente.montant_total),
+                    'lignes_count': len(lignes_creees),
+                    'lignes': lignes_creees
+                })
+                
+                logger.info(f"✅ Vente {numero_facture} synchronisée:")
+                logger.info(f"   - Boutique: {boutique.id} ({boutique.nom})")
+                logger.info(f"   - Lignes: {len(lignes_creees)}")
+                logger.info(f"   - Montant: {montant_total} CDF")
+                
+            except Exception as e:
+                logger.error(f"❌ Erreur création vente {index + 1}: {str(e)}")
+                ventes_erreurs.append({
+                    'index': index + 1,
+                    'numero_facture': vente_data.get('numero_facture', 'N/A'),
+                    'erreur': str(e)
+                })
+        
+        # Retourner le résumé avec informations d'isolation
+        logger.info(f"✅ Synchronisation terminée:")
+        logger.info(f"   - Créées: {len(ventes_creees)}")
+        logger.info(f"   - Erreurs: {len(ventes_erreurs)}")
+        
+        return Response({
+            'success': True,
+            'message': f'{len(ventes_creees)} vente(s) synchronisée(s) avec succès',
+            'ventes_creees': len(ventes_creees),
+            'ventes_erreurs': len(ventes_erreurs),
+            'details': {
+                'creees': ventes_creees,
+                'erreurs': ventes_erreurs if ventes_erreurs else []
+            },
+            'boutique': {
+                'id': boutique.id,
+                'nom': boutique.nom,
+                'code': boutique.code_boutique if hasattr(boutique, 'code_boutique') else None
+            },
+            'terminal': {
+                'id': terminal.id,
+                'nom': terminal.nom_terminal,
+                'numero_serie': numero_serie
+            },
+            'statistiques': {
+                'total_envoyees': len(ventes_data),
+                'reussies': len(ventes_creees),
+                'erreurs': len(ventes_erreurs)
+            }
+        }, status=status.HTTP_201_CREATED)
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur synchronisation ventes: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback complet:\n{traceback.format_exc()}")
+        
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR',
+            'details': str(e) if settings.DEBUG else None
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

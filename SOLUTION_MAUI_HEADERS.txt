@@ -1,0 +1,197 @@
+═══════════════════════════════════════════════════════════════════════
+   ✅ SOLUTION FINALE - Synchronisation Articles MAUI
+═══════════════════════════════════════════════════════════════════════
+
+🎯 PROBLÈME RÉSOLU
+
+L'API retournait une erreur 400 car MAUI n'envoyait pas le boutique_id.
+
+✅ SOLUTION ADAPTÉE
+
+L'API accepte maintenant le numéro de série dans les HEADERS HTTP !
+→ Pas besoin de changer les URLs
+→ Juste ajouter un header à chaque requête
+
+═══════════════════════════════════════════════════════════════════════
+
+📡 ENDPOINTS (Inchangés)
+
+Articles : GET /api/v2/simple/articles/
+Catégories : GET /api/v2/simple/categories/
+
+═══════════════════════════════════════════════════════════════════════
+
+🔑 HEADER À AJOUTER
+
+Nom du header : X-Device-Serial
+Valeur : Le numéro de série du terminal Android
+
+Exemple :
+X-Device-Serial: 0a1badae951f8473
+
+═══════════════════════════════════════════════════════════════════════
+
+💻 CODE C# POUR MAUI
+
+Option 1 : Ajouter le header à chaque requête
+─────────────────────────────────────────────────────────────────────
+
+public class ArticleService
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _baseUrl = "http://192.168.52.224:8000";
+    private string _numeroSerie;
+
+    public ArticleService(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+        
+        // Récupérer le numéro de série du terminal
+        #if ANDROID
+        _numeroSerie = Android.OS.Build.Serial ?? Android.OS.Build.GetSerial();
+        #else
+        _numeroSerie = "DEMO_SERIAL";
+        #endif
+    }
+
+    public async Task<List<Article>> GetArticlesAsync()
+    {
+        try
+        {
+            var url = $"{_baseUrl}/api/v2/simple/articles/";
+            
+            // Créer la requête avec le header
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("X-Device-Serial", _numeroSerie);
+            
+            var response = await _httpClient.SendAsync(request);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                var result = JsonSerializer.Deserialize<ArticlesResponse>(content);
+                
+                Console.WriteLine($"✅ {result.Count} articles récupérés");
+                return result.Articles;
+            }
+            
+            Console.WriteLine($"❌ Erreur: {response.StatusCode}");
+            return new List<Article>();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Exception: {ex.Message}");
+            return new List<Article>();
+        }
+    }
+}
+
+═══════════════════════════════════════════════════════════════════════
+
+Option 2 : Configurer le HttpClient globalement (RECOMMANDÉ)
+─────────────────────────────────────────────────────────────────────
+
+Dans MauiProgram.cs ou au démarrage de l'app :
+
+public static MauiApp CreateMauiApp()
+{
+    var builder = MauiApp.CreateBuilder();
+    
+    // Récupérer le numéro de série
+    string numeroSerie = "";
+    #if ANDROID
+    numeroSerie = Android.OS.Build.Serial ?? Android.OS.Build.GetSerial();
+    #endif
+    
+    // Configurer HttpClient avec le header par défaut
+    builder.Services.AddHttpClient("DjangoAPI", client =>
+    {
+        client.BaseAddress = new Uri("http://192.168.52.224:8000");
+        client.DefaultRequestHeaders.Add("X-Device-Serial", numeroSerie);
+    });
+    
+    return builder.Build();
+}
+
+Puis dans vos services :
+
+public class ArticleService
+{
+    private readonly HttpClient _httpClient;
+
+    public ArticleService(IHttpClientFactory httpClientFactory)
+    {
+        _httpClient = httpClientFactory.CreateClient("DjangoAPI");
+    }
+
+    public async Task<List<Article>> GetArticlesAsync()
+    {
+        // Le header est automatiquement ajouté !
+        var response = await _httpClient.GetAsync("/api/v2/simple/articles/");
+        
+        if (response.IsSuccessStatusCode)
+        {
+            var content = await response.Content.ReadAsStringAsync();
+            var result = JsonSerializer.Deserialize<ArticlesResponse>(content);
+            return result.Articles;
+        }
+        
+        return new List<Article>();
+    }
+}
+
+═══════════════════════════════════════════════════════════════════════
+
+🔍 VÉRIFICATION
+
+Dans les logs Django, vous devriez voir :
+
+🔍 Tentative de récupération articles via numéro de série: 0a1badae951f8473
+✅ Terminal trouvé: Terminal messie vanza → Boutique ID: 2
+
+═══════════════════════════════════════════════════════════════════════
+
+✅ AVANTAGES
+
+1. Pas besoin de changer les URLs dans MAUI
+2. Isolation automatique par boutique
+3. Sécurisé : chaque terminal ne voit que ses articles
+4. Simple : juste un header à ajouter
+
+═══════════════════════════════════════════════════════════════════════
+
+📋 CHECKLIST
+
+[ ] Récupérer le numéro de série du terminal Android
+[ ] Ajouter le header X-Device-Serial à toutes les requêtes API
+[ ] Tester avec /api/v2/simple/articles/
+[ ] Tester avec /api/v2/simple/categories/
+[ ] Vérifier que les articles s'affichent dans MAUI
+[ ] Vérifier les logs Django pour confirmer
+
+═══════════════════════════════════════════════════════════════════════
+
+🆘 DÉPANNAGE
+
+Problème : Toujours erreur 400
+→ Vérifier que le header est bien envoyé
+→ Vérifier le nom exact : X-Device-Serial (avec le tiret)
+
+Problème : "Terminal non trouvé"
+→ Vérifier que le numéro de série est correct
+→ Vérifier que le terminal existe dans Django
+→ Vérifier que le terminal est actif (est_actif=True)
+
+Problème : "Terminal non associé à une boutique"
+→ Dans Django, associer le terminal à une boutique
+
+═══════════════════════════════════════════════════════════════════════
+
+📞 SUPPORT
+
+Si problème, envoyer :
+1. Le numéro de série du terminal
+2. Les logs Django (console serveur)
+3. Les logs MAUI (console app)
+
+═══════════════════════════════════════════════════════════════════════

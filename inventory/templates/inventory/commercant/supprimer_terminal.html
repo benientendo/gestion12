@@ -1,0 +1,113 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Supprimer Terminal - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-exclamation-triangle text-danger"></i> Supprimer Terminal MAUI</h1>
+                    <p class="text-muted">Boutique : {{ boutique.nom }}</p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:commercant_terminaux_boutique' boutique.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour aux Terminaux
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 offset-md-2">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Confirmation de Suppression</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-danger">
+                        <h5><i class="fas fa-exclamation-circle"></i> Attention !</h5>
+                        <p class="mb-0">Vous êtes sur le point de supprimer définitivement ce terminal MAUI. Cette action est <strong>irréversible</strong>.</p>
+                    </div>
+
+                    <h6 class="mb-3">Informations du Terminal à Supprimer :</h6>
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <strong><i class="fas fa-mobile-alt"></i> Nom Terminal :</strong><br>
+                                    {{ terminal.nom_terminal|default:"Terminal MAUI" }}
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <strong><i class="fas fa-barcode"></i> Numéro de Série :</strong><br>
+                                    <code>{{ terminal.numero_serie }}</code>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <strong><i class="fas fa-user"></i> Propriétaire :</strong><br>
+                                    {% if terminal.compte_proprietaire %}
+                                        {{ terminal.compte_proprietaire.username }}
+                                    {% else %}
+                                        <span class="text-muted">Non assigné</span>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <strong><i class="fas fa-wifi"></i> Statut :</strong><br>
+                                    {% if terminal.est_actif %}
+                                        <span class="badge bg-success">Actif</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Inactif</span>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <strong><i class="fas fa-calendar"></i> Date Création :</strong><br>
+                                    {{ terminal.date_creation|date:"d/m/Y H:i" }}
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <strong><i class="fas fa-clock"></i> Dernière Activité :</strong><br>
+                                    {% if terminal.derniere_activite %}
+                                        {{ terminal.derniere_activite|date:"d/m/Y H:i" }}
+                                    {% else %}
+                                        <span class="text-muted">Jamais</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% if terminal.description %}
+                            <div class="mt-3">
+                                <strong><i class="fas fa-comment"></i> Description :</strong><br>
+                                {{ terminal.description }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <h6><i class="fas fa-info-circle"></i> Conséquences de la Suppression :</h6>
+                        <ul class="mb-0">
+                            <li>Le terminal ne pourra plus se connecter à l'application</li>
+                            <li>L'historique des ventes associées sera conservé</li>
+                            <li>Les sessions actives seront terminées</li>
+                            <li>Cette action ne peut pas être annulée</li>
+                        </ul>
+                    </div>
+
+                    <form method="POST">
+                        {% csrf_token %}
+                        <div class="d-flex justify-content-between mt-4">
+                            <a href="{% url 'inventory:commercant_terminaux_boutique' boutique.id %}" class="btn btn-success btn-lg">
+                                <i class="fas fa-times"></i> Annuler la Suppression
+                            </a>
+                            <button type="submit" class="btn btn-danger btn-lg" 
+                                    onclick="return confirm('Êtes-vous absolument certain de vouloir supprimer ce terminal ? Cette action est IRRÉVERSIBLE.');">
+                                <i class="fas fa-trash"></i> Supprimer Définitivement
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,122 @@
+═══════════════════════════════════════════════════════════════════════
+   GUIDE RAPIDE - TESTER LA SYNCHRONISATION DES ARTICLES
+═══════════════════════════════════════════════════════════════════════
+
+🎯 PROBLÈME : Les articles ne se synchronisent pas sur MAUI
+
+📋 SOLUTION : Tester ces URLs directement dans votre navigateur
+
+═══════════════════════════════════════════════════════════════════════
+
+ÉTAPE 1 : VÉRIFIER QUE L'API FONCTIONNE
+─────────────────────────────────────────────────────────────────────
+
+Ouvrir dans le navigateur :
+http://192.168.52.224:8000/api/v2/simple/status/
+
+✅ Si vous voyez un JSON avec "status": "active" → L'API fonctionne
+❌ Si erreur 404 ou 500 → L'API a un problème
+
+═══════════════════════════════════════════════════════════════════════
+
+ÉTAPE 2 : VOIR LES BOUTIQUES DISPONIBLES
+─────────────────────────────────────────────────────────────────────
+
+Ouvrir dans le navigateur :
+http://192.168.52.224:8000/api/v2/simple/boutiques/
+
+✅ Vous devriez voir 4 boutiques :
+   - Boutique ID 1: supernova tabora (1 article)
+   - Boutique ID 2: messie vanza (2 articles)
+   - Boutique ID 3: hugues (1 article)
+   - Boutique ID 4: ccccc (2 articles)
+
+═══════════════════════════════════════════════════════════════════════
+
+ÉTAPE 3 : TESTER LA RÉCUPÉRATION DES ARTICLES
+─────────────────────────────────────────────────────────────────────
+
+Pour chaque boutique, tester cette URL (remplacer X par l'ID) :
+
+Boutique 1 :
+http://192.168.52.224:8000/api/v2/simple/articles/?boutique_id=1
+
+Boutique 2 :
+http://192.168.52.224:8000/api/v2/simple/articles/?boutique_id=2
+
+Boutique 3 :
+http://192.168.52.224:8000/api/v2/simple/articles/?boutique_id=3
+
+Boutique 4 :
+http://192.168.52.224:8000/api/v2/simple/articles/?boutique_id=4
+
+✅ Si vous voyez les articles en JSON → L'API fonctionne correctement
+❌ Si "count": 0 → La boutique n'a pas d'articles
+❌ Si erreur → Problème avec l'API
+
+═══════════════════════════════════════════════════════════════════════
+
+ÉTAPE 4 : IDENTIFIER LE PROBLÈME MAUI
+─────────────────────────────────────────────────────────────────────
+
+Si l'API fonctionne dans le navigateur mais pas dans MAUI :
+
+❌ PROBLÈME 1 : MAUI n'envoie pas boutique_id
+   → MAUI fait : GET /api/v2/simple/articles/
+   → MAUI devrait faire : GET /api/v2/simple/articles/?boutique_id=2
+
+❌ PROBLÈME 2 : MAUI utilise la mauvaise URL
+   → MAUI utilise : /api/articles/ (ancienne API)
+   → MAUI devrait utiliser : /api/v2/simple/articles/?boutique_id=X
+
+❌ PROBLÈME 3 : MAUI n'a pas le bon boutique_id
+   → Vérifier que MAUI récupère le boutique_id lors de l'authentification
+
+═══════════════════════════════════════════════════════════════════════
+
+SOLUTION POUR MAUI
+─────────────────────────────────────────────────────────────────────
+
+Dans le code C# de MAUI, modifier :
+
+AVANT (incorrect) :
+var url = "api/articles/";
+
+APRÈS (correct) :
+var url = $"api/v2/simple/articles/?boutique_id={_boutiqueId}";
+
+Et s'assurer que _boutiqueId est récupéré lors de l'authentification :
+
+POST /api/v2/auth/maui/
+{
+    "numero_serie": "VOTRE_NUMERO_SERIE"
+}
+
+Réponse contient :
+{
+    "boutique_id": 2,  ← UTILISER CETTE VALEUR
+    "boutique": { ... }
+}
+
+═══════════════════════════════════════════════════════════════════════
+
+OUTIL DE DIAGNOSTIC DISPONIBLE
+─────────────────────────────────────────────────────────────────────
+
+Si vous êtes super admin, accéder à :
+http://192.168.52.224:8000/superadmin/diagnostic-api/
+
+Cette page permet de tester tous les endpoints avec une interface graphique.
+
+═══════════════════════════════════════════════════════════════════════
+
+RÉSUMÉ RAPIDE
+─────────────────────────────────────────────────────────────────────
+
+1. Tester : http://192.168.52.224:8000/api/v2/simple/status/
+2. Tester : http://192.168.52.224:8000/api/v2/simple/boutiques/
+3. Tester : http://192.168.52.224:8000/api/v2/simple/articles/?boutique_id=2
+4. Si ça fonctionne → Le problème est dans MAUI
+5. Corriger MAUI pour envoyer boutique_id
+
+═══════════════════════════════════════════════════════════════════════

@@ -126,7 +126,7 @@
                     <div class="card metric-card text-center p-3">
                         <div class="card-body">
                             <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
-                            <h4>{{ articles_stock_faible }}</h4>
+                            <h4>{{ articles_stock_faible.count }}</h4>
                             <p class="text-muted mb-0">Articles en Stock Bas</p>
                         </div>
                     </div>
@@ -148,7 +148,10 @@
                     <h5><i class="fas fa-chart-line"></i> Chiffre d'Affaires Quotidien du Mois</h5>
                     <div class="btn-group" role="group">
                         <a href="{% url 'inventory:exporter_ca_quotidien_pdf' boutique.id %}" class="btn btn-outline-success btn-sm">
-                            <i class="fas fa-file-pdf"></i> Export PDF CA
+                            <i class="fas fa-file-pdf"></i> Export PDF Quotidien
+                        </a>
+                        <a href="{% url 'inventory:exporter_ca_mensuel_pdf' boutique.id %}" class="btn btn-outline-info btn-sm">
+                            <i class="fas fa-calendar-alt"></i> Export PDF Mensuel
                         </a>
                         <a href="{% url 'inventory:generer_pdf_qr_codes' boutique.id %}" class="btn btn-outline-primary btn-sm">
                             <i class="fas fa-qrcode"></i> QR Codes PDF
@@ -234,7 +237,7 @@
                         <a href="{% url 'inventory:commercant_categories_boutique' boutique.id %}" class="btn btn-info">
                             <i class="fas fa-tags"></i> Gérer Catégories
                         </a>
-                        <a href="{% url 'inventory:ventes' %}?boutique={{ boutique.id }}" class="btn btn-warning">
+                        <a href="{% url 'inventory:commercant_ventes_boutique' boutique.id %}" class="btn btn-warning">
                             <i class="fas fa-shopping-cart"></i> Voir Ventes
                         </a>
                     </div>

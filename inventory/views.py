@@ -33,12 +33,14 @@ def home(request):
         pass
     
     # Ancien code pour compatibilité avec les utilisateurs existants
-    categories_count = Categorie.objects.count()
-    articles_count = Article.objects.count()
-    ventes_count = Vente.objects.count()
+    # ⭐ ISOLATION: Afficher des données vides pour utilisateurs legacy
+    # (ils devraient migrer vers un profil commerçant)
+    categories_count = 0
+    articles_count = 0
+    ventes_count = 0
     
-    latest_articles = Article.objects.order_by('-date_creation')[:5]
-    latest_ventes = Vente.objects.order_by('-date_vente')[:5]
+    latest_articles = Article.objects.none()
+    latest_ventes = Vente.objects.none()
     
     context = {
         'categories_count': categories_count,
@@ -251,8 +253,26 @@ def liste_articles(request):
 @login_required
 def liste_ventes(request):
     """Page de gestion des ventes."""
-    ventes = Vente.objects.all().order_by('-date_vente')
-    articles = Article.objects.filter(quantite_stock__gt=0)
+    # ⭐ ISOLATION: Filtrer les ventes selon le contexte utilisateur
+    if request.user.is_superuser:
+        # Super admin voit toutes les ventes
+        ventes = Vente.objects.all().order_by('-date_vente')
+        articles = Article.objects.filter(quantite_stock__gt=0)
+    else:
+        try:
+            # Commerçant voit uniquement les ventes de ses boutiques
+            commercant = request.user.profil_commercant
+            ventes = Vente.objects.filter(
+                boutique__commercant=commercant
+            ).select_related('boutique', 'client_maui').order_by('-date_vente')
+            articles = Article.objects.filter(
+                boutique__commercant=commercant,
+                quantite_stock__gt=0
+            )
+        except Commercant.DoesNotExist:
+            # Utilisateur legacy sans profil commerçant - pas de ventes
+            ventes = Vente.objects.none()
+            articles = Article.objects.none()
     
     context = {
         'ventes': ventes,
@@ -440,8 +460,20 @@ def generate_qr_pdf(request):
 @login_required
 def historique_ventes(request):
     """Page d'historique détaillé des ventes."""
-    # Récupérer toutes les ventes avec leurs lignes
-    ventes = Vente.objects.all().order_by('-date_vente')
+    # ⭐ ISOLATION: Filtrer les ventes selon le contexte utilisateur
+    if request.user.is_superuser:
+        # Super admin voit toutes les ventes
+        ventes = Vente.objects.all().order_by('-date_vente')
+    else:
+        try:
+            # Commerçant voit uniquement les ventes de ses boutiques
+            commercant = request.user.profil_commercant
+            ventes = Vente.objects.filter(
+                boutique__commercant=commercant
+            ).select_related('boutique', 'client_maui').order_by('-date_vente')
+        except Commercant.DoesNotExist:
+            # Utilisateur legacy sans profil commerçant - pas de ventes
+            ventes = Vente.objects.none()
     
     # Filtres de dates
     date_debut = request.GET.get('date_debut')

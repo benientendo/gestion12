@@ -11,6 +11,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+import dj_database_url
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement depuis .env en local
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,29 +26,29 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-s=efibuc#+l(2(6i5kr%60p$_avc4v!z5ko#+91j4j7)qs!1q+'
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-s=efibuc#+l(2(6i5kr%60p$_avc4v!z5ko#+91j4j7)qs!1q+')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
 # URL de base pour les requêtes API
 BASE_URL = 'http://192.168.52.224'
 
-ALLOWED_HOSTS = [
-    
-    "192.168.155.224",
-    "192.168.194.224",
-    "localhost",
-    "127.0.0.1",
-    "10.113.224.224",
-    "13.113.224.224",
-    "10.135.88.224",
-    "10.199.74.224",
-    "192.168.1.131"
-    
-        
-   
-]
+# Configuration des hôtes autorisés
+ALLOWED_HOSTS_ENV = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_ENV.split(',')]
+
+# Ajouter les IPs locales pour développement
+if DEBUG:
+    ALLOWED_HOSTS.extend([
+        "192.168.155.224",
+        "192.168.194.224",
+        "10.113.224.224",
+        "13.113.224.224",
+        "192.168.142.224",
+        "192.168.1.131",
+        "192.168.52.224",
+    ])
 
 
 # Application definition
@@ -62,6 +68,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Servir fichiers statiques
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -93,12 +100,24 @@ WSGI_APPLICATION = 'gestion_magazin.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Utiliser PostgreSQL en production, SQLite en développement
+if os.environ.get('DATABASE_URL'):
+    # Production : PostgreSQL via Scalingo
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.environ.get('DATABASE_URL'),
+            conn_max_age=600,
+            conn_health_checks=True,
+        )
     }
-}
+else:
+    # Développement : SQLite
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -135,13 +154,17 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Dossiers où rechercher les fichiers statiques
-STATICFILES_DIRS = [
-    BASE_DIR / 'static',
-]
+if (BASE_DIR / 'static').exists():
+    STATICFILES_DIRS = [
+        BASE_DIR / 'static',
+    ]
+
+# Configuration Whitenoise pour la compression et cache
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Media files (User uploaded files)
 MEDIA_URL = '/media/'
@@ -163,3 +186,15 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/'
 LOGOUT_REDIRECT_URL = '/login/'
+
+# Sécurité en production
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True

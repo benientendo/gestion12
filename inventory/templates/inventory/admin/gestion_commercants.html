@@ -24,6 +24,7 @@
 {% endblock %}
 
 {% block content %}
+{% csrf_token %}
 <div class="container-fluid">
     <!-- En-tête -->
     <div class="row mb-4">
@@ -191,7 +192,7 @@
                 const isActive = this.classList.contains('btn-warning');
                 
                 if (confirm(`Êtes-vous sûr de vouloir ${isActive ? 'désactiver' : 'activer'} ce commerçant ?`)) {
-                    fetch(`/admin/commercants/${commercantId}/toggle-status/`, {
+                    fetch(`/superadmin/commercants/${commercantId}/toggle-status/`, {
                         method: 'POST',
                         headers: {
                             'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,

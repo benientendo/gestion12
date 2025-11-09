@@ -24,7 +24,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('inventory.urls')),
     path('api/', include('inventory.api_urls')),
-    path('api/v2/', include('inventory.api_urls_multi_boutiques')),  # Nouvelle API multi-boutiques
+    path('api/v2/', include('inventory.api_urls_v2')),  # API v2 multi-boutiques avec isolation par boutique
+    path('api/v2/simple/', include('inventory.api_urls_v2_simple')),  # API v2 simplifiée sans authentification
     path('api-token-auth/', obtain_auth_token, name='api_token_auth'),
 ]
 

@@ -238,3 +238,17 @@ def gestion_boutiques_admin(request):
     }
     
     return render(request, 'inventory/admin/gestion_boutiques.html', context)
+
+
+@login_required
+@user_passes_test(is_superuser)
+def diagnostic_api(request):
+    """Page de diagnostic pour tester la synchronisation des catalogues d'articles."""
+    
+    boutiques = Boutique.objects.filter(est_active=True).select_related('commercant').order_by('nom')
+    
+    context = {
+        'boutiques': boutiques,
+    }
+    
+    return render(request, 'inventory/admin/diagnostic_api.html', context)
