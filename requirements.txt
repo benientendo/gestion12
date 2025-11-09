@@ -2,7 +2,7 @@
 Django==5.2
 
 # Database
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.11
 dj-database-url==2.1.0
 
 # Web Server
