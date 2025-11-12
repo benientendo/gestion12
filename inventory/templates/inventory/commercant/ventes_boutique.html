@@ -1,5 +1,6 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
+{% load date_filters %}
 
 {% block title %}Ventes - {{ boutique.nom }}{% endblock %}
 
@@ -27,6 +28,19 @@
         font-size: 0.85rem;
         color: #6c757d;
         font-weight: 600;
+    }
+    .periode-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 12px 20px;
+        border-radius: 8px;
+        margin: 30px 0 20px 0;
+        font-weight: 600;
+        font-size: 1.1rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .periode-header:first-of-type {
+        margin-top: 0;
     }
 </style>
 {% endblock %}
@@ -83,14 +97,19 @@
         </div>
     </div>
 
-    <!-- Liste des ventes en cartes -->
-    {% if ventes %}
-        {% for vente in ventes %}
+    <!-- Liste des ventes regroupées par période -->
+    {% if ventes_groupees %}
+        {% for periode, ventes_periode in ventes_groupees.items %}
+        <div class="periode-header">
+            <i class="fas fa-calendar-alt me-2"></i>{{ periode }}
+        </div>
+        
+        {% for vente in ventes_periode %}
         <div class="card vente-card">
             <div class="card-header vente-header d-flex justify-content-between align-items-center">
                 <div>
                     <strong class="text-primary">{{ vente.numero_facture }}</strong>
-                    <span class="ms-3 text-muted">{{ vente.date_vente|date:"d/m/Y à H:i" }}</span>
+                    <span class="ms-3 text-muted">{{ vente.date_vente|format_date_vente }}</span>
                 </div>
                 <div>
                     {% if vente.paye %}
@@ -143,7 +162,7 @@
                     <div class="modal-body">
                         <!-- Informations -->
                         <div class="mb-3">
-                            <p><strong>Date:</strong> {{ vente.date_vente|date:"d/m/Y à H:i" }}</p>
+                            <p><strong>Date:</strong> {{ vente.date_vente|format_date_vente }}</p>
                             <p><strong>Terminal:</strong> {{ vente.client_maui.nom_terminal|default:"Manuel" }}</p>
                             <p><strong>Mode:</strong> {{ vente.get_mode_paiement_display }}</p>
                         </div>
@@ -184,7 +203,9 @@
             </div>
         </div>
         {% endfor %}
-            {% else %}
+        
+        {% endfor %}
+    {% else %}
                 <div class="p-5 text-center">
                     <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
                     <h5 class="text-muted">Aucune vente trouvée</h5>

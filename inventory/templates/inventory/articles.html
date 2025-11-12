@@ -29,21 +29,21 @@
 {% block content %}
 <!-- En-tête Boutique -->
 <div class="boutique-header p-4 mb-4">
-    <div class="d-flex justify-content-between align-items-center">
-        <div>
-            <h1><i class="fas fa-box me-2"></i>Articles - {{ boutique.nom }}</h1>
-            <p class="mb-0 opacity-75">
+    <div class="row align-items-center">
+        <div class="col-12 col-md-7 mb-3 mb-md-0">
+            <h1 class="mb-2"><i class="fas fa-box me-2"></i>Articles - {{ boutique.nom }}</h1>
+            <p class="mb-0 opacity-75 small">
                 <i class="fas fa-map-marker-alt me-1"></i>{{ boutique.ville }} • 
                 <i class="fas fa-tag me-1"></i>{{ boutique.get_type_commerce_display }} • 
                 <i class="fas fa-calendar me-1"></i>{{ "aujourd'hui"|date:"d/m/Y" }}
             </p>
         </div>
-        <div>
-            <a href="{% url 'inventory:dashboard_boutique' boutique.id %}" class="btn btn-light me-2">
-                <i class="fas fa-arrow-left"></i> Retour Dashboard
+        <div class="col-12 col-md-5 text-center text-md-end">
+            <a href="{% url 'inventory:dashboard_boutique' boutique.id %}" class="btn btn-light me-2 mb-2 mb-sm-0">
+                <i class="fas fa-arrow-left"></i> <span class="d-none d-sm-inline">Retour</span>
             </a>
-            <a href="{% url 'inventory:categories' %}?boutique={{ boutique.id }}" class="btn btn-outline-light">
-                <i class="fas fa-tags"></i> Gérer Catégories
+            <a href="{% url 'inventory:categories' %}?boutique={{ boutique.id }}" class="btn btn-outline-light mb-2 mb-sm-0">
+                <i class="fas fa-tags"></i> <span class="d-none d-sm-inline">Catégories</span>
             </a>
         </div>
     </div>
@@ -51,28 +51,28 @@
 
 <!-- Statistiques -->
 <div class="row mb-4">
-    <div class="col-xl-3 col-md-6 mb-4">
+    <div class="col-6 col-sm-6 col-xl-3 mb-4">
         <div class="card stats-card border-0 h-100">
             <div class="card-body text-center">
-                <i class="fas fa-box fa-3x text-primary mb-3"></i>
+                <i class="fas fa-box fa-2x fa-md-3x text-primary mb-3"></i>
                 <h3 class="text-primary">{{ articles|length }}</h3>
-                <p class="text-muted mb-0">Articles Total</p>
+                <p class="text-muted mb-0 small">Articles Total</p>
             </div>
         </div>
     </div>
-    <div class="col-xl-3 col-md-6 mb-4">
+    <div class="col-6 col-sm-6 col-xl-3 mb-4">
         <div class="card stats-card border-0 h-100">
             <div class="card-body text-center">
-                <i class="fas fa-tags fa-3x text-success mb-3"></i>
+                <i class="fas fa-tags fa-2x fa-md-3x text-success mb-3"></i>
                 <h3 class="text-success">{{ categories|length }}</h3>
-                <p class="text-muted mb-0">Catégories</p>
+                <p class="text-muted mb-0 small">Catégories</p>
             </div>
         </div>
     </div>
-    <div class="col-xl-3 col-md-6 mb-4">
+    <div class="col-6 col-sm-6 col-xl-3 mb-4">
         <div class="card stats-card border-0 h-100">
             <div class="card-body text-center">
-                <i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i>
+                <i class="fas fa-exclamation-triangle fa-2x fa-md-3x text-warning mb-3"></i>
                 <h3 class="text-warning">
                     {% with stock_bas=0 %}
                         {% for article in articles %}
@@ -87,10 +87,10 @@
             </div>
         </div>
     </div>
-    <div class="col-xl-3 col-md-6 mb-4">
+    <div class="col-6 col-sm-6 col-xl-3 mb-4">
         <div class="card stats-card border-0 h-100">
             <div class="card-body text-center">
-                <i class="fas fa-coins fa-3x text-info mb-3"></i>
+                <i class="fas fa-coins fa-2x fa-md-3x text-info mb-3"></i>
                 <h3 class="text-info">
                     {% with valeur_stock=0 %}
                         {% for article in articles %}
@@ -99,7 +99,7 @@
                         {{ valeur_stock|floatformat:0 }} CDF
                     {% endwith %}
                 </h3>
-                <p class="text-muted mb-0">Valeur Stock</p>
+                <p class="text-muted mb-0 small">Valeur Stock</p>
             </div>
         </div>
     </div>
@@ -109,18 +109,24 @@
 <div class="row">
     <div class="col-md-12">
         <div class="card shadow mb-4">
-            <div class="card-header py-3 d-flex justify-content-between align-items-center">
-                <h6 class="m-0 font-weight-bold text-primary">Liste des Articles</h6>
-                <div class="btn-group">
-                    <a href="{% url 'inventory:ajouter_article' %}?boutique={{ boutique.id }}" class="btn btn-primary me-2">
-                        <i class="fas fa-plus"></i> Ajouter Article
-                    </a>
-                    <button class="btn btn-success me-2" data-bs-toggle="modal" data-bs-target="#importerArticlesModal">
-                        <i class="fas fa-upload"></i> Importer
-                    </button>
-                    <a href="{% url 'inventory:generer_qr_codes_pdf' %}?boutique={{ boutique.id }}" class="btn btn-danger" target="_blank">
-                        <i class="fas fa-file-pdf"></i> PDF Codes QR
-                    </a>
+            <div class="card-header py-3">
+                <div class="row align-items-center">
+                    <div class="col-12 col-md-6 mb-2 mb-md-0">
+                        <h6 class="m-0 font-weight-bold text-primary">Liste des Articles</h6>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="d-flex flex-column flex-sm-row gap-2 justify-content-md-end">
+                            <a href="{% url 'inventory:ajouter_article' %}?boutique={{ boutique.id }}" class="btn btn-primary btn-sm">
+                                <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Ajouter</span>
+                            </a>
+                            <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#importerArticlesModal">
+                                <i class="fas fa-upload"></i> <span class="d-none d-sm-inline">Importer</span>
+                            </button>
+                            <a href="{% url 'inventory:generer_qr_codes_pdf' %}?boutique={{ boutique.id }}" class="btn btn-danger btn-sm" target="_blank">
+                                <i class="fas fa-file-pdf"></i> <span class="d-none d-sm-inline">PDF QR</span>
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
                 <div class="card-body">

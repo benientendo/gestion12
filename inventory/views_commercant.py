@@ -339,11 +339,13 @@ def articles_boutique(request, boutique_id):
     """Liste des articles d'une boutique"""
     boutique = request.boutique
     
-    # Filtres
+    # Récupérer les filtres
     search = request.GET.get('search', '')
-    categorie_id = request.GET.get('categorie')
-    stock_filter = request.GET.get('stock')  # 'bas', 'zero', 'normal'
+    categorie_id = request.GET.get('categorie', '')
+    stock_filter = request.GET.get('stock', '')
+    populaires_filter = request.GET.get('populaires', '')
     
+    # Appliquer les filtres
     articles = boutique.articles.filter(est_actif=True)
     
     if search:
@@ -363,7 +365,14 @@ def articles_boutique(request, boutique_id):
     elif stock_filter == 'normal':
         articles = articles.filter(quantite_stock__gt=boutique.alerte_stock_bas)
     
-    articles = articles.select_related('categorie').order_by('nom')
+    # Filtre pour les articles populaires (ayant des ventes)
+    if populaires_filter:
+        from django.db.models import Count
+        articles = articles.annotate(
+            nb_ventes=Count('lignesvente')
+        ).filter(nb_ventes__gt=0).order_by('-nb_ventes')
+    else:
+        articles = articles.select_related('categorie').order_by('nom')
     
     # Catégories pour le filtre
     categories = boutique.categories.all()
@@ -381,7 +390,8 @@ def articles_boutique(request, boutique_id):
         'articles_stock_bas': articles_stock_bas,
         'search': search,
         'categorie_id': int(categorie_id) if categorie_id else None,
-        'stock_filter': stock_filter
+        'stock_filter': stock_filter,
+        'populaires_filter': populaires_filter
     }
     
     return render(request, 'inventory/commercant/articles_boutique.html', context)
@@ -687,6 +697,143 @@ def ajouter_client_maui_boutique(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+def rapport_ca_quotidien(request, boutique_id):
+    """Afficher le rapport du chiffre d'affaires quotidien"""
+    boutique = request.boutique
+    
+    # Données des 30 derniers jours
+    date_fin = timezone.now().date()
+    date_debut = date_fin - timedelta(days=30)
+    
+    rapports_jours = []
+    current_date = date_debut
+    total_ca = 0
+    total_ventes = 0
+    
+    while current_date <= date_fin:
+        ventes_jour = Vente.objects.filter(
+            boutique=boutique,
+            date_vente__date=current_date,
+            paye=True
+        )
+        nb_ventes = ventes_jour.count()
+        ca_jour = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
+        
+        rapports_jours.append({
+            'date': current_date,
+            'nb_ventes': nb_ventes,
+            'ca': ca_jour
+        })
+        
+        total_ventes += nb_ventes
+        total_ca += ca_jour
+        current_date += timedelta(days=1)
+    
+    # Inverser pour avoir les dates les plus récentes en premier
+    rapports_jours.reverse()
+    
+    context = {
+        'boutique': boutique,
+        'rapports_jours': rapports_jours,
+        'total_ventes': total_ventes,
+        'total_ca': total_ca,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+    }
+    
+    return render(request, 'inventory/commercant/rapport_ca_quotidien.html', context)
+
+@login_required
+@commercant_required
+@boutique_access_required
+def rapport_ca_mensuel(request, boutique_id):
+    """Afficher le rapport du chiffre d'affaires mensuel"""
+    boutique = request.boutique
+    
+    # Récupérer le mois et l'année depuis les paramètres GET (optionnel)
+    try:
+        annee = int(request.GET.get('annee', timezone.now().year))
+        mois = int(request.GET.get('mois', timezone.now().month))
+    except (ValueError, TypeError):
+        annee = timezone.now().year
+        mois = timezone.now().month
+    
+    # Noms des mois en français
+    mois_noms = {
+        1: 'Janvier', 2: 'Février', 3: 'Mars', 4: 'Avril',
+        5: 'Mai', 6: 'Juin', 7: 'Juillet', 8: 'Août',
+        9: 'Septembre', 10: 'Octobre', 11: 'Novembre', 12: 'Décembre'
+    }
+    nom_mois = mois_noms.get(mois, 'Mois')
+    
+    # Calculer le premier et dernier jour du mois
+    from calendar import monthrange
+    premier_jour = datetime(annee, mois, 1).date()
+    dernier_jour_num = monthrange(annee, mois)[1]
+    dernier_jour = datetime(annee, mois, dernier_jour_num).date()
+    
+    rapports_jours = []
+    current_date = premier_jour
+    total_ca = 0
+    total_ventes = 0
+    
+    # Parcourir tous les jours du mois
+    while current_date <= dernier_jour:
+        ventes_jour = Vente.objects.filter(
+            boutique=boutique,
+            date_vente__date=current_date,
+            paye=True
+        )
+        nb_ventes = ventes_jour.count()
+        ca_jour = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
+        
+        rapports_jours.append({
+            'date': current_date,
+            'nb_ventes': nb_ventes,
+            'ca': ca_jour
+        })
+        
+        total_ventes += nb_ventes
+        total_ca += ca_jour
+        current_date += timedelta(days=1)
+    
+    # Inverser pour avoir les dates les plus récentes en premier
+    rapports_jours.reverse()
+    
+    # Calculer mois précédent et suivant pour navigation
+    if mois == 1:
+        mois_precedent = 12
+        annee_precedente = annee - 1
+    else:
+        mois_precedent = mois - 1
+        annee_precedente = annee
+    
+    if mois == 12:
+        mois_suivant = 1
+        annee_suivante = annee + 1
+    else:
+        mois_suivant = mois + 1
+        annee_suivante = annee
+    
+    context = {
+        'boutique': boutique,
+        'rapports_jours': rapports_jours,
+        'total_ventes': total_ventes,
+        'total_ca': total_ca,
+        'mois': mois,
+        'annee': annee,
+        'nom_mois': nom_mois,
+        'mois_precedent': mois_precedent,
+        'annee_precedente': annee_precedente,
+        'mois_suivant': mois_suivant,
+        'annee_suivante': annee_suivante,
+    }
+    
+    return render(request, 'inventory/commercant/rapport_ca_mensuel.html', context)
+
+@login_required
+@commercant_required
+@boutique_access_required
 def exporter_ca_quotidien_pdf(request, boutique_id):
     """Exporter le chiffre d'affaires quotidien en PDF"""
     from django.http import HttpResponse
@@ -738,7 +885,7 @@ def exporter_ca_quotidien_pdf(request, boutique_id):
     while current_date <= date_fin:
         try:
             ventes_jour = Vente.objects.filter(
-                client_maui__boutique=boutique,
+                boutique=boutique,
                 date_vente__date=current_date,
                 paye=True
             )
@@ -865,7 +1012,7 @@ def exporter_ca_mensuel_pdf(request, boutique_id):
     while current_date <= dernier_jour:
         try:
             ventes_jour = Vente.objects.filter(
-                client_maui__boutique=boutique,
+                boutique=boutique,
                 date_vente__date=current_date,
                 paye=True
             )
@@ -920,9 +1067,78 @@ def exporter_ca_mensuel_pdf(request, boutique_id):
 @boutique_access_required
 def ajouter_article_boutique(request, boutique_id):
     """Ajouter un article à une boutique spécifique (interface commerçant)"""
+    from django.http import JsonResponse
+    from inventory.models import Article, Categorie
+    
     boutique = request.boutique
     
     if request.method == 'POST':
+        # Vérifier si c'est une requête AJAX (ajout rapide)
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            try:
+                # Créer l'article avec les données minimales
+                nom = request.POST.get('nom', '').strip()
+                code = request.POST.get('code', '').strip()
+                prix_vente = request.POST.get('prix_vente', '')
+                quantite_stock = request.POST.get('quantite_stock', 0)
+                categorie_id = request.POST.get('categorie', '')
+                
+                # Validations
+                errors = {}
+                if not nom:
+                    errors['nom'] = ['Le nom est requis']
+                if not code:
+                    errors['code'] = ['Le code-barres est requis']
+                if not prix_vente:
+                    errors['prix_vente'] = ['Le prix de vente est requis']
+                    
+                # Vérifier si le code existe déjà
+                if code and Article.objects.filter(boutique=boutique, code=code).exists():
+                    errors['code'] = ['Ce code-barres existe déjà dans cette boutique']
+                
+                if errors:
+                    return JsonResponse({'success': False, 'errors': errors})
+                
+                # Créer l'article
+                article = Article.objects.create(
+                    boutique=boutique,
+                    nom=nom,
+                    code=code,
+                    prix_vente=float(prix_vente),
+                    prix_achat=0,  # Prix d'achat non calculé
+                    quantite_stock=int(quantite_stock) if quantite_stock else 0,
+                    est_actif=True
+                )
+                
+                # Ajouter la catégorie si fournie
+                if categorie_id:
+                    try:
+                        categorie = Categorie.objects.get(id=categorie_id, boutique=boutique)
+                        article.categorie = categorie
+                        article.save()
+                    except Categorie.DoesNotExist:
+                        pass
+                
+                # Générer le code QR automatiquement
+                try:
+                    generer_qr_code_article(article)
+                except Exception as e:
+                    print(f"Erreur génération QR: {e}")
+                
+                return JsonResponse({
+                    'success': True, 
+                    'message': f'Article "{article.nom}" ajouté avec succès',
+                    'article_id': article.id,
+                    'article_nom': article.nom
+                })
+                
+            except Exception as e:
+                return JsonResponse({
+                    'success': False, 
+                    'message': f'Erreur lors de l\'ajout: {str(e)}'
+                })
+        
+        # Si ce n'est pas AJAX, utiliser le formulaire normal
         form = ArticleForm(request.POST, request.FILES)
         if form.is_valid():
             article = form.save(commit=False)
@@ -954,6 +1170,139 @@ def ajouter_article_boutique(request, boutique_id):
     }
     
     return render(request, 'inventory/commercant/ajouter_article.html', context)
+
+@login_required
+@commercant_required
+@boutique_access_required
+def modifier_article_boutique(request, boutique_id, article_id):
+    """Modifier un article d'une boutique spécifique"""
+    boutique = request.boutique
+    
+    try:
+        article = Article.objects.get(id=article_id, boutique=boutique)
+    except Article.DoesNotExist:
+        messages.error(request, "Article introuvable.")
+        return redirect('inventory:commercant_articles_boutique', boutique_id=boutique.id)
+    
+    if request.method == 'POST':
+        form = ArticleForm(request.POST, request.FILES, instance=article)
+        if form.is_valid():
+            article = form.save(commit=False)
+            article.boutique = boutique
+            article.save()
+            
+            # Régénérer le code QR si le code a changé
+            try:
+                generer_qr_code_article(article)
+                messages.success(request, f'Article "{article.nom}" modifié avec succès.')
+            except Exception as e:
+                messages.warning(request, f'Article modifié, mais erreur lors de la génération du code QR: {str(e)}')
+            
+            return redirect('inventory:commercant_articles_boutique', boutique_id=boutique.id)
+        else:
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f"Erreur dans {field}: {error}")
+    else:
+        form = ArticleForm(instance=article)
+    
+    # Récupérer les catégories de la boutique
+    categories = boutique.categories.all()
+    
+    context = {
+        'form': form,
+        'boutique': boutique,
+        'categories': categories,
+        'article': article,
+        'mode_edition': True
+    }
+    
+    return render(request, 'inventory/commercant/modifier_article.html', context)
+
+@login_required
+@commercant_required
+@boutique_access_required
+def ajuster_stock_article(request, boutique_id, article_id):
+    """Ajuster rapidement le stock d'un article"""
+    from django.http import JsonResponse
+    
+    boutique = request.boutique
+    
+    if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        try:
+            article = Article.objects.get(id=article_id, boutique=boutique)
+            
+            type_ajustement = request.POST.get('type_ajustement')
+            quantite = int(request.POST.get('quantite', 0))
+            commentaire = request.POST.get('commentaire', '')
+            
+            ancien_stock = article.quantite_stock
+            
+            if type_ajustement == 'ajouter':
+                article.quantite_stock += quantite
+            elif type_ajustement == 'retirer':
+                article.quantite_stock = max(0, article.quantite_stock - quantite)
+            elif type_ajustement == 'definir':
+                article.quantite_stock = quantite
+            
+            article.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Stock ajusté: {ancien_stock} → {article.quantite_stock}',
+                'ancien_stock': ancien_stock,
+                'nouveau_stock': article.quantite_stock
+            })
+            
+        except Article.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Article introuvable'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'message': str(e)})
+    
+    return JsonResponse({'success': False, 'message': 'Méthode non autorisée'})
+
+@login_required
+@commercant_required
+@boutique_access_required
+def modifier_prix_article(request, boutique_id, article_id):
+    """Modifier rapidement le prix d'un article"""
+    from django.http import JsonResponse
+    
+    boutique = request.boutique
+    
+    if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        try:
+            article = Article.objects.get(id=article_id, boutique=boutique)
+            
+            nouveau_prix = float(request.POST.get('prix_vente', 0))
+            commentaire = request.POST.get('commentaire', '')
+            
+            if nouveau_prix < 0:
+                return JsonResponse({'success': False, 'message': 'Le prix ne peut pas être négatif'})
+            
+            ancien_prix = article.prix_vente
+            article.prix_vente = nouveau_prix
+            article.save()
+            
+            # Régénérer le QR code avec le nouveau prix
+            try:
+                generer_qr_code_article(article)
+            except Exception:
+                pass  # Ne pas bloquer si le QR code échoue
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Prix modifié: {ancien_prix} → {nouveau_prix} CDF',
+                'ancien_prix': float(ancien_prix),
+                'nouveau_prix': float(nouveau_prix)
+            })
+            
+        except Article.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Article introuvable'})
+        except Exception as e:
+            return JsonResponse({'success': False, 'message': str(e)})
+    
+    return JsonResponse({'success': False, 'message': 'Méthode non autorisée'})
 
 @login_required
 @commercant_required
@@ -1178,9 +1527,59 @@ def ventes_boutique(request, boutique_id):
         chiffre_affaires=Sum('montant_total')
     )
     
+    # Regrouper les ventes par période
+    from collections import OrderedDict
+    maintenant = datetime.now()
+    aujourd_hui = maintenant.date()
+    
+    ventes_groupees = OrderedDict()
+    periodes_ordre = [
+        "Aujourd'hui",
+        "Hier",
+        "Cette semaine",
+        "Ce mois",
+        "Mois précédent"
+    ]
+    
+    for vente in ventes:
+        # Déterminer la période
+        date_vente = vente.date_vente.date()
+        
+        if date_vente == aujourd_hui:
+            periode = "Aujourd'hui"
+        elif date_vente == aujourd_hui - timedelta(days=1):
+            periode = "Hier"
+        elif date_vente > aujourd_hui - timedelta(days=7):
+            periode = "Cette semaine"
+        elif vente.date_vente.year == aujourd_hui.year and vente.date_vente.month == aujourd_hui.month:
+            periode = "Ce mois"
+        else:
+            mois_precedent = aujourd_hui.replace(day=1) - timedelta(days=1)
+            if vente.date_vente.year == mois_precedent.year and vente.date_vente.month == mois_precedent.month:
+                periode = "Mois précédent"
+            else:
+                mois_fr = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                          'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+                periode = f"{mois_fr[vente.date_vente.month - 1]} {vente.date_vente.year}"
+        
+        if periode not in ventes_groupees:
+            ventes_groupees[periode] = []
+        ventes_groupees[periode].append(vente)
+    
+    # Trier les périodes dans l'ordre souhaité
+    ventes_groupees_triees = OrderedDict()
+    for periode in periodes_ordre:
+        if periode in ventes_groupees:
+            ventes_groupees_triees[periode] = ventes_groupees[periode]
+    # Ajouter les autres périodes (mois passés)
+    for periode, ventes_list in ventes_groupees.items():
+        if periode not in ventes_groupees_triees:
+            ventes_groupees_triees[periode] = ventes_list
+    
     context = {
         'boutique': boutique,
         'ventes': ventes,
+        'ventes_groupees': ventes_groupees_triees,
         'total_ventes': stats['total_ventes'] or 0,
         'chiffre_affaires': stats['chiffre_affaires'] or 0,
         'date_debut': date_debut,

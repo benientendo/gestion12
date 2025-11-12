@@ -32,18 +32,26 @@ class ArticleForm(forms.ModelForm):
 
     class Meta:
         model = Article
-        fields = ['code', 'nom', 'description', 'prix_vente', 'prix_achat', 'categorie', 'quantite_stock', 'image', 'est_actif']
+        fields = ['code', 'nom', 'description', 'prix_vente', 'categorie', 'quantite_stock', 'image', 'est_actif']
         widgets = {
             'code': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Code-barres ou code unique'}),
             'nom': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Nom de l\'article'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Description de l\'article'}),
             'prix_vente': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'placeholder': 'Prix de vente en CDF'}),
-            'prix_achat': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'placeholder': 'Prix d\'achat en CDF'}),
             'categorie': forms.Select(attrs={'class': 'form-select'}),
             'quantite_stock': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Quantité en stock'}),
             'image': forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
             'est_actif': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
+    
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        # Définir prix_achat à 0 par défaut s'il n'est pas fourni
+        if not hasattr(instance, 'prix_achat') or instance.prix_achat is None:
+            instance.prix_achat = 0
+        if commit:
+            instance.save()
+        return instance
 
     def rechercher_article_par_code(self, code):
         """

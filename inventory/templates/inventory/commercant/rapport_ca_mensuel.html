@@ -1,0 +1,184 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load date_filters %}
+
+{% block title %}Rapport CA Mensuel - {{ nom_mois }} {{ annee }} - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .rapport-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #667eea;
+    }
+    .stat-label {
+        color: #6c757d;
+        font-size: 0.9rem;
+        margin-top: 5px;
+    }
+    .table-rapport {
+        background: white;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    .table-rapport thead {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    .table-rapport tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+    .jour-weekend {
+        background-color: #fff3cd;
+    }
+    .ca-positif {
+        color: #198754;
+        font-weight: bold;
+    }
+    .ca-nul {
+        color: #6c757d;
+    }
+    .navigation-mois {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    .btn-nav-mois {
+        background: rgba(255,255,255,0.2);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white;
+        transition: all 0.3s ease;
+    }
+    .btn-nav-mois:hover {
+        background: rgba(255,255,255,0.3);
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête du rapport -->
+    <div class="rapport-header">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h2><i class="fas fa-calendar-alt me-2"></i>Rapport CA Mensuel</h2>
+                <p class="mb-0 opacity-75">{{ boutique.nom }} - {{ boutique.ville }}</p>
+            </div>
+            <div class="col-md-6 text-end">
+                <div class="navigation-mois justify-content-end">
+                    <a href="?mois={{ mois_precedent }}&annee={{ annee_precedente }}" class="btn btn-nav-mois">
+                        <i class="fas fa-chevron-left"></i> Mois précédent
+                    </a>
+                    <h4 class="mb-0">{{ nom_mois }} {{ annee }}</h4>
+                    <a href="?mois={{ mois_suivant }}&annee={{ annee_suivante }}" class="btn btn-nav-mois">
+                        Mois suivant <i class="fas fa-chevron-right"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-3">
+            <div class="col-12 text-end">
+                <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-light me-2">
+                    <i class="fas fa-arrow-left"></i> Retour
+                </a>
+                <a href="{% url 'inventory:exporter_ca_mensuel_pdf' boutique.id %}?mois={{ mois }}&annee={{ annee }}" class="btn btn-light" target="_blank">
+                    <i class="fas fa-file-pdf"></i> Export PDF
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistiques -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="stat-card">
+                <div class="stat-value">{{ rapports_jours|length }}</div>
+                <div class="stat-label">JOURS DU MOIS</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="stat-card">
+                <div class="stat-value">{{ total_ventes }}</div>
+                <div class="stat-label">TOTAL VENTES</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="stat-card">
+                <div class="stat-value">{{ total_ca|floatformat:0 }} CDF</div>
+                <div class="stat-label">CHIFFRE D'AFFAIRES</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tableau des rapports -->
+    <div class="table-rapport">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Jour</th>
+                    <th class="text-center">Nb Ventes</th>
+                    <th class="text-end">Chiffre d'Affaires (CDF)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for jour in rapports_jours %}
+                <tr {% if jour.date.weekday >= 5 %}class="jour-weekend"{% endif %}>
+                    <td>
+                        <strong>{{ jour.date|date:"d/m/Y" }}</strong>
+                    </td>
+                    <td>
+                        {% if jour.date.weekday == 0 %}Lundi
+                        {% elif jour.date.weekday == 1 %}Mardi
+                        {% elif jour.date.weekday == 2 %}Mercredi
+                        {% elif jour.date.weekday == 3 %}Jeudi
+                        {% elif jour.date.weekday == 4 %}Vendredi
+                        {% elif jour.date.weekday == 5 %}Samedi
+                        {% else %}Dimanche
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if jour.nb_ventes > 0 %}
+                            <span class="badge bg-primary">{{ jour.nb_ventes }}</span>
+                        {% else %}
+                            <span class="text-muted">0</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end {% if jour.ca > 0 %}ca-positif{% else %}ca-nul{% endif %}">
+                        {{ jour.ca|floatformat:0 }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="table-active">
+                    <th colspan="2">TOTAL {{ nom_mois|upper }} {{ annee }}</th>
+                    <th class="text-center">{{ total_ventes }}</th>
+                    <th class="text-end text-success">{{ total_ca|floatformat:0 }} CDF</th>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+{% endblock %}

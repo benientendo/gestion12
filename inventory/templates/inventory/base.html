@@ -26,60 +26,70 @@
     <!-- Main Content Full Width -->
     <div class="main-content w-100">
                 <!-- Topbar -->
-                <nav class="navbar navbar-expand navbar-light bg-white topbar mb-4 static-top shadow-sm">
-                    <!-- Brand Logo -->
-                    <a class="navbar-brand d-flex align-items-center" href="{% url 'inventory:home' %}">
-                        <i class="bi bi-shop me-2 text-primary fs-3"></i>
-                        <span class="fw-bold text-primary">Gestion Magazin</span>
-                    </a>
-                    
-                    <!-- Topbar Title -->
-                    <h4 class="d-none d-md-inline-block form-inline mx-auto my-md-0 mw-100 text-center">{% block page_title %}{% endblock %}</h4>
-                    
-                    <!-- Topbar Navbar -->
-                    <ul class="navbar-nav ml-auto">
-                        <li class="nav-item dropdown no-arrow mx-1">
-                            <a class="nav-link dropdown-toggle" href="#" id="alertsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i class="bi bi-bell fa-fw"></i>
-                                <span class="badge bg-danger badge-counter">3+</span>
-                            </a>
-                            <div class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="alertsDropdown">
-                                <h6 class="dropdown-header">Notifications</h6>
-                                <a class="dropdown-item d-flex align-items-center" href="#">
-                                    <div class="me-3">
-                                        <div class="icon-circle bg-primary">
-                                            <i class="bi bi-file-text text-white"></i>
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div class="small text-gray-500">23 Mai, 2025</div>
-                                        <span>Stocks bas pour certains articles</span>
-                                    </div>
-                                </a>
-                                <a class="dropdown-item text-center small text-gray-500" href="#">Voir toutes les notifications</a>
-                            </div>
-                        </li>
+                <nav class="navbar navbar-expand-lg navbar-light bg-white topbar mb-4 static-top shadow-sm">
+                    <div class="container-fluid">
+                        <!-- Brand Logo -->
+                        <a class="navbar-brand d-flex align-items-center" href="{% url 'inventory:home' %}">
+                            <i class="bi bi-shop me-2 text-primary fs-3"></i>
+                            <span class="fw-bold text-primary">Gestion Magazin</span>
+                        </a>
                         
-                        {% if user.is_authenticated %}
-                        <li class="nav-item dropdown no-arrow">
-                            <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                <span class="d-none d-lg-inline text-gray-600 small me-2">{{ user.username }}</span>
-                                <i class="bi bi-person-circle"></i>
-                            </a>
-                            <div class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="userDropdown">
-                                <a class="dropdown-item" href="{% url 'inventory:change_password' %}">
-                                    <i class="bi bi-key fa-sm fa-fw me-2 text-gray-400"></i>
-                                    Modifier mot de passe
-                                </a>
-                                <div class="dropdown-divider"></div>
-                                <a class="dropdown-item" href="{% url 'inventory:logout' %}">
-                                    <i class="bi bi-box-arrow-right fa-sm fa-fw me-2 text-gray-400"></i>
-                                    Déconnexion
-                                </a>
-                            </div>
-                        </li>
-                        {% endif %}
-                    </ul>
+                        <!-- Hamburger Toggle Button for Mobile -->
+                        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                            <span class="navbar-toggler-icon"></span>
+                        </button>
+                        
+                        <!-- Collapsible Navbar Content -->
+                        <div class="collapse navbar-collapse" id="navbarNav">
+                            <!-- Topbar Title -->
+                            <h4 class="d-none d-md-inline-block mx-auto my-md-0 text-center">{% block page_title %}{% endblock %}</h4>
+                            
+                            <!-- Topbar Navbar -->
+                            <ul class="navbar-nav ms-auto">
+                                <li class="nav-item dropdown no-arrow mx-1">
+                                    <a class="nav-link dropdown-toggle" href="#" id="alertsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="bi bi-bell fa-fw"></i>
+                                        <span class="badge bg-danger badge-counter">3+</span>
+                                    </a>
+                                    <div class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="alertsDropdown">
+                                        <h6 class="dropdown-header">Notifications</h6>
+                                        <a class="dropdown-item d-flex align-items-center" href="#">
+                                            <div class="me-3">
+                                                <div class="icon-circle bg-primary">
+                                                    <i class="bi bi-file-text text-white"></i>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <div class="small text-gray-500">23 Mai, 2025</div>
+                                                <span>Stocks bas pour certains articles</span>
+                                            </div>
+                                        </a>
+                                        <a class="dropdown-item text-center small text-gray-500" href="#">Voir toutes les notifications</a>
+                                    </div>
+                                </li>
+                                
+                                {% if user.is_authenticated %}
+                                <li class="nav-item dropdown no-arrow">
+                                    <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <span class="d-none d-lg-inline text-gray-600 small me-2">{{ user.username }}</span>
+                                        <i class="bi bi-person-circle"></i>
+                                    </a>
+                                    <div class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="userDropdown">
+                                        <a class="dropdown-item" href="{% url 'inventory:change_password' %}">
+                                            <i class="bi bi-key fa-sm fa-fw me-2 text-gray-400"></i>
+                                            Modifier mot de passe
+                                        </a>
+                                        <div class="dropdown-divider"></div>
+                                        <a class="dropdown-item" href="{% url 'inventory:logout' %}">
+                                            <i class="bi bi-box-arrow-right fa-sm fa-fw me-2 text-gray-400"></i>
+                                            Déconnexion
+                                        </a>
+                                    </div>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                    </div>
                 </nav>
                 
                 <!-- Content Container -->

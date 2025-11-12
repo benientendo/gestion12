@@ -55,11 +55,11 @@
         <div class="col-12">
             <div class="stats-overview">
                 <div class="row align-items-center">
-                    <div class="col-md-8">
+                    <div class="col-12 col-md-8 mb-3 mb-md-0">
                         <h1><i class="fas fa-store"></i> {{ commercant.nom_entreprise }}</h1>
                         <p class="mb-0">Bienvenue dans votre espace de gestion multi-boutiques</p>
                     </div>
-                    <div class="col-md-4 text-end">
+                    <div class="col-12 col-md-4 text-center text-md-end">
                         <div class="row text-center">
                             <div class="col-4">
                                 <h3>{{ total_boutiques }}</h3>
@@ -95,7 +95,7 @@
     <!-- Liste des boutiques -->
     <div class="row">
         {% for boutique in boutiques %}
-        <div class="col-md-6 col-lg-4 mb-4">
+        <div class="col-12 col-sm-6 col-lg-4 mb-4">
             <div class="card boutique-card h-100 {% if not boutique.est_active %}boutique-inactive{% endif %}" 
                  onclick="window.location.href='{% url 'inventory:commercant_detail_boutique' boutique.id %}'">
                 <div class="card-body">

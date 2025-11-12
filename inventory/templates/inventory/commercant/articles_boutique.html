@@ -10,61 +10,102 @@
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h1><i class="fas fa-box"></i> Gestion des Articles</h1>
+                    <h1>
+                        <i class="fas fa-box"></i> Gestion des Articles
+                        {% if stock_filter == 'bas' %}
+                        <span class="badge bg-warning">Stock Bas</span>
+                        {% elif populaires_filter %}
+                        <span class="badge bg-success">Articles Populaires</span>
+                        {% endif %}
+                    </h1>
                     <p class="text-muted">Boutique : {{ boutique.nom }} - {{ boutique.ville }}</p>
                 </div>
                 <div>
                     <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary me-2">
                         <i class="fas fa-arrow-left"></i> Retour Dashboard
                     </a>
-                    <a href="{% url 'inventory:ajouter_article_boutique' boutique.id %}" class="btn btn-success">
-                        <i class="fas fa-plus"></i> Ajouter Article
+                    <a href="{% url 'inventory:generer_pdf_qr_codes' boutique.id %}" class="btn btn-outline-primary me-2" target="_blank">
+                        <i class="fas fa-qrcode"></i> QR Codes PDF
                     </a>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
+                        <i class="fas fa-plus"></i> Ajouter Article Rapide
+                    </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Filtres et recherche -->
+    <!-- Filtres et recherche en temps réel -->
     <div class="row mb-4">
         <div class="col-12">
             <div class="card">
                 <div class="card-body">
-                    <form method="get" class="row g-3">
-                        <div class="col-md-4">
-                            <label for="search" class="form-label">Rechercher</label>
-                            <input type="text" class="form-control" id="search" name="search" 
-                                   value="{{ search }}" placeholder="Nom, code ou description...">
+                    <div class="row g-3">
+                        <div class="col-md-5">
+                            <label for="searchRealTime" class="form-label">
+                                <i class="fas fa-search"></i> Rechercher en temps réel
+                            </label>
+                            <div class="position-relative">
+                                <input type="text" class="form-control" id="searchRealTime" 
+                                       placeholder="Nom, code, catégorie ou description..." autocomplete="off">
+                                
+                                <!-- Dropdown des actions rapides -->
+                                <div class="search-actions-dropdown" id="searchActionsDropdown" style="display: none;">
+                                    <div class="search-actions-content">
+                                        <!-- Action: Ajouter un nouvel article -->
+                                        <div class="action-item action-add" id="actionAddArticle" style="display: none;">
+                                            <button type="button" class="btn btn-success btn-sm w-100 text-start" 
+                                                    data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
+                                                <i class="fas fa-plus-circle"></i> 
+                                                <strong>Ajouter un nouvel article</strong> 
+                                                "<span id="searchTermDisplay"></span>"
+                                            </button>
+                                        </div>
+                                        
+                                        <!-- Liste des résultats rapides -->
+                                        <div class="action-results" id="quickResults">
+                                            <div class="action-header">Résultats de la recherche</div>
+                                            <div id="quickResultsList"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <small class="text-muted">La recherche se fait automatiquement pendant que vous tapez</small>
                         </div>
                         <div class="col-md-3">
-                            <label for="categorie" class="form-label">Catégorie</label>
-                            <select class="form-select" id="categorie" name="categorie">
+                            <label for="filterCategorie" class="form-label">
+                                <i class="fas fa-folder"></i> Catégorie
+                            </label>
+                            <select class="form-select" id="filterCategorie">
                                 <option value="">Toutes les catégories</option>
                                 {% for cat in categories %}
-                                <option value="{{ cat.id }}" {% if cat.id == categorie_id %}selected{% endif %}>
-                                    {{ cat.nom }}
-                                </option>
+                                <option value="{{ cat.nom }}">{{ cat.nom }}</option>
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-3">
-                            <label for="stock" class="form-label">Stock</label>
-                            <select class="form-select" id="stock" name="stock">
+                        <div class="col-md-2">
+                            <label for="filterStock" class="form-label">
+                                <i class="fas fa-boxes"></i> Stock
+                            </label>
+                            <select class="form-select" id="filterStock">
                                 <option value="">Tous les stocks</option>
-                                <option value="bas" {% if stock_filter == 'bas' %}selected{% endif %}>Stock bas</option>
-                                <option value="zero" {% if stock_filter == 'zero' %}selected{% endif %}>Stock épuisé</option>
-                                <option value="normal" {% if stock_filter == 'normal' %}selected{% endif %}>Stock normal</option>
+                                <option value="bas">Stock bas</option>
+                                <option value="zero">Stock épuisé</option>
+                                <option value="normal">Stock normal</option>
                             </select>
                         </div>
                         <div class="col-md-2">
                             <label class="form-label">&nbsp;</label>
                             <div class="d-grid">
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-search"></i> Filtrer
+                                <button type="button" class="btn btn-outline-secondary" id="btnResetFilters">
+                                    <i class="fas fa-redo"></i> Réinitialiser
                                 </button>
                             </div>
                         </div>
-                    </form>
+                    </div>
+                    <div class="mt-3">
+                        <span class="badge bg-info" id="resultCount">{{ articles|length }} article(s) trouvé(s)</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -157,7 +198,6 @@
                                     <th>Code</th>
                                     <th>Catégorie</th>
                                     <th>Prix Vente</th>
-                                    <th>Prix Achat</th>
                                     <th>Stock</th>
                                     <th>QR Code</th>
                                     <th>Actions</th>
@@ -165,7 +205,10 @@
                             </thead>
                             <tbody>
                                 {% for article in articles %}
-                                <tr>
+                                <tr data-article-id="{{ article.id }}" 
+                                    data-article-nom="{{ article.nom }}" 
+                                    data-article-stock="{{ article.quantite_stock }}" 
+                                    data-article-prix="{{ article.prix_vente }}">
                                     <td>
                                         {% if article.image %}
                                         <img src="{{ article.image.url }}" alt="{{ article.nom }}" 
@@ -192,7 +235,6 @@
                                         {% endif %}
                                     </td>
                                     <td><strong>{{ article.prix_vente|floatformat:0 }} CDF</strong></td>
-                                    <td>{{ article.prix_achat|floatformat:0 }} CDF</td>
                                     <td>
                                         {% if article.quantite_stock <= 0 %}
                                         <span class="badge bg-danger">{{ article.quantite_stock }}</span>
@@ -212,15 +254,31 @@
                                     <td>
                                         <div class="btn-group btn-group-sm" role="group">
                                             <button type="button" class="btn btn-outline-primary" 
-                                                    data-bs-toggle="modal" data-bs-target="#articleModal{{ article.id }}">
+                                                    data-bs-toggle="modal" data-bs-target="#articleModal{{ article.id }}"
+                                                    title="Voir détails">
                                                 <i class="fas fa-eye"></i>
                                             </button>
-                                            <a href="#" class="btn btn-outline-warning">
+                                            <button type="button" class="btn btn-outline-success" 
+                                                    data-bs-toggle="modal" data-bs-target="#ajusterStockModal"
+                                                    onclick="setArticleForStock({{ article.id }}, '{{ article.nom }}', {{ article.quantite_stock }})"
+                                                    title="Ajuster le stock">
+                                                <i class="fas fa-boxes"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-info" 
+                                                    data-bs-toggle="modal" data-bs-target="#modifierPrixModal"
+                                                    onclick="setArticleForPrice({{ article.id }}, '{{ article.nom }}', {{ article.prix_vente }})"
+                                                    title="Modifier le prix">
+                                                <i class="fas fa-dollar-sign"></i>
+                                            </button>
+                                            <a href="{% url 'inventory:modifier_article_boutique' boutique.id article.id %}" 
+                                               class="btn btn-outline-warning"
+                                               title="Modifier tout">
                                                 <i class="fas fa-edit"></i>
                                             </a>
                                             <a href="{% url 'inventory:supprimer_article' article.id %}" 
                                                class="btn btn-outline-danger"
-                                               onclick="return confirm('Êtes-vous sûr de vouloir supprimer cet article ?')">
+                                               onclick="return confirm('Êtes-vous sûr de vouloir supprimer cet article ?')"
+                                               title="Supprimer">
                                                 <i class="fas fa-trash"></i>
                                             </a>
                                         </div>
@@ -241,9 +299,9 @@
                             Cette boutique n'a pas encore d'articles.
                             {% endif %}
                         </p>
-                        <a href="{% url 'inventory:ajouter_article_boutique' boutique.id %}" class="btn btn-primary">
+                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
                             <i class="fas fa-plus"></i> Ajouter le premier article
-                        </a>
+                        </button>
                     </div>
                     {% endif %}
                 </div>
@@ -287,10 +345,6 @@
                                 <td><strong>{{ article.prix_vente|floatformat:0 }} CDF</strong></td>
                             </tr>
                             <tr>
-                                <th>Prix d'achat:</th>
-                                <td>{{ article.prix_achat|floatformat:0 }} CDF</td>
-                            </tr>
-                            <tr>
                                 <th>Stock:</th>
                                 <td>{{ article.quantite_stock }} unités</td>
                             </tr>
@@ -323,6 +377,192 @@
 </div>
 {% endfor %}
 
+<!-- Modal d'ajout rapide d'article -->
+<div class="modal fade" id="ajouterArticleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-plus-circle"></i> Ajouter un Article (Rapide)</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formAjoutRapide">
+                    {% csrf_token %}
+                    <input type="hidden" name="boutique_id" value="{{ boutique.id }}">
+                    
+                    <div class="row">
+                        <!-- Champs essentiels seulement -->
+                        <div class="col-md-6 mb-3">
+                            <label for="nom" class="form-label"><i class="fas fa-tag"></i> Nom de l'article *</label>
+                            <input type="text" class="form-control" id="nom" name="nom" required 
+                                   placeholder="Ex: Fanta Orange 1.5L">
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="code" class="form-label"><i class="fas fa-barcode"></i> Code-barres *</label>
+                            <input type="text" class="form-control" id="code" name="code" required
+                                   placeholder="Ex: 123456789">
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="prix_vente" class="form-label"><i class="fas fa-money-bill"></i> Prix de vente (CDF) *</label>
+                            <input type="number" class="form-control" id="prix_vente" name="prix_vente" 
+                                   required min="0" step="0.01" placeholder="Ex: 1500">
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="quantite_stock" class="form-label"><i class="fas fa-boxes"></i> Stock initial *</label>
+                            <input type="number" class="form-control" id="quantite_stock" name="quantite_stock" 
+                                   required min="0" value="0" placeholder="Ex: 50">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="categorie" class="form-label"><i class="fas fa-folder"></i> Catégorie</label>
+                        <select class="form-select" id="categorie" name="categorie">
+                            <option value="">-- Sélectionner une catégorie --</option>
+                            {% for cat in categories %}
+                            <option value="{{ cat.id }}">{{ cat.nom }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Optionnel - Vous pourrez la modifier plus tard</small>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> 
+                        <strong>Ajout rapide :</strong> Seuls les champs essentiels sont demandés. 
+                        Vous pourrez compléter les détails (description, image, etc.) plus tard.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Annuler
+                </button>
+                <button type="button" class="btn btn-success" id="btnAjouterArticle">
+                    <i class="fas fa-save"></i> Ajouter l'Article
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajustement Stock Rapide -->
+<div class="modal fade" id="ajusterStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-boxes me-2"></i>Ajuster le Stock</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <strong id="stockArticleName"></strong><br>
+                    <small>Stock actuel: <span id="stockActuel" class="badge bg-primary"></span> unités</small>
+                </div>
+                
+                <form id="formAjusterStock">
+                    {% csrf_token %}
+                    <input type="hidden" id="stockArticleId" name="article_id">
+                    
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fas fa-cogs"></i> Type d'ajustement</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="type_ajustement" id="ajouterStock" value="ajouter" checked>
+                            <label class="btn btn-outline-success" for="ajouterStock">
+                                <i class="fas fa-plus"></i> Ajouter
+                            </label>
+                            
+                            <input type="radio" class="btn-check" name="type_ajustement" id="retirerStock" value="retirer">
+                            <label class="btn btn-outline-danger" for="retirerStock">
+                                <i class="fas fa-minus"></i> Retirer
+                            </label>
+                            
+                            <input type="radio" class="btn-check" name="type_ajustement" id="definirStock" value="definir">
+                            <label class="btn btn-outline-info" for="definirStock">
+                                <i class="fas fa-edit"></i> Définir
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="quantite_ajustement" class="form-label"><i class="fas fa-hashtag"></i> Quantité</label>
+                        <input type="number" class="form-control form-control-lg" id="quantite_ajustement" 
+                               name="quantite" required min="1" value="1" autofocus>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="commentaire_stock" class="form-label"><i class="fas fa-comment"></i> Commentaire (optionnel)</label>
+                        <textarea class="form-control" id="commentaire_stock" name="commentaire" rows="2" 
+                                  placeholder="Ex: Réception nouvelle commande"></textarea>
+                    </div>
+                    
+                    <div class="alert alert-secondary">
+                        <strong>Nouveau stock:</strong> <span id="previewStock" class="text-primary fs-5"></span> unités
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Annuler
+                </button>
+                <button type="button" class="btn btn-success" id="btnAjusterStock">
+                    <i class="fas fa-check"></i> Confirmer l'Ajustement
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Modification Prix Rapide -->
+<div class="modal fade" id="modifierPrixModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-dollar-sign me-2"></i>Modifier le Prix</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <strong id="prixArticleName"></strong><br>
+                    <small>Prix actuel: <span id="prixActuel" class="badge bg-primary"></span> CDF</small>
+                </div>
+                
+                <form id="formModifierPrix">
+                    {% csrf_token %}
+                    <input type="hidden" id="prixArticleId" name="article_id">
+                    
+                    <div class="mb-3">
+                        <label for="nouveau_prix" class="form-label"><i class="fas fa-money-bill"></i> Nouveau Prix de Vente (CDF)</label>
+                        <input type="number" class="form-control form-control-lg text-center" id="nouveau_prix" 
+                               name="prix_vente" required min="0" step="0.01" autofocus>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="commentaire_prix" class="form-label"><i class="fas fa-comment"></i> Raison du changement (optionnel)</label>
+                        <textarea class="form-control" id="commentaire_prix" name="commentaire" rows="2" 
+                                  placeholder="Ex: Promotion, Hausse des coûts..."></textarea>
+                    </div>
+                    
+                    <div id="changementPrixInfo" class="alert alert-warning" style="display: none;">
+                        <strong>Changement:</strong> <span id="changementPrixText"></span>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Annuler
+                </button>
+                <button type="button" class="btn btn-info" id="btnModifierPrix">
+                    <i class="fas fa-check"></i> Enregistrer le Prix
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <style>
 .card {
     border-radius: 12px;
@@ -341,5 +581,705 @@
 .img-thumbnail {
     border-radius: 8px;
 }
+
+/* Styles pour la recherche en temps réel */
+#searchRealTime {
+    transition: all 0.3s ease;
+    border: 2px solid #dee2e6;
+}
+
+#searchRealTime:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
+    transform: scale(1.02);
+}
+
+.search-focused {
+    animation: pulse 0.5s ease;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.02); }
+    100% { transform: scale(1); }
+}
+
+/* Animation pour les lignes du tableau */
+tbody tr {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+tbody tr[style*="display: none"] {
+    opacity: 0;
+    transform: scale(0.95);
+}
+
+/* Badge de comptage */
+#resultCount {
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Message aucun résultat */
+.no-result-row {
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Highlight effect sur le hover des filtres */
+.form-select:hover, .form-control:hover {
+    border-color: #0d6efd;
+}
+
+/* Dropdown des actions de recherche */
+.search-actions-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 2px solid #0d6efd;
+    border-radius: 8px;
+    margin-top: 5px;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+    z-index: 1000;
+    max-height: 400px;
+    overflow-y: auto;
+    animation: slideDown 0.3s ease;
+}
+
+.search-actions-content {
+    padding: 10px;
+}
+
+.action-item {
+    margin-bottom: 10px;
+}
+
+.action-item:last-child {
+    margin-bottom: 0;
+}
+
+.action-add .btn {
+    padding: 12px 15px;
+    font-size: 0.95rem;
+    box-shadow: 0 2px 4px rgba(40, 167, 69, 0.2);
+}
+
+.action-add .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+}
+
+.action-header {
+    font-weight: 600;
+    color: #6c757d;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    padding: 8px 10px;
+    border-bottom: 1px solid #dee2e6;
+    margin-bottom: 8px;
+}
+
+.quick-result-item {
+    padding: 10px;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    background: #f8f9fa;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.quick-result-item:hover {
+    background: #e9ecef;
+    border-color: #0d6efd;
+    transform: translateX(5px);
+}
+
+.quick-result-item .result-name {
+    font-weight: 600;
+    color: #212529;
+    margin-bottom: 4px;
+}
+
+.quick-result-item .result-info {
+    font-size: 0.85rem;
+    color: #6c757d;
+}
+
+.quick-result-item .result-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 5px;
+}
+
+.quick-result-item .btn-xs {
+    padding: 3px 8px;
+    font-size: 0.75rem;
+}
 </style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btnAjouterArticle = document.getElementById('btnAjouterArticle');
+    const formAjoutRapide = document.getElementById('formAjoutRapide');
+    const modal = document.getElementById('ajouterArticleModal');
+    let articlesAjoutes = 0; // Compteur d'articles ajoutés
+    
+    // Fonction pour soumettre le formulaire
+    function soumettreFormulaire() {
+        // Validation du formulaire
+        if (!formAjoutRapide.checkValidity()) {
+            formAjoutRapide.reportValidity();
+            return;
+        }
+        
+        // Désactiver le bouton pendant l'envoi
+        btnAjouterArticle.disabled = true;
+        btnAjouterArticle.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ajout en cours...';
+        
+        // Récupérer les données du formulaire
+        const formData = new FormData(formAjoutRapide);
+        
+        // Envoyer en AJAX
+        fetch('{% url "inventory:ajouter_article_boutique" boutique.id %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Supprimer les anciens messages
+                const oldAlerts = document.querySelectorAll('#ajouterArticleModal .alert');
+                oldAlerts.forEach(alert => alert.remove());
+                
+                // Afficher un message de succès DANS le modal
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-success alert-dismissible fade show';
+                alertDiv.innerHTML = `
+                    <i class="fas fa-check-circle"></i> <strong>Article "${data.article_nom || 'ajouté'}" avec succès !</strong>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.querySelector('#ajouterArticleModal .modal-body').insertBefore(
+                    alertDiv, 
+                    formAjoutRapide
+                );
+                
+                // Incrémenter le compteur d'articles ajoutés
+                articlesAjoutes++;
+                
+                // Réinitialiser le formulaire pour ajouter un autre article
+                formAjoutRapide.reset();
+                
+                // Réactiver le bouton
+                btnAjouterArticle.disabled = false;
+                btnAjouterArticle.innerHTML = '<i class="fas fa-save"></i> Ajouter l\'Article';
+                
+                // Focus sur le premier champ pour un ajout rapide
+                document.getElementById('nom').focus();
+                
+                // Faire disparaître le message après 3 secondes
+                setTimeout(() => {
+                    alertDiv.classList.remove('show');
+                    setTimeout(() => alertDiv.remove(), 150);
+                }, 3000);
+            } else {
+                // Afficher les erreurs
+                let errorMessage = 'Erreurs : ';
+                if (data.errors) {
+                    Object.keys(data.errors).forEach(key => {
+                        errorMessage += data.errors[key].join(', ') + ' ';
+                    });
+                } else {
+                    errorMessage = data.message || 'Une erreur est survenue';
+                }
+                
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+                alertDiv.innerHTML = `
+                    <i class="fas fa-exclamation-triangle"></i> ${errorMessage}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+                document.querySelector('#ajouterArticleModal .modal-body').insertBefore(
+                    alertDiv, 
+                    formAjoutRapide
+                );
+                
+                // Réactiver le bouton
+                btnAjouterArticle.disabled = false;
+                btnAjouterArticle.innerHTML = '<i class="fas fa-save"></i> Ajouter l\'Article';
+            }
+        })
+        .catch(error => {
+            console.error('Erreur:', error);
+            
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+            alertDiv.innerHTML = `
+                <i class="fas fa-exclamation-triangle"></i> Une erreur est survenue lors de l'ajout de l'article.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('#ajouterArticleModal .modal-body').insertBefore(
+                alertDiv, 
+                formAjoutRapide
+            );
+            
+            // Réactiver le bouton
+            btnAjouterArticle.disabled = false;
+            btnAjouterArticle.innerHTML = '<i class="fas fa-save"></i> Ajouter l\'Article';
+        });
+    }
+    
+    // Gestionnaire pour le bouton
+    btnAjouterArticle.addEventListener('click', soumettreFormulaire);
+    
+    // Gestionnaire pour la touche Entrée sur les champs du formulaire
+    formAjoutRapide.addEventListener('keypress', function(e) {
+        // Vérifier si c'est la touche Entrée et que ce n'est pas un textarea ou select
+        if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
+            e.preventDefault(); // Empêcher la soumission normale du formulaire
+            soumettreFormulaire();
+        }
+    });
+    
+    // Réinitialiser le formulaire quand le modal est fermé
+    modal.addEventListener('hidden.bs.modal', function() {
+        formAjoutRapide.reset();
+        btnAjouterArticle.disabled = false;
+        btnAjouterArticle.innerHTML = '<i class="fas fa-save"></i> Ajouter l\'Article';
+        
+        // Supprimer tous les messages (succès et erreur)
+        const alerts = document.querySelectorAll('#ajouterArticleModal .alert');
+        alerts.forEach(alert => alert.remove());
+        
+        // Recharger la page si des articles ont été ajoutés
+        if (articlesAjoutes > 0) {
+            window.location.reload();
+        }
+    });
+    
+    // ==================== RECHERCHE EN TEMPS RÉEL ====================
+    const searchInput = document.getElementById('searchRealTime');
+    const filterCategorie = document.getElementById('filterCategorie');
+    const filterStock = document.getElementById('filterStock');
+    const btnResetFilters = document.getElementById('btnResetFilters');
+    const resultCount = document.getElementById('resultCount');
+    const tableBody = document.querySelector('tbody');
+    const searchActionsDropdown = document.getElementById('searchActionsDropdown');
+    const actionAddArticle = document.getElementById('actionAddArticle');
+    const searchTermDisplay = document.getElementById('searchTermDisplay');
+    const quickResultsList = document.getElementById('quickResultsList');
+    const quickResults = document.getElementById('quickResults');
+    
+    // Stocker toutes les lignes du tableau avec leurs données
+    let allRows = Array.from(tableBody.querySelectorAll('tr'));
+    let allArticles = [];
+    
+    // Extraire les données des articles depuis les attributs data-*
+    allRows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length > 0 && row.dataset.articleId) {
+            allArticles.push({
+                row: row,
+                id: row.dataset.articleId,
+                nom: row.dataset.articleNom || cells[1]?.textContent.trim() || '',
+                code: cells[2]?.textContent.trim() || '',
+                categorie: cells[3]?.textContent.trim() || '',
+                prix: cells[4]?.textContent.trim() || '',
+                stock: parseInt(row.dataset.articleStock) || 0,
+                prixNumeric: parseFloat(row.dataset.articlePrix) || 0
+            });
+        }
+    });
+    
+    // Fonction de filtrage avec debounce pour optimiser les performances
+    let debounceTimer;
+    function filterArticles() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            const categorieFilter = filterCategorie.value.toLowerCase();
+            const stockFilter = filterStock.value;
+            
+            // Gérer l'affichage du dropdown d'actions
+            if (searchTerm.length >= 2) {
+                showSearchActions(searchTerm);
+            } else {
+                searchActionsDropdown.style.display = 'none';
+            }
+            
+            let visibleCount = 0;
+            let matchedArticles = [];
+            
+            allRows.forEach(row => {
+                // Récupérer les données de la ligne
+                const cells = row.querySelectorAll('td');
+                if (cells.length === 0) return;
+                
+                const nom = cells[0]?.textContent.toLowerCase() || '';
+                const code = cells[1]?.textContent.toLowerCase() || '';
+                const categorie = cells[2]?.textContent.toLowerCase() || '';
+                const stock = parseInt(cells[4]?.textContent.trim()) || 0;
+                const prix = cells[3]?.textContent.toLowerCase() || '';
+                
+                // Appliquer le filtre de recherche textuelle
+                const matchSearch = !searchTerm || 
+                    nom.includes(searchTerm) || 
+                    code.includes(searchTerm) || 
+                    categorie.includes(searchTerm) ||
+                    prix.includes(searchTerm);
+                
+                // Appliquer le filtre de catégorie
+                const matchCategorie = !categorieFilter || categorie.includes(categorieFilter);
+                
+                // Appliquer le filtre de stock
+                let matchStock = true;
+                if (stockFilter === 'bas') {
+                    matchStock = stock > 0 && stock < {{ boutique.alerte_stock_bas }};
+                } else if (stockFilter === 'zero') {
+                    matchStock = stock === 0;
+                } else if (stockFilter === 'normal') {
+                    matchStock = stock >= {{ boutique.alerte_stock_bas }};
+                }
+                
+                // Afficher ou masquer la ligne
+                if (matchSearch && matchCategorie && matchStock) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // Mettre à jour le compteur
+            resultCount.textContent = `${visibleCount} article(s) trouvé(s)`;
+            
+            // Afficher un message si aucun résultat
+            const noResultRow = tableBody.querySelector('.no-result-row');
+            if (visibleCount === 0) {
+                if (!noResultRow) {
+                    const tr = document.createElement('tr');
+                    tr.className = 'no-result-row';
+                    tr.innerHTML = `
+                        <td colspan="7" class="text-center py-5">
+                            <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                            <h5>Aucun article trouvé</h5>
+                            <p class="text-muted">Essayez de modifier vos critères de recherche</p>
+                        </td>
+                    `;
+                    tableBody.appendChild(tr);
+                }
+            } else if (noResultRow) {
+                noResultRow.remove();
+            }
+        }, 300); // Délai de 300ms après la dernière frappe
+    }
+    
+    // Événements pour la recherche en temps réel
+    searchInput.addEventListener('input', filterArticles);
+    filterCategorie.addEventListener('change', filterArticles);
+    filterStock.addEventListener('change', filterArticles);
+    
+    // Bouton de réinitialisation
+    btnResetFilters.addEventListener('click', function() {
+        searchInput.value = '';
+        filterCategorie.value = '';
+        filterStock.value = '';
+        filterArticles();
+        searchInput.focus();
+    });
+    
+    // Effet visuel sur le champ de recherche
+    searchInput.addEventListener('focus', function() {
+        this.parentElement.classList.add('search-focused');
+        if (this.value.trim().length >= 2) {
+            searchActionsDropdown.style.display = 'block';
+        }
+    });
+    
+    searchInput.addEventListener('blur', function() {
+        this.parentElement.classList.remove('search-focused');
+        // Délai pour permettre le clic sur les actions
+        setTimeout(() => {
+            searchActionsDropdown.style.display = 'none';
+        }, 200);
+    });
+    
+    // Fonction pour afficher le dropdown d'actions
+    function showSearchActions(searchTerm) {
+        // Trouver les articles correspondants
+        const matches = allArticles.filter(article => {
+            return article.nom.toLowerCase().includes(searchTerm) ||
+                   article.code.toLowerCase().includes(searchTerm) ||
+                   article.categorie.toLowerCase().includes(searchTerm);
+        }).slice(0, 5); // Limiter à 5 résultats
+        
+        // Afficher ou masquer le bouton d'ajout
+        if (matches.length === 0) {
+            actionAddArticle.style.display = 'block';
+            searchTermDisplay.textContent = searchTerm;
+            quickResults.style.display = 'none';
+        } else {
+            actionAddArticle.style.display = 'none';
+            quickResults.style.display = 'block';
+            
+            // Construire la liste des résultats rapides
+            quickResultsList.innerHTML = matches.map((article, index) => `
+                <div class="quick-result-item">
+                    <div class="result-name">${article.nom}</div>
+                    <div class="result-info">
+                        <span class="badge bg-secondary">${article.code}</span>
+                        <span class="badge bg-info">${article.categorie || 'Sans catégorie'}</span>
+                        <span class="badge bg-primary">${article.stock} en stock</span>
+                        <span class="text-success fw-bold">${article.prix}</span>
+                    </div>
+                    <div class="result-actions">
+                        <button type="button" class="btn btn-success btn-xs quick-action-btn" 
+                                data-article-id="${article.id}"
+                                data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
+                                data-article-stock="${article.stock}"
+                                data-action="stock">
+                            <i class="fas fa-boxes"></i> Stock
+                        </button>
+                        <button type="button" class="btn btn-info btn-xs quick-action-btn" 
+                                data-article-id="${article.id}"
+                                data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
+                                data-article-prix="${article.prixNumeric}"
+                                data-action="prix">
+                            <i class="fas fa-dollar-sign"></i> Prix
+                        </button>
+                        <a href="/commercant/boutiques/{{ boutique.id }}/articles/${article.id}/modifier/" 
+                           class="btn btn-warning btn-xs">
+                            <i class="fas fa-edit"></i> Modifier
+                        </a>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Ajouter les event listeners pour les actions rapides
+            setTimeout(() => {
+                document.querySelectorAll('.quick-action-btn').forEach(btn => {
+                    btn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const action = this.getAttribute('data-action');
+                        const articleId = this.getAttribute('data-article-id');
+                        const articleNom = this.getAttribute('data-article-nom');
+                        
+                        // Fermer le dropdown
+                        searchActionsDropdown.style.display = 'none';
+                        
+                        if (action === 'stock') {
+                            const stock = parseInt(this.getAttribute('data-article-stock'));
+                            setArticleForStock(articleId, articleNom, stock);
+                            // Ouvrir le modal
+                            const modal = new bootstrap.Modal(document.getElementById('ajusterStockModal'));
+                            modal.show();
+                        } else if (action === 'prix') {
+                            const prix = parseFloat(this.getAttribute('data-article-prix'));
+                            setArticleForPrice(articleId, articleNom, prix);
+                            // Ouvrir le modal
+                            const modal = new bootstrap.Modal(document.getElementById('modifierPrixModal'));
+                            modal.show();
+                        }
+                    });
+                });
+            }, 100);
+        }
+        
+        searchActionsDropdown.style.display = 'block';
+    }
+    
+    // Pré-remplir le formulaire d'ajout avec le terme recherché
+    searchActionsDropdown.querySelector('.action-add button')?.addEventListener('click', function() {
+        const searchTerm = searchInput.value.trim();
+        if (searchTerm) {
+            // Pré-remplir le nom de l'article dans le modal
+            setTimeout(() => {
+                const nomInput = document.getElementById('nom');
+                if (nomInput && !nomInput.value) {
+                    nomInput.value = searchTerm;
+                }
+            }, 100);
+        }
+    });
+    
+    // ==================== AJUSTEMENT STOCK RAPIDE ====================
+    let currentStockArticleId = null;
+    let currentStockActuel = 0;
+    
+    window.setArticleForStock = function(articleId, articleNom, stockActuel) {
+        currentStockArticleId = articleId;
+        currentStockActuel = stockActuel;
+        
+        document.getElementById('stockArticleId').value = articleId;
+        document.getElementById('stockArticleName').textContent = articleNom;
+        document.getElementById('stockActuel').textContent = stockActuel;
+        document.getElementById('quantite_ajustement').value = 1;
+        document.getElementById('commentaire_stock').value = '';
+        document.getElementById('ajouterStock').checked = true;
+        
+        updateStockPreview();
+    };
+    
+    function updateStockPreview() {
+        const typeAjustement = document.querySelector('input[name="type_ajustement"]:checked').value;
+        const quantite = parseInt(document.getElementById('quantite_ajustement').value) || 0;
+        let nouveauStock = currentStockActuel;
+        
+        if (typeAjustement === 'ajouter') {
+            nouveauStock = currentStockActuel + quantite;
+        } else if (typeAjustement === 'retirer') {
+            nouveauStock = Math.max(0, currentStockActuel - quantite);
+        } else if (typeAjustement === 'definir') {
+            nouveauStock = quantite;
+        }
+        
+        document.getElementById('previewStock').textContent = nouveauStock;
+    }
+    
+    // Événements pour mise à jour du preview
+    document.querySelectorAll('input[name="type_ajustement"]').forEach(radio => {
+        radio.addEventListener('change', updateStockPreview);
+    });
+    
+    document.getElementById('quantite_ajustement').addEventListener('input', updateStockPreview);
+    
+    // Soumission ajustement stock
+    document.getElementById('btnAjusterStock').addEventListener('click', function() {
+        const form = document.getElementById('formAjusterStock');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ajustement...';
+        
+        const formData = new FormData(form);
+        formData.append('type_ajustement', document.querySelector('input[name="type_ajustement"]:checked').value);
+        
+        fetch(`/commercant/boutiques/{{ boutique.id }}/articles/${currentStockArticleId}/ajuster-stock/`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Fermer le modal et recharger
+                bootstrap.Modal.getInstance(document.getElementById('ajusterStockModal')).hide();
+                location.reload();
+            } else {
+                alert('Erreur: ' + (data.message || 'Une erreur est survenue'));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check"></i> Confirmer l\'Ajustement';
+            }
+        })
+        .catch(error => {
+            alert('Erreur réseau: ' + error);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Confirmer l\'Ajustement';
+        });
+    });
+    
+    // ==================== MODIFICATION PRIX RAPIDE ====================
+    let currentPrixArticleId = null;
+    let currentPrixActuel = 0;
+    
+    window.setArticleForPrice = function(articleId, articleNom, prixActuel) {
+        currentPrixArticleId = articleId;
+        currentPrixActuel = prixActuel;
+        
+        document.getElementById('prixArticleId').value = articleId;
+        document.getElementById('prixArticleName').textContent = articleNom;
+        document.getElementById('prixActuel').textContent = prixActuel.toFixed(0);
+        document.getElementById('nouveau_prix').value = prixActuel;
+        document.getElementById('commentaire_prix').value = '';
+        document.getElementById('changementPrixInfo').style.display = 'none';
+    };
+    
+    // Afficher le changement de prix en temps réel
+    document.getElementById('nouveau_prix').addEventListener('input', function() {
+        const nouveauPrix = parseFloat(this.value) || 0;
+        const difference = nouveauPrix - currentPrixActuel;
+        const pourcentage = currentPrixActuel > 0 ? ((difference / currentPrixActuel) * 100).toFixed(1) : 0;
+        
+        if (Math.abs(difference) > 0.01) {
+            const changementDiv = document.getElementById('changementPrixInfo');
+            const changementText = document.getElementById('changementPrixText');
+            
+            if (difference > 0) {
+                changementDiv.className = 'alert alert-success';
+                changementText.innerHTML = `+${difference.toFixed(0)} CDF (+${pourcentage}%)`;
+            } else {
+                changementDiv.className = 'alert alert-danger';
+                changementText.innerHTML = `${difference.toFixed(0)} CDF (${pourcentage}%)`;
+            }
+            
+            changementDiv.style.display = 'block';
+        } else {
+            document.getElementById('changementPrixInfo').style.display = 'none';
+        }
+    });
+    
+    // Soumission modification prix
+    document.getElementById('btnModifierPrix').addEventListener('click', function() {
+        const form = document.getElementById('formModifierPrix');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enregistrement...';
+        
+        const formData = new FormData(form);
+        
+        fetch(`/commercant/boutiques/{{ boutique.id }}/articles/${currentPrixArticleId}/modifier-prix/`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Fermer le modal et recharger
+                bootstrap.Modal.getInstance(document.getElementById('modifierPrixModal')).hide();
+                location.reload();
+            } else {
+                alert('Erreur: ' + (data.message || 'Une erreur est survenue'));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check"></i> Enregistrer le Prix';
+            }
+        })
+        .catch(error => {
+            alert('Erreur réseau: ' + error);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Enregistrer le Prix';
+        });
+    });
+});
+</script>
 {% endblock %}

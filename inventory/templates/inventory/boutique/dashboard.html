@@ -24,14 +24,42 @@
         box-shadow: 0 4px 20px rgba(0,0,0,0.15);
         transform: translateY(-2px);
     }
-    .chart-container {
-        position: relative;
-        height: 300px;
+    .card-hover {
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    .card-hover:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+    }
+    .card-hover small {
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    .card-hover:hover small {
+        opacity: 1;
+    }
+    .card-hover-ca {
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    .card-hover-ca:hover {
+        transform: scale(1.05);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.3);
     }
     .activity-item {
         border-left: 3px solid #007bff;
         padding-left: 15px;
         margin-bottom: 15px;
+    }
+    .offcanvas {
+        width: 400px !important;
+    }
+    .offcanvas-body {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    }
+    .offcanvas-body hr {
+        border-color: rgba(0,0,0,0.1);
     }
 </style>
 {% endblock %}
@@ -51,6 +79,9 @@
                     </p>
                 </div>
                 <div>
+                    <button class="btn btn-outline-info me-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarInfo" aria-controls="sidebarInfo">
+                        <i class="fas fa-store"></i> Boutique & Terminal
+                    </button>
                     <a href="{% url 'inventory:commercant_dashboard' %}" class="btn btn-outline-secondary me-2">
                         <i class="fas fa-arrow-left"></i> Retour
                     </a>
@@ -81,30 +112,26 @@
                         <p class="mb-0">Ventes Récentes</p>
                     </div>
                     <div class="col-md-3">
-                        <h2><i class="fas fa-coins me-2"></i>{{ ca_mois|floatformat:0 }} CDF</h2>
-                        <p class="mb-0">CA du Mois</p>
+                        <a href="{% url 'inventory:rapport_ca_mensuel' boutique.id %}" class="text-decoration-none text-dark">
+                            <h2><i class="fas fa-coins me-2"></i>{{ ca_mois|floatformat:0 }} CDF</h2>
+                            <p class="mb-0">CA du Mois <i class="fas fa-external-link-alt fa-xs"></i></p>
+                        </a>
                     </div>
                 </div>
                 
                 <!-- Deuxième ligne de métriques -->
                 <div class="row text-center">
-                    <div class="col-md-4">
-                        <div class="card bg-success text-white h-100">
-                            <div class="card-body">
-                                <h3><i class="fas fa-calendar-day me-2"></i>{{ ca_jour|floatformat:0 }} CDF</h3>
-                                <p class="mb-0">CA du Jour</p>
+                    <div class="col-md-6">
+                        <a href="{% url 'inventory:rapport_ca_quotidien' boutique.id %}" class="text-decoration-none">
+                            <div class="card bg-success text-white h-100 card-hover-ca">
+                                <div class="card-body">
+                                    <h3><i class="fas fa-calendar-day me-2"></i>{{ ca_jour|floatformat:0 }} CDF</h3>
+                                    <p class="mb-0">CA du Jour <i class="fas fa-external-link-alt fa-xs"></i></p>
+                                </div>
                             </div>
-                        </div>
+                        </a>
                     </div>
-                    <div class="col-md-4">
-                        <div class="card bg-info text-white h-100">
-                            <div class="card-body">
-                                <h3><i class="fas fa-chart-line me-2"></i>{{ articles_stock_faible.count }}</h3>
-                                <p class="mb-0">Stock Faible</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
+                    <div class="col-md-6">
                         <div class="card bg-warning text-white h-100">
                             <div class="card-body">
                                 <h3><i class="fas fa-star me-2"></i>{{ articles_populaires.count }}</h3>
@@ -120,103 +147,34 @@
     <div class="row">
         <!-- Métriques détaillées -->
         <div class="col-md-8">
-            <!-- Métriques rapides -->
+            <!-- Métriques rapides cliquables -->
             <div class="row mb-4">
                 <div class="col-md-6">
-                    <div class="card metric-card text-center p-3">
-                        <div class="card-body">
-                            <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
-                            <h4>{{ articles_stock_faible.count }}</h4>
-                            <p class="text-muted mb-0">Articles en Stock Bas</p>
+                    <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}?stock=bas" class="text-decoration-none">
+                        <div class="card metric-card text-center p-3 card-hover">
+                            <div class="card-body">
+                                <i class="fas fa-exclamation-triangle fa-2x text-warning mb-2"></i>
+                                <h4>{{ articles_stock_faible.count }}</h4>
+                                <p class="text-muted mb-0">Articles en Stock Bas</p>
+                                <small class="text-primary"><i class="fas fa-arrow-right"></i> Voir les articles</small>
+                            </div>
                         </div>
-                    </div>
+                    </a>
                 </div>
                 <div class="col-md-6">
-                    <div class="card metric-card text-center p-3">
-                        <div class="card-body">
-                            <i class="fas fa-star fa-2x text-success mb-2"></i>
-                            <h4>{{ articles_populaires.count }}</h4>
-                            <p class="text-muted mb-0">Articles Populaires</p>
+                    <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}?populaires=1" class="text-decoration-none">
+                        <div class="card metric-card text-center p-3 card-hover">
+                            <div class="card-body">
+                                <i class="fas fa-star fa-2x text-success mb-2"></i>
+                                <h4>{{ articles_populaires.count }}</h4>
+                                <p class="text-muted mb-0">Articles Populaires</p>
+                                <small class="text-primary"><i class="fas fa-arrow-right"></i> Voir les articles</small>
+                            </div>
                         </div>
-                    </div>
+                    </a>
                 </div>
             </div>
 
-            <!-- Graphique du CA quotidien -->
-            <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5><i class="fas fa-chart-line"></i> Chiffre d'Affaires Quotidien du Mois</h5>
-                    <div class="btn-group" role="group">
-                        <a href="{% url 'inventory:exporter_ca_quotidien_pdf' boutique.id %}" class="btn btn-outline-success btn-sm">
-                            <i class="fas fa-file-pdf"></i> Export PDF Quotidien
-                        </a>
-                        <a href="{% url 'inventory:exporter_ca_mensuel_pdf' boutique.id %}" class="btn btn-outline-info btn-sm">
-                            <i class="fas fa-calendar-alt"></i> Export PDF Mensuel
-                        </a>
-                        <a href="{% url 'inventory:generer_pdf_qr_codes' boutique.id %}" class="btn btn-outline-primary btn-sm">
-                            <i class="fas fa-qrcode"></i> QR Codes PDF
-                        </a>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container" style="height: 300px;">
-                        <canvas id="caQuotidienChart"></canvas>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Articles populaires -->
-            <div class="card">
-                <div class="card-header">
-                    <h5><i class="fas fa-fire"></i> Articles Populaires</h5>
-                </div>
-                <div class="card-body">
-                    {% if articles_populaires %}
-                        <div class="table-responsive">
-                            <table class="table table-sm">
-                                <thead>
-                                    <tr>
-                                        <th>Article</th>
-                                        <th>Catégorie</th>
-                                        <th>Prix</th>
-                                        <th>Stock</th>
-                                        <th>Ventes</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for article in articles_populaires %}
-                                    <tr>
-                                        <td>
-                                            <strong>{{ article.nom }}</strong><br>
-                                            <small class="text-muted">{{ article.code_barre }}</small>
-                                        </td>
-                                        <td>{{ article.categorie.nom }}</td>
-                                        <td>{{ article.prix_vente }} CDF</td>
-                                        <td>
-                                            {% if article.stock_actuel <= article.stock_minimum %}
-                                                <span class="badge bg-danger">{{ article.stock_actuel }}</span>
-                                            {% else %}
-                                                <span class="badge bg-success">{{ article.stock_actuel }}</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>{{ article.total_ventes|default:0 }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    {% else %}
-                        <div class="text-center py-4">
-                            <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
-                            <h5>Aucun article populaire</h5>
-                            <p class="text-muted">Les articles les plus vendus apparaîtront ici.</p>
-                            <a href="{% url 'inventory:ajouter_article_boutique' boutique.id %}" class="btn btn-primary">
-                                <i class="fas fa-plus"></i> Ajouter des Articles
-                            </a>
-                        </div>
-                    {% endif %}
-                </div>
-            </div>
         </div>
 
         <!-- Sidebar avec activités et actions -->
@@ -228,9 +186,6 @@
                 </div>
                 <div class="card-body">
                     <div class="d-grid gap-2">
-                        <a href="{% url 'inventory:ajouter_article_boutique' boutique.id %}" class="btn btn-success">
-                            <i class="fas fa-plus"></i> Ajouter Article
-                        </a>
                         <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-primary">
                             <i class="fas fa-box"></i> Gérer Articles
                         </a>
@@ -244,82 +199,60 @@
                 </div>
             </div>
 
-            <!-- Ventes récentes -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5><i class="fas fa-clock"></i> Ventes Récentes</h5>
-                </div>
-                <div class="card-body">
-                    {% if ventes_recentes %}
-                        {% for vente in ventes_recentes %}
-                        <div class="activity-item">
-                            <div class="d-flex justify-content-between align-items-start">
-                                <div>
-                                    <strong>{{ vente.numero_facture }}</strong><br>
-                                    <small class="text-muted">{{ vente.date_vente|date:"d/m H:i" }}</small>
-                                </div>
-                                <div class="text-end">
-                                    <strong class="text-success">{{ vente.montant_total }} CDF</strong><br>
-                                    <small class="text-muted">{{ vente.lignes.count }} article(s)</small>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                        <div class="text-center mt-3">
-                            <a href="{% url 'inventory:ventes' %}?boutique={{ boutique.id }}" class="btn btn-sm btn-outline-primary">
-                                Voir toutes les ventes
-                            </a>
-                        </div>
-                    {% else %}
-                        <div class="text-center py-3">
-                            <i class="fas fa-shopping-cart fa-2x text-muted mb-2"></i>
-                            <p class="text-muted mb-0">Aucune vente récente</p>
-                        </div>
-                    {% endif %}
-                </div>
+
+        </div>
+    </div>
+
+    <!-- Sidebar dépliable pour les informations -->
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="sidebarInfo" aria-labelledby="sidebarInfoLabel">
+        <div class="offcanvas-header bg-primary text-white">
+            <h5 class="offcanvas-title" id="sidebarInfoLabel">
+                <i class="fas fa-store me-2"></i>Boutique & Terminal
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body d-flex flex-column justify-content-center align-items-center">
+            <!-- Nom de la boutique -->
+            <div class="text-center mb-5">
+                <h3 class="text-primary">{{ boutique.nom }}</h3>
+                <p class="text-muted mb-0">{{ boutique.ville }} • {{ boutique.get_type_commerce_display }}</p>
             </div>
 
-            <!-- Informations boutique -->
-            <div class="card">
-                <div class="card-header">
-                    <h5><i class="fas fa-info-circle"></i> Informations</h5>
-                </div>
-                <div class="card-body">
-                    <div class="mb-3">
-                        <strong>Code Boutique:</strong><br>
-                        <code>{{ boutique.code }}</code>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <strong>Adresse:</strong><br>
-                        <span class="text-muted">{{ boutique.adresse }}, {{ boutique.ville }}</span>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <strong>Statut:</strong><br>
-                        {% if boutique.est_active %}
-                            <span class="badge bg-success">Active</span>
-                        {% else %}
-                            <span class="badge bg-danger">Inactive</span>
-                        {% endif %}
-                    </div>
-                    
-                    <div class="mb-3">
-                        <strong>Terminal MAUI:</strong><br>
+            <!-- Boutons d'action -->
+            <div class="d-grid gap-3 w-100">
+                <!-- Bouton Informations Boutique -->
+                <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-primary btn-lg py-4">
+                    <i class="fas fa-info-circle fa-2x d-block mb-2"></i>
+                    <strong>Informations de la Boutique</strong>
+                    <small class="d-block mt-1">Détails complets, adresse, contact...</small>
+                </a>
+
+                <!-- Bouton Liaison Équipement -->
+                <a href="{% url 'inventory:commercant_terminaux_boutique' boutique.id %}" class="btn btn-success btn-lg py-4">
+                    <i class="fas fa-link fa-2x d-block mb-2"></i>
+                    <strong>Liaison Équipement de Vente</strong>
+                    <small class="d-block mt-1">
                         {% if boutique.client_maui %}
-                            <span class="badge bg-success">Configuré</span><br>
-                            <small class="text-muted">{{ boutique.client_maui.nom_terminal }}</small>
+                        ✓ Terminal configuré
                         {% else %}
-                            <span class="badge bg-warning">Non configuré</span>
+                        Configurer un terminal
                         {% endif %}
+                    </small>
+                </a>
+            </div>
+
+            <!-- Info rapide sur l'état du terminal -->
+            <div class="mt-4 text-center">
+                {% if boutique.client_maui %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle"></i> <strong>Terminal connecté</strong><br>
+                        <small>{{ boutique.client_maui.nom_terminal }}</small>
                     </div>
-                    
-                    <div class="d-grid">
-                        <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-outline-primary btn-sm">
-                            <i class="fas fa-eye"></i> Voir Détails
-                        </a>
+                {% else %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i> <strong>Aucun terminal configuré</strong>
                     </div>
-                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -327,90 +260,8 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Données pour le graphique CA quotidien
-        const labelsJours = [{% for label in labels_jours %}'{{ label }}'{% if not forloop.last %},{% endif %}{% endfor %}];
-        const caQuotidienData = [{% for ca in ca_quotidien %}{{ ca }}{% if not forloop.last %},{% endif %}{% endfor %}];
-        
-        // Graphique du CA quotidien
-        const ctx = document.getElementById('caQuotidienChart').getContext('2d');
-        const caQuotidienChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labelsJours,
-                datasets: [{
-                    label: 'CA Quotidien (CDF)',
-                    data: caQuotidienData,
-                    borderColor: 'rgb(54, 162, 235)',
-                    backgroundColor: 'rgba(54, 162, 235, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: 'rgb(54, 162, 235)',
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 2,
-                    pointRadius: 6,
-                    pointHoverRadius: 8
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Évolution du Chiffre d\'Affaires Quotidien',
-                        font: {
-                            size: 16,
-                            weight: 'bold'
-                        }
-                    },
-                    legend: {
-                        display: true,
-                        position: 'top'
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0,0,0,0.8)',
-                        titleColor: 'white',
-                        bodyColor: 'white',
-                        callbacks: {
-                            label: function(context) {
-                                return 'CA: ' + context.parsed.y.toLocaleString('fr-FR') + ' CDF';
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            color: 'rgba(0,0,0,0.1)'
-                        },
-                        ticks: {
-                            callback: function(value) {
-                                return value.toLocaleString('fr-FR') + ' CDF';
-                            },
-                            font: {
-                                size: 12
-                            }
-                        }
-                    },
-                    x: {
-                        grid: {
-                            color: 'rgba(0,0,0,0.1)'
-                        },
-                        ticks: {
-                            font: {
-                                size: 12
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        
         // Animation des cartes métriques
         const metricCards = document.querySelectorAll('.metric-card');
         metricCards.forEach(card => {

@@ -332,8 +332,250 @@ body {
     to { opacity: 1; }
 }
 
-/* Responsive design */
-@media (max-width: 991.98px) {
+/* ============================================
+   RESPONSIVE DESIGN - Mobile First Approach
+   ============================================ */
+
+/* XS - Smartphones (moins de 576px) */
+@media (max-width: 575.98px) {
+    /* Navbar et topbar */
+    .navbar-brand span {
+        font-size: 0.9rem;
+    }
+    
+    .topbar {
+        padding: 0.5rem 0.75rem !important;
+    }
+    
+    .topbar h4 {
+        font-size: 1rem !important;
+    }
+    
+    /* Navigation utilisateur */
+    .navbar-nav .nav-link {
+        font-size: 0.85rem;
+    }
+    
+    .dropdown-menu {
+        font-size: 0.85rem;
+        min-width: 200px;
+    }
+    
+    /* Container principal */
+    .container-fluid {
+        padding: 0.75rem !important;
+    }
+    
+    /* Cartes */
+    .card {
+        margin-bottom: 1rem;
+    }
+    
+    .card-header {
+        padding: 0.75rem;
+        font-size: 0.95rem;
+        flex-direction: column;
+        align-items: flex-start !important;
+    }
+    
+    .card-header h4, .card-header h5 {
+        font-size: 1rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .card-body {
+        padding: 0.75rem;
+    }
+    
+    .card-footer {
+        padding: 0.75rem;
+        font-size: 0.85rem;
+    }
+    
+    /* Cartes dashboard */
+    .stats-overview {
+        padding: 15px !important;
+    }
+    
+    .stats-overview h1 {
+        font-size: 1.5rem;
+    }
+    
+    .stats-overview .row {
+        margin-top: 1rem;
+    }
+    
+    .stats-overview .col-4 h3 {
+        font-size: 1.2rem;
+    }
+    
+    .stats-overview .col-4 small {
+        font-size: 0.7rem;
+    }
+    
+    /* Boutique header */
+    .boutique-header {
+        padding: 15px !important;
+    }
+    
+    .boutique-header h1 {
+        font-size: 1.3rem !important;
+    }
+    
+    .boutique-header p {
+        font-size: 0.8rem;
+    }
+    
+    .boutique-header .btn {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.7rem;
+        margin-top: 0.5rem;
+    }
+    
+    /* Tableaux */
+    .table-responsive {
+        font-size: 0.8rem;
+        border-radius: var(--border-radius);
+    }
+    
+    .table thead th {
+        padding: 0.5rem 0.3rem;
+        font-size: 0.75rem;
+    }
+    
+    .table tbody td {
+        padding: 0.5rem 0.3rem;
+        font-size: 0.8rem;
+    }
+    
+    /* Masquer certaines colonnes sur mobile */
+    .table th:nth-child(3),
+    .table td:nth-child(3),
+    .table th:nth-child(4),
+    .table td:nth-child(4) {
+        display: none;
+    }
+    
+    /* Actions des articles */
+    .article-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+    }
+    
+    .article-actions .btn {
+        width: 100%;
+        padding: 0.3rem 0.5rem;
+        font-size: 0.75rem;
+    }
+    
+    /* Boutons */
+    .btn {
+        padding: 0.4rem 0.7rem;
+        font-size: 0.85rem;
+    }
+    
+    .btn i {
+        margin-right: 0.2rem;
+    }
+    
+    .btn-group {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .btn-group .btn {
+        margin-bottom: 0.3rem;
+    }
+    
+    /* Formulaires */
+    .form-control, .form-select {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.9rem;
+    }
+    
+    .form-label {
+        font-size: 0.9rem;
+    }
+    
+    /* Alertes */
+    .alert {
+        padding: 0.75rem;
+        font-size: 0.85rem;
+    }
+    
+    /* Modals */
+    .modal-dialog {
+        margin: 0.5rem;
+    }
+    
+    .modal-header, .modal-body, .modal-footer {
+        padding: 0.75rem;
+    }
+    
+    /* Footer */
+    footer {
+        padding: 1rem;
+        font-size: 0.8rem;
+    }
+    
+    /* Badges */
+    .badge {
+        font-size: 0.75rem;
+        padding: 0.3em 0.5em;
+    }
+    
+    /* Stats cards */
+    .stats-card .card-body {
+        padding: 1rem;
+    }
+    
+    .stats-card i {
+        font-size: 2rem !important;
+    }
+    
+    .stats-card h3 {
+        font-size: 1.3rem;
+    }
+    
+    /* Grille responsive */
+    .row {
+        margin-left: -0.5rem;
+        margin-right: -0.5rem;
+    }
+    
+    .row > * {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+}
+
+/* SM - Smartphones en paysage / Petites tablettes (576px - 767px) */
+@media (min-width: 576px) and (max-width: 767.98px) {
+    .container-fluid {
+        padding: 1rem !important;
+    }
+    
+    .card-header h4 {
+        font-size: 1.1rem;
+    }
+    
+    .table-responsive {
+        font-size: 0.85rem;
+    }
+    
+    .btn {
+        padding: 0.45rem 0.8rem;
+        font-size: 0.9rem;
+    }
+    
+    .stats-overview h1 {
+        font-size: 1.75rem;
+    }
+}
+
+/* MD - Tablettes (768px - 991px) */
+@media (min-width: 768px) and (max-width: 991.98px) {
     .sidebar {
         width: 100%;
         height: auto;
@@ -342,34 +584,118 @@ body {
     
     .main-content {
         margin-left: 0;
-        padding: 1rem;
+        padding: 1.5rem;
     }
     
     .card-header {
-        flex-direction: column;
+        flex-direction: row;
+        flex-wrap: wrap;
     }
     
     .card-header h4 {
-        margin-bottom: 1rem;
-    }
-    
-    .btn-group-sm {
-        display: flex;
-        margin-top: 0.5rem;
-    }
-}
-
-@media (max-width: 767.98px) {
-    .card-header {
-        padding: 1rem;
+        font-size: 1.25rem;
+        margin-bottom: 0.5rem;
     }
     
     .table-responsive {
         font-size: 0.9rem;
     }
     
-    .btn {
-        padding: 0.375rem 0.75rem;
+    /* Afficher 2 colonnes pour les cartes */
+    .col-md-6 {
+        flex: 0 0 50%;
+        max-width: 50%;
+    }
+    
+    /* Stats overview pour tablettes */
+    .stats-overview .col-md-8,
+    .stats-overview .col-md-4 {
+        flex: 0 0 100%;
+        max-width: 100%;
+        text-align: center;
+    }
+    
+    .stats-overview h1 {
+        font-size: 2rem;
+    }
+}
+
+/* LG - Tablettes en paysage / Petits desktops (992px - 1199px) */
+@media (min-width: 992px) and (max-width: 1199.98px) {
+    .card-header h4 {
+        font-size: 1.3rem;
+    }
+    
+    .main-content {
+        padding: 2rem;
+    }
+}
+
+/* XL et plus - Grands écrans (1200px et plus) */
+@media (min-width: 1200px) {
+    .container-fluid {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+}
+
+/* Utilitaires responsive généraux */
+@media (max-width: 767.98px) {
+    /* Masquer sur mobile */
+    .d-mobile-none {
+        display: none !important;
+    }
+    
+    /* Texte centré sur mobile */
+    .text-mobile-center {
+        text-align: center !important;
+    }
+    
+    /* Boutons pleine largeur sur mobile */
+    .btn-mobile-block {
+        display: block;
+        width: 100%;
+    }
+    
+    /* Espacement réduit sur mobile */
+    .mb-mobile-2 {
+        margin-bottom: 0.5rem !important;
+    }
+}
+
+/* Orientation paysage sur mobile */
+@media (max-width: 767.98px) and (orientation: landscape) {
+    .topbar {
+        padding: 0.3rem 0.5rem !important;
+    }
+    
+    .stats-overview {
+        padding: 10px !important;
+    }
+    
+    .stats-overview h1 {
+        font-size: 1.2rem;
+    }
+}
+
+/* Print styles */
+@media print {
+    .sidebar,
+    .topbar,
+    .btn,
+    .dropdown,
+    footer {
+        display: none !important;
+    }
+    
+    .main-content {
+        margin: 0;
+        padding: 0;
+    }
+    
+    .card {
+        box-shadow: none;
+        border: 1px solid #ddd;
     }
 }
 
@@ -390,5 +716,122 @@ body {
     } 100% {
         transform: scale(1.0);
         opacity: 0;
+    }
+}
+
+/* ============================================
+   STYLES ADDITIONNELS POUR AMÉLIORER L'UX
+   ============================================ */
+
+/* Amélioration de la navbar responsive */
+.navbar-toggler {
+    border: none;
+    padding: 0.5rem;
+}
+
+.navbar-toggler:focus {
+    box-shadow: none;
+    outline: 2px solid var(--primary-color);
+}
+
+.navbar-collapse {
+    transition: all 0.3s ease;
+}
+
+/* Touch-friendly sur mobile */
+@media (max-width: 767.98px) {
+    a, button, .btn {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .dropdown-item {
+        padding: 0.75rem 1rem;
+    }
+}
+
+/* Amélioration des tableaux responsive */
+.table-responsive {
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Scrollbar personnalisée pour les tableaux sur desktop */
+@media (min-width: 992px) {
+    .table-responsive::-webkit-scrollbar {
+        height: 8px;
+    }
+    
+    .table-responsive::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+    
+    .table-responsive::-webkit-scrollbar-thumb {
+        background: var(--primary-color);
+        border-radius: 10px;
+    }
+    
+    .table-responsive::-webkit-scrollbar-thumb:hover {
+        background: #3a5cbf;
+    }
+}
+
+/* Amélioration des transitions */
+.card, .btn, .badge, .alert {
+    transition: all 0.3s ease;
+}
+
+/* Focus visible pour l'accessibilité */
+a:focus, button:focus, input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* Amélioration du contraste pour la lisibilité */
+.text-muted {
+    color: #6c757d !important;
+}
+
+@media (prefers-contrast: high) {
+    body {
+        font-weight: 500;
+    }
+    
+    .btn {
+        border-width: 2px;
+    }
+}
+
+/* Support du mode sombre (préparation future) */
+@media (prefers-color-scheme: dark) {
+    /* Les styles du mode sombre peuvent être ajoutés ici */
+}
+
+/* Amélioration des espacements sur mobile */
+@media (max-width: 575.98px) {
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.3rem; }
+    h3 { font-size: 1.1rem; }
+    h4 { font-size: 1rem; }
+    h5 { font-size: 0.9rem; }
+    h6 { font-size: 0.85rem; }
+}
+
+/* Classes utilitaires personnalisées */
+.gap-2 {
+    gap: 0.5rem;
+}
+
+.gap-3 {
+    gap: 1rem;
+}
+
+/* Touch feedback pour les interactions tactiles */
+@media (hover: none) and (pointer: coarse) {
+    .btn:active, .card:active, a:active {
+        transform: scale(0.98);
+        transition: transform 0.1s;
     }
 }

@@ -1,4 +1,5 @@
 {% extends "inventory/base.html" %}
+{% load date_filters %}
 
 {% block page_title %}Historique des Ventes{% endblock %}
 
@@ -135,7 +136,7 @@
                     {% for vente in page_obj %}
                     <tr>
                         <td><strong>{{ vente.numero_facture }}</strong></td>
-                        <td>{{ vente.date_vente|date:"d/m/Y H:i" }}</td>
+                        <td>{{ vente.date_vente|format_date_vente }}</td>
                         <td><span class="text-primary fw-bold">{{ vente.montant_total|floatformat:2 }} CDF</span></td>
                         <td>
                             <span class="badge 
