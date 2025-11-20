@@ -93,6 +93,14 @@
                     <option value="{{ code }}" {% if mode_paiement_selected == code %}selected{% endif %}>{{ nom }}</option>
                     {% endfor %}
                 </select>
+
+                <label class="form-label mt-2">Terminal</label>
+                <select class="form-select" name="terminal_id">
+                    <option value="TOUS" {% if terminal_selected == 'TOUS' %}selected{% endif %}>Tous les terminaux</option>
+                    {% for terminal in terminaux %}
+                    <option value="{{ terminal.id }}" {% if terminal_selected == terminal.id %}selected{% endif %}>{{ terminal.nom_terminal }}</option>
+                    {% endfor %}
+                </select>
             </div>
             <div class="col-md-3 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary me-2">
@@ -192,7 +200,7 @@
             <ul class="pagination justify-content-center">
                 {% if page_obj.has_previous %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if date_debut %}&date_debut={{ date_debut }}{% endif %}{% if date_fin %}&date_fin={{ date_fin }}{% endif %}{% if mode_paiement_selected != 'TOUS' %}&mode_paiement={{ mode_paiement_selected }}{% endif %}" aria-label="Previous">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if date_debut %}&date_debut={{ date_debut }}{% endif %}{% if date_fin %}&date_fin={{ date_fin }}{% endif %}{% if mode_paiement_selected != 'TOUS' %}&mode_paiement={{ mode_paiement_selected }}{% endif %}{% if terminal_selected != 'TOUS' %}&terminal_id={{ terminal_selected }}{% endif %}" aria-label="Previous">
                         <span aria-hidden="true">&laquo;</span>
                     </a>
                 </li>
@@ -206,13 +214,13 @@
                     {% if page_obj.number == i %}
                     <li class="page-item active"><a class="page-link" href="#">{{ i }}</a></li>
                     {% else %}
-                    <li class="page-item"><a class="page-link" href="?page={{ i }}{% if date_debut %}&date_debut={{ date_debut }}{% endif %}{% if date_fin %}&date_fin={{ date_fin }}{% endif %}{% if mode_paiement_selected != 'TOUS' %}&mode_paiement={{ mode_paiement_selected }}{% endif %}">{{ i }}</a></li>
+                    <li class="page-item"><a class="page-link" href="?page={{ i }}{% if date_debut %}&date_debut={{ date_debut }}{% endif %}{% if date_fin %}&date_fin={{ date_fin }}{% endif %}{% if mode_paiement_selected != 'TOUS' %}&mode_paiement={{ mode_paiement_selected }}{% endif %}{% if terminal_selected != 'TOUS' %}&terminal_id={{ terminal_selected }}{% endif %}">{{ i }}</a></li>
                     {% endif %}
                 {% endfor %}
                 
                 {% if page_obj.has_next %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if date_debut %}&date_debut={{ date_debut }}{% endif %}{% if date_fin %}&date_fin={{ date_fin }}{% endif %}{% if mode_paiement_selected != 'TOUS' %}&mode_paiement={{ mode_paiement_selected }}{% endif %}" aria-label="Next">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if date_debut %}&date_debut={{ date_debut }}{% endif %}{% if date_fin %}&date_fin={{ date_fin }}{% endif %}{% if mode_paiement_selected != 'TOUS' %}&mode_paiement={{ mode_paiement_selected }}{% endif %}{% if terminal_selected != 'TOUS' %}&terminal_id={{ terminal_selected }}{% endif %}" aria-label="Next">
                         <span aria-hidden="true">&raquo;</span>
                     </a>
                 </li>

@@ -461,9 +461,11 @@ def generate_qr_pdf(request):
 def historique_ventes(request):
     """Page d'historique détaillé des ventes."""
     # ⭐ ISOLATION: Filtrer les ventes selon le contexte utilisateur
+    terminaux = Client.objects.none()
     if request.user.is_superuser:
         # Super admin voit toutes les ventes
         ventes = Vente.objects.all().order_by('-date_vente')
+        terminaux = Client.objects.all().order_by('nom_terminal')
     else:
         try:
             # Commerçant voit uniquement les ventes de ses boutiques
@@ -471,14 +473,19 @@ def historique_ventes(request):
             ventes = Vente.objects.filter(
                 boutique__commercant=commercant
             ).select_related('boutique', 'client_maui').order_by('-date_vente')
+            terminaux = Client.objects.filter(
+                boutique__commercant=commercant
+            ).order_by('nom_terminal')
         except Commercant.DoesNotExist:
             # Utilisateur legacy sans profil commerçant - pas de ventes
             ventes = Vente.objects.none()
+            terminaux = Client.objects.none()
     
     # Filtres de dates
     date_debut = request.GET.get('date_debut')
     date_fin = request.GET.get('date_fin')
     mode_paiement = request.GET.get('mode_paiement')
+    terminal_id = request.GET.get('terminal_id')
     
     # Appliquer les filtres si nécessaire
     if date_debut:
@@ -499,6 +506,19 @@ def historique_ventes(request):
     
     if mode_paiement and mode_paiement != 'TOUS':
         ventes = ventes.filter(mode_paiement=mode_paiement)
+    
+    if terminal_id:
+        if terminal_id != 'TOUS':
+            try:
+                terminal_id_int = int(terminal_id)
+                ventes = ventes.filter(client_maui_id=terminal_id_int)
+                terminal_selected = terminal_id_int
+            except (TypeError, ValueError):
+                terminal_selected = 'TOUS'
+        else:
+            terminal_selected = 'TOUS'
+    else:
+        terminal_selected = 'TOUS'
     
     # Pagination
     paginator = Paginator(ventes, 15)  # 15 ventes par page
@@ -522,7 +542,9 @@ def historique_ventes(request):
         'modes_paiement': dict(Vente._meta.get_field('mode_paiement').choices),
         'date_debut': date_debut.strftime('%Y-%m-%d') if isinstance(date_debut, datetime) else '',
         'date_fin': (date_fin - timedelta(days=1)).strftime('%Y-%m-%d') if isinstance(date_fin, datetime) else '',
-        'mode_paiement_selected': mode_paiement or 'TOUS'
+        'mode_paiement_selected': mode_paiement or 'TOUS',
+        'terminaux': terminaux,
+        'terminal_selected': terminal_selected,
     }
     
     return render(request, 'inventory/historique_ventes.html', context)
