@@ -1513,11 +1513,29 @@ def ventes_boutique(request, boutique_id):
     ventes = Vente.objects.filter(
         boutique=boutique  # Filtrage direct par boutique
     ).select_related('client_maui', 'boutique').prefetch_related('lignes__article').order_by('-date_vente')
+    terminaux = boutique.clients.all().order_by('nom_terminal')
     
     # Filtres optionnels
+    periode = request.GET.get('periode') or 'CUSTOM'
     date_debut = request.GET.get('date_debut')
     date_fin = request.GET.get('date_fin')
-    
+    terminal_id = request.GET.get('terminal_id')
+
+    # Calculer les dates selon la période sélectionnée
+    today = timezone.now().date()
+    if periode == 'TODAY':
+        date_debut = today.isoformat()
+        date_fin = today.isoformat()
+    elif periode == 'YESTERDAY':
+        jour = today - timedelta(days=1)
+        date_debut = jour.isoformat()
+        date_fin = jour.isoformat()
+    elif periode == 'THIS_MONTH':
+        premier_jour = today.replace(day=1)
+        date_debut = premier_jour.isoformat()
+        date_fin = today.isoformat()
+
+    # Appliquer les filtres de dates
     if date_debut:
         try:
             date_debut_obj = datetime.strptime(date_debut, '%Y-%m-%d')
@@ -1531,6 +1549,20 @@ def ventes_boutique(request, boutique_id):
             ventes = ventes.filter(date_vente__lt=date_fin_obj)
         except ValueError:
             pass
+
+    # Filtre par terminal (client MAUI)
+    if terminal_id:
+        if terminal_id != 'TOUS':
+            try:
+                terminal_id_int = int(terminal_id)
+                ventes = ventes.filter(client_maui_id=terminal_id_int)
+                terminal_selected = terminal_id_int
+            except (TypeError, ValueError):
+                terminal_selected = 'TOUS'
+        else:
+            terminal_selected = 'TOUS'
+    else:
+        terminal_selected = 'TOUS'
     
     # Statistiques
     from django.db.models import Sum, Count
@@ -1596,6 +1628,9 @@ def ventes_boutique(request, boutique_id):
         'chiffre_affaires': stats['chiffre_affaires'] or 0,
         'date_debut': date_debut,
         'date_fin': date_fin,
+        'terminaux': terminaux,
+        'terminal_selected': terminal_selected,
+        'periode_selected': periode,
     }
     
     return render(request, 'inventory/commercant/ventes_boutique.html', context)

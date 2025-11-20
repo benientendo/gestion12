@@ -482,10 +482,25 @@ def historique_ventes(request):
             terminaux = Client.objects.none()
     
     # Filtres de dates
+    periode = request.GET.get('periode') or 'CUSTOM'
     date_debut = request.GET.get('date_debut')
     date_fin = request.GET.get('date_fin')
     mode_paiement = request.GET.get('mode_paiement')
     terminal_id = request.GET.get('terminal_id')
+    
+    # Calculer les dates selon la période sélectionnée
+    today = timezone.now().date()
+    if periode == 'TODAY':
+        date_debut = today.isoformat()
+        date_fin = today.isoformat()
+    elif periode == 'YESTERDAY':
+        jour = today - timedelta(days=1)
+        date_debut = jour.isoformat()
+        date_fin = jour.isoformat()
+    elif periode == 'THIS_MONTH':
+        premier_jour = today.replace(day=1)
+        date_debut = premier_jour.isoformat()
+        date_fin = today.isoformat()
     
     # Appliquer les filtres si nécessaire
     if date_debut:
@@ -545,6 +560,7 @@ def historique_ventes(request):
         'mode_paiement_selected': mode_paiement or 'TOUS',
         'terminaux': terminaux,
         'terminal_selected': terminal_selected,
+        'periode_selected': periode,
     }
     
     return render(request, 'inventory/historique_ventes.html', context)
