@@ -6,7 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden
-from django.db.models import Count, Sum, Q
+from django.db.models import Count, Sum, Q, F
 from django.utils import timezone
 from datetime import datetime, timedelta
 from .models import Commercant, Boutique, Article, Vente, MouvementStock, Client
@@ -614,6 +614,17 @@ def entrer_boutique(request, boutique_id):
     total_categories = boutique.categories.count()
     ca_jour = ca_aujourd_hui
     
+    # Valeur totale du stock disponible (prix de vente x quantité)
+    try:
+        valeur_stock_disponible = boutique.articles.filter(
+            est_actif=True,
+            quantite_stock__gt=0
+        ).aggregate(
+            total=Sum(F('prix_vente') * F('quantite_stock'))
+        )['total'] or 0
+    except Exception:
+        valeur_stock_disponible = 0
+    
     # Articles en stock faible
     try:
         articles_stock_faible = boutique.articles.filter(
@@ -648,6 +659,7 @@ def entrer_boutique(request, boutique_id):
         'total_categories': total_categories,
         'ca_mois': ca_mois,
         'ca_jour': ca_jour,
+        'valeur_stock_disponible': valeur_stock_disponible,
         'articles_stock_faible': articles_stock_faible,
         'articles_populaires': articles_populaires,
         'ventes_recentes': ventes_recentes,

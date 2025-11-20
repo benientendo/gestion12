@@ -46,7 +46,7 @@ if DEBUG:
         "10.113.224.224",
         "13.113.224.224",
         "192.168.142.224",
-        "10.131.240.224",
+        "10.186.33.224",
         
     ])
 
@@ -144,7 +144,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'fr-fr'
 
-TIME_ZONE = 'Europe/Paris'
+TIME_ZONE = 'Africa/Kinshasa'
 
 USE_I18N = True
 

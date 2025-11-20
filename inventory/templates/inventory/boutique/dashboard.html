@@ -1,7 +1,7 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
 
-{% block title %}Dashboard - {{ boutique.nom }}{% endblock %}
+{% block title %}Tableau de bord - {{ boutique.nom }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -71,7 +71,7 @@
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h1><i class="fas fa-tachometer-alt"></i> Dashboard - {{ boutique.nom }}</h1>
+                    <h1><i class="fas fa-tachometer-alt"></i> Tableau de bord - {{ boutique.nom }}</h1>
                     <p class="text-muted">
                         <i class="fas fa-map-marker-alt"></i> {{ boutique.ville }} • 
                         <i class="fas fa-tag"></i> {{ boutique.get_type_commerce_display }} • 
@@ -112,10 +112,8 @@
                         <p class="mb-0">Ventes Récentes</p>
                     </div>
                     <div class="col-md-3">
-                        <a href="{% url 'inventory:rapport_ca_mensuel' boutique.id %}" class="text-decoration-none text-dark">
-                            <h2><i class="fas fa-coins me-2"></i>{{ ca_mois|floatformat:0 }} CDF</h2>
-                            <p class="mb-0">CA du Mois <i class="fas fa-external-link-alt fa-xs"></i></p>
-                        </a>
+                        <h2><i class="fas fa-coins me-2"></i>{{ valeur_stock_disponible|floatformat:0 }} CDF</h2>
+                        <p class="mb-0">Valeur du stock disponible</p>
                     </div>
                 </div>
                 
@@ -126,18 +124,20 @@
                             <div class="card bg-success text-white h-100 card-hover-ca">
                                 <div class="card-body">
                                     <h3><i class="fas fa-calendar-day me-2"></i>{{ ca_jour|floatformat:0 }} CDF</h3>
-                                    <p class="mb-0">CA du Jour <i class="fas fa-external-link-alt fa-xs"></i></p>
+                                    <p class="mb-0">Recette du jour <i class="fas fa-external-link-alt fa-xs"></i></p>
                                 </div>
                             </div>
                         </a>
                     </div>
                     <div class="col-md-6">
-                        <div class="card bg-warning text-white h-100">
-                            <div class="card-body">
-                                <h3><i class="fas fa-star me-2"></i>{{ articles_populaires.count }}</h3>
-                                <p class="mb-0">Articles Populaires</p>
+                        <a href="{% url 'inventory:rapport_ca_mensuel' boutique.id %}" class="text-decoration-none">
+                            <div class="card bg-warning text-white h-100 card-hover-ca">
+                                <div class="card-body">
+                                    <h3><i class="fas fa-coins me-2"></i>{{ ca_mois|floatformat:0 }} CDF</h3>
+                                    <p class="mb-0">Recette du mois de {{ "now"|date:"F Y" }} <i class="fas fa-external-link-alt fa-xs"></i></p>
+                                </div>
                             </div>
-                        </div>
+                        </a>
                     </div>
                 </div>
             </div>
