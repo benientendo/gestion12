@@ -1,5 +1,6 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
+{% load date_filters %}
 
 {% block title %}Gestion des Clients MAUI{% endblock %}
 
@@ -176,7 +177,7 @@
                                 <strong>{{ vente.client_maui.nom_boutique }}</strong><br>
                                 <small class="text-muted">{{ vente.date_vente|date:"d/m H:i" }}</small>
                             </div>
-                            <span class="badge bg-primary">{{ vente.montant_total }} CDF</span>
+                            <span class="badge bg-primary">{{ vente.montant_total|format_cdf:0 }} CDF</span>
                         </div>
                         {% endfor %}
                     {% else %}

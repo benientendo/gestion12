@@ -1,6 +1,7 @@
 from django import template
 from datetime import datetime, timedelta
 import locale
+from decimal import Decimal, InvalidOperation
 
 register = template.Library()
 
@@ -106,3 +107,27 @@ def group_period(date_vente):
     mois_fr = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
                'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
     return f"{mois_fr[date_only.month - 1]} {date_only.year}"
+
+
+@register.filter
+def format_cdf(value, decimals=0):
+    """Formate un montant en CDF avec des espaces entre milliers.
+
+    Exemple: 1234567.89 -> "1 234 567.89"
+    """
+    if value is None:
+        return "0"
+
+    try:
+        decimals = int(decimals)
+    except (TypeError, ValueError):
+        decimals = 0
+
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return value
+
+    formatted = f"{amount:,.{decimals}f}"
+    # Remplacer les séparateurs de milliers par des espaces
+    return formatted.replace(",", " ")

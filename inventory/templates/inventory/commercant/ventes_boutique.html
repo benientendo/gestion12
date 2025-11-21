@@ -71,7 +71,7 @@
         <div class="col-md-6">
             <div class="card border-success">
                 <div class="card-body text-center">
-                    <h2 class="text-success mb-0">{{ chiffre_affaires|floatformat:0 }}</h2>
+                    <h2 class="text-success mb-0">{{ chiffre_affaires|format_cdf:0 }}</h2>
                     <small class="text-muted">CDF</small>
                 </div>
             </div>
@@ -152,7 +152,7 @@
                     </div>
                     <div class="col-md-4 text-end">
                         <div class="mb-3">
-                            <div class="montant-principal">{{ vente.montant_total|floatformat:0 }} CDF</div>
+                            <div class="montant-principal">{{ vente.montant_total|format_cdf:0 }} CDF</div>
                         </div>
                         <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#venteModal{{ vente.id }}">
                             <i class="fas fa-eye"></i> Détails
@@ -194,15 +194,15 @@
                                 <tr>
                                     <td>{{ ligne.article.nom }}</td>
                                     <td class="text-center">{{ ligne.quantite }}</td>
-                                    <td class="text-end">{{ ligne.prix_unitaire|floatformat:0 }}</td>
-                                    <td class="text-end">{{ ligne.sous_total|floatformat:0 }}</td>
+                                    <td class="text-end">{{ ligne.prix_unitaire|format_cdf:0 }}</td>
+                                    <td class="text-end">{{ ligne.sous_total|format_cdf:0 }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                             <tfoot>
                                 <tr class="fw-bold">
                                     <td colspan="3" class="text-end">TOTAL:</td>
-                                    <td class="text-end text-success">{{ vente.montant_total|floatformat:0 }} CDF</td>
+                                    <td class="text-end text-success">{{ vente.montant_total|format_cdf:0 }} CDF</td>
                                 </tr>
                             </tfoot>
                         </table>

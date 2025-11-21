@@ -1,5 +1,6 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
+{% load date_filters %}
 
 {% block title %}Tableau de bord Clients MAUI{% endblock %}
 
@@ -126,7 +127,7 @@
                                 <strong>{{ vente.client_maui__nom_boutique }}</strong><br>
                                 <small class="text-muted">{{ vente.total_ventes }} vente{{ vente.total_ventes|pluralize }}</small>
                             </div>
-                            <span class="badge bg-primary">{{ vente.montant_total|floatformat:0 }} CDF</span>
+                            <span class="badge bg-primary">{{ vente.montant_total|format_cdf:0 }} CDF</span>
                         </div>
                         {% endfor %}
                     {% else %}
@@ -290,7 +291,7 @@
                     beginAtZero: true,
                     ticks: {
                         callback: function(value) {
-                            return value + ' CDF';
+                            return value.toLocaleString('fr-FR') + ' CDF';
                         }
                     }
                 }
@@ -302,7 +303,7 @@
                 tooltip: {
                     callbacks: {
                         label: function(context) {
-                            return 'Montant: ' + context.parsed.y + ' CDF';
+                            return 'Montant: ' + context.parsed.y.toLocaleString('fr-FR') + ' CDF';
                         }
                     }
                 }

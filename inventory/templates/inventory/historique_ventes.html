@@ -27,7 +27,7 @@
                 <div class="row no-gutters align-items-center">
                     <div class="col mr-2">
                         <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Montant Total</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.montant_total|floatformat:2 }} CDF</div>
+                        <div class="h5 mb-0 font-weight-bold text-gray-800">{{ stats.montant_total|format_cdf:2 }} CDF</div>
                     </div>
                     <div class="col-auto">
                         <i class="fas fa-coins fa-2x text-gray-300"></i>
@@ -57,7 +57,7 @@
                             </span>
                         </div>
                         <div class="small text-muted">{{ mode.count }} ventes</div>
-                        <div class="font-weight-bold">{{ mode.total|floatformat:2 }} CDF</div>
+                        <div class="font-weight-bold">{{ mode.total|format_cdf:2 }} CDF</div>
                     </div>
                     {% empty %}
                     <div class="col-12 text-center py-3">
@@ -151,7 +151,7 @@
                     <tr>
                         <td><strong>{{ vente.numero_facture }}</strong></td>
                         <td>{{ vente.date_vente|format_date_vente }}</td>
-                        <td><span class="text-primary fw-bold">{{ vente.montant_total|floatformat:2 }} CDF</span></td>
+                        <td><span class="text-primary fw-bold">{{ vente.montant_total|format_cdf:2 }} CDF</span></td>
                         <td>
                             <span class="badge 
                                 {% if vente.mode_paiement == 'CASH' %}bg-success

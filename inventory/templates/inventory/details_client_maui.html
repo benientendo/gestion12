@@ -1,5 +1,6 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
+{% load date_filters %}
 
 {% block title %}{{ client.nom_boutique }} - Détails Client MAUI{% endblock %}
 
@@ -88,7 +89,7 @@
                 </div>
                 <div class="col-md-3">
                     <div class="card bg-success text-white stat-card">
-                        <h3>{{ stats.montant_total|floatformat:0 }} CDF</h3>
+                        <h3>{{ stats.montant_total|format_cdf:0 }} CDF</h3>
                         <p class="mb-0">Chiffre d'Affaires</p>
                     </div>
                 </div>
@@ -100,7 +101,7 @@
                 </div>
                 <div class="col-md-3">
                     <div class="card bg-info text-white stat-card">
-                        <h3>{{ stats.montant_aujourd_hui|floatformat:0 }} CDF</h3>
+                        <h3>{{ stats.montant_aujourd_hui|format_cdf:0 }} CDF</h3>
                         <p class="mb-0">Recette du jour</p>
                     </div>
                 </div>
@@ -207,7 +208,7 @@
                                     <tr class="vente-row">
                                         <td><strong>{{ vente.numero_facture }}</strong></td>
                                         <td>{{ vente.date_vente|date:"d/m/Y H:i" }}</td>
-                                        <td><span class="badge bg-primary">{{ vente.montant_total }} CDF</span></td>
+                                        <td><span class="badge bg-primary">{{ vente.montant_total|format_cdf:0 }} CDF</span></td>
                                         <td>{{ vente.get_mode_paiement_display }}</td>
                                         <td>
                                             {% if vente.paye %}

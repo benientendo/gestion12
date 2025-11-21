@@ -1,5 +1,6 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
+{% load date_filters %}
 
 {% block title %}Tableau de bord - {{ boutique.nom }}{% endblock %}
 
@@ -112,7 +113,7 @@
                         <p class="mb-0">Ventes Récentes</p>
                     </div>
                     <div class="col-md-3">
-                        <h2><i class="fas fa-coins me-2"></i>{{ valeur_stock_disponible|floatformat:0 }} CDF</h2>
+                        <h2><i class="fas fa-coins me-2"></i>{{ valeur_stock_disponible|format_cdf:0 }} CDF</h2>
                         <p class="mb-0">Valeur du stock disponible</p>
                     </div>
                 </div>
@@ -123,7 +124,7 @@
                         <a href="{% url 'inventory:rapport_ca_quotidien' boutique.id %}" class="text-decoration-none">
                             <div class="card bg-success text-white h-100 card-hover-ca">
                                 <div class="card-body">
-                                    <h3><i class="fas fa-calendar-day me-2"></i>{{ ca_jour|floatformat:0 }} CDF</h3>
+                                    <h3><i class="fas fa-calendar-day me-2"></i>{{ ca_jour|format_cdf:0 }} CDF</h3>
                                     <p class="mb-0">Recette du jour <i class="fas fa-external-link-alt fa-xs"></i></p>
                                 </div>
                             </div>
@@ -133,7 +134,7 @@
                         <a href="{% url 'inventory:rapport_ca_mensuel' boutique.id %}" class="text-decoration-none">
                             <div class="card bg-warning text-white h-100 card-hover-ca">
                                 <div class="card-body">
-                                    <h3><i class="fas fa-coins me-2"></i>{{ ca_mois|floatformat:0 }} CDF</h3>
+                                    <h3><i class="fas fa-coins me-2"></i>{{ ca_mois|format_cdf:0 }} CDF</h3>
                                     <p class="mb-0">Recette du mois de {{ "now"|date:"F Y" }} <i class="fas fa-external-link-alt fa-xs"></i></p>
                                 </div>
                             </div>

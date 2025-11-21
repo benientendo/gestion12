@@ -1,4 +1,5 @@
 {% extends "inventory/base.html" %}
+{% load date_filters %}
 
 {% block page_title %}Historique des Ventes{% endblock %}
 
@@ -30,7 +31,7 @@
                             <tr>
                                 <td>{{ vente.numero_facture }}</td>
                                 <td>{{ vente.date_vente|date:"d/m/Y H:i" }}</td>
-                                <td>{{ vente.montant_total }} CDF</td>
+                                <td>{{ vente.montant_total|format_cdf:0 }} CDF</td>
                                 <td>
                                     {% if vente.mode_paiement == 'CASH' %}
                                         <span class="badge bg-success">Espèces</span>
@@ -96,7 +97,7 @@
                                         {% for article in articles %}
                                         <tr>
                                             <td>{{ article.nom }}</td>
-                                            <td>{{ article.prix_vente }} CDF</td>
+                                            <td>{{ article.prix_vente|format_cdf:0 }} CDF</td>
                                             <td>{{ article.quantite_stock }}</td>
                                             <td>
                                                 <input type="number" class="form-control" min="0" max="{{ article.quantite_stock }}" value="0">
