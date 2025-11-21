@@ -369,7 +369,7 @@ def articles_boutique(request, boutique_id):
     if populaires_filter:
         from django.db.models import Count
         articles = articles.annotate(
-            nb_ventes=Count('lignesvente')
+            nb_ventes=Count('lignevente')
         ).filter(nb_ventes__gt=0).order_by('-nb_ventes')
     else:
         articles = articles.select_related('categorie').order_by('nom')
@@ -710,49 +710,42 @@ def ajouter_client_maui_boutique(request, boutique_id):
 @commercant_required
 @boutique_access_required
 def rapport_ca_quotidien(request, boutique_id):
-    """Afficher le rapport du chiffre d'affaires quotidien"""
+    """Afficher le rapport du chiffre d'affaires pour une journée donnée (par défaut aujourd'hui)"""
     boutique = request.boutique
-    
-    # Données des 30 derniers jours
-    date_fin = timezone.now().date()
-    date_debut = date_fin - timedelta(days=30)
-    
-    rapports_jours = []
-    current_date = date_debut
-    total_ca = 0
-    total_ventes = 0
-    
-    while current_date <= date_fin:
-        ventes_jour = Vente.objects.filter(
-            boutique=boutique,
-            date_vente__date=current_date,
-            paye=True
-        )
-        nb_ventes = ventes_jour.count()
-        ca_jour = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
-        
-        rapports_jours.append({
-            'date': current_date,
-            'nb_ventes': nb_ventes,
-            'ca': ca_jour
-        })
-        
-        total_ventes += nb_ventes
-        total_ca += ca_jour
-        current_date += timedelta(days=1)
-    
-    # Inverser pour avoir les dates les plus récentes en premier
-    rapports_jours.reverse()
-    
+
+    # Récupérer la date ciblée (par défaut aujourd'hui)
+    date_str = request.GET.get('date')
+    if date_str:
+        try:
+            date_cible = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            date_cible = timezone.now().date()
+    else:
+        date_cible = timezone.now().date()
+
+    ventes = Vente.objects.filter(
+        boutique=boutique,
+        date_vente__date=date_cible,
+        paye=True
+    ).select_related('client_maui').prefetch_related('lignes__article')
+
+    total_ventes = ventes.count()
+    total_ca = ventes.aggregate(total=Sum('montant_total'))['total'] or 0
+
+    ventes_par_mode = ventes.values('mode_paiement').annotate(
+        count=Count('id'),
+        total=Sum('montant_total')
+    )
+
     context = {
         'boutique': boutique,
-        'rapports_jours': rapports_jours,
+        'ventes': ventes,
+        'date_cible': date_cible,
         'total_ventes': total_ventes,
         'total_ca': total_ca,
-        'date_debut': date_debut,
-        'date_fin': date_fin,
+        'ventes_par_mode': ventes_par_mode,
     }
-    
+
     return render(request, 'inventory/commercant/rapport_ca_quotidien.html', context)
 
 @login_required

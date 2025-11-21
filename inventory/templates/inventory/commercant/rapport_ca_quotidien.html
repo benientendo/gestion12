@@ -2,7 +2,7 @@
 {% load static %}
 {% load date_filters %}
 
-{% block title %}Rapport CA Quotidien - {{ boutique.nom }}{% endblock %}
+{% block title %}Rapport Recette Quotidienne - {{ boutique.nom }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -38,8 +38,10 @@
     .table-rapport {
         background: white;
         border-radius: 10px;
-        overflow: hidden;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
     }
     .table-rapport thead {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -67,80 +69,87 @@
     <div class="rapport-header">
         <div class="row align-items-center">
             <div class="col-md-8">
-                <h2><i class="fas fa-chart-line me-2"></i>Rapport CA Quotidien</h2>
+                <h2><i class="fas fa-chart-line me-2"></i>Rapport Recette Quotidienne</h2>
                 <p class="mb-0 opacity-75">{{ boutique.nom }} - {{ boutique.ville }}</p>
-                <small class="opacity-75">30 derniers jours ({{ date_debut|date:"d/m/Y" }} - {{ date_fin|date:"d/m/Y" }})</small>
+                <small class="opacity-75">Jour sélectionné : {{ date_cible|date:"d/m/Y" }}</small>
             </div>
             <div class="col-md-4 text-end">
-                <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-light me-2">
-                    <i class="fas fa-arrow-left"></i> Retour
-                </a>
-                <a href="{% url 'inventory:exporter_ca_quotidien_pdf' boutique.id %}" class="btn btn-light" target="_blank">
-                    <i class="fas fa-file-pdf"></i> Export PDF
-                </a>
+                <form method="get" class="d-inline-flex align-items-center mb-2">
+                    <label for="id_date" class="me-2 mb-0"><small>Sélectionner une date :</small></label>
+                    <input id="id_date" type="date" name="date" class="form-control form-control-sm"
+                           value="{{ date_cible|date:'Y-m-d' }}"
+                           onchange="this.form.submit()">
+                </form>
+                <div class="mt-2">
+                    <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-light btn-sm me-2">
+                        <i class="fas fa-arrow-left"></i> Retour
+                    </a>
+                    <a href="{% url 'inventory:exporter_ca_quotidien_pdf' boutique.id %}" class="btn btn-light btn-sm" target="_blank">
+                        <i class="fas fa-file-pdf"></i> Export PDF (30 jours)
+                    </a>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Statistiques -->
+    <!-- Statistiques du jour -->
     <div class="row mb-4">
         <div class="col-md-6">
             <div class="stat-card">
                 <div class="stat-value">{{ total_ventes }}</div>
-                <div class="stat-label">TOTAL VENTES</div>
+                <div class="stat-label">VENTES SUR LA JOURNÉE</div>
             </div>
         </div>
         <div class="col-md-6">
             <div class="stat-card">
                 <div class="stat-value">{{ total_ca|floatformat:0 }} CDF</div>
-                <div class="stat-label">CHIFFRE D'AFFAIRES</div>
+                <div class="stat-label">CHIFFRE D'AFFAIRES DE LA JOURNÉE</div>
             </div>
         </div>
     </div>
 
-    <!-- Tableau des rapports -->
+    <!-- Tableau des ventes du jour -->
     <div class="table-rapport">
         <table class="table table-hover mb-0">
             <thead>
                 <tr>
-                    <th>Date</th>
-                    <th>Jour</th>
-                    <th class="text-center">Nb Ventes</th>
-                    <th class="text-end">Chiffre d'Affaires (CDF)</th>
+                    <th>Heure</th>
+                    <th>N° Facture</th>
+                    <th>Terminal</th>
+                    <th>Mode de paiement</th>
+                    <th class="text-center">Nb Articles</th>
+                    <th class="text-end">Montant (CDF)</th>
                 </tr>
             </thead>
             <tbody>
-                {% for jour in rapports_jours %}
-                <tr {% if jour.date.weekday >= 5 %}class="jour-weekend"{% endif %}>
-                    <td>
-                        <strong>{{ jour.date|format_date_vente }}</strong>
-                    </td>
-                    <td>
-                        {% if jour.date.weekday == 0 %}Lundi
-                        {% elif jour.date.weekday == 1 %}Mardi
-                        {% elif jour.date.weekday == 2 %}Mercredi
-                        {% elif jour.date.weekday == 3 %}Jeudi
-                        {% elif jour.date.weekday == 4 %}Vendredi
-                        {% elif jour.date.weekday == 5 %}Samedi
-                        {% else %}Dimanche
-                        {% endif %}
-                    </td>
-                    <td class="text-center">
-                        {% if jour.nb_ventes > 0 %}
-                            <span class="badge bg-primary">{{ jour.nb_ventes }}</span>
-                        {% else %}
-                            <span class="text-muted">0</span>
-                        {% endif %}
-                    </td>
-                    <td class="text-end {% if jour.ca > 0 %}ca-positif{% else %}ca-nul{% endif %}">
-                        {{ jour.ca|floatformat:0 }}
-                    </td>
-                </tr>
-                {% endfor %}
+                {% if ventes %}
+                    {% for vente in ventes %}
+                    <tr>
+                        <td>{{ vente.date_vente|date:"d/m/Y H:i" }}</td>
+                        <td>{{ vente.numero_facture }}</td>
+                        <td>
+                            {% if vente.client_maui %}
+                                {{ vente.client_maui.nom_terminal }}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ vente.get_mode_paiement_display }}</td>
+                        <td class="text-center">{{ vente.lignes.count }}</td>
+                        <td class="text-end ca-positif">{{ vente.montant_total|floatformat:0 }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center ca-nul py-4">
+                            Aucune vente pour cette journée.
+                        </td>
+                    </tr>
+                {% endif %}
             </tbody>
             <tfoot>
                 <tr class="table-active">
-                    <th colspan="2">TOTAL</th>
+                    <th colspan="4">TOTAL</th>
                     <th class="text-center">{{ total_ventes }}</th>
                     <th class="text-end text-success">{{ total_ca|floatformat:0 }} CDF</th>
                 </tr>
