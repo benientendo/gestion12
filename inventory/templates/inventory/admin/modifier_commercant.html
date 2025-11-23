@@ -41,51 +41,25 @@
                                 </h6>
                             </div>
                         </div>
-                        
+
                         <div class="row mb-3">
                             <div class="col-md-6">
-                                <label for="{{ form.username.id_for_label }}" class="form-label">{{ form.username.label }}</label>
-                                {{ form.username }}
-                                {% if form.username.errors %}
-                                    <div class="text-danger small">{{ form.username.errors }}</div>
-                                {% endif %}
+                                <label class="form-label">Nom d'utilisateur</label>
+                                <input type="text" class="form-control" value="{{ commercant.user.username }}" disabled>
                             </div>
                             <div class="col-md-6">
-                                <label for="{{ form.email.id_for_label }}" class="form-label">{{ form.email.label }}</label>
-                                {{ form.email }}
-                                {% if form.email.errors %}
-                                    <div class="text-danger small">{{ form.email.errors }}</div>
-                                {% endif %}
+                                <label class="form-label">Nom complet</label>
+                                <input type="text" class="form-control" value="{{ commercant.user.get_full_name|default:'Non renseigné' }}" disabled>
                             </div>
                         </div>
-                        
+
                         <div class="row mb-3">
                             <div class="col-md-6">
-                                <label for="{{ form.prenom.id_for_label }}" class="form-label">{{ form.prenom.label }}</label>
-                                {{ form.prenom }}
-                                {% if form.prenom.errors %}
-                                    <div class="text-danger small">{{ form.prenom.errors }}</div>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-6">
-                                <label for="{{ form.nom.id_for_label }}" class="form-label">{{ form.nom.label }}</label>
-                                {{ form.nom }}
-                                {% if form.nom.errors %}
-                                    <div class="text-danger small">{{ form.nom.errors }}</div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        
-                        <div class="row mb-4">
-                            <div class="col-md-6">
-                                <label for="{{ form.password.id_for_label }}" class="form-label">{{ form.password.label }}</label>
-                                {{ form.password }}
-                                {% if form.password.errors %}
-                                    <div class="text-danger small">{{ form.password.errors }}</div>
-                                {% endif %}
-                                {% if form.password.help_text %}
-                                    <div class="form-text">{{ form.password.help_text }}</div>
-                                {% endif %}
+                                <label class="form-label">Email de connexion</label>
+                                <input type="email" class="form-control" value="{{ commercant.user.email }}" disabled>
+                                <div class="form-text">
+                                    La modification de l'email ou du mot de passe se fait via la gestion des utilisateurs.
+                                </div>
                             </div>
                         </div>
                         
@@ -99,33 +73,30 @@
                         </div>
                         
                         <div class="row mb-3">
-                            <div class="col-md-8">
+                            <div class="col-md-6">
                                 <label for="{{ form.nom_entreprise.id_for_label }}" class="form-label">{{ form.nom_entreprise.label }} *</label>
                                 {{ form.nom_entreprise }}
                                 {% if form.nom_entreprise.errors %}
                                     <div class="text-danger small">{{ form.nom_entreprise.errors }}</div>
                                 {% endif %}
                             </div>
-                            <div class="col-md-4">
-                                <label for="{{ form.siret.id_for_label }}" class="form-label">{{ form.siret.label }}</label>
-                                {{ form.siret }}
-                                {% if form.siret.errors %}
-                                    <div class="text-danger small">{{ form.siret.errors }}</div>
+                            <div class="col-md-6">
+                                <label for="{{ form.nom_responsable.id_for_label }}" class="form-label">{{ form.nom_responsable.label }} *</label>
+                                {{ form.nom_responsable }}
+                                {% if form.nom_responsable.errors %}
+                                    <div class="text-danger small">{{ form.nom_responsable.errors }}</div>
                                 {% endif %}
                             </div>
                         </div>
-                        
+
                         <div class="row mb-3">
-                            <div class="col-12">
-                                <label for="{{ form.adresse_siege.id_for_label }}" class="form-label">{{ form.adresse_siege.label }}</label>
-                                {{ form.adresse_siege }}
-                                {% if form.adresse_siege.errors %}
-                                    <div class="text-danger small">{{ form.adresse_siege.errors }}</div>
+                            <div class="col-md-6">
+                                <label for="{{ form.email.id_for_label }}" class="form-label">{{ form.email.label }}</label>
+                                {{ form.email }}
+                                {% if form.email.errors %}
+                                    <div class="text-danger small">{{ form.email.errors }}</div>
                                 {% endif %}
                             </div>
-                        </div>
-                        
-                        <div class="row mb-3">
                             <div class="col-md-6">
                                 <label for="{{ form.telephone.id_for_label }}" class="form-label">{{ form.telephone.label }}</label>
                                 {{ form.telephone }}
@@ -133,11 +104,31 @@
                                     <div class="text-danger small">{{ form.telephone.errors }}</div>
                                 {% endif %}
                             </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <label for="{{ form.adresse.id_for_label }}" class="form-label">{{ form.adresse.label }}</label>
+                                {{ form.adresse }}
+                                {% if form.adresse.errors %}
+                                    <div class="text-danger small">{{ form.adresse.errors }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
                             <div class="col-md-6">
-                                <label for="{{ form.email_contact.id_for_label }}" class="form-label">{{ form.email_contact.label }}</label>
-                                {{ form.email_contact }}
-                                {% if form.email_contact.errors %}
-                                    <div class="text-danger small">{{ form.email_contact.errors }}</div>
+                                <label for="{{ form.numero_registre_commerce.id_for_label }}" class="form-label">{{ form.numero_registre_commerce.label }}</label>
+                                {{ form.numero_registre_commerce }}
+                                {% if form.numero_registre_commerce.errors %}
+                                    <div class="text-danger small">{{ form.numero_registre_commerce.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.numero_fiscal.id_for_label }}" class="form-label">{{ form.numero_fiscal.label }}</label>
+                                {{ form.numero_fiscal }}
+                                {% if form.numero_fiscal.errors %}
+                                    <div class="text-danger small">{{ form.numero_fiscal.errors }}</div>
                                 {% endif %}
                             </div>
                         </div>
@@ -152,7 +143,14 @@
                         </div>
                         
                         <div class="row mb-3">
-                            <div class="col-md-6">
+                            <div class="col-md-4">
+                                <label for="{{ form.type_abonnement.id_for_label }}" class="form-label">{{ form.type_abonnement.label }}</label>
+                                {{ form.type_abonnement }}
+                                {% if form.type_abonnement.errors %}
+                                    <div class="text-danger small">{{ form.type_abonnement.errors }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4">
                                 <label for="{{ form.max_boutiques.id_for_label }}" class="form-label">{{ form.max_boutiques.label }}</label>
                                 {{ form.max_boutiques }}
                                 {% if form.max_boutiques.errors %}
@@ -160,7 +158,7 @@
                                 {% endif %}
                                 <div class="form-text">Actuellement: {{ commercant.boutiques.count }} boutique(s) créée(s)</div>
                             </div>
-                            <div class="col-md-6 d-flex align-items-center">
+                            <div class="col-md-4 d-flex align-items-center">
                                 <div class="form-check">
                                     {{ form.est_actif }}
                                     <label class="form-check-label" for="{{ form.est_actif.id_for_label }}">
@@ -169,7 +167,7 @@
                                 </div>
                             </div>
                         </div>
-                        
+
                         <div class="row mb-3">
                             <div class="col-12">
                                 <label for="{{ form.notes_admin.id_for_label }}" class="form-label">{{ form.notes_admin.label }}</label>
@@ -206,34 +204,21 @@
     // Validation côté client
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.querySelector('form');
-        const siretField = document.querySelector('#id_siret');
         const maxBoutiquesField = document.querySelector('#id_max_boutiques');
-        
-        // Validation SIRET
-        if (siretField) {
-            siretField.addEventListener('input', function() {
-                const siret = this.value.replace(/\s/g, '');
-                if (siret.length > 0 && siret.length !== 14) {
-                    this.setCustomValidity('Le SIRET doit contenir exactement 14 chiffres');
-                } else {
-                    this.setCustomValidity('');
-                }
-            });
-        }
-        
+
         // Validation max boutiques
         if (maxBoutiquesField) {
             const boutiquesExistantes = {{ commercant.boutiques.count }};
             maxBoutiquesField.addEventListener('input', function() {
                 const newMax = parseInt(this.value);
-                if (newMax < boutiquesExistantes) {
+                if (!isNaN(newMax) && newMax < boutiquesExistantes) {
                     this.setCustomValidity(`Le nombre maximum ne peut pas être inférieur au nombre de boutiques existantes (${boutiquesExistantes})`);
                 } else {
                     this.setCustomValidity('');
                 }
             });
         }
-        
+
         // Confirmation avant soumission
         form.addEventListener('submit', function(e) {
             if (!confirm('Enregistrer les modifications ?')) {

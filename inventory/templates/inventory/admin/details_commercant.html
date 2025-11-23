@@ -17,9 +17,15 @@
                     <a href="{% url 'inventory:admin_gestion_commercants' %}" class="btn btn-outline-secondary me-2">
                         <i class="fas fa-arrow-left"></i> Retour à la liste
                     </a>
-                    <a href="{% url 'inventory:admin_modifier_commercant' commercant.id %}" class="btn btn-primary">
+                    <a href="{% url 'inventory:admin_modifier_commercant' commercant.id %}" class="btn btn-primary me-2">
                         <i class="fas fa-edit"></i> Modifier
                     </a>
+                    <form method="post" action="{% url 'inventory:admin_reset_commercant_password' commercant.id %}" class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-warning" onclick="return confirm('Réinitialiser le mot de passe de ce commerçant ? Un nouveau mot de passe sera généré et affiché une seule fois.')">
+                            <i class="fas fa-key"></i> Réinitialiser le mot de passe
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>

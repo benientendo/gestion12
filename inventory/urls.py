@@ -50,6 +50,7 @@ urlpatterns = [
     path('superadmin/commercants/<int:commercant_id>/', admin_views.details_commercant, name='admin_details_commercant'),
     path('superadmin/commercants/<int:commercant_id>/modifier/', admin_views.modifier_commercant, name='admin_modifier_commercant'),
     path('superadmin/commercants/<int:commercant_id>/supprimer/', admin_views.supprimer_commercant, name='admin_supprimer_commercant'),
+    path('superadmin/commercants/<int:commercant_id>/reset-password/', admin_views.reset_commercant_password, name='admin_reset_commercant_password'),
     path('superadmin/commercants/<int:commercant_id>/toggle-status/', admin_views.toggle_commercant_status, name='admin_toggle_commercant_status'),
     path('superadmin/boutiques/', admin_views.gestion_boutiques_admin, name='admin_gestion_boutiques'),
     path('superadmin/diagnostic-api/', admin_views.diagnostic_api, name='admin_diagnostic_api'),

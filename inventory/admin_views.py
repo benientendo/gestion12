@@ -9,8 +9,14 @@ from django.db.models import Count
 from .models import Client, Commercant, Boutique
 from .forms import ClientForm, CommercantForm
 import logging
+import secrets
+import string
 
 logger = logging.getLogger(__name__)
+
+def _generate_random_password(length=10):
+    alphabet = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 def is_superuser(user):
     """Vérifier si l'utilisateur est un super administrateur."""
@@ -157,6 +163,22 @@ def modifier_commercant(request, commercant_id):
         'form': form,
         'commercant': commercant
     })
+
+
+@login_required
+@user_passes_test(is_superuser)
+def reset_commercant_password(request, commercant_id):
+    commercant = get_object_or_404(Commercant, id=commercant_id)
+
+    if request.method != 'POST':
+        return redirect('inventory:admin_details_commercant', commercant_id=commercant.id)
+
+    new_password = _generate_random_password()
+    commercant.user.set_password(new_password)
+    commercant.user.save()
+
+    messages.success(request, f'Nouveau mot de passe pour {commercant.nom_entreprise} : {new_password}')
+    return redirect('inventory:admin_details_commercant', commercant_id=commercant.id)
 
 
 @login_required
