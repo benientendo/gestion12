@@ -15,6 +15,7 @@ import json
 import qrcode
 from PIL import Image
 import io
+import uuid
 from django.core.files.base import ContentFile
 
 # ===== DÉCORATEURS ET UTILITAIRES =====
@@ -1083,7 +1084,6 @@ def ajouter_article_boutique(request, boutique_id):
             try:
                 # Créer l'article avec les données minimales
                 nom = request.POST.get('nom', '').strip()
-                code = request.POST.get('code', '').strip()
                 prix_vente = request.POST.get('prix_vente', '')
                 quantite_stock = request.POST.get('quantite_stock', 0)
                 categorie_id = request.POST.get('categorie', '')
@@ -1092,17 +1092,24 @@ def ajouter_article_boutique(request, boutique_id):
                 errors = {}
                 if not nom:
                     errors['nom'] = ['Le nom est requis']
-                if not code:
-                    errors['code'] = ['Le code-barres est requis']
                 if not prix_vente:
                     errors['prix_vente'] = ['Le prix de vente est requis']
                     
-                # Vérifier si le code existe déjà
-                if code and Article.objects.filter(boutique=boutique, code=code).exists():
-                    errors['code'] = ['Ce code-barres existe déjà dans cette boutique']
+                # Si un code est fourni (cas évolutif), vérifier qu'il n'existe pas déjà
+                code = request.POST.get('code', '').strip()
+                if code and Article.objects.filter(code=code).exists():
+                    errors['code'] = ['Ce code-barres existe déjà']
                 
                 if errors:
                     return JsonResponse({'success': False, 'errors': errors})
+                
+                # Générer un code-barres automatique si aucun n'est fourni
+                if not code:
+                    base_code = f"{boutique.id}-{uuid.uuid4().hex[:8].upper()}"
+                    # S'assurer que le code est unique
+                    while Article.objects.filter(code=base_code).exists():
+                        base_code = f"{boutique.id}-{uuid.uuid4().hex[:8].upper()}"
+                    code = base_code
                 
                 # Créer l'article
                 article = Article.objects.create(
@@ -1190,10 +1197,14 @@ def modifier_article_boutique(request, boutique_id, article_id):
         return redirect('inventory:commercant_articles_boutique', boutique_id=boutique.id)
     
     if request.method == 'POST':
+        # Conserver le code-barres existant (on ne souhaite plus le modifier via ce formulaire)
+        ancien_code = article.code
         form = ArticleForm(request.POST, request.FILES, instance=article)
         if form.is_valid():
             article = form.save(commit=False)
             article.boutique = boutique
+            # Réappliquer le code d'origine pour éviter de le vider ou de le dupliquer
+            article.code = ancien_code
             article.save()
             
             # Régénérer le code QR si le code a changé

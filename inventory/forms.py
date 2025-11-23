@@ -44,6 +44,15 @@ class ArticleForm(forms.ModelForm):
             'est_actif': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
     
+    def __init__(self, *args, **kwargs):
+        instance = kwargs.get('instance')
+        super().__init__(*args, **kwargs)
+        if 'categorie' in self.fields:
+            self.fields['categorie'].required = False
+        # En mode modification, ne pas exiger le champ code (on ne l'édite plus dans certains formulaires)
+        if instance is not None and getattr(instance, 'pk', None) and 'code' in self.fields:
+            self.fields['code'].required = False
+
     def save(self, commit=True):
         instance = super().save(commit=False)
         # Définir prix_achat à 0 par défaut s'il n'est pas fourni
