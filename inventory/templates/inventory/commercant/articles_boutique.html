@@ -275,12 +275,15 @@
                                                title="Modifier tout">
                                                 <i class="fas fa-edit"></i>
                                             </a>
-                                            <a href="{% url 'inventory:supprimer_article' article.id %}" 
-                                               class="btn btn-outline-danger"
-                                               onclick="return confirm('Êtes-vous sûr de vouloir supprimer cet article ?')"
-                                               title="Supprimer">
-                                                <i class="fas fa-trash"></i>
-                                            </a>
+                                            <form method="post" action="{% url 'inventory:supprimer_article_boutique' boutique.id article.id %}" style="display: inline;">
+                                                {% csrf_token %}
+                                                <button type="submit" 
+                                                        class="btn btn-outline-danger"
+                                                        onclick="return confirm('Êtes-vous sûr de vouloir supprimer cet article ?')"
+                                                        title="Supprimer">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </form>
                                         </div>
                                     </td>
                                 </tr>

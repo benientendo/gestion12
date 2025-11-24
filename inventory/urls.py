@@ -74,6 +74,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/client-maui/ajouter/', views_commercant.ajouter_client_maui_boutique, name='ajouter_client_maui_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/ajouter/', views_commercant.ajouter_article_boutique, name='ajouter_article_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier/', views_commercant.modifier_article_boutique, name='modifier_article_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/supprimer/', views_commercant.supprimer_article_boutique, name='supprimer_article_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/ajuster-stock/', views_commercant.ajuster_stock_article, name='ajuster_stock_article'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier-prix/', views_commercant.modifier_prix_article, name='modifier_prix_article'),
     path('commercant/boutiques/<int:boutique_id>/categories/', views_commercant.categories_boutique, name='commercant_categories_boutique'),

@@ -1238,6 +1238,29 @@ def modifier_article_boutique(request, boutique_id, article_id):
 @login_required
 @commercant_required
 @boutique_access_required
+def supprimer_article_boutique(request, boutique_id, article_id):
+    """Supprimer un article d'une boutique spécifique (interface commerçant)"""
+    boutique = request.boutique
+    
+    try:
+        article = Article.objects.get(id=article_id, boutique=boutique)
+    except Article.DoesNotExist:
+        messages.error(request, "Article introuvable.")
+        return redirect('inventory:commercant_articles_boutique', boutique_id=boutique.id)
+    
+    if request.method == 'POST':
+        nom_article = article.nom
+        try:
+            article.delete()
+            messages.success(request, f"Article '{nom_article}' supprimé avec succès!")
+        except Exception as e:
+            messages.error(request, f"Impossible de supprimer l'article : {str(e)}")
+    
+    return redirect('inventory:commercant_articles_boutique', boutique_id=boutique.id)
+
+@login_required
+@commercant_required
+@boutique_access_required
 def ajuster_stock_article(request, boutique_id, article_id):
     """Ajuster rapidement le stock d'un article"""
     from django.http import JsonResponse
