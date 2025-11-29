@@ -575,6 +575,19 @@ def supprimer_boutique(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+def toggle_boutique_pos(request, boutique_id):
+    boutique = request.boutique
+    boutique.pos_autorise = not boutique.pos_autorise
+    boutique.save(update_fields=['pos_autorise'])
+    if boutique.pos_autorise:
+        messages.success(request, f"POS MAUI autorisé pour la boutique '{boutique.nom}'.")
+    else:
+        messages.warning(request, f"POS MAUI désactivé pour la boutique '{boutique.nom}'. Aucun terminal ne pourra enregistrer de ventes.")
+    return redirect('inventory:commercant_dashboard')
+
+@login_required
+@commercant_required
+@boutique_access_required
 def entrer_boutique(request, boutique_id):
     """Entrer dans une boutique (dashboard boutique)"""
     boutique = request.boutique

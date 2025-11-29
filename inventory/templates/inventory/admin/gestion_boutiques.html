@@ -128,6 +128,24 @@
                         </small>
                     </div>
                     
+                    <!-- Statut POS MAUI -->
+                    <div class="mb-3">
+                        {% if boutique.pos_autorise %}
+                            <span class="badge bg-success me-2">
+                                <i class="fas fa-mobile-alt"></i> POS autorisé
+                            </span>
+                        {% else %}
+                            <span class="badge bg-danger me-2">
+                                <i class="fas fa-mobile-alt"></i> POS désactivé
+                            </span>
+                        {% endif %}
+                        {% if boutique.clients.count %}
+                            <small class="text-muted">
+                                {{ boutique.clients.count }} terminal(s) MAUI associé(s)
+                            </small>
+                        {% endif %}
+                    </div>
+                    
                     <!-- Code boutique -->
                     {% if boutique.code %}
                     <div class="mb-3">
@@ -141,6 +159,15 @@
                     <div class="d-grid gap-2">
                         <a href="{% url 'inventory:admin_details_commercant' boutique.commercant.id %}" class="btn btn-outline-primary btn-sm">
                             <i class="fas fa-user"></i> Voir le commerçant
+                        </a>
+                        <a href="{% url 'inventory:admin_toggle_boutique_pos' boutique.id %}"
+                           class="btn btn-outline-secondary btn-sm"
+                           onclick="return confirm('Voulez-vous vraiment {% if boutique.pos_autorise %}désactiver{% else %}autoriser{% endif %} le POS pour cette boutique ?');">
+                            {% if boutique.pos_autorise %}
+                                Bloquer POS
+                            {% else %}
+                                Autoriser POS
+                            {% endif %}
                         </a>
                     </div>
                 </div>

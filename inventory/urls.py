@@ -25,6 +25,7 @@ urlpatterns = [
     # Gestion des ventes
     path('ventes/', views.liste_ventes, name='ventes'),
     path('ventes/historique/', views.historique_ventes, name='historique_ventes'),
+    path('ventes/historique/supprimer-selection/', views.supprimer_ventes_selectionnees, name='supprimer_ventes_selectionnees'),
     
     # Authentification
     path('login/', views.user_login, name='login'),
@@ -53,6 +54,7 @@ urlpatterns = [
     path('superadmin/commercants/<int:commercant_id>/reset-password/', admin_views.reset_commercant_password, name='admin_reset_commercant_password'),
     path('superadmin/commercants/<int:commercant_id>/toggle-status/', admin_views.toggle_commercant_status, name='admin_toggle_commercant_status'),
     path('superadmin/boutiques/', admin_views.gestion_boutiques_admin, name='admin_gestion_boutiques'),
+    path('superadmin/boutiques/<int:boutique_id>/toggle-pos/', admin_views.toggle_boutique_pos_admin, name='admin_toggle_boutique_pos'),
     path('superadmin/diagnostic-api/', admin_views.diagnostic_api, name='admin_diagnostic_api'),
     
     # ===== INTERFACE COMMERÇANT =====
@@ -64,6 +66,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/', views_commercant.detail_boutique, name='commercant_detail_boutique'),
     path('commercant/boutiques/<int:boutique_id>/modifier/', views_commercant.modifier_boutique, name='modifier_boutique'),
     path('commercant/boutiques/<int:boutique_id>/supprimer/', views_commercant.supprimer_boutique, name='supprimer_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/toggle-pos/', views_commercant.toggle_boutique_pos, name='toggle_boutique_pos'),
     path('commercant/boutiques/<int:boutique_id>/entrer/', views_commercant.entrer_boutique, name='entrer_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/', views_commercant.articles_boutique, name='commercant_articles_boutique'),
     path('commercant/boutiques/<int:boutique_id>/terminaux/', views_commercant.terminaux_boutique, name='commercant_terminaux_boutique'),

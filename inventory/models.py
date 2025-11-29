@@ -370,6 +370,7 @@ class Boutique(models.Model):
     
     # Statut et paramètres
     est_active = models.BooleanField(default=True, help_text="La boutique est-elle active?")
+    pos_autorise = models.BooleanField(default=True)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_mise_a_jour = models.DateTimeField(auto_now=True)
     

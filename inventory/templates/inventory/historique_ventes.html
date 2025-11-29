@@ -134,22 +134,38 @@
         </div>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-bordered table-striped table-hover" id="dataTable" width="100%" cellspacing="0">
-                <thead class="thead-light">
-                    <tr>
-                        <th>N° Facture</th>
-                        <th>Date</th>
-                        <th>Montant</th>
-                        <th>Mode de paiement</th>
-                        <th>Statut</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for vente in page_obj %}
-                    <tr>
-                        <td><strong>{{ vente.numero_facture }}</strong></td>
+        <form method="post" action="{% url 'inventory:supprimer_ventes_selectionnees' %}" id="form-suppression-ventes">
+            {% csrf_token %}
+            <div class="mb-3 d-flex justify-content-between align-items-center">
+                <div class="text-muted small">
+                    Sélectionnez une ou plusieurs ventes à supprimer.
+                </div>
+                <button type="submit" class="btn btn-sm btn-danger" id="deleteSelectedButton" disabled>
+                    <i class="bi bi-trash me-1"></i>Supprimer la sélection
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped table-hover" id="dataTable" width="100%" cellspacing="0">
+                    <thead class="thead-light">
+                        <tr>
+                            <th class="text-center" style="width: 40px;">
+                                <input type="checkbox" id="selectAllVentes">
+                            </th>
+                            <th>N° Facture</th>
+                            <th>Date</th>
+                            <th>Montant</th>
+                            <th>Mode de paiement</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for vente in page_obj %}
+                        <tr>
+                            <td class="text-center">
+                                <input type="checkbox" name="ventes_ids" value="{{ vente.id }}" class="vente-checkbox">
+                            </td>
+                            <td><strong>{{ vente.numero_facture }}</strong></td>
                         <td>{{ vente.date_vente|format_date_vente }}</td>
                         <td><span class="text-primary fw-bold">{{ vente.montant_total|format_cdf:2 }} CDF</span></td>
                         <td>
@@ -171,34 +187,35 @@
                                 {% if vente.paye %}Payé{% else %}En attente{% endif %}
                             </span>
                         </td>
-                        <td>
-                            <div class="d-flex">
-                                <button class="btn btn-sm btn-info me-1" onclick="voirDetailsVente('{{ vente.id }}')">
-                                    <i class="bi bi-eye"></i>
-                                </button>
-                                <button class="btn btn-sm btn-primary me-1" onclick="imprimerFacture('{{ vente.id }}')">
-                                    <i class="bi bi-printer"></i>
-                                </button>
-                                {% if not vente.paye %}
-                                <button class="btn btn-sm btn-success me-1" onclick="marquerCommePaye('{{ vente.id }}')">
-                                    <i class="bi bi-check-circle"></i>
-                                </button>
-                                {% endif %}
-                            </div>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="6" class="text-center py-4">
-                            <div class="text-muted">
-                                <i class="bi bi-info-circle me-1"></i>Aucune vente trouvée pour ces critères.
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+                            <td>
+                                <div class="d-flex">
+                                    <button class="btn btn-sm btn-info me-1" type="button" onclick="voirDetailsVente('{{ vente.id }}')">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button class="btn btn-sm btn-primary me-1" type="button" onclick="imprimerFacture('{{ vente.id }}')">
+                                        <i class="bi bi-printer"></i>
+                                    </button>
+                                    {% if not vente.paye %}
+                                    <button class="btn btn-sm btn-success me-1" type="button" onclick="marquerCommePaye('{{ vente.id }}')">
+                                        <i class="bi bi-check-circle"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center py-4">
+                                <div class="text-muted">
+                                    <i class="bi bi-info-circle me-1"></i>Aucune vente trouvée pour ces critères.
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </form>
         
         <!-- Pagination -->
         {% if page_obj.has_other_pages %}
@@ -429,6 +446,48 @@
             });
         }
         
+        // Gestion de la sélection des ventes pour suppression
+        const selectAllCheckbox = document.getElementById('selectAllVentes');
+        const venteCheckboxes = document.querySelectorAll('.vente-checkbox');
+        const deleteButton = document.getElementById('deleteSelectedButton');
+        const formSuppression = document.getElementById('form-suppression-ventes');
+
+        function updateDeleteButtonState() {
+            const anyChecked = Array.from(venteCheckboxes).some(cb => cb.checked);
+            deleteButton.disabled = !anyChecked;
+        }
+
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                venteCheckboxes.forEach(cb => {
+                    cb.checked = selectAllCheckbox.checked;
+                });
+                updateDeleteButtonState();
+            });
+        }
+
+        venteCheckboxes.forEach(cb => {
+            cb.addEventListener('change', function() {
+                if (!this.checked && selectAllCheckbox) {
+                    selectAllCheckbox.checked = false;
+                }
+                updateDeleteButtonState();
+            });
+        });
+
+        if (formSuppression) {
+            formSuppression.addEventListener('submit', function(e) {
+                const anyChecked = Array.from(venteCheckboxes).some(cb => cb.checked);
+                if (!anyChecked) {
+                    e.preventDefault();
+                    return;
+                }
+                if (!confirm('Supprimer définitivement les ventes sélectionnées ? Cette action est irréversible.')) {
+                    e.preventDefault();
+                }
+            });
+        }
+
         // Gestion du bouton d'impression des détails
         document.getElementById('imprimerDetailsBtn').addEventListener('click', function() {
             const contenu = document.getElementById('detailsVenteContent').innerHTML;

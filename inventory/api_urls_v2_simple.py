@@ -11,6 +11,7 @@ app_name = 'api_v2_simple'
 urlpatterns = [
     # ===== DIAGNOSTIC =====
     path('status/', api_views_v2_simple.api_status_v2_simple, name='api_status'),
+    path('pos/status/', api_views_v2_simple.pos_status_simple, name='pos_status'),
     
     # ===== BOUTIQUES =====
     path('boutiques/', api_views_v2_simple.boutiques_list_simple, name='boutiques_list'),

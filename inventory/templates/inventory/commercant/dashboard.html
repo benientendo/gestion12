@@ -139,7 +139,12 @@
                                 <span class="badge bg-success me-2">
                                     <i class="fas fa-mobile-alt"></i> {{ boutique.clients.count }} MAUI
                                 </span>
-                                <small class="text-muted">{{ boutique.clients.first.nom_terminal|default:"Terminal" }}</small>
+                                <small class="text-muted me-2">{{ boutique.clients.first.nom_terminal|default:"Terminal" }}</small>
+                                {% if boutique.pos_autorise %}
+                                    <span class="badge bg-success me-2">POS autorisé</span>
+                                {% else %}
+                                    <span class="badge bg-danger me-2">POS désactivé</span>
+                                {% endif %}
                             </div>
                         {% else %}
                             <div class="d-flex align-items-center">

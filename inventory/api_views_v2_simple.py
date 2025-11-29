@@ -90,6 +90,68 @@ def boutiques_list_simple(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+def pos_status_simple(request):
+    boutique_id = request.GET.get('boutique_id')
+    numero_serie = request.GET.get('numero_serie')
+    if not boutique_id and not numero_serie:
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or
+            request.headers.get('Device-Serial') or
+            request.headers.get('Serial-Number') or
+            request.META.get('HTTP_X_DEVICE_SERIAL') or
+            request.META.get('HTTP_DEVICE_SERIAL')
+        )
+    boutique = None
+    terminal = None
+    try:
+        if boutique_id:
+            boutique = get_object_or_404(Boutique, id=boutique_id)
+        elif numero_serie:
+            terminal = Client.objects.select_related('boutique').filter(
+                numero_serie=numero_serie
+            ).first()
+            if terminal and terminal.boutique:
+                boutique = terminal.boutique
+        if not boutique:
+            return Response({
+                'success': False,
+                'code': 'POS_UNKNOWN_BOUTIQUE',
+                'message': 'Boutique introuvable pour ce terminal',
+                'numero_serie': numero_serie
+            }, status=status.HTTP_404_NOT_FOUND)
+        if not boutique.est_active:
+            return Response({
+                'success': False,
+                'code': 'POS_BOUTIQUE_INACTIVE',
+                'message': 'Boutique désactivée, POS indisponible',
+                'boutique_id': boutique.id
+            }, status=status.HTTP_403_FORBIDDEN)
+        if not boutique.pos_autorise:
+            return Response({
+                'success': True,
+                'pos_allowed': False,
+                'code': 'POS_DISABLED',
+                'message': 'POS désactivé au niveau de la boutique',
+                'boutique_id': boutique.id
+            }, status=status.HTTP_200_OK)
+        return Response({
+            'success': True,
+            'pos_allowed': True,
+            'code': 'POS_OK',
+            'message': 'POS autorisé pour cette boutique',
+            'boutique_id': boutique.id
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        logger.error(f"Erreur lors de la vérification POS: {str(e)}")
+        return Response({
+            'success': False,
+            'code': 'POS_INTERNAL_ERROR',
+            'message': 'Erreur interne du serveur'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
 def terminal_info_simple(request, numero_serie):
     """
     Informations sur un terminal MAUI par son numéro de série

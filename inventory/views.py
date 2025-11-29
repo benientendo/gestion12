@@ -566,6 +566,39 @@ def historique_ventes(request):
     return render(request, 'inventory/historique_ventes.html', context)
 
 
+@login_required
+def supprimer_ventes_selectionnees(request):
+    """Supprimer plusieurs ventes sélectionnées depuis l'historique."""
+    if request.method != 'POST':
+        return redirect('inventory:historique_ventes')
+    
+    ventes_ids = request.POST.getlist('ventes_ids')
+    if not ventes_ids:
+        messages.warning(request, "Aucune vente sélectionnée pour suppression.")
+        return redirect('inventory:historique_ventes')
+    
+    ventes = Vente.objects.filter(id__in=ventes_ids)
+    
+    if request.user.is_superuser:
+        ventes_autorisees = ventes
+    else:
+        try:
+            commercant = request.user.profil_commercant
+            ventes_autorisees = ventes.filter(boutique__commercant=commercant)
+        except Commercant.DoesNotExist:
+            messages.error(request, "Vous n'êtes pas autorisé à supprimer ces ventes.")
+            return redirect('inventory:historique_ventes')
+    
+    compteur = ventes_autorisees.count()
+    if compteur == 0:
+        messages.warning(request, "Aucune vente à supprimer pour votre compte.")
+        return redirect('inventory:historique_ventes')
+    
+    ventes_autorisees.delete()
+    messages.success(request, f"{compteur} vente(s) supprimée(s) avec succès.")
+    return redirect('inventory:historique_ventes')
+
+
 def is_superuser(user):
     """Vérifie si l'utilisateur est un super-utilisateur."""
     return user.is_superuser
