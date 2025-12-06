@@ -1,0 +1,220 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Rapports de caisse - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3><i class="fas fa-cash-register"></i> Rapports de caisse</h3>
+            <p class="text-muted mb-0">{{ boutique.nom }} - {{ boutique.ville }}</p>
+        </div>
+        <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Retour à la boutique
+        </a>
+    </div>
+
+    <div class="mb-3">
+        <div class="btn-group" role="group" aria-label="Navigation rapports">
+            <a href="{% url 'inventory:commercant_rapports_caisse_boutique' boutique.id %}"
+               class="btn btn-outline-primary active">
+                {% if unread_rapports_count %}
+                <span class="badge bg-danger d-block mb-1">{{ unread_rapports_count }}</span>
+                {% endif %}
+                Rapports de caisse
+            </a>
+            <a href="{% url 'inventory:commercant_articles_negocies_boutique' boutique.id %}"
+               class="btn btn-outline-primary">
+                {% if unread_articles_negocies_count %}
+                <span class="badge bg-danger d-block mb-1">{{ unread_articles_negocies_count }}</span>
+                {% endif %}
+                Articles négociés
+            </a>
+            <a href="{% url 'inventory:commercant_retours_articles_boutique' boutique.id %}"
+               class="btn btn-outline-primary">
+                {% if unread_retours_count %}
+                <span class="badge bg-danger d-block mb-1">{{ unread_retours_count }}</span>
+                {% endif %}
+                Articles retournés
+            </a>
+        </div>
+    </div>
+
+    <div class="modal fade" id="rapportDetailModal" tabindex="-1" aria-labelledby="rapportDetailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="rapportDetailModalLabel">Détails du rapport de caisse</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+                </div>
+                <div class="modal-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-3">Date du rapport</dt>
+                        <dd class="col-sm-9" id="modalRapportDate"></dd>
+                        <dt class="col-sm-3">Terminal</dt>
+                        <dd class="col-sm-9" id="modalRapportTerminal"></dd>
+                        <dt class="col-sm-3 text-danger">Dépense</dt>
+                        <dd class="col-sm-9 text-danger fw-bold" id="modalRapportDepense"></dd>
+                        <dt class="col-sm-3">Détail</dt>
+                        <dd class="col-sm-9" id="modalRapportDetail"></dd>
+                    </dl>
+                    <div id="modalRapportAppliqueeInfo" class="alert alert-success small d-none mt-3 mb-0">
+                        Cette dépense est déjà appliquée à la recette du jour.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <form method="post" id="appliquerDepenseForm" class="me-auto">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger" id="appliquerDepenseButton">
+                            <i class="fas fa-minus-circle"></i> Appliquer cette dépense à la recette du jour
+                        </button>
+                    </form>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var modalElement = document.getElementById('rapportDetailModal');
+        if (!modalElement) {
+            return;
+        }
+
+        modalElement.addEventListener('show.bs.modal', function (event) {
+            var trigger = event.relatedTarget;
+            if (!trigger) {
+                return;
+            }
+
+            var date = trigger.getAttribute('data-date') || '';
+            var terminal = trigger.getAttribute('data-terminal') || '';
+            var depense = trigger.getAttribute('data-depense') || '';
+            var devise = trigger.getAttribute('data-devise') || '';
+            var detail = trigger.getAttribute('data-detail') || '';
+            var appliquee = trigger.getAttribute('data-appliquee') === '1';
+            var appliquerUrl = trigger.getAttribute('data-appliquer-url') || '#';
+
+            var dateEl = modalElement.querySelector('#modalRapportDate');
+            var terminalEl = modalElement.querySelector('#modalRapportTerminal');
+            var depenseEl = modalElement.querySelector('#modalRapportDepense');
+            var detailEl = modalElement.querySelector('#modalRapportDetail');
+            var appliqueeInfo = modalElement.querySelector('#modalRapportAppliqueeInfo');
+            var appliquerBtn = modalElement.querySelector('#appliquerDepenseButton');
+            var form = modalElement.querySelector('#appliquerDepenseForm');
+
+            if (dateEl) {
+                dateEl.textContent = date;
+            }
+            if (terminalEl) {
+                terminalEl.textContent = terminal;
+            }
+            if (depenseEl) {
+                depenseEl.textContent = depense + ' ' + devise;
+            }
+            if (detailEl) {
+                detailEl.textContent = detail;
+            }
+
+            if (form) {
+                form.setAttribute('action', appliquerUrl);
+            }
+
+            if (appliquee) {
+                if (appliquerBtn) {
+                    appliquerBtn.classList.add('d-none');
+                }
+                if (appliqueeInfo) {
+                    appliqueeInfo.classList.remove('d-none');
+                }
+            } else {
+                if (appliquerBtn) {
+                    appliquerBtn.classList.remove('d-none');
+                }
+                if (appliqueeInfo) {
+                    appliqueeInfo.classList.add('d-none');
+                }
+            }
+        });
+    });
+    </script>
+
+    <!-- Liste des rapports -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list"></i> Rapports</h5>
+            <div class="text-muted small text-end">
+                <div>Rapports enregistrés : {{ rapports|length }}</div>
+                <div>Total des dépenses : {{ total_depense|floatformat:0 }} {{ boutique.devise }}</div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if rapports %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date du rapport</th>
+                            <th>Terminal</th>
+                            <th>Dépense</th>
+                            <th>Devise</th>
+                            <th>Détail</th>
+                            <th>Statut</th>
+                            <th>Créé le</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for rapport in rapports %}
+                        <tr class="rapport-row"
+                            data-bs-toggle="modal"
+                            data-bs-target="#rapportDetailModal"
+                            data-rapport-id="{{ rapport.id }}"
+                            data-date="{{ rapport.date_rapport|date:'d/m/Y H:i' }}"
+                            data-terminal="{% if rapport.terminal %}{{ rapport.terminal.nom_terminal }}{% else %}-{% endif %}"
+                            data-depense="{{ rapport.depense|floatformat:0 }}"
+                            data-devise="{{ rapport.devise }}"
+                            data-detail="{{ rapport.detail|escapejs }}"
+                            data-appliquee="{% if rapport.depense_appliquee %}1{% else %}0{% endif %}"
+                            data-appliquer-url="{% url 'inventory:appliquer_depense_rapport_caisse' boutique.id rapport.id %}">
+                            <td>{{ rapport.date_rapport|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                {% if rapport.terminal %}
+                                    <span class="badge bg-info">{{ rapport.terminal.nom_terminal }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">{{ rapport.depense|floatformat:0 }}</td>
+                            <td>{{ rapport.devise }}</td>
+                            <td style="max-width: 350px;">
+                                <span title="{{ rapport.detail }}">{{ rapport.detail|truncatechars:80 }}</span>
+                            </td>
+                            <td>
+                                {% if rapport.depense_appliquee %}
+                                    <span class="badge bg-success">Appliquée</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Non appliquée</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ rapport.created_at|date:"d/m/Y H:i" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center">
+                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">Aucun rapport de caisse trouvé</h5>
+                <p class="text-muted mb-0">
+                    Les rapports envoyés depuis l'application MAUI apparaîtront ici automatiquement.
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

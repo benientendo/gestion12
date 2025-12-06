@@ -25,6 +25,7 @@ urlpatterns = [
     
     # ===== VENTES =====
     path('ventes/', api_views_v2.create_vente_v2, name='create_vente'),
+    path('rapports-caisse/', api_views_v2.RapportCaisseListCreateView.as_view(), name='rapports_caisse'),
     
     # ===== BOUTIQUE =====
     path('boutique/<int:boutique_id>/info/', api_views_v2.boutique_info_v2, name='boutique_info'),

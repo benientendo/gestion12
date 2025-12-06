@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.db import transaction
 import decimal
-from .models import Article, Categorie, Vente, LigneVente, Client, SessionClientMaui
+from .models import Article, Categorie, Vente, LigneVente, Client, SessionClientMaui, RapportCaisse, ArticleNegocie, RetourArticle
 
 class CategorieSerializer(serializers.ModelSerializer):
     class Meta:
@@ -106,7 +106,9 @@ class VenteSerializer(serializers.ModelSerializer):
         if 'mode_paiement' in data:
             internal_data['mode_paiement'] = data['mode_paiement']
 
-        if 'date' in data: # Assuming MAUI sends 'date' in ISO format
+        if 'date_vente' in data:
+            internal_data['date_vente'] = data['date_vente']
+        elif 'date' in data: # Assuming MAUI sends 'date' in ISO format
             internal_data['date_vente'] = data['date'] # DRF will parse this for DateTimeField
 
         # Handle 'paye' field, defaulting to True as observed in logs
@@ -477,3 +479,77 @@ class SessionClientMauiSerializer(serializers.ModelSerializer):
             return f"{str(duree)} (en cours)"
         return None
 
+
+class RapportCaisseSerializer(serializers.ModelSerializer):
+    boutique_id = serializers.IntegerField(source='boutique.id', read_only=True)
+    boutique_nom = serializers.CharField(source='boutique.nom', read_only=True)
+    terminal_id = serializers.IntegerField(source='terminal.id', read_only=True)
+    terminal_nom = serializers.CharField(source='terminal.nom_terminal', read_only=True)
+    terminal_serial = serializers.CharField(source='terminal.numero_serie', read_only=True)
+
+    class Meta:
+        model = RapportCaisse
+        fields = [
+            'id',
+            'boutique_id', 'boutique_nom',
+            'terminal_id', 'terminal_nom', 'terminal_serial',
+            'date_rapport', 'detail', 'depense', 'devise',
+            'est_synchronise', 'id_backend',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'boutique_id', 'boutique_nom',
+            'terminal_id', 'terminal_nom', 'terminal_serial',
+            'est_synchronise', 'id_backend',
+            'created_at', 'updated_at',
+        ]
+        extra_kwargs = {
+            'date_rapport': {'required': False},
+        }
+
+
+class ArticleNegocieSerializer(serializers.ModelSerializer):
+    boutique_id = serializers.IntegerField(source='boutique.id', read_only=True)
+    boutique_nom = serializers.CharField(source='boutique.nom', read_only=True)
+    terminal_id = serializers.IntegerField(source='terminal.id', read_only=True)
+    terminal_nom = serializers.CharField(source='terminal.nom_terminal', read_only=True)
+    terminal_serial = serializers.CharField(source='terminal.numero_serie', read_only=True)
+    article_id = serializers.IntegerField(source='article.id', read_only=True)
+    article_nom = serializers.CharField(source='article.nom', read_only=True)
+
+    class Meta:
+        model = ArticleNegocie
+        fields = [
+            'id',
+            'boutique_id', 'boutique_nom',
+            'terminal_id', 'terminal_nom', 'terminal_serial',
+            'article_id', 'article_nom',
+            'code_article', 'quantite', 'montant_negocie', 'devise', 'date_operation',
+            'motif', 'reference_vente',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = fields
+
+
+class RetourArticleSerializer(serializers.ModelSerializer):
+    boutique_id = serializers.IntegerField(source='boutique.id', read_only=True)
+    boutique_nom = serializers.CharField(source='boutique.nom', read_only=True)
+    terminal_id = serializers.IntegerField(source='terminal.id', read_only=True)
+    terminal_nom = serializers.CharField(source='terminal.nom_terminal', read_only=True)
+    terminal_serial = serializers.CharField(source='terminal.numero_serie', read_only=True)
+    article_id = serializers.IntegerField(source='article.id', read_only=True)
+    article_nom = serializers.CharField(source='article.nom', read_only=True)
+
+    class Meta:
+        model = RetourArticle
+        fields = [
+            'id',
+            'boutique_id', 'boutique_nom',
+            'terminal_id', 'terminal_nom', 'terminal_serial',
+            'article_id', 'article_nom',
+            'code_article', 'quantite', 'montant_retourne', 'devise', 'date_operation',
+            'motif', 'reference_vente',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = fields

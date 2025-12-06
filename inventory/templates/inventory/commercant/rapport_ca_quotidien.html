@@ -103,10 +103,29 @@
         <div class="col-md-6">
             <div class="stat-card">
                 <div class="stat-value">{{ total_ca|floatformat:0 }} CDF</div>
-                <div class="stat-label">CHIFFRE D'AFFAIRES DE LA JOURNÉE</div>
+                <div class="stat-label">CHIFFRE D'AFFAIRES NET DE LA JOURNÉE</div>
+                {% if total_depenses_appliquees %}
+                <div class="mt-2">
+                    <small class="text-muted">
+                        Brut: {{ total_ca_brut|floatformat:0 }} CDF -
+                        <span class="text-danger fw-semibold">Dépenses appliquées: {{ total_depenses_appliquees|floatformat:0 }} CDF</span>
+                    </small>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
+
+    {% if total_depenses_appliquees %}
+    <div class="alert alert-warning">
+        La recette brute de cette journée est de {{ total_ca_brut|floatformat:0 }} CDF.
+        Après application de <span class="text-danger fw-semibold">dépenses de {{ total_depenses_appliquees|floatformat:0 }} CDF</span> issues des rapports de caisse,
+        la recette nette affichée est de {{ total_ca|floatformat:0 }} CDF.
+        <a href="{% url 'inventory:commercant_rapports_caisse_boutique' boutique.id %}?date_debut={{ date_cible|date:'Y-m-d' }}&date_fin={{ date_cible|date:'Y-m-d' }}" class="alert-link">
+            Voir les rapports de caisse de cette journée
+        </a>.
+    </div>
+    {% endif %}
 
     <!-- Tableau des ventes du jour -->
     <div class="table-rapport">

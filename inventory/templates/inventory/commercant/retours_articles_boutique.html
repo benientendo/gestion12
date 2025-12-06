@@ -1,0 +1,116 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Articles retournés - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3><i class="fas fa-undo"></i> Articles retournés</h3>
+            <p class="text-muted mb-0">{{ boutique.nom }} - {{ boutique.ville }}</p>
+        </div>
+        <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Retour à la boutique
+        </a>
+    </div>
+
+    <div class="mb-3">
+        <div class="btn-group" role="group" aria-label="Navigation rapports">
+            <a href="{% url 'inventory:commercant_rapports_caisse_boutique' boutique.id %}"
+               class="btn btn-outline-primary">
+                {% if unread_rapports_count %}
+                <span class="badge bg-danger d-block mb-1">{{ unread_rapports_count }}</span>
+                {% endif %}
+                Rapports de caisse
+            </a>
+            <a href="{% url 'inventory:commercant_articles_negocies_boutique' boutique.id %}"
+               class="btn btn-outline-primary">
+                {% if unread_articles_negocies_count %}
+                <span class="badge bg-danger d-block mb-1">{{ unread_articles_negocies_count }}</span>
+                {% endif %}
+                Articles négociés
+            </a>
+            <a href="{% url 'inventory:commercant_retours_articles_boutique' boutique.id %}"
+               class="btn btn-outline-primary active">
+                {% if unread_retours_count %}
+                <span class="badge bg-danger d-block mb-1">{{ unread_retours_count }}</span>
+                {% endif %}
+                Articles retournés
+            </a>
+        </div>
+    </div>
+
+    <!-- Liste des retours d'articles -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list"></i> Articles retournés</h5>
+            <div class="text-muted small text-end">
+                <div>Articles retournés : {{ retours_articles|length }}</div>
+                <div>Total retourné : {{ total_montant|floatformat:0 }} {{ boutique.devise }}</div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if retours_articles %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date opération</th>
+                            <th>Terminal</th>
+                            <th>Article</th>
+                            <th>Code article</th>
+                            <th class="text-end">Quantité</th>
+                            <th class="text-end">Montant retourné</th>
+                            <th>Devise</th>
+                            <th>Motif</th>
+                            <th>Référence vente</th>
+                            <th>Créé le</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in retours_articles %}
+                        <tr>
+                            <td>{{ r.date_operation|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                {% if r.terminal %}
+                                    <span class="badge bg-info">{{ r.terminal.nom_terminal }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if r.article %}
+                                    {{ r.article.nom }}
+                                {% else %}
+                                    <span class="text-muted">Inconnu</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ r.code_article }}</td>
+                            <td class="text-end">{{ r.quantite }}</td>
+                            <td class="text-end">{{ r.montant_retourne|floatformat:0 }}</td>
+                            <td>{{ r.devise }}</td>
+                            <td style="max-width: 250px;">
+                                <span title="{{ r.motif }}">{{ r.motif|default:'-'|truncatechars:60 }}</span>
+                            </td>
+                            <td>{{ r.reference_vente|default:'-' }}</td>
+                            <td>{{ r.created_at|date:"d/m/Y H:i" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center">
+                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">Aucun retour d'article trouvé</h5>
+                <p class="text-muted mb-0">
+                    Les retours envoyés depuis l'application MAUI apparaîtront ici automatiquement.
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -915,6 +915,19 @@ class VenteViewSet(viewsets.ModelViewSet):
         # Adapter les données pour le format reçu de l'application MAUI
         adapted_data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
         
+        # ⭐ GESTION DE LA DATE DE VENTE ENVOYÉE PAR MAUI
+        # MAUI envoie typiquement: "2025-12-05T11:58:32" (heure locale du terminal)
+        date_str = adapted_data.get('date_vente') or adapted_data.get('date')
+        if date_str:
+            try:
+                # Utiliser fromisoformat pour le format "yyyy-MM-ddTHH:mm:ss"
+                date_vente = datetime.fromisoformat(str(date_str))
+            except Exception:
+                # Fallback uniquement si format inattendu
+                date_vente = timezone.now()
+            adapted_data['date_vente'] = date_vente
+        # Si aucune date n'est fournie, on laisse le modèle appliquer son default (timezone.now)
+
         # Format spécifique pour le client MAUI observé dans les logs
         # Mapping des clés du format MAUI vers le format Django
         maui_mapping = {

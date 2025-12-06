@@ -128,7 +128,15 @@
         <div class="col-md-4">
             <div class="stat-card">
                 <div class="stat-value">{{ total_ca|floatformat:0 }} CDF</div>
-                <div class="stat-label">CHIFFRE D'AFFAIRES</div>
+                <div class="stat-label">CHIFFRE D'AFFAIRES NET</div>
+                {% if total_depenses_appliquees %}
+                <div class="mt-2">
+                    <small class="text-muted">
+                        Brut: {{ total_ca_brut|floatformat:0 }} CDF -
+                        <span class="text-danger fw-semibold">Dépenses appliquées: {{ total_depenses_appliquees|floatformat:0 }} CDF</span>
+                    </small>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -169,6 +177,16 @@
                     </td>
                     <td class="text-end {% if jour.ca > 0 %}ca-positif{% else %}ca-nul{% endif %}">
                         {{ jour.ca|floatformat:0 }}
+                        {% if jour.depenses_appliquees %}
+                        <br>
+                        <small class="text-muted">
+                            Brut: {{ jour.ca_brut|floatformat:0 }} -
+                            <span class="text-danger fw-semibold">Dépenses: {{ jour.depenses_appliquees|floatformat:0 }}</span>
+                            <a href="{% url 'inventory:commercant_rapports_caisse_boutique' boutique.id %}?date_debut={{ jour.date|date:'Y-m-d' }}&date_fin={{ jour.date|date:'Y-m-d' }}" class="text-decoration-underline">
+                                Voir rapport de caisse
+                            </a>
+                        </small>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}

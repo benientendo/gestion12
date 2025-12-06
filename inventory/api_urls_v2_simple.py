@@ -5,6 +5,7 @@ URLs API v2 Multi-Boutiques SIMPLIFIÉE (Sans Authentification)
 
 from django.urls import path
 from . import api_views_v2_simple
+from .api_views_v2 import RapportCaisseListCreateView
 
 app_name = 'api_v2_simple'
 
@@ -33,6 +34,16 @@ urlpatterns = [
     path('ventes/sync/', api_views_v2_simple.sync_ventes_simple, name='sync_ventes'),
     path('ventes/historique/', api_views_v2_simple.historique_ventes_simple, name='historique_ventes'),
     
+    # ===== RAPPORTS DE CAISSE =====
+    path('rapports-caisse/', RapportCaisseListCreateView.as_view(), name='rapports_caisse_simple'),
+    
     # ===== STATISTIQUES =====
     path('statistiques/', api_views_v2_simple.statistiques_boutique_simple, name='statistiques_boutique'),
+    
+    path('articles-negocies', api_views_v2_simple.creer_article_negocie_simple, name='articles_negocies_create_no_slash'),
+    path('articles-negocies/', api_views_v2_simple.creer_article_negocie_simple, name='articles_negocies_create'),
+    path('retours-articles', api_views_v2_simple.creer_retour_article_simple, name='retours_articles_create_no_slash'),
+    path('retours-articles/', api_views_v2_simple.creer_retour_article_simple, name='retours_articles_create'),
+    path('articles-negocies/historique/', api_views_v2_simple.historique_articles_negocies_simple, name='articles_negocies_history'),
+    path('retours-articles/historique/', api_views_v2_simple.historique_retours_articles_simple, name='retours_articles_history'),
 ]

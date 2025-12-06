@@ -2,6 +2,7 @@ from django.db import models
 from django.core.validators import MinValueValidator
 from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
+from django.utils import timezone
 import re
 import qrcode
 from io import BytesIO
@@ -159,7 +160,7 @@ class Vente(models.Model):
     """Ventes."""
     
     numero_facture = models.CharField(max_length=50, unique=True)
-    date_vente = models.DateTimeField(auto_now_add=True)
+    date_vente = models.DateTimeField(default=timezone.now)
     montant_total = models.DecimalField(max_digits=12, decimal_places=2)
     paye = models.BooleanField(default=False)
     mode_paiement = models.CharField(max_length=50, choices=[
@@ -344,13 +345,18 @@ class Boutique(models.Model):
     # Type et catégorie de commerce
     type_commerce = models.CharField(max_length=50, choices=[
         ('PHARMACIE', 'Pharmacie'),
-        ('BAR', 'Bar/Café'),
         ('ALIMENTATION', 'Alimentation générale'),
         ('SUPERMARCHE', 'Supermarché'),
         ('BOUTIQUE', 'Boutique générale'),
         ('KIOSQUE', 'Kiosque'),
-        ('HABILLEMENT', 'Habillement'),
-        ('ELECTRONIQUE', 'Électronique'),
+        ('BAR', 'Bar/Café'),
+        ('RESTAURANT', 'Restaurant / Fast-food'),
+        ('HABILLEMENT', 'Habillement / Friperie'),
+        ('COIFFURE_BEAUTE', 'Salon de coiffure / Beauté'),
+        ('ELECTRONIQUE', 'Appareils électroniques / Accessoires'),
+        ('TELEPHONIE_MOBILE', 'Téléphonie / Mobile Money'),
+        ('QUINCAILLERIE', 'Quincaillerie'),
+        ('SERVICES_BUREAU', 'Services bureautiques / Cybercafé'),
         ('AUTRE', 'Autre')
     ], default='BOUTIQUE')
     
@@ -377,7 +383,10 @@ class Boutique(models.Model):
     # Paramètres de fonctionnement
     devise = models.CharField(max_length=10, default='CDF')
     alerte_stock_bas = models.IntegerField(default=5, help_text="Seuil d'alerte pour stock bas")
-    
+    derniere_lecture_rapports_caisse = models.DateTimeField(null=True, blank=True)
+    derniere_lecture_articles_negocies = models.DateTimeField(null=True, blank=True)
+    derniere_lecture_retours_articles = models.DateTimeField(null=True, blank=True)
+
     def save(self, *args, **kwargs):
         # Générer un code boutique unique si pas défini
         if not self.code_boutique:
@@ -425,3 +434,72 @@ class Boutique(models.Model):
         verbose_name_plural = "Boutiques"
         ordering = ['commercant__nom_entreprise', 'nom']
         unique_together = ['commercant', 'nom']  # Nom unique par commerçant
+
+
+class RapportCaisse(models.Model):
+    """Rapport de caisse quotidien lié à une boutique et un terminal MAUI (Client)."""
+
+    boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='rapports_caisse')
+    terminal = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='rapports_caisse')
+
+    date_rapport = models.DateTimeField(default=timezone.now)
+    detail = models.TextField(max_length=500)
+    depense = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
+    devise = models.CharField(max_length=10, default='CDF')
+
+    depense_appliquee = models.BooleanField(default=False)
+    date_application_depense = models.DateTimeField(null=True, blank=True)
+
+    est_synchronise = models.BooleanField(default=True)
+    id_backend = models.PositiveIntegerField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Rapport {self.date_rapport} - {self.boutique} - {self.terminal}"
+
+    class Meta:
+        verbose_name = "Rapport de caisse"
+        verbose_name_plural = "Rapports de caisse"
+        ordering = ['-date_rapport', '-created_at']
+
+
+class ArticleNegocie(models.Model):
+    boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='articles_negocies')
+    terminal = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name='articles_negocies')
+    article = models.ForeignKey(Article, on_delete=models.SET_NULL, null=True, blank=True, related_name='negociations')
+
+    code_article = models.CharField(max_length=100)
+    quantite = models.PositiveIntegerField(default=1)
+    montant_negocie = models.DecimalField(max_digits=12, decimal_places=2)
+    devise = models.CharField(max_length=10, default='CDF')
+    date_operation = models.DateTimeField()
+    motif = models.CharField(max_length=255, blank=True)
+    reference_vente = models.CharField(max_length=100, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date_operation', '-created_at']
+
+
+class RetourArticle(models.Model):
+    boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='retours_articles')
+    terminal = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name='retours_articles')
+    article = models.ForeignKey(Article, on_delete=models.SET_NULL, null=True, blank=True, related_name='retours')
+
+    code_article = models.CharField(max_length=100)
+    quantite = models.PositiveIntegerField(default=1)
+    montant_retourne = models.DecimalField(max_digits=12, decimal_places=2)
+    devise = models.CharField(max_length=10, default='CDF')
+    date_operation = models.DateTimeField()
+    motif = models.CharField(max_length=255, blank=True)
+    reference_vente = models.CharField(max_length=100, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-date_operation', '-created_at']

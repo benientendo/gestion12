@@ -12,14 +12,15 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.db.models import Sum, Q
 from django.db import transaction  # ⭐ NOUVEAU : Pour les transactions atomiques
 from django.conf import settings
 import json
 import logging
 
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock
-from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle
+from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -528,8 +529,19 @@ def create_vente_simple(request):
         # ⭐ TRANSACTION ATOMIQUE : Tout ou rien
         with transaction.atomic():
             # ⭐ CRÉER LA VENTE AVEC ISOLATION PAR BOUTIQUE
+            date_str = vente_data.get('date_vente') or vente_data.get('date')
+            if date_str:
+                date_vente = parse_datetime(date_str)
+                if date_vente is None:
+                    date_vente = timezone.now()
+                elif timezone.is_naive(date_vente):
+                    date_vente = timezone.make_aware(date_vente)
+            else:
+                date_vente = timezone.now()
+            
             vente = Vente.objects.create(
                 numero_facture=numero_facture,
+                date_vente=date_vente,
                 montant_total=0,  # Sera calculé avec les lignes
                 mode_paiement=vente_data.get('mode_paiement', 'CASH'),
                 paye=vente_data.get('paye', True),
@@ -1060,8 +1072,19 @@ def sync_ventes_simple(request):
                     continue
                 
                 # ⭐ CRÉER LA VENTE AVEC ISOLATION STRICTE
+                date_str = vente_data.get('date_vente') or vente_data.get('date')
+                if date_str:
+                    date_vente = parse_datetime(date_str)
+                    if date_vente is None:
+                        date_vente = timezone.now()
+                    elif timezone.is_naive(date_vente):
+                        date_vente = timezone.make_aware(date_vente)
+                else:
+                    date_vente = timezone.now()
+                
                 vente = Vente.objects.create(
                     numero_facture=numero_facture,
+                    date_vente=date_vente,
                     montant_total=0,  # Sera calculé avec les lignes
                     mode_paiement=vente_data.get('mode_paiement', 'CASH'),
                     paye=vente_data.get('paye', True),
@@ -1125,6 +1148,7 @@ def sync_ventes_simple(request):
                     montant_total += prix_unitaire * quantite
                     lignes_creees.append({
                         'article_nom': article.nom,
+                        'article_code': article.code,
                         'quantite': quantite,
                         'prix_unitaire': str(prix_unitaire),
                         'sous_total': str(prix_unitaire * quantite)
@@ -1201,3 +1225,269 @@ def sync_ventes_simple(request):
             'code': 'INTERNAL_ERROR',
             'details': str(e) if settings.DEBUG else None
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def creer_article_negocie_simple(request):
+    numero_serie = (
+        request.headers.get('X-Device-Serial')
+        or request.headers.get('Device-Serial')
+        or request.headers.get('Serial-Number')
+        or request.META.get('HTTP_X_DEVICE_SERIAL')
+        or request.META.get('HTTP_DEVICE_SERIAL')
+    )
+
+    if not numero_serie:
+        return Response({
+            'error': 'Numéro de série du terminal requis dans les headers',
+            'code': 'MISSING_SERIAL'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    terminal = Client.objects.select_related('boutique').filter(
+        numero_serie=numero_serie,
+        est_actif=True
+    ).first()
+
+    if not terminal or not terminal.boutique:
+        return Response({
+            'error': 'Terminal non trouvé ou sans boutique',
+            'code': 'TERMINAL_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = terminal.boutique
+    data = request.data
+
+    code_article = data.get('code_article')
+    if not code_article:
+        return Response({
+            'error': 'code_article requis',
+            'code': 'MISSING_CODE_ARTICLE'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        montant_negocie = data['montant_negocie']
+        date_raw = data['date_operation']
+    except KeyError as e:
+        return Response({
+            'error': f'Champ manquant: {str(e)}',
+            'code': 'MISSING_FIELD'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    date_operation = parse_datetime(date_raw) or timezone.now()
+
+    # Quantité négociée (MAUI envoie déjà la quantité)
+    quantite_raw = data.get('quantite', 1)
+    try:
+        quantite = int(quantite_raw)
+        if quantite <= 0:
+            quantite = 1
+    except (TypeError, ValueError):
+        quantite = 1
+
+    article = Article.objects.filter(
+        code=code_article,
+        boutique=boutique,
+        est_actif=True
+    ).first()
+
+    obj = ArticleNegocie.objects.create(
+        boutique=boutique,
+        terminal=terminal,
+        article=article,
+        code_article=code_article,
+        quantite=quantite,
+        montant_negocie=montant_negocie,
+        devise=data.get('devise') or boutique.devise,
+        date_operation=date_operation,
+        motif=data.get('motif') or '',
+        reference_vente=data.get('reference_vente') or '',
+    )
+
+    return Response({'id': obj.id}, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def creer_retour_article_simple(request):
+    numero_serie = (
+        request.headers.get('X-Device-Serial')
+        or request.headers.get('Device-Serial')
+        or request.headers.get('Serial-Number')
+        or request.META.get('HTTP_X_DEVICE_SERIAL')
+        or request.META.get('HTTP_DEVICE_SERIAL')
+    )
+
+    if not numero_serie:
+        return Response({
+            'error': 'Numéro de série du terminal requis dans les headers',
+            'code': 'MISSING_SERIAL'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    terminal = Client.objects.select_related('boutique').filter(
+        numero_serie=numero_serie,
+        est_actif=True
+    ).first()
+
+    if not terminal or not terminal.boutique:
+        return Response({
+            'error': 'Terminal non trouvé ou sans boutique',
+            'code': 'TERMINAL_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = terminal.boutique
+    data = request.data
+
+    code_article = data.get('code_article')
+    if not code_article:
+        return Response({
+            'error': 'code_article requis',
+            'code': 'MISSING_CODE_ARTICLE'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        montant_retourne = data['montant_retourne']
+        date_raw = data['date_operation']
+    except KeyError as e:
+        return Response({
+            'error': f'Champ manquant: {str(e)}',
+            'code': 'MISSING_FIELD'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    date_operation = parse_datetime(date_raw) or timezone.now()
+
+    # Quantité retournée (MAUI envoie déjà la quantité)
+    quantite_raw = data.get('quantite', 1)
+    try:
+        quantite = int(quantite_raw)
+        if quantite <= 0:
+            quantite = 1
+    except (TypeError, ValueError):
+        quantite = 1
+
+    article = Article.objects.filter(
+        code=code_article,
+        boutique=boutique,
+        est_actif=True
+    ).first()
+
+    retour = RetourArticle.objects.create(
+        boutique=boutique,
+        terminal=terminal,
+        article=article,
+        code_article=code_article,
+        quantite=quantite,
+        montant_retourne=montant_retourne,
+        devise=data.get('devise') or boutique.devise,
+        date_operation=date_operation,
+        motif=data.get('motif') or '',
+        reference_vente=data.get('reference_vente') or '',
+    )
+
+    return Response({'id': retour.id}, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def historique_articles_negocies_simple(request):
+    numero_serie = (
+        request.headers.get('X-Device-Serial')
+        or request.headers.get('Device-Serial')
+        or request.headers.get('Serial-Number')
+        or request.META.get('HTTP_X_DEVICE_SERIAL')
+        or request.META.get('HTTP_DEVICE_SERIAL')
+    )
+
+    if not numero_serie:
+        return Response({
+            'error': 'Numéro de série du terminal requis dans les headers',
+            'code': 'MISSING_SERIAL'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    terminal = Client.objects.select_related('boutique').filter(
+        numero_serie=numero_serie,
+        est_actif=True
+    ).first()
+
+    if not terminal or not terminal.boutique:
+        return Response({
+            'error': 'Terminal non trouvé ou sans boutique',
+            'code': 'TERMINAL_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = terminal.boutique
+    par_terminal = request.query_params.get('par_terminal')
+    limit_param = request.query_params.get('limit')
+    try:
+        limit = int(limit_param) if limit_param is not None else 100
+    except ValueError:
+        limit = 100
+
+    qs = ArticleNegocie.objects.filter(boutique=boutique)
+    if par_terminal and par_terminal.lower() in ('1', 'true', 'yes', 'on'):
+        qs = qs.filter(terminal=terminal)
+
+    qs = qs.select_related('boutique', 'terminal', 'article').order_by('-date_operation', '-created_at')[:limit]
+    serializer = ArticleNegocieSerializer(qs, many=True)
+
+    return Response({
+        'success': True,
+        'count': qs.count(),
+        'boutique_id': boutique.id,
+        'boutique_nom': boutique.nom,
+        'par_terminal': bool(par_terminal and par_terminal.lower() in ('1', 'true', 'yes', 'on')),
+        'results': serializer.data,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def historique_retours_articles_simple(request):
+    numero_serie = (
+        request.headers.get('X-Device-Serial')
+        or request.headers.get('Device-Serial')
+        or request.headers.get('Serial-Number')
+        or request.META.get('HTTP_X_DEVICE_SERIAL')
+        or request.META.get('HTTP_DEVICE_SERIAL')
+    )
+
+    if not numero_serie:
+        return Response({
+            'error': 'Numéro de série du terminal requis dans les headers',
+            'code': 'MISSING_SERIAL'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    terminal = Client.objects.select_related('boutique').filter(
+        numero_serie=numero_serie,
+        est_actif=True
+    ).first()
+
+    if not terminal or not terminal.boutique:
+        return Response({
+            'error': 'Terminal non trouvé ou sans boutique',
+            'code': 'TERMINAL_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    boutique = terminal.boutique
+    par_terminal = request.query_params.get('par_terminal')
+    limit_param = request.query_params.get('limit')
+    try:
+        limit = int(limit_param) if limit_param is not None else 100
+    except ValueError:
+        limit = 100
+
+    qs = RetourArticle.objects.filter(boutique=boutique)
+    if par_terminal and par_terminal.lower() in ('1', 'true', 'yes', 'on'):
+        qs = qs.filter(terminal=terminal)
+
+    qs = qs.select_related('boutique', 'terminal', 'article').order_by('-date_operation', '-created_at')[:limit]
+    serializer = RetourArticleSerializer(qs, many=True)
+
+    return Response({
+        'success': True,
+        'count': qs.count(),
+        'boutique_id': boutique.id,
+        'boutique_nom': boutique.nom,
+        'par_terminal': bool(par_terminal and par_terminal.lower() in ('1', 'true', 'yes', 'on')),
+        'results': serializer.data,
+    }, status=status.HTTP_200_OK)

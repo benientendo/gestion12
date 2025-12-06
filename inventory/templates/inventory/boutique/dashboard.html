@@ -125,7 +125,13 @@
                             <div class="card bg-success text-white h-100 card-hover-ca">
                                 <div class="card-body">
                                     <h3><i class="fas fa-calendar-day me-2"></i>{{ ca_jour|format_cdf:0 }} CDF</h3>
-                                    <p class="mb-0">Recette du jour <i class="fas fa-external-link-alt fa-xs"></i></p>
+                                    <p class="mb-0">Recette du jour (net) <i class="fas fa-external-link-alt fa-xs"></i></p>
+                                    {% if depenses_appliquees_ca_jour %}
+                                    <small class="d-block mt-1">
+                                        Brut: {{ ca_aujourd_hui_brut|format_cdf:0 }} CDF -
+                                        <span class="text-danger fw-semibold">Dépenses: {{ depenses_appliquees_ca_jour|format_cdf:0 }} CDF</span>
+                                    </small>
+                                    {% endif %}
                                 </div>
                             </div>
                         </a>
@@ -135,7 +141,13 @@
                             <div class="card bg-warning text-white h-100 card-hover-ca">
                                 <div class="card-body">
                                     <h3><i class="fas fa-coins me-2"></i>{{ ca_mois|format_cdf:0 }} CDF</h3>
-                                    <p class="mb-0">Recette du mois de {{ "now"|date:"F Y" }} <i class="fas fa-external-link-alt fa-xs"></i></p>
+                                    <p class="mb-0">Recette du mois (net) de {{ "now"|date:"F Y" }} <i class="fas fa-external-link-alt fa-xs"></i></p>
+                                    {% if depenses_appliquees_ca_mois %}
+                                    <small class="d-block mt-1">
+                                        Brut: {{ ca_mois_brut|format_cdf:0 }} CDF -
+                                        <span class="text-danger fw-semibold">Dépenses: {{ depenses_appliquees_ca_mois|format_cdf:0 }} CDF</span>
+                                    </small>
+                                    {% endif %}
                                 </div>
                             </div>
                         </a>
@@ -195,6 +207,9 @@
                         </a>
                         <a href="{% url 'inventory:commercant_ventes_boutique' boutique.id %}" class="btn btn-warning">
                             <i class="fas fa-shopping-cart"></i> Voir Ventes
+                        </a>
+                        <a href="{% url 'inventory:commercant_rapports_caisse_boutique' boutique.id %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-cash-register"></i> Rapports
                         </a>
                     </div>
                 </div>

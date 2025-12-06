@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Categorie, Article, Vente, LigneVente, MouvementStock
+from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle
 
 @admin.register(Categorie)
 class CategorieAdmin(admin.ModelAdmin):
@@ -67,3 +67,15 @@ class MouvementStockAdmin(admin.ModelAdmin):
             'fields': ('date_mouvement',)
         }),
     )
+
+@admin.register(ArticleNegocie)
+class ArticleNegocieAdmin(admin.ModelAdmin):
+    list_display = ('boutique', 'terminal', 'code_article', 'montant_negocie', 'devise', 'date_operation', 'reference_vente')
+    list_filter = ('boutique', 'devise', 'date_operation')
+    search_fields = ('code_article', 'reference_vente', 'motif')
+
+@admin.register(RetourArticle)
+class RetourArticleAdmin(admin.ModelAdmin):
+    list_display = ('boutique', 'terminal', 'code_article', 'montant_retourne', 'devise', 'date_operation', 'reference_vente')
+    list_filter = ('boutique', 'devise', 'date_operation')
+    search_fields = ('code_article', 'reference_vente', 'motif')

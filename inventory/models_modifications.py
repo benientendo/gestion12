@@ -158,7 +158,7 @@ class Vente(models.Model):
     Modèle Vente modifié pour être lié à une boutique et un terminal.
     """
     numero_facture = models.CharField(max_length=50, help_text="Numéro unique de facture dans la boutique")
-    date_vente = models.DateTimeField(auto_now_add=True)
+    date_vente = models.DateTimeField()
     montant_total = models.DecimalField(max_digits=12, decimal_places=2)
     paye = models.BooleanField(default=False)
     mode_paiement = models.CharField(max_length=50, choices=[

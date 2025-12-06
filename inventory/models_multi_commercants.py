@@ -5,6 +5,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator
 import uuid
+from django.utils import timezone
 
 class Commercant(models.Model):
     """
@@ -231,3 +232,6 @@ class SessionTerminalMaui(models.Model):
         verbose_name = "Session Terminal MAUI"
         verbose_name_plural = "Sessions Terminaux MAUI"
         ordering = ['-date_debut']
+
+
+    

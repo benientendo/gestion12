@@ -94,18 +94,11 @@
                         </div>
                         
                         <div class="row mb-3">
-                            <div class="col-md-8">
+                            <div class="col-12">
                                 <label for="{{ form.ville.id_for_label }}" class="form-label">{{ form.ville.label }} *</label>
                                 {{ form.ville }}
                                 {% if form.ville.errors %}
                                     <div class="text-danger small">{{ form.ville.errors }}</div>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-4">
-                                <label for="{{ form.code_postal.id_for_label }}" class="form-label">{{ form.code_postal.label }} *</label>
-                                {{ form.code_postal }}
-                                {% if form.code_postal.errors %}
-                                    <div class="text-danger small">{{ form.code_postal.errors }}</div>
                                 {% endif %}
                             </div>
                         </div>
@@ -120,18 +113,11 @@
                         </div>
                         
                         <div class="row mb-3">
-                            <div class="col-md-6">
+                            <div class="col-12">
                                 <label for="{{ form.telephone.id_for_label }}" class="form-label">{{ form.telephone.label }}</label>
                                 {{ form.telephone }}
                                 {% if form.telephone.errors %}
                                     <div class="text-danger small">{{ form.telephone.errors }}</div>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-6">
-                                <label for="{{ form.email.id_for_label }}" class="form-label">{{ form.email.label }}</label>
-                                {{ form.email }}
-                                {% if form.email.errors %}
-                                    <div class="text-danger small">{{ form.email.errors }}</div>
                                 {% endif %}
                             </div>
                         </div>
@@ -215,20 +201,7 @@
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const form = document.querySelector('form');
-        const codePostalField = document.querySelector('#id_code_postal');
-        
-        // Validation code postal
-        if (codePostalField) {
-            codePostalField.addEventListener('input', function() {
-                const codePostal = this.value;
-                if (codePostal.length > 0 && (codePostal.length !== 5 || !/^\d+$/.test(codePostal))) {
-                    this.setCustomValidity('Le code postal doit contenir exactement 5 chiffres');
-                } else {
-                    this.setCustomValidity('');
-                }
-            });
-        }
-        
+
         // Confirmation avant soumission
         form.addEventListener('submit', function(e) {
             const nomBoutique = document.querySelector('#id_nom').value;

@@ -1,0 +1,235 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Articles négociés - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3><i class="fas fa-tags"></i> Articles négociés</h3>
+            <p class="text-muted mb-0">{{ boutique.nom }} - {{ boutique.ville }}</p>
+        </div>
+        <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Retour à la boutique
+        </a>
+    </div>
+
+    <div class="mb-3">
+        <div class="btn-group" role="group" aria-label="Navigation rapports">
+            <a href="{% url 'inventory:commercant_rapports_caisse_boutique' boutique.id %}"
+               class="btn btn-outline-primary">
+                {% if unread_rapports_count %}
+                <span class="badge bg-danger d-block mb-1">{{ unread_rapports_count }}</span>
+                {% endif %}
+                Rapports de caisse
+            </a>
+            <a href="{% url 'inventory:commercant_articles_negocies_boutique' boutique.id %}"
+               class="btn btn-outline-primary active">
+                {% if unread_articles_negocies_count %}
+                <span class="badge bg-danger d-block mb-1">{{ unread_articles_negocies_count }}</span>
+                {% endif %}
+                Articles négociés
+            </a>
+            <a href="{% url 'inventory:commercant_retours_articles_boutique' boutique.id %}"
+               class="btn btn-outline-primary">
+                {% if unread_retours_count %}
+                <span class="badge bg-danger d-block mb-1">{{ unread_retours_count }}</span>
+                {% endif %}
+                Articles retournés
+            </a>
+        </div>
+    </div>
+
+    <!-- Liste des articles négociés -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list"></i> Articles négociés</h5>
+            <div class="text-muted small text-end">
+                <div>Articles négociés : {{ articles_negocies|length }}</div>
+                <div>Total négocié : {{ total_montant|floatformat:0 }} {{ boutique.devise }}</div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if articles_negocies %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date opération</th>
+                            <th>Terminal</th>
+                            <th>Article</th>
+                            <th>Code article</th>
+                            <th class="text-end">Quantité</th>
+                            <th class="text-end">Montant négocié</th>
+                            <th>Devise</th>
+                            <th>Motif</th>
+                            <th>Référence vente</th>
+                            <th>Statut</th>
+                            <th>Créé le</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in articles_negocies %}
+                        <tr class="negociation-row"
+                            style="cursor: pointer;"
+                            data-bs-toggle="modal"
+                            data-bs-target="#negociationDetailModal"
+                            data-id="{{ a.id }}"
+                            data-date="{{ a.date_operation|date:'d/m/Y H:i' }}"
+                            data-terminal="{% if a.terminal %}{{ a.terminal.nom_terminal }}{% else %}-{% endif %}"
+                            data-article="{% if a.article %}{{ a.article.nom }}{% else %}Inconnu{% endif %}"
+                            data-code="{{ a.code_article }}"
+                            data-quantite="{{ a.quantite }}"
+                            data-montant="{{ a.montant_negocie }}"
+                            data-devise="{{ a.devise }}"
+                            data-motif="{{ a.motif|escapejs }}"
+                            data-reference="{{ a.reference_vente|default:'' }}"
+                            data-appliquer-url="{% url 'inventory:appliquer_article_negocie' boutique.id a.id %}">
+                            <td>{{ a.date_operation|date:"d/m/Y H:i" }}</td>
+                            <td>
+                                {% if a.terminal %}
+                                    <span class="badge bg-info">{{ a.terminal.nom_terminal }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if a.article %}
+                                    {{ a.article.nom }}
+                                {% else %}
+                                    <span class="text-muted">Inconnu</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ a.code_article }}</td>
+                            <td class="text-end">{{ a.quantite }}</td>
+                            <td class="text-end">{{ a.montant_negocie|floatformat:0 }}</td>
+                            <td>{{ a.devise }}</td>
+                            <td style="max-width: 250px;">
+                                <span title="{{ a.motif }}">{{ a.motif|default:'-'|truncatechars:60 }}</span>
+                            </td>
+                            <td>{{ a.reference_vente|default:'-' }}</td>
+                            <td>
+                                {% if a.id in applied_negociations_ids %}
+                                    <span class="badge bg-success">Appliquée</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Non appliquée</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ a.created_at|date:"d/m/Y H:i" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center">
+                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">Aucun article négocié trouvé</h5>
+                <p class="text-muted mb-0">
+                    Les négociations envoyées depuis l'application MAUI apparaîtront ici automatiquement.
+                </p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Modal détail négociation -->
+    <div class="modal fade" id="negociationDetailModal" tabindex="-1" aria-labelledby="negociationDetailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="negociationDetailModalLabel">Détails de la négociation</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+                </div>
+                <div class="modal-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-3">Date opération</dt>
+                        <dd class="col-sm-9" id="modalNegociationDate"></dd>
+
+                        <dt class="col-sm-3">Terminal</dt>
+                        <dd class="col-sm-9" id="modalNegociationTerminal"></dd>
+
+                        <dt class="col-sm-3">Article</dt>
+                        <dd class="col-sm-9" id="modalNegociationArticle"></dd>
+
+                        <dt class="col-sm-3">Code article</dt>
+                        <dd class="col-sm-9" id="modalNegociationCode"></dd>
+
+                        <dt class="col-sm-3">Quantité</dt>
+                        <dd class="col-sm-9" id="modalNegociationQuantite"></dd>
+
+                        <dt class="col-sm-3">Montant unitaire</dt>
+                        <dd class="col-sm-9" id="modalNegociationMontant"></dd>
+
+                        <dt class="col-sm-3">Total appliqué</dt>
+                        <dd class="col-sm-9 fw-bold" id="modalNegociationTotal"></dd>
+
+                        <dt class="col-sm-3">Motif</dt>
+                        <dd class="col-sm-9" id="modalNegociationMotif"></dd>
+
+                        <dt class="col-sm-3">Référence vente</dt>
+                        <dd class="col-sm-9" id="modalNegociationReference"></dd>
+                    </dl>
+                </div>
+                <div class="modal-footer">
+                    <form method="post" id="appliquerNegociationForm" class="me-auto">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success" id="appliquerNegociationButton">
+                            <i class="fas fa-check-circle"></i> Appliquer cette négociation à la recette du jour
+                        </button>
+                    </form>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var modalElement = document.getElementById('negociationDetailModal');
+        if (!modalElement) {
+            return;
+        }
+
+        modalElement.addEventListener('show.bs.modal', function (event) {
+            var trigger = event.relatedTarget;
+            if (!trigger) {
+                return;
+            }
+
+            var date = trigger.getAttribute('data-date') || '';
+            var terminal = trigger.getAttribute('data-terminal') || '';
+            var article = trigger.getAttribute('data-article') || '';
+            var code = trigger.getAttribute('data-code') || '';
+            var quantiteStr = trigger.getAttribute('data-quantite') || '0';
+            var montantStr = trigger.getAttribute('data-montant') || '0';
+            var devise = trigger.getAttribute('data-devise') || '';
+            var motif = trigger.getAttribute('data-motif') || '';
+            var reference = trigger.getAttribute('data-reference') || '';
+            var appliquerUrl = trigger.getAttribute('data-appliquer-url') || '#';
+
+            var quantite = parseInt(quantiteStr, 10) || 0;
+            var montant = parseFloat(montantStr.replace(',', '.')) || 0;
+            var total = quantite * montant;
+
+            modalElement.querySelector('#modalNegociationDate').textContent = date;
+            modalElement.querySelector('#modalNegociationTerminal').textContent = terminal;
+            modalElement.querySelector('#modalNegociationArticle').textContent = article;
+            modalElement.querySelector('#modalNegociationCode').textContent = code;
+            modalElement.querySelector('#modalNegociationQuantite').textContent = quantite;
+            modalElement.querySelector('#modalNegociationMontant').textContent = montant.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) + ' ' + devise;
+            modalElement.querySelector('#modalNegociationTotal').textContent = total.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) + ' ' + devise;
+            modalElement.querySelector('#modalNegociationMotif').textContent = motif || '-';
+            modalElement.querySelector('#modalNegociationReference').textContent = reference || '-';
+
+            var form = modalElement.querySelector('#appliquerNegociationForm');
+            if (form) {
+                form.setAttribute('action', appliquerUrl);
+            }
+        });
+    });
+    </script>
+</div>
+{% endblock %}

@@ -7,9 +7,11 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponseForbidden
 from django.db.models import Count, Sum, Q, F
+from django.db import transaction
 from django.utils import timezone
 from datetime import datetime, timedelta
-from .models import Commercant, Boutique, Article, Vente, MouvementStock, Client
+from decimal import Decimal
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle
 from .forms import BoutiqueForm, ArticleForm
 import json
 import qrcode
@@ -492,7 +494,7 @@ def api_stats_boutique(request, boutique_id):
         aujourd_hui = timezone.now().date()
         try:
             ventes_aujourd_hui = Vente.objects.filter(
-                client_maui__boutique=boutique,
+                boutique=boutique,
                 date_vente__date=aujourd_hui,
                 paye=True
             )
@@ -501,7 +503,15 @@ def api_stats_boutique(request, boutique_id):
             ventes_aujourd_hui = Vente.objects.none()
         
         nb_ventes = ventes_aujourd_hui.count()
-        ca_aujourd_hui = ventes_aujourd_hui.aggregate(total=Sum('montant_total'))['total'] or 0
+        ca_aujourd_hui_brut = ventes_aujourd_hui.aggregate(total=Sum('montant_total'))['total'] or 0
+
+        depenses_appliquees_aujourd_hui = RapportCaisse.objects.filter(
+            boutique=boutique,
+            date_rapport__date=aujourd_hui,
+            depense_appliquee=True
+        ).aggregate(total=Sum('depense'))['total'] or 0
+
+        ca_aujourd_hui_net = ca_aujourd_hui_brut - depenses_appliquees_aujourd_hui
         
         # Terminaux connectés
         terminaux_actifs = boutique.clients.filter(
@@ -513,7 +523,9 @@ def api_stats_boutique(request, boutique_id):
             'success': True,
             'stats': {
                 'ventes_aujourd_hui': nb_ventes,
-                'ca_aujourd_hui': float(ca_aujourd_hui),
+                'ca_aujourd_hui': float(ca_aujourd_hui_net),
+                'ca_aujourd_hui_brut': float(ca_aujourd_hui_brut),
+                'depenses_appliquees_aujourd_hui': float(depenses_appliquees_aujourd_hui),
                 'terminaux_connectes': terminaux_actifs
             }
         })
@@ -597,31 +609,49 @@ def entrer_boutique(request, boutique_id):
     nb_terminaux = boutique.clients.count()
     
     # Ventes d'aujourd'hui
+    date_aujourd_hui = timezone.now().date()
     try:
         ventes_aujourd_hui = Vente.objects.filter(
-            client_maui__boutique=boutique,
-            date_vente__date=timezone.now().date(),
+            boutique=boutique,
+            date_vente__date=date_aujourd_hui,
             paye=True
         )
         nb_ventes_aujourd_hui = ventes_aujourd_hui.count()
-        ca_aujourd_hui = ventes_aujourd_hui.aggregate(total=Sum('montant_total'))['total'] or 0
+        ca_aujourd_hui_brut = ventes_aujourd_hui.aggregate(total=Sum('montant_total'))['total'] or 0
     except (ValueError, TypeError):
         nb_ventes_aujourd_hui = 0
-        ca_aujourd_hui = 0
+        ca_aujourd_hui_brut = 0
+
+    depenses_appliquees_ca_jour = RapportCaisse.objects.filter(
+        boutique=boutique,
+        date_rapport__date=date_aujourd_hui,
+        depense_appliquee=True
+    ).aggregate(total=Sum('depense'))['total'] or 0
+
+    ca_aujourd_hui = ca_aujourd_hui_brut - depenses_appliquees_ca_jour
     
     # Ventes du mois en cours
     try:
         premier_jour_mois = timezone.now().date().replace(day=1)
         ventes_mois = Vente.objects.filter(
-            client_maui__boutique=boutique,
+            boutique=boutique,
             date_vente__date__gte=premier_jour_mois,
             paye=True
         )
         nb_ventes_mois = ventes_mois.count()
-        ca_mois = ventes_mois.aggregate(total=Sum('montant_total'))['total'] or 0
+        ca_mois_brut = ventes_mois.aggregate(total=Sum('montant_total'))['total'] or 0
     except (ValueError, TypeError):
         nb_ventes_mois = 0
-        ca_mois = 0
+        ca_mois_brut = 0
+
+    depenses_appliquees_ca_mois = RapportCaisse.objects.filter(
+        boutique=boutique,
+        date_rapport__date__gte=premier_jour_mois,
+        date_rapport__date__lte=date_aujourd_hui,
+        depense_appliquee=True
+    ).aggregate(total=Sum('depense'))['total'] or 0
+
+    ca_mois = ca_mois_brut - depenses_appliquees_ca_mois
     
     # Variables supplémentaires pour le template dashboard.html
     total_articles = nb_articles
@@ -669,9 +699,13 @@ def entrer_boutique(request, boutique_id):
         'nb_terminaux': nb_terminaux,
         'nb_ventes_aujourd_hui': nb_ventes_aujourd_hui,
         'ca_aujourd_hui': ca_aujourd_hui,
+        'ca_aujourd_hui_brut': ca_aujourd_hui_brut,
+        'depenses_appliquees_ca_jour': depenses_appliquees_ca_jour,
         'total_articles': total_articles,
         'total_categories': total_categories,
         'ca_mois': ca_mois,
+        'ca_mois_brut': ca_mois_brut,
+        'depenses_appliquees_ca_mois': depenses_appliquees_ca_mois,
         'ca_jour': ca_jour,
         'valeur_stock_disponible': valeur_stock_disponible,
         'articles_stock_faible': articles_stock_faible,
@@ -746,6 +780,16 @@ def rapport_ca_quotidien(request, boutique_id):
     total_ventes = ventes.count()
     total_ca = ventes.aggregate(total=Sum('montant_total'))['total'] or 0
 
+    depenses_appliquees_qs = RapportCaisse.objects.filter(
+        boutique=boutique,
+        date_rapport__date=date_cible,
+        depense_appliquee=True
+    )
+    total_depenses_appliquees = depenses_appliquees_qs.aggregate(total=Sum('depense'))['total'] or 0
+
+    total_ca_brut = total_ca
+    total_ca_net = total_ca_brut - total_depenses_appliquees
+
     ventes_par_mode = ventes.values('mode_paiement').annotate(
         count=Count('id'),
         total=Sum('montant_total')
@@ -756,7 +800,9 @@ def rapport_ca_quotidien(request, boutique_id):
         'ventes': ventes,
         'date_cible': date_cible,
         'total_ventes': total_ventes,
-        'total_ca': total_ca,
+        'total_ca': total_ca_net,
+        'total_ca_brut': total_ca_brut,
+        'total_depenses_appliquees': total_depenses_appliquees,
         'ventes_par_mode': ventes_par_mode,
     }
 
@@ -795,6 +841,8 @@ def rapport_ca_mensuel(request, boutique_id):
     current_date = premier_jour
     total_ca = 0
     total_ventes = 0
+    total_ca_brut = 0
+    total_depenses_appliquees = 0
     
     # Parcourir tous les jours du mois
     while current_date <= dernier_jour:
@@ -804,16 +852,28 @@ def rapport_ca_mensuel(request, boutique_id):
             paye=True
         )
         nb_ventes = ventes_jour.count()
-        ca_jour = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
+        ca_jour_brut = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
+
+        depenses_jour = RapportCaisse.objects.filter(
+            boutique=boutique,
+            date_rapport__date=current_date,
+            depense_appliquee=True
+        ).aggregate(total=Sum('depense'))['total'] or 0
+
+        ca_jour = ca_jour_brut - depenses_jour
         
         rapports_jours.append({
             'date': current_date,
             'nb_ventes': nb_ventes,
-            'ca': ca_jour
+            'ca': ca_jour,
+            'ca_brut': ca_jour_brut,
+            'depenses_appliquees': depenses_jour
         })
         
         total_ventes += nb_ventes
         total_ca += ca_jour
+        total_ca_brut += ca_jour_brut
+        total_depenses_appliquees += depenses_jour
         current_date += timedelta(days=1)
     
     # Inverser pour avoir les dates les plus récentes en premier
@@ -839,6 +899,8 @@ def rapport_ca_mensuel(request, boutique_id):
         'rapports_jours': rapports_jours,
         'total_ventes': total_ventes,
         'total_ca': total_ca,
+        'total_ca_brut': total_ca_brut,
+        'total_depenses_appliquees': total_depenses_appliquees,
         'mois': mois,
         'annee': annee,
         'nom_mois': nom_mois,
@@ -849,6 +911,414 @@ def rapport_ca_mensuel(request, boutique_id):
     }
     
     return render(request, 'inventory/commercant/rapport_ca_mensuel.html', context)
+
+@login_required
+@commercant_required
+@boutique_access_required
+def rapports_caisse_boutique(request, boutique_id):
+    """Liste des rapports de caisse envoyés depuis les terminaux MAUI pour une boutique."""
+    boutique = request.boutique
+
+    rapports = RapportCaisse.objects.filter(
+        boutique=boutique
+    ).select_related('terminal').order_by('-date_rapport', '-created_at')
+
+    # Filtres optionnels
+    date_debut = request.GET.get('date_debut')
+    date_fin = request.GET.get('date_fin')
+    terminal_id = request.GET.get('terminal_id')
+
+    if date_debut:
+        try:
+            d = datetime.strptime(date_debut, '%Y-%m-%d').date()
+            rapports = rapports.filter(date_rapport__date__gte=d)
+        except ValueError:
+            pass
+
+    if date_fin:
+        try:
+            d = datetime.strptime(date_fin, '%Y-%m-%d').date()
+            rapports = rapports.filter(date_rapport__date__lte=d)
+        except ValueError:
+            pass
+
+    terminal_selected = 'TOUS'
+    if terminal_id:
+        if terminal_id != 'TOUS':
+            try:
+                terminal_id_int = int(terminal_id)
+                rapports = rapports.filter(terminal_id=terminal_id_int)
+                terminal_selected = terminal_id_int
+            except (TypeError, ValueError):
+                terminal_selected = 'TOUS'
+
+    terminaux = boutique.clients.all().order_by('nom_terminal')
+
+    # Statistiques simples
+    stats = rapports.aggregate(total_depense=Sum('depense'))
+    total_depense = stats['total_depense'] or 0
+
+    # Notifications de rapports non lus (style "Facebook")
+    now = timezone.now()
+    boutique.derniere_lecture_rapports_caisse = now
+    boutique.save(update_fields=['derniere_lecture_rapports_caisse'])
+
+    # Sur cette page, tous les rapports de caisse sont considérés comme lus
+    unread_rapports_count = 0
+
+    # Articles négociés non lus
+    if boutique.derniere_lecture_articles_negocies:
+        unread_articles_negocies_count = ArticleNegocie.objects.filter(
+            boutique=boutique,
+            created_at__gt=boutique.derniere_lecture_articles_negocies
+        ).count()
+    else:
+        unread_articles_negocies_count = ArticleNegocie.objects.filter(
+            boutique=boutique
+        ).count()
+
+    # Retours d'articles non lus
+    if boutique.derniere_lecture_retours_articles:
+        unread_retours_count = RetourArticle.objects.filter(
+            boutique=boutique,
+            created_at__gt=boutique.derniere_lecture_retours_articles
+        ).count()
+    else:
+        unread_retours_count = RetourArticle.objects.filter(
+            boutique=boutique
+        ).count()
+
+    context = {
+        'boutique': boutique,
+        'rapports': rapports,
+        'terminaux': terminaux,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+        'terminal_selected': terminal_selected,
+        'total_depense': total_depense,
+        'unread_rapports_count': unread_rapports_count,
+        'unread_articles_negocies_count': unread_articles_negocies_count,
+        'unread_retours_count': unread_retours_count,
+    }
+
+    return render(request, 'inventory/commercant/rapports_caisse_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def articles_negocies_boutique(request, boutique_id):
+    boutique = request.boutique
+
+    articles = ArticleNegocie.objects.filter(
+        boutique=boutique
+    ).select_related('terminal', 'article').order_by('-date_operation', '-created_at')
+
+    date_debut = request.GET.get('date_debut')
+    date_fin = request.GET.get('date_fin')
+    terminal_id = request.GET.get('terminal_id')
+
+    if date_debut:
+        try:
+            d = datetime.strptime(date_debut, '%Y-%m-%d').date()
+            articles = articles.filter(date_operation__date__gte=d)
+        except ValueError:
+            pass
+
+    if date_fin:
+        try:
+            d = datetime.strptime(date_fin, '%Y-%m-%d').date()
+            articles = articles.filter(date_operation__date__lte=d)
+        except ValueError:
+            pass
+
+    terminal_selected = 'TOUS'
+    if terminal_id:
+        if terminal_id != 'TOUS':
+            try:
+                terminal_id_int = int(terminal_id)
+                articles = articles.filter(terminal_id=terminal_id_int)
+                terminal_selected = terminal_id_int
+            except (TypeError, ValueError):
+                terminal_selected = 'TOUS'
+
+    terminaux = boutique.clients.all().order_by('nom_terminal')
+
+    stats = articles.aggregate(total_montant=Sum('montant_negocie'))
+    total_montant = stats['total_montant'] or 0
+
+    # Notifications de rapports non lus (style "Facebook")
+    now = timezone.now()
+    boutique.derniere_lecture_articles_negocies = now
+    boutique.save(update_fields=['derniere_lecture_articles_negocies'])
+
+    # Sur cette page, tous les articles négociés sont considérés comme lus
+    unread_articles_negocies_count = 0
+
+    # Rapports de caisse non lus
+    if boutique.derniere_lecture_rapports_caisse:
+        unread_rapports_count = RapportCaisse.objects.filter(
+            boutique=boutique,
+            created_at__gt=boutique.derniere_lecture_rapports_caisse
+        ).count()
+    else:
+        unread_rapports_count = RapportCaisse.objects.filter(
+            boutique=boutique
+        ).count()
+
+    # Retours d'articles non lus
+    if boutique.derniere_lecture_retours_articles:
+        unread_retours_count = RetourArticle.objects.filter(
+            boutique=boutique,
+            created_at__gt=boutique.derniere_lecture_retours_articles
+        ).count()
+    else:
+        unread_retours_count = RetourArticle.objects.filter(
+            boutique=boutique
+        ).count()
+
+    # Statut d'application des négociations (vente déjà créée ou non)
+    article_ids = list(articles.values_list('id', flat=True))
+    applied_negociations_ids = []
+    if article_ids:
+        numero_map = {f"NEG-{boutique.id}-{nid}": nid for nid in article_ids}
+        existing_num = Vente.objects.filter(
+            boutique=boutique,
+            numero_facture__in=numero_map.keys()
+        ).values_list('numero_facture', flat=True)
+        applied_negociations_ids = [
+            numero_map[nf]
+            for nf in existing_num
+            if nf in numero_map
+        ]
+
+    context = {
+        'boutique': boutique,
+        'articles_negocies': articles,
+        'terminaux': terminaux,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+        'terminal_selected': terminal_selected,
+        'total_montant': total_montant,
+        'unread_rapports_count': unread_rapports_count,
+        'unread_articles_negocies_count': unread_articles_negocies_count,
+        'unread_retours_count': unread_retours_count,
+        'applied_negociations_ids': applied_negociations_ids,
+    }
+
+    return render(request, 'inventory/commercant/articles_negocies_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def retours_articles_boutique(request, boutique_id):
+    boutique = request.boutique
+
+    retours = RetourArticle.objects.filter(
+        boutique=boutique
+    ).select_related('terminal', 'article').order_by('-date_operation', '-created_at')
+
+    date_debut = request.GET.get('date_debut')
+    date_fin = request.GET.get('date_fin')
+    terminal_id = request.GET.get('terminal_id')
+
+    if date_debut:
+        try:
+            d = datetime.strptime(date_debut, '%Y-%m-%d').date()
+            retours = retours.filter(date_operation__date__gte=d)
+        except ValueError:
+            pass
+
+    if date_fin:
+        try:
+            d = datetime.strptime(date_fin, '%Y-%m-%d').date()
+            retours = retours.filter(date_operation__date__lte=d)
+        except ValueError:
+            pass
+
+    terminal_selected = 'TOUS'
+    if terminal_id:
+        if terminal_id != 'TOUS':
+            try:
+                terminal_id_int = int(terminal_id)
+                retours = retours.filter(terminal_id=terminal_id_int)
+                terminal_selected = terminal_id_int
+            except (TypeError, ValueError):
+                terminal_selected = 'TOUS'
+
+    terminaux = boutique.clients.all().order_by('nom_terminal')
+
+    stats = retours.aggregate(total_montant=Sum('montant_retourne'))
+    total_montant = stats['total_montant'] or 0
+
+    # Notifications de rapports non lus (style "Facebook")
+    now = timezone.now()
+    boutique.derniere_lecture_retours_articles = now
+    boutique.save(update_fields=['derniere_lecture_retours_articles'])
+
+    # Sur cette page, tous les retours d'articles sont considérés comme lus
+    unread_retours_count = 0
+
+    # Rapports de caisse non lus
+    if boutique.derniere_lecture_rapports_caisse:
+        unread_rapports_count = RapportCaisse.objects.filter(
+            boutique=boutique,
+            created_at__gt=boutique.derniere_lecture_rapports_caisse
+        ).count()
+    else:
+        unread_rapports_count = RapportCaisse.objects.filter(
+            boutique=boutique
+        ).count()
+
+    # Articles négociés non lus
+    if boutique.derniere_lecture_articles_negocies:
+        unread_articles_negocies_count = ArticleNegocie.objects.filter(
+            boutique=boutique,
+            created_at__gt=boutique.derniere_lecture_articles_negocies
+        ).count()
+    else:
+        unread_articles_negocies_count = ArticleNegocie.objects.filter(
+            boutique=boutique
+        ).count()
+
+    context = {
+        'boutique': boutique,
+        'retours_articles': retours,
+        'terminaux': terminaux,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+        'terminal_selected': terminal_selected,
+        'total_montant': total_montant,
+        'unread_rapports_count': unread_rapports_count,
+        'unread_articles_negocies_count': unread_articles_negocies_count,
+        'unread_retours_count': unread_retours_count,
+    }
+
+    return render(request, 'inventory/commercant/retours_articles_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def appliquer_article_negocie(request, boutique_id, negociation_id):
+    boutique = request.boutique
+    negociation = get_object_or_404(ArticleNegocie, id=negociation_id, boutique=boutique)
+
+    if request.method != 'POST':
+        return HttpResponseForbidden("Méthode non autorisée")
+
+    # Idempotence simple : numéro de facture déterministe basé sur la boutique et l'ID de la négociation
+    numero_facture = f"NEG-{boutique.id}-{negociation.id}"
+    if Vente.objects.filter(numero_facture=numero_facture).exists():
+        messages.warning(request, "Cette négociation a déjà été appliquée à la recette.")
+        return redirect('inventory:commercant_articles_negocies_boutique', boutique_id=boutique.id)
+
+    if not negociation.article:
+        messages.error(request, "Impossible d'appliquer cette négociation car l'article lié est introuvable.")
+        return redirect('inventory:commercant_articles_negocies_boutique', boutique_id=boutique.id)
+
+    article = negociation.article
+    if article.boutique_id != boutique.id:
+        messages.error(request, "Cet article n'appartient plus à cette boutique.")
+        return redirect('inventory:commercant_articles_negocies_boutique', boutique_id=boutique.id)
+
+    quantite = negociation.quantite or 0
+    if quantite <= 0:
+        messages.error(request, "Quantité invalide pour cette négociation.")
+        return redirect('inventory:commercant_articles_negocies_boutique', boutique_id=boutique.id)
+
+    montant_unitaire = negociation.montant_negocie or Decimal('0')
+    montant_total = montant_unitaire * quantite
+    if montant_total <= 0:
+        messages.error(request, "Montant négocié invalide pour cette négociation.")
+        return redirect('inventory:commercant_articles_negocies_boutique', boutique_id=boutique.id)
+
+    # Vérifier le stock disponible avant de lancer la transaction
+    if article.quantite_stock < quantite:
+        messages.error(
+            request,
+            f"Stock insuffisant pour l'article {article.code}. Stock disponible : {article.quantite_stock}, quantité demandée : {quantite}."
+        )
+        return redirect('inventory:commercant_articles_negocies_boutique', boutique_id=boutique.id)
+
+    terminal = negociation.terminal
+
+    try:
+        with transaction.atomic():
+            # Créer la vente comme si elle venait de MAUI
+            vente = Vente.objects.create(
+                numero_facture=numero_facture,
+                date_vente=timezone.now(),
+                montant_total=montant_total,
+                mode_paiement='CASH',
+                paye=True,
+                boutique=boutique,
+                client_maui=terminal,
+                adresse_ip_client=request.META.get('REMOTE_ADDR'),
+                version_app_maui=terminal.version_app_maui if terminal else ''
+            )
+
+            # Créer la ligne de vente
+            LigneVente.objects.create(
+                vente=vente,
+                article=article,
+                quantite=quantite,
+                prix_unitaire=montant_unitaire,
+            )
+
+            # Mettre à jour le stock de l'article et journaliser le mouvement
+            stock_avant = article.quantite_stock
+            article.quantite_stock = stock_avant - quantite
+            article.save(update_fields=['quantite_stock'])
+
+            MouvementStock.objects.create(
+                article=article,
+                type_mouvement='VENTE',
+                quantite=-quantite,
+                stock_avant=stock_avant,
+                stock_apres=article.quantite_stock,
+                reference_document=vente.numero_facture,
+                utilisateur=request.user.username,
+                commentaire=(
+                    f"Négociation appliquée depuis l'interface commerçant "
+                    f"(Article négocié ID {negociation.id}, motif: {negociation.motif})"
+                )
+            )
+
+        messages.success(
+            request,
+            f"La négociation sur l'article {article.code} a été appliquée avec succès "
+            f"({quantite} × {montant_unitaire} {negociation.devise} ajoutés au CA du jour)."
+        )
+    except Exception as e:
+        messages.error(request, f"Erreur lors de l'application de la négociation : {e}")
+
+    return redirect('inventory:commercant_articles_negocies_boutique', boutique_id=boutique.id)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def appliquer_depense_rapport_caisse(request, boutique_id, rapport_id):
+    boutique = request.boutique
+    rapport = get_object_or_404(RapportCaisse, id=rapport_id, boutique=boutique)
+
+    if request.method != 'POST':
+        return HttpResponseForbidden("Méthode non autorisée")
+
+    if not rapport.depense_appliquee:
+        rapport.depense_appliquee = True
+        rapport.date_application_depense = timezone.now()
+        rapport.save(update_fields=['depense_appliquee', 'date_application_depense'])
+        messages.success(
+            request,
+            f"La dépense de {rapport.depense} {rapport.devise} du {rapport.date_rapport.date()} a été appliquée à la recette du jour."
+        )
+    else:
+        messages.info(request, "Cette dépense est déjà appliquée à la recette du jour.")
+
+    return redirect('inventory:commercant_rapports_caisse_boutique', boutique_id=boutique.id)
 
 @login_required
 @commercant_required

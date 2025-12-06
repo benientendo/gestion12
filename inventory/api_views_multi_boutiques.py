@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models, transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from .models_multi_commercants import Boutique, TerminalMaui, SessionTerminalMaui
 from .models_modifications import Article, Categorie, Vente, LigneVente, MouvementStock
 from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer
@@ -419,9 +420,25 @@ class VenteBoutiqueViewSet(viewsets.ModelViewSet):
         # Traitement de la vente avec transaction atomique
         try:
             with transaction.atomic():
-                # Créer la vente
+                # Déterminer la date de vente à partir des données MAUI
+                date_str = request.data.get('date_vente') or request.data.get('date')
+                if date_str:
+                    dt = parse_datetime(str(date_str))
+                    if dt is None:
+                        date_vente = timezone.now()
+                    else:
+                        # Si datetime naïf, l'interpréter dans le fuseau du serveur
+                        if timezone.is_naive(dt):
+                            date_vente = timezone.make_aware(dt)
+                        else:
+                            date_vente = dt
+                else:
+                    date_vente = timezone.now()
+
+                # Créer la vente en utilisant la date envoyée par MAUI (ou fallback serveur)
                 vente = Vente.objects.create(
                     numero_facture=request.data.get('numero_facture'),
+                    date_vente=date_vente,
                     montant_total=request.data.get('montant_total'),
                     mode_paiement=request.data.get('mode_paiement'),
                     paye=True,

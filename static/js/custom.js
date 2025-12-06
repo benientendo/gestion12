@@ -176,6 +176,275 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
+    // Navigation AJAX entre les pages de rapports (rapports caisse, articles négociés, retours)
+    function loadRapportsSection(url, pushState) {
+        const contentContainer = document.querySelector('.container-fluid.py-4');
+        if (!contentContainer) {
+            // Si la structure attendue n'est pas trouvée, on repasse en navigation classique
+            window.location.href = url;
+            return;
+        }
+
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(function(response) {
+            if (!response.ok) {
+                throw new Error('Erreur lors du chargement de la page');
+            }
+            return response.text();
+        })
+        .then(function(html) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+
+            const newContent = doc.querySelector('.container-fluid.py-4');
+            if (!newContent) {
+                window.location.href = url;
+                return;
+            }
+
+            // Remplacer le contenu principal
+            contentContainer.replaceWith(newContent);
+
+            // Mettre à jour les messages flash
+            const newMessages = doc.querySelector('.messages');
+            const currentMessages = document.querySelector('.messages');
+            if (currentMessages) {
+                currentMessages.innerHTML = newMessages ? newMessages.innerHTML : '';
+            }
+
+            // Réinitialiser les tooltips Bootstrap éventuels
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+
+            // Remonter en haut de la page
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Réinitialiser la navigation AJAX sur le nouveau contenu
+            initRapportsAjaxNavigation();
+
+            // Mettre à jour l'URL dans l'historique si nécessaire
+            if (pushState) {
+                history.pushState({ rapportsAjax: true }, '', url);
+            }
+        })
+        .catch(function(error) {
+            console.error('Erreur de navigation AJAX:', error);
+            window.location.href = url;
+        });
+    }
+
+    function initRapportsAjaxNavigation() {
+        const navGroup = document.querySelector('.btn-group[aria-label="Navigation rapports"]');
+        if (!navGroup) {
+            return;
+        }
+
+        // Intercepter les clics sur les trois onglets
+        navGroup.addEventListener('click', function(event) {
+            const link = event.target.closest('a');
+            if (!link) {
+                return;
+            }
+
+            const url = link.getAttribute('href');
+            if (!url) {
+                return;
+            }
+
+            // Laisser le comportement normal pour clic milieu / Ctrl+clic
+            if (event.button === 1 || event.metaKey || event.ctrlKey) {
+                return;
+            }
+
+            event.preventDefault();
+            loadRapportsSection(url, true);
+        });
+
+        // Gérer le bouton retour/avant du navigateur
+        window.addEventListener('popstate', function() {
+            if (!document.querySelector('.btn-group[aria-label="Navigation rapports"]')) {
+                return;
+            }
+            loadRapportsSection(location.href, false);
+        });
+    }
+
+    function initGlobalRapportsModalsHandlers() {
+        document.addEventListener('show.bs.modal', function(event) {
+            var modal = event.target;
+            var trigger = event.relatedTarget;
+            if (!trigger) {
+                return;
+            }
+
+            // Détail rapport de caisse
+            if (modal.id === 'rapportDetailModal') {
+                var date = trigger.getAttribute('data-date') || '';
+                var terminal = trigger.getAttribute('data-terminal') || '';
+                var depense = trigger.getAttribute('data-depense') || '';
+                var devise = trigger.getAttribute('data-devise') || '';
+                var detail = trigger.getAttribute('data-detail') || '';
+                var appliquee = trigger.getAttribute('data-appliquee') === '1';
+                var appliquerUrl = trigger.getAttribute('data-appliquer-url') || '#';
+
+                var dateEl = modal.querySelector('#modalRapportDate');
+                var terminalEl = modal.querySelector('#modalRapportTerminal');
+                var depenseEl = modal.querySelector('#modalRapportDepense');
+                var detailEl = modal.querySelector('#modalRapportDetail');
+                var appliqueeInfo = modal.querySelector('#modalRapportAppliqueeInfo');
+                var appliquerBtn = modal.querySelector('#appliquerDepenseButton');
+                var form = modal.querySelector('#appliquerDepenseForm');
+
+                if (dateEl) {
+                    dateEl.textContent = date;
+                }
+                if (terminalEl) {
+                    terminalEl.textContent = terminal;
+                }
+                if (depenseEl) {
+                    depenseEl.textContent = depense + ' ' + devise;
+                }
+                if (detailEl) {
+                    detailEl.textContent = detail;
+                }
+
+                if (form) {
+                    form.setAttribute('action', appliquerUrl);
+                }
+
+                if (appliquee) {
+                    if (appliquerBtn) {
+                        appliquerBtn.classList.add('d-none');
+                    }
+                    if (appliqueeInfo) {
+                        appliqueeInfo.classList.remove('d-none');
+                    }
+                } else {
+                    if (appliquerBtn) {
+                        appliquerBtn.classList.remove('d-none');
+                    }
+                    if (appliqueeInfo) {
+                        appliqueeInfo.classList.add('d-none');
+                    }
+                }
+            }
+
+            // Détail article négocié
+            if (modal.id === 'negociationDetailModal') {
+                var dateNeg = trigger.getAttribute('data-date') || '';
+                var terminalNeg = trigger.getAttribute('data-terminal') || '';
+                var articleNeg = trigger.getAttribute('data-article') || '';
+                var codeNeg = trigger.getAttribute('data-code') || '';
+                var quantiteStr = trigger.getAttribute('data-quantite') || '0';
+                var montantStr = trigger.getAttribute('data-montant') || '0';
+                var deviseNeg = trigger.getAttribute('data-devise') || '';
+                var motifNeg = trigger.getAttribute('data-motif') || '';
+                var referenceNeg = trigger.getAttribute('data-reference') || '';
+                var appliquerUrlNeg = trigger.getAttribute('data-appliquer-url') || '#';
+
+                var quantite = parseInt(quantiteStr, 10) || 0;
+                var montant = parseFloat(montantStr.replace(',', '.')) || 0;
+                var total = quantite * montant;
+
+                var dateElNeg = modal.querySelector('#modalNegociationDate');
+                var terminalElNeg = modal.querySelector('#modalNegociationTerminal');
+                var articleElNeg = modal.querySelector('#modalNegociationArticle');
+                var codeElNeg = modal.querySelector('#modalNegociationCode');
+                var quantiteElNeg = modal.querySelector('#modalNegociationQuantite');
+                var montantElNeg = modal.querySelector('#modalNegociationMontant');
+                var totalElNeg = modal.querySelector('#modalNegociationTotal');
+                var motifElNeg = modal.querySelector('#modalNegociationMotif');
+                var referenceElNeg = modal.querySelector('#modalNegociationReference');
+                var formNeg = modal.querySelector('#appliquerNegociationForm');
+
+                if (dateElNeg) dateElNeg.textContent = dateNeg;
+                if (terminalElNeg) terminalElNeg.textContent = terminalNeg;
+                if (articleElNeg) articleElNeg.textContent = articleNeg;
+                if (codeElNeg) codeElNeg.textContent = codeNeg;
+                if (quantiteElNeg) quantiteElNeg.textContent = quantite;
+                if (montantElNeg) montantElNeg.textContent = montant.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) + ' ' + deviseNeg;
+                if (totalElNeg) totalElNeg.textContent = total.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) + ' ' + deviseNeg;
+                if (motifElNeg) motifElNeg.textContent = motifNeg || '-';
+                if (referenceElNeg) referenceElNeg.textContent = referenceNeg || '-';
+
+                if (formNeg) {
+                    formNeg.setAttribute('action', appliquerUrlNeg);
+                }
+            }
+        });
+    }
+
+    function initRapportsAjaxApplyForms() {
+        document.addEventListener('submit', function(event) {
+            var form = event.target;
+            if (!form) {
+                return;
+            }
+
+            if (form.id === 'appliquerDepenseForm' || form.id === 'appliquerNegociationForm') {
+                event.preventDefault();
+
+                var submitBtn = form.querySelector('button[type="submit"]');
+                var originalText = '';
+                if (submitBtn) {
+                    originalText = submitBtn.innerHTML;
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Traitement...';
+                }
+
+                var formData = new FormData(form);
+
+                fetch(form.action, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': getCSRFToken(),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('Erreur lors de l\'application');
+                    }
+
+                    // Recharger la section actuelle pour refléter les changements et les messages
+                    loadRapportsSection(window.location.href, false);
+
+                    // Fermer le modal si présent
+                    var modalEl = form.closest('.modal');
+                    if (modalEl) {
+                        var modalInstance = bootstrap.Modal.getInstance(modalEl);
+                        if (modalInstance) {
+                            modalInstance.hide();
+                        }
+                    }
+                })
+                .catch(function(error) {
+                    console.error('Erreur application négociation/rapport:', error);
+                    showAlert('Erreur lors de l\'application. Veuillez réessayer.', 'danger');
+                })
+                .finally(function() {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalText;
+                    }
+                });
+            }
+        });
+    }
+
+    // Initialiser la navigation AJAX et les handlers globaux de modals sur les pages concernées
+    initRapportsAjaxNavigation();
+    initGlobalRapportsModalsHandlers();
+    initRapportsAjaxApplyForms();
+
     // Gestion du menu mobile
     const toggleSidebarBtn = document.getElementById('toggleSidebar');
     if (toggleSidebarBtn) {

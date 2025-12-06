@@ -10,20 +10,23 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.views import APIView
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime, parse_date
 from django.db.models import Sum, Q
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import ValidationError
+from datetime import datetime, time
 import json
 import logging
 
 from .models import (
     Client, Boutique, Article, Categorie, Vente, LigneVente, 
-    MouvementStock, SessionClientMaui
+    MouvementStock, SessionClientMaui, RapportCaisse
 )
-from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer
+from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer, RapportCaisseSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -457,9 +460,20 @@ def create_vente_v2(request):
         # Préparer les données de vente
         vente_data = request.data.copy()
         
+        date_str = vente_data.get('date_vente') or vente_data.get('date')
+        if date_str:
+            date_vente = parse_datetime(date_str)
+            if date_vente is None:
+                date_vente = timezone.now()
+            elif timezone.is_naive(date_vente):
+                date_vente = timezone.make_aware(date_vente)
+        else:
+            date_vente = timezone.now()
+        
         # Créer la vente
         vente = Vente.objects.create(
             numero_facture=vente_data.get('numero_facture'),
+            date_vente=date_vente,
             montant_total=0,  # Sera calculé avec les lignes
             mode_paiement=vente_data.get('mode_paiement', 'CASH'),
             paye=vente_data.get('paye', True),
@@ -666,6 +680,154 @@ def validate_session_v2(request):
             'error': 'Erreur interne du serveur',
             'code': 'INTERNAL_ERROR'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class RapportCaisseListCreateView(APIView):
+    """Création et liste des rapports de caisse via header X-Device-Serial.
+
+    - POST /api/v2/rapports-caisse/
+      Body JSON:
+      {
+        "detail": "Cloture du soir, panne réseau 30 minutes, sortie carburant.",
+        "depense": 50000,
+        "devise": "CDF",
+        "date_rapport": "2025-11-30T21:00:00Z"  # optionnel
+      }
+
+    - GET /api/v2/rapports-caisse/
+      Filtres optionnels:
+        ?date_min=2025-11-01
+        ?date_max=2025-11-30
+        ?par_terminal=true
+    """
+
+    permission_classes = [AllowAny]
+
+    def _get_terminal_and_boutique(self, request):
+        numero_serie = (
+            request.headers.get('X-Device-Serial')
+            or request.headers.get('Device-Serial')
+            or request.headers.get('Serial-Number')
+            or request.META.get('HTTP_X_DEVICE_SERIAL')
+            or request.META.get('HTTP_DEVICE_SERIAL')
+        )
+
+        if not numero_serie:
+            return None, None, Response({
+                'error': 'Header X-Device-Serial requis',
+                'code': 'MISSING_SERIAL',
+                'header_required': 'X-Device-Serial',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            terminal = Client.objects.select_related('boutique').get(
+                numero_serie=numero_serie,
+                est_actif=True,
+            )
+        except Client.DoesNotExist:
+            logger.warning(f"Terminal MAUI inconnu ou inactif: {numero_serie}")
+            return None, None, Response({
+                'error': 'Terminal non autorisé ou inexistant',
+                'code': 'TERMINAL_NOT_FOUND',
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        boutique = terminal.boutique
+        if not boutique or not boutique.est_active:
+            return terminal, None, Response({
+                'error': 'Boutique introuvable ou désactivée pour ce terminal',
+                'code': 'BOUTIQUE_INACTIVE',
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        return terminal, boutique, None
+
+    def _apply_date_filters(self, queryset, request):
+        date_min_str = request.query_params.get('date_min')
+        date_max_str = request.query_params.get('date_max')
+
+        def _to_datetime(value, is_max=False):
+            if not value:
+                return None
+            dt = parse_datetime(value)
+            if dt is not None:
+                if timezone.is_naive(dt):
+                    dt = timezone.make_aware(dt)
+                return dt
+            d = parse_date(value)
+            if d is not None:
+                if is_max:
+                    combined = datetime.combine(d, time.max)
+                else:
+                    combined = datetime.combine(d, time.min)
+                return timezone.make_aware(combined)
+            return None
+
+        if date_min_str:
+            dt_min = _to_datetime(date_min_str, is_max=False)
+            if dt_min is None:
+                raise ValueError(f"Format date_min invalide: {date_min_str}")
+            queryset = queryset.filter(date_rapport__gte=dt_min)
+
+        if date_max_str:
+            dt_max = _to_datetime(date_max_str, is_max=True)
+            if dt_max is None:
+                raise ValueError(f"Format date_max invalide: {date_max_str}")
+            queryset = queryset.filter(date_rapport__lte=dt_max)
+
+        return queryset
+
+    def get(self, request, format=None):
+        terminal, boutique, error_response = self._get_terminal_and_boutique(request)
+        if error_response is not None:
+            return error_response
+
+        queryset = RapportCaisse.objects.filter(boutique=boutique)
+
+        par_terminal = request.query_params.get('par_terminal')
+        if par_terminal and par_terminal.lower() in ('1', 'true', 'yes', 'on'):
+            queryset = queryset.filter(terminal=terminal)
+
+        try:
+            queryset = self._apply_date_filters(queryset, request)
+        except ValueError as e:
+            return Response({
+                'error': str(e),
+                'code': 'INVALID_DATE_FORMAT',
+                'expected': 'ISO 8601, ex: 2025-11-30 ou 2025-11-30T00:00:00Z',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = queryset.order_by('-date_rapport', '-created_at')
+
+        serializer = RapportCaisseSerializer(queryset, many=True)
+        return Response({
+            'success': True,
+            'count': queryset.count(),
+            'boutique_id': boutique.id,
+            'boutique_nom': boutique.nom,
+            'par_terminal': bool(par_terminal and par_terminal.lower() in ('1', 'true', 'yes', 'on')),
+            'results': serializer.data,
+        }, status=status.HTTP_200_OK)
+
+    def post(self, request, format=None):
+        terminal, boutique, error_response = self._get_terminal_and_boutique(request)
+        if error_response is not None:
+            return error_response
+
+        data = request.data.copy()
+        if not data.get('date_rapport'):
+            data['date_rapport'] = timezone.now()
+
+        serializer = RapportCaisseSerializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        rapport = serializer.save(
+            boutique=boutique,
+            terminal=terminal,
+            est_synchronise=True,
+        )
+
+        out_serializer = RapportCaisseSerializer(rapport)
+        return Response(out_serializer.data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['GET'])
