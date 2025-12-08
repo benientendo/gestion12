@@ -131,18 +131,34 @@ def authentifier_client_maui(request):
         
         # ⭐ AJOUT: Si le terminal a une boutique, inclure toutes les infos
         if client.boutique:
+            boutique = client.boutique
+            commercant = getattr(boutique, 'commercant', None)
+
             response_data['client_maui'] = {
                 'id': client.id,
                 'numero_serie': client.numero_serie,
                 'nom_terminal': client.nom_terminal,
-                'boutique_id': client.boutique.id,
+                'boutique_id': boutique.id,
                 'boutique': {
-                    'id': client.boutique.id,
-                    'nom': client.boutique.nom,
-                    'code': client.boutique.code_boutique,
-                    'commercant': client.boutique.commercant.nom_entreprise if hasattr(client.boutique, 'commercant') else '',
-                    'type_commerce': client.boutique.type_commerce,
-                    'devise': client.boutique.devise
+                    'id': boutique.id,
+                    'nom': boutique.nom,
+                    'code': boutique.code_boutique,
+                    # Conservé pour compatibilité: nom simple du commerçant
+                    'commercant': commercant.nom_entreprise if commercant else '',
+                    'type_commerce': boutique.type_commerce,
+                    'devise': boutique.devise,
+                    # Nouveau bloc détaillé pour l'en-tête de facture MAUI
+                    'commercant_details': {
+                        'id': commercant.id if commercant else None,
+                        'nom_entreprise': commercant.nom_entreprise if commercant else '',
+                        'nom_responsable': commercant.nom_responsable if commercant else '',
+                        'adresse': commercant.adresse if commercant else '',
+                        'telephone': commercant.telephone if commercant else '',
+                        'email': commercant.email if commercant else '',
+                        # Champs légaux pour l'en-tête de facture
+                        'rccm': commercant.numero_registre_commerce if commercant else '',
+                        'id_nat': commercant.numero_fiscal if commercant else ''
+                    }
                 }
             }
         

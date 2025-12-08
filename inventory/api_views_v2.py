@@ -148,6 +148,7 @@ def maui_auth_v2(request):
         
         # Préparer les informations de réponse
         boutique = terminal.boutique
+        commercant = boutique.commercant
         
         response_data = {
             'token': str(refresh.access_token),
@@ -174,10 +175,22 @@ def maui_auth_v2(request):
                     'id': boutique.id,
                     'nom': boutique.nom,
                     'code': boutique.code_boutique,
-                    'commercant': boutique.commercant.nom_entreprise,
+                    # Nom simple du commerçant (compatibilité avec versions MAUI existantes)
+                    'commercant': commercant.nom_entreprise if commercant else '',
                     'type_commerce': boutique.type_commerce,
                     'ville': boutique.ville,
-                    'devise': boutique.devise
+                    'devise': boutique.devise,
+                    # Nouveau bloc détaillé pour entête de facture MAUI
+                    'commercant_details': {
+                        'id': commercant.id if commercant else None,
+                        'nom_entreprise': commercant.nom_entreprise if commercant else '',
+                        'nom_responsable': commercant.nom_responsable if commercant else '',
+                        'adresse': commercant.adresse if commercant else '',
+                        'telephone': commercant.telephone if commercant else '',
+                        'email': commercant.email if commercant else '',
+                        'rccm': commercant.numero_registre_commerce if commercant else '',
+                        'id_nat': commercant.numero_fiscal if commercant else ''
+                    }
                 }
             }
         }

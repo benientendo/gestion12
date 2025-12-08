@@ -191,6 +191,10 @@ class CommercantForm(forms.ModelForm):
             'est_actif': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'notes_admin': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
         }
+        labels = {
+            'numero_registre_commerce': 'RCCM',
+            'numero_fiscal': 'Id. Nat',
+        }
     
     def __init__(self, *args, **kwargs):
         # Si on modifie un commerçant existant, ne pas afficher les champs utilisateur
