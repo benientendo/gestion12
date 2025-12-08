@@ -381,6 +381,35 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function initBoutiqueDashboardAmountsToggle() {
+        var toggleBtn = document.getElementById('toggleBoutiqueAmounts');
+        if (!toggleBtn) {
+            return;
+        }
+        var statsCard = document.querySelector('.stats-card');
+        if (!statsCard) {
+            return;
+        }
+
+        toggleBtn.addEventListener('click', function() {
+            var icon = toggleBtn.querySelector('i');
+            var isHidden = statsCard.classList.contains('amounts-hidden');
+            if (isHidden) {
+                statsCard.classList.remove('amounts-hidden');
+                if (icon) {
+                    icon.classList.remove('fa-eye-slash');
+                    icon.classList.add('fa-eye');
+                }
+            } else {
+                statsCard.classList.add('amounts-hidden');
+                if (icon) {
+                    icon.classList.remove('fa-eye');
+                    icon.classList.add('fa-eye-slash');
+                }
+            }
+        });
+    }
+
     function initRapportsAjaxApplyForms() {
         document.addEventListener('submit', function(event) {
             var form = event.target;
@@ -440,10 +469,41 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    function initDashboardAmountsToggle() {
+        var toggleBtn = document.getElementById('toggleDashboardAmounts');
+        if (!toggleBtn) {
+            return;
+        }
+        var statsOverview = document.querySelector('.stats-overview');
+        if (!statsOverview) {
+            return;
+        }
+
+        toggleBtn.addEventListener('click', function() {
+            var icon = toggleBtn.querySelector('i');
+            var isHidden = statsOverview.classList.contains('amounts-hidden');
+            if (isHidden) {
+                statsOverview.classList.remove('amounts-hidden');
+                if (icon) {
+                    icon.classList.remove('fa-eye-slash');
+                    icon.classList.add('fa-eye');
+                }
+            } else {
+                statsOverview.classList.add('amounts-hidden');
+                if (icon) {
+                    icon.classList.remove('fa-eye');
+                    icon.classList.add('fa-eye-slash');
+                }
+            }
+        });
+    }
+
     // Initialiser la navigation AJAX et les handlers globaux de modals sur les pages concernées
     initRapportsAjaxNavigation();
     initGlobalRapportsModalsHandlers();
     initRapportsAjaxApplyForms();
+    initDashboardAmountsToggle();
+    initBoutiqueDashboardAmountsToggle();
 
     // Gestion du menu mobile
     const toggleSidebarBtn = document.getElementById('toggleSidebar');

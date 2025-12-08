@@ -158,6 +158,9 @@ def dashboard_commercant(request):
     
     # Statistiques des 30 derniers jours
     date_debut = timezone.now() - timedelta(days=30)
+    aujourd_hui = timezone.now().date()
+    # Début du mois en cours (pour les dépenses mensuelles)
+    debut_mois = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     
     # Calculs par boutique
     stats_boutiques = []
@@ -190,6 +193,31 @@ def dashboard_commercant(request):
         total_ventes += nb_ventes
         total_ca += ca_boutique
     
+    # Recette du jour (toutes boutiques, ventes payées)
+    ventes_jour = Vente.objects.filter(
+        client_maui__boutique__in=boutiques,
+        date_vente__date=aujourd_hui,
+        paye=True
+    )
+    ca_jour = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
+
+    # Valeur totale de la marchandise (stock) en CDF
+    articles_commercant = Article.objects.filter(
+        boutique__commercant=commercant,
+        est_actif=True
+    )
+    valeur_marchandise = articles_commercant.aggregate(
+        total=Sum(F('quantite_stock') * F('prix_achat'))
+    )['total'] or 0
+
+    # Dépenses totales de toutes les boutiques (rapports de caisse en CDF) sur le mois en cours
+    depenses_qs = RapportCaisse.objects.filter(
+        boutique__in=boutiques,
+        devise='CDF',
+        date_rapport__gte=debut_mois
+    )
+    depenses_totales = depenses_qs.aggregate(total=Sum('depense'))['total'] or 0
+
     # Articles en stock bas (tous les boutiques)
     articles_stock_bas = Article.objects.filter(
         boutique__commercant=commercant
@@ -204,6 +232,9 @@ def dashboard_commercant(request):
         'total_ventes': total_ventes,
         'total_ca': total_ca,
         'chiffre_affaires_30j': total_ca,  # Alias pour le template
+        'recette_jour': ca_jour,
+        'valeur_marchandise': valeur_marchandise,
+        'depenses_totales': depenses_totales,
         'boutiques_avec_clients': boutiques.filter(clients__isnull=False).distinct().count(),
         'stats_boutiques': stats_boutiques,
         'articles_stock_bas': articles_stock_bas,

@@ -62,6 +62,29 @@
     .offcanvas-body hr {
         border-color: rgba(0,0,0,0.1);
     }
+    .amount-toggle-btn {
+        background-color: rgba(0,0,0,0.35);
+        color: #ffd43b;
+        border: none;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .amount-toggle-btn:focus {
+        outline: none;
+        box-shadow: none;
+    }
+    .stats-card.amounts-hidden .sensitive-amount {
+        filter: blur(0.3rem);
+    }
+    .stats-card.amounts-hidden .js-boutique-metric-link {
+        pointer-events: none;
+        cursor: default;
+        opacity: 0.7;
+    }
 </style>
 {% endblock %}
 
@@ -72,7 +95,12 @@
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h1><i class="fas fa-tachometer-alt"></i> Tableau de bord - {{ boutique.nom }}</h1>
+                    <div class="d-flex align-items-center gap-2">
+                        <h1 class="mb-0"><i class="fas fa-tachometer-alt"></i> Tableau de bord - {{ boutique.nom }}</h1>
+                        <button type="button" class="btn btn-sm amount-toggle-btn" id="toggleBoutiqueAmounts" title="Afficher/masquer les montants">
+                            <i class="fas fa-eye-slash"></i>
+                        </button>
+                    </div>
                     <p class="text-muted">
                         <i class="fas fa-map-marker-alt"></i> {{ boutique.ville }} • 
                         <i class="fas fa-tag"></i> {{ boutique.get_type_commerce_display }} • 
@@ -97,7 +125,7 @@
     <!-- Statistiques principales -->
     <div class="row mb-4">
         <div class="col-12">
-            <div class="stats-card p-4">
+            <div class="stats-card p-4 amounts-hidden">
                 <!-- Première ligne de métriques -->
                 <div class="row text-center mb-3">
                     <div class="col-md-3">
@@ -113,7 +141,7 @@
                         <p class="mb-0">Ventes Récentes</p>
                     </div>
                     <div class="col-md-3">
-                        <h2><i class="fas fa-coins me-2"></i>{{ valeur_stock_disponible|format_cdf:0 }} CDF</h2>
+                        <h2><i class="fas fa-coins me-2"></i><span class="sensitive-amount">{{ valeur_stock_disponible|format_cdf:0 }} CDF</span></h2>
                         <p class="mb-0">Valeur du stock disponible</p>
                     </div>
                 </div>
@@ -121,15 +149,15 @@
                 <!-- Deuxième ligne de métriques -->
                 <div class="row text-center">
                     <div class="col-md-6">
-                        <a href="{% url 'inventory:rapport_ca_quotidien' boutique.id %}" class="text-decoration-none">
+                        <a href="{% url 'inventory:rapport_ca_quotidien' boutique.id %}" class="text-decoration-none js-boutique-metric-link">
                             <div class="card bg-success text-white h-100 card-hover-ca">
                                 <div class="card-body">
-                                    <h3><i class="fas fa-calendar-day me-2"></i>{{ ca_jour|format_cdf:0 }} CDF</h3>
+                                    <h3><i class="fas fa-calendar-day me-2"></i><span class="sensitive-amount">{{ ca_jour|format_cdf:0 }} CDF</span></h3>
                                     <p class="mb-0">Recette du jour (net) <i class="fas fa-external-link-alt fa-xs"></i></p>
                                     {% if depenses_appliquees_ca_jour %}
                                     <small class="d-block mt-1">
-                                        Brut: {{ ca_aujourd_hui_brut|format_cdf:0 }} CDF -
-                                        <span class="text-danger fw-semibold">Dépenses: {{ depenses_appliquees_ca_jour|format_cdf:0 }} CDF</span>
+                                        Brut: <span class="sensitive-amount">{{ ca_aujourd_hui_brut|format_cdf:0 }} CDF</span> -
+                                        <span class="text-danger fw-semibold">Dépenses: <span class="sensitive-amount">{{ depenses_appliquees_ca_jour|format_cdf:0 }} CDF</span></span>
                                     </small>
                                     {% endif %}
                                 </div>
@@ -137,15 +165,15 @@
                         </a>
                     </div>
                     <div class="col-md-6">
-                        <a href="{% url 'inventory:rapport_ca_mensuel' boutique.id %}" class="text-decoration-none">
+                        <a href="{% url 'inventory:rapport_ca_mensuel' boutique.id %}" class="text-decoration-none js-boutique-metric-link">
                             <div class="card bg-warning text-white h-100 card-hover-ca">
                                 <div class="card-body">
-                                    <h3><i class="fas fa-coins me-2"></i>{{ ca_mois|format_cdf:0 }} CDF</h3>
+                                    <h3><i class="fas fa-coins me-2"></i><span class="sensitive-amount">{{ ca_mois|format_cdf:0 }} CDF</span></h3>
                                     <p class="mb-0">Recette du mois (net) de {{ "now"|date:"F Y" }} <i class="fas fa-external-link-alt fa-xs"></i></p>
                                     {% if depenses_appliquees_ca_mois %}
                                     <small class="d-block mt-1">
-                                        Brut: {{ ca_mois_brut|format_cdf:0 }} CDF -
-                                        <span class="text-danger fw-semibold">Dépenses: {{ depenses_appliquees_ca_mois|format_cdf:0 }} CDF</span>
+                                        Brut: <span class="sensitive-amount">{{ ca_mois_brut|format_cdf:0 }} CDF</span> -
+                                        <span class="text-danger fw-semibold">Dépenses: <span class="sensitive-amount">{{ depenses_appliquees_ca_mois|format_cdf:0 }} CDF</span></span>
                                     </small>
                                     {% endif %}
                                 </div>

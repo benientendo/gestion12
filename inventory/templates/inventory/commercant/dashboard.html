@@ -1,5 +1,6 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
+{% load humanize %}
 
 {% block title %}Mes Boutiques - {{ commercant.nom_entreprise }}{% endblock %}
 
@@ -24,6 +25,46 @@
         border-radius: 15px;
         padding: 20px;
         margin-bottom: 20px;
+    }
+    .small-stat-number {
+        font-size: 0.95rem;
+        font-weight: 700;
+    }
+    .small-stat-number-neutral {
+        color: #ffffff;
+    }
+    .small-stat-number-success {
+        color: #b2f2bb;
+    }
+    .small-stat-number-info {
+        color: #a5d8ff;
+    }
+    .small-stat-number-danger {
+        color: #ffc9c9;
+    }
+    .small-stat-label {
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        opacity: 0.9;
+        color: #ffeb99;
+    }
+    .amount-toggle-btn {
+        background-color: rgba(0,0,0,0.35);
+        color: #ffd43b;
+        border: none;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .amount-toggle-btn:focus {
+        outline: none;
+        box-shadow: none;
+    }
+    .stats-overview.amounts-hidden .sensitive-amount {
+        filter: blur(0.3rem);
     }
     .boutique-actions {
         opacity: 0;
@@ -53,25 +94,43 @@
     <!-- En-tête Commerçant -->
     <div class="row mb-4">
         <div class="col-12">
-            <div class="stats-overview">
+            <div class="stats-overview amounts-hidden">
                 <div class="row align-items-center">
                     <div class="col-12 col-md-8 mb-3 mb-md-0">
-                        <h1><i class="fas fa-store"></i> {{ commercant.nom_entreprise }}</h1>
+                        <div class="d-flex align-items-center justify-content-between">
+                            <h1 class="mb-0"><i class="fas fa-store"></i> {{ commercant.nom_entreprise }}</h1>
+                            <button type="button" class="btn btn-sm amount-toggle-btn" id="toggleDashboardAmounts" title="Afficher/masquer les montants">
+                                <i class="fas fa-eye-slash"></i>
+                            </button>
+                        </div>
                         <p class="mb-0">Bienvenue dans votre espace de gestion multi-boutiques</p>
                     </div>
                     <div class="col-12 col-md-4 text-center text-md-end">
                         <div class="row text-center">
-                            <div class="col-4">
-                                <h3>{{ total_boutiques }}</h3>
-                                <small>Boutiques</small>
+                            <div class="col-4 mb-2">
+                                <div class="small-stat-number small-stat-number-neutral">{{ total_boutiques }}</div>
+                                <div class="small-stat-label">Boutiques totales</div>
                             </div>
-                            <div class="col-4">
-                                <h3>{{ boutiques_avec_clients }}</h3>
-                                <small>Connectées</small>
+                            <div class="col-4 mb-2">
+                                <div class="small-stat-number small-stat-number-neutral">{{ boutiques_avec_clients }}</div>
+                                <div class="small-stat-label">Boutiques connectées</div>
                             </div>
-                            <div class="col-4">
-                                <h3>{{ chiffre_affaires_30j|floatformat:0 }} CDF</h3>
-                                <small>Recette 30j</small>
+                            <div class="col-4 mb-2">
+                                <div class="small-stat-number small-stat-number-success sensitive-amount">{{ recette_jour|floatformat:2|intcomma }} CDF</div>
+                                <div class="small-stat-label">Recette jour (toutes)</div>
+                            </div>
+                            <div class="w-100"></div>
+                            <div class="col-4 mt-1">
+                                <div class="small-stat-number small-stat-number-success sensitive-amount">{{ chiffre_affaires_30j|floatformat:2|intcomma }} CDF</div>
+                                <div class="small-stat-label">Recette 30j (toutes)</div>
+                            </div>
+                            <div class="col-4 mt-1">
+                                <div class="small-stat-number small-stat-number-info sensitive-amount">{{ valeur_marchandise|floatformat:2|intcomma }} CDF</div>
+                                <div class="small-stat-label">Valeur stock (CDF)</div>
+                            </div>
+                            <div class="col-4 mt-1">
+                                <div class="small-stat-number small-stat-number-danger sensitive-amount">{{ depenses_totales|floatformat:2|intcomma }} CDF</div>
+                                <div class="small-stat-label">Dépenses mois en cours</div>
                             </div>
                         </div>
                     </div>
