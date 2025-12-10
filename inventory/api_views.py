@@ -932,17 +932,31 @@ class VenteViewSet(viewsets.ModelViewSet):
         adapted_data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
         
         # ⭐ GESTION DE LA DATE DE VENTE ENVOYÉE PAR MAUI
-        # MAUI envoie typiquement: "2025-12-05T11:58:32" (heure locale du terminal)
+        # MAUI envoie maintenant: "2024-12-10T14:30:00+01:00" (avec timezone)
+        # Ou ancien format: "2024-12-10T14:30:00" (sans timezone)
         date_str = adapted_data.get('date_vente') or adapted_data.get('date')
         if date_str:
             try:
-                # Utiliser fromisoformat pour le format "yyyy-MM-ddTHH:mm:ss"
+                # Parser la date (supporte les deux formats)
                 date_vente = datetime.fromisoformat(str(date_str))
-            except Exception:
-                # Fallback uniquement si format inattendu
+                
+                # ⭐ CORRECTION: Si la date est naïve, la rendre aware avec le timezone local
+                if timezone.is_naive(date_vente):
+                    # Interpréter comme heure locale du terminal (TIME_ZONE = 'Africa/Kinshasa')
+                    date_vente = timezone.make_aware(date_vente)
+                    logger.info(f"📅 Date naïve convertie en aware (UTC+1): {date_vente}")
+                else:
+                    logger.info(f"📅 Date déjà aware reçue: {date_vente}")
+                
+                adapted_data['date_vente'] = date_vente
+                
+            except Exception as e:
+                logger.error(f"❌ Erreur parsing date '{date_str}': {e}")
+                # Fallback: utiliser l'heure actuelle du serveur
                 date_vente = timezone.now()
-            adapted_data['date_vente'] = date_vente
-        # Si aucune date n'est fournie, on laisse le modèle appliquer son default (timezone.now)
+                adapted_data['date_vente'] = date_vente
+                logger.warning(f"⚠️ Utilisation de l'heure serveur par défaut: {date_vente}")
+        # Si aucune date n'est fournie, le modèle appliquera son default (timezone.now)
 
         # Format spécifique pour le client MAUI observé dans les logs
         # Mapping des clés du format MAUI vers le format Django
