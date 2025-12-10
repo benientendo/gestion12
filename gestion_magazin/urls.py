@@ -19,6 +19,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.authtoken.views import obtain_auth_token
+from inventory.test_timezone import test_timezone
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -27,6 +28,7 @@ urlpatterns = [
     path('api/v2/', include('inventory.api_urls_v2')),  # API v2 multi-boutiques avec isolation par boutique
     path('api/v2/simple/', include('inventory.api_urls_v2_simple')),  # API v2 simplifiée sans authentification
     path('api-token-auth/', obtain_auth_token, name='api_token_auth'),
+    path('test-timezone/', test_timezone),  # Endpoint de test pour les timezone
 ]
 
 # Serve media files during development

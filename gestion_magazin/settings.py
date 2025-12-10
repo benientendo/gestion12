@@ -77,6 +77,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'inventory.middleware.ForceTimezoneMiddleware',  # Forcer le timezone correct
 ]
 
 ROOT_URLCONF = 'gestion_magazin.urls'

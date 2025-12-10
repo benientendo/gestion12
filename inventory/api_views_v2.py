@@ -479,7 +479,11 @@ def create_vente_v2(request):
             if date_vente is None:
                 date_vente = timezone.now()
             elif timezone.is_naive(date_vente):
+                # Interpréter la date naïve comme étant dans le timezone de Django (Europe/Paris)
                 date_vente = timezone.make_aware(date_vente)
+            else:
+                # Si la date est déjà aware, s'assurer qu'elle est dans le bon timezone
+                date_vente = date_vente.astimezone(timezone.get_current_timezone())
         else:
             date_vente = timezone.now()
         
