@@ -105,6 +105,7 @@ class Article(models.Model):
     boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='articles', null=True, blank=True)
     quantite_stock = models.IntegerField(default=0)
     est_actif = models.BooleanField(default=True, help_text="L'article est-il actif?")
+    date_suppression = models.DateTimeField(null=True, blank=True, help_text="Date de désactivation/suppression pour sync MAUI")
     qr_code = models.ImageField(upload_to='qr_codes/', blank=True)
     image = models.ImageField(upload_to='articles/', blank=True, null=True)
     date_creation = models.DateTimeField(auto_now_add=True)
@@ -115,6 +116,19 @@ class Article(models.Model):
 
     def save(self, *args, **kwargs):
         logger = logging.getLogger(__name__)
+        
+        # Tracer la date de suppression quand un article est désactivé
+        if self.pk:
+            try:
+                old_instance = Article.objects.get(pk=self.pk)
+                if old_instance.est_actif and not self.est_actif:
+                    self.date_suppression = timezone.now()
+                    logger.info(f"📍 Article {self.code} désactivé - date_suppression mise à jour")
+                elif not old_instance.est_actif and self.est_actif:
+                    self.date_suppression = None
+                    logger.info(f"📍 Article {self.code} réactivé - date_suppression effacée")
+            except Article.DoesNotExist:
+                pass
         
         # Determine if this save call is specifically for updating the qr_code field
         updating_qr_code_field_only = False

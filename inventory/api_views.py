@@ -6,10 +6,14 @@ import logging
 import json
 import uuid
 from datetime import datetime, timedelta
+from decimal import Decimal, InvalidOperation
+import threading
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
 from django.db import models
 from django.utils import timezone
-from .models import Article, Categorie, Vente, Client, SessionClientMaui
+from django.utils.dateparse import parse_datetime
+from .models import Article, Categorie, Vente, Client, SessionClientMaui, LigneVente, MouvementStock
 from .serializers import (
     ArticleSerializer, 
     CategorieSerializer,
@@ -305,6 +309,275 @@ def get_client_from_token(request):
         
     except SessionClientMaui.DoesNotExist:
         return None, "Session invalide"
+
+
+def _get_terminal_from_headers(request):
+    numero_serie = (
+        request.headers.get('X-Device-Serial') or
+        request.headers.get('Device-Serial') or
+        request.headers.get('Serial-Number') or
+        request.META.get('HTTP_X_DEVICE_SERIAL') or
+        request.META.get('HTTP_DEVICE_SERIAL')
+    )
+
+    if not numero_serie:
+        return None, Response({
+            'error': 'Header X-Device-Serial requis',
+            'code': 'MISSING_SERIAL',
+            'header_required': 'X-Device-Serial'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    terminal = Client.objects.select_related('boutique').filter(
+        numero_serie=numero_serie,
+        est_actif=True,
+    ).first()
+
+    if not terminal:
+        return None, Response({
+            'error': 'Terminal non autorisé ou inexistant',
+            'code': 'TERMINAL_NOT_FOUND'
+        }, status=status.HTTP_401_UNAUTHORIZED)
+
+    if not terminal.boutique or not terminal.boutique.est_active:
+        return None, Response({
+            'error': 'Boutique introuvable ou désactivée pour ce terminal',
+            'code': 'BOUTIQUE_INACTIVE'
+        }, status=status.HTTP_403_FORBIDDEN)
+
+    return terminal, None
+
+
+def _post_process_vente_stock_async(vente_id):
+    logger = logging.getLogger(__name__)
+
+    def _run():
+        try:
+            vente = Vente.objects.select_related('client_maui').prefetch_related('lignes').get(id=vente_id)
+        except Vente.DoesNotExist:
+            logger.warning(f"Post-traitement stock: vente introuvable (id={vente_id})")
+            return
+
+        terminal = vente.client_maui
+        utilisateur = getattr(terminal, 'numero_serie', '') or 'POS'
+
+        for ligne in vente.lignes.all():
+            try:
+                with transaction.atomic():
+                    article = Article.objects.select_for_update().get(id=ligne.article_id)
+                    stock_avant = int(article.quantite_stock or 0)
+                    quantite = int(ligne.quantite or 0)
+                    stock_apres = stock_avant - quantite
+
+                    anomalie_stock = False
+                    if stock_apres < 0:
+                        anomalie_stock = True
+                        stock_apres = 0
+
+                    article.quantite_stock = stock_apres
+                    article.save(update_fields=['quantite_stock'])
+
+                    try:
+                        MouvementStock.objects.create(
+                            article=article,
+                            type_mouvement='VENTE',
+                            quantite=-quantite,
+                            stock_avant=stock_avant,
+                            stock_apres=stock_apres,
+                            reference_document=vente.numero_facture,
+                            utilisateur=utilisateur,
+                            commentaire=f"SYNC_VENTE_OFFLINE (anomalie_stock={anomalie_stock})",
+                        )
+                    except Exception as e:
+                        logger.warning(f"Impossible de créer mouvement de stock pour vente {vente.numero_facture}: {e}")
+
+                    if anomalie_stock:
+                        logger.warning(
+                            f"Anomalie stock non bloquante - Vente={vente.numero_facture} Article={article.id} "
+                            f"StockAvant={stock_avant} Quantite={quantite} StockApres=0"
+                        )
+
+            except Article.DoesNotExist:
+                logger.warning(
+                    f"Anomalie non bloquante - Article introuvable pendant post-traitement stock: "
+                    f"vente={vente.numero_facture} article_id={ligne.article_id}"
+                )
+            except Exception as e:
+                logger.error(f"Erreur post-traitement stock vente={vente.numero_facture}: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def sync_ventes_batch(request):
+    logger = logging.getLogger(__name__)
+
+    terminal, error_response = _get_terminal_from_headers(request)
+    if error_response is not None:
+        return error_response
+
+    pos_id = request.data.get('pos_id') if isinstance(request.data, dict) else None
+    ventes = None
+    if isinstance(request.data, dict):
+        ventes = request.data.get('ventes')
+    elif isinstance(request.data, list):
+        ventes = request.data
+
+    if not isinstance(ventes, list):
+        return Response({
+            'error': 'Format invalide: champ ventes (liste) requis',
+            'code': 'INVALID_FORMAT'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    accepted = []
+    rejected = []
+
+    for vente_data in ventes:
+        vente_uid = None
+        try:
+            vente_uid = (vente_data or {}).get('vente_uid') or (vente_data or {}).get('numero_facture')
+            if not vente_uid:
+                raise ValueError('MISSING_VENTE_UID')
+
+            date_str = (vente_data or {}).get('date') or (vente_data or {}).get('date_vente')
+            date_vente = None
+            if date_str:
+                date_vente = parse_datetime(date_str)
+                if date_vente and timezone.is_naive(date_vente):
+                    date_vente = timezone.make_aware(date_vente)
+            if not date_vente:
+                date_vente = timezone.now()
+
+            total_raw = (vente_data or {}).get('total')
+            if total_raw is None:
+                total_raw = (vente_data or {}).get('montant_total')
+            if total_raw is None:
+                raise ValueError('MISSING_TOTAL')
+
+            try:
+                total = Decimal(str(total_raw).replace(',', '.'))
+            except (InvalidOperation, ValueError, TypeError):
+                raise ValueError('INVALID_TOTAL')
+
+            items = (vente_data or {}).get('items') or (vente_data or {}).get('lignes')
+            if not isinstance(items, list) or not items:
+                raise ValueError('MISSING_ITEMS')
+
+            expected_total = Decimal('0')
+            lignes_to_create = []
+
+            with transaction.atomic():
+                existing = Vente.objects.filter(numero_facture=vente_uid).only('id').first()
+                if existing:
+                    accepted.append(vente_uid)
+                    continue
+
+                for item in items:
+                    article_id = (item or {}).get('article_id')
+                    quantite = (item or {}).get('quantite', 1)
+                    prix_unitaire_raw = (item or {}).get('prix_unitaire')
+
+                    if article_id is None or prix_unitaire_raw is None:
+                        raise ValueError('ITEM_INVALID')
+
+                    try:
+                        article_id = int(article_id)
+                        quantite = int(quantite)
+                    except (ValueError, TypeError):
+                        raise ValueError('ITEM_INVALID')
+
+                    if quantite <= 0:
+                        raise ValueError('ITEM_INVALID')
+
+                    try:
+                        prix_unitaire = Decimal(str(prix_unitaire_raw).replace(',', '.'))
+                    except (InvalidOperation, ValueError, TypeError):
+                        raise ValueError('ITEM_INVALID')
+
+                    article = Article.objects.filter(
+                        id=article_id,
+                        boutique=terminal.boutique,
+                        est_actif=True
+                    ).first()
+                    if not article:
+                        raise ValueError('ARTICLE_NOT_FOUND')
+
+                    if prix_unitaire != article.prix_vente:
+                        raise ValueError('PRIX_ARTICLE_MODIFIE')
+
+                    expected_total += (prix_unitaire * quantite)
+                    lignes_to_create.append({
+                        'article': article,
+                        'quantite': quantite,
+                        'prix_unitaire': prix_unitaire,
+                    })
+
+                if expected_total != total:
+                    raise ValueError('TOTAL_INCOHERENT')
+
+                vente, created = Vente.objects.get_or_create(
+                    numero_facture=vente_uid,
+                    defaults={
+                        'date_vente': date_vente,
+                        'montant_total': total,
+                        'mode_paiement': (vente_data or {}).get('mode_paiement', 'CASH'),
+                        'paye': (vente_data or {}).get('paye', True),
+                        'client_maui': terminal,
+                        'adresse_ip_client': request.META.get('REMOTE_ADDR'),
+                        'version_app_maui': getattr(terminal, 'version_app_maui', ''),
+                    }
+                )
+
+                if not created:
+                    accepted.append(vente_uid)
+                    continue
+
+                LigneVente.objects.bulk_create([
+                    LigneVente(
+                        vente=vente,
+                        article=ligne['article'],
+                        quantite=ligne['quantite'],
+                        prix_unitaire=ligne['prix_unitaire'],
+                    ) for ligne in lignes_to_create
+                ])
+
+                transaction.on_commit(lambda v_id=vente.id: _post_process_vente_stock_async(v_id))
+
+            accepted.append(vente_uid)
+
+        except ValueError as e:
+            reason = str(e)
+            if reason in ('MISSING_VENTE_UID', 'MISSING_TOTAL', 'INVALID_TOTAL', 'MISSING_ITEMS', 'ITEM_INVALID'):
+                reason_out = 'FORMAT_INVALIDE'
+            elif reason in ('ARTICLE_NOT_FOUND',):
+                reason_out = 'ARTICLE_INEXISTANT'
+            elif reason in ('PRIX_ARTICLE_MODIFIE',):
+                reason_out = 'PRIX_ARTICLE_MODIFIE'
+            elif reason in ('TOTAL_INCOHERENT',):
+                reason_out = 'TOTAL_INCOHERENT'
+            else:
+                reason_out = 'INCOHERENCE'
+
+            rejected.append({
+                'vente_uid': vente_uid or None,
+                'reason': reason_out
+            })
+        except Exception as e:
+            logger.error(f"Erreur sync vente_uid={vente_uid}: {e}")
+            rejected.append({
+                'vente_uid': vente_uid or None,
+                'reason': 'INTERNAL_ERROR'
+            })
+
+    logger.info(
+        f"Sync ventes batch - pos_id={pos_id} terminal={terminal.numero_serie} "
+        f"accepted={len(accepted)} rejected={len(rejected)}"
+    )
+
+    return Response({
+        'accepted': accepted,
+        'rejected': rejected,
+    }, status=status.HTTP_200_OK)
 
 class ArticleViewSet(viewsets.ModelViewSet):
     queryset = Article.objects.all()

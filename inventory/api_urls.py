@@ -9,6 +9,7 @@ from .api_views import (
     CategorieViewSet, 
     VenteViewSet, 
     update_stock_efficient,
+    sync_ventes_batch,
     authentifier_client_maui,
     verifier_session_maui,
     deconnecter_client_maui
@@ -23,6 +24,7 @@ router.register(r'ventes', VenteViewSet)
 urlpatterns = [
     path('', include(router.urls)),
     path('stock/update/', update_stock_efficient, name='update_stock_efficient'),
+    path('sync/ventes', sync_ventes_batch, name='sync_ventes_batch'),
     
     # Authentification clients MAUI
     path('maui/auth/', authentifier_client_maui, name='authentifier_client_maui'),

@@ -347,6 +347,96 @@ def articles_list_simple(request):
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+def articles_deleted_simple(request):
+    """
+    Liste des IDs d'articles supprimés/désactivés pour synchronisation MAUI
+    
+    Paramètres:
+    - boutique_id: ID de la boutique (requis ou via header X-Device-Serial)
+    - since: Date ISO depuis laquelle récupérer les suppressions (optionnel)
+    
+    Exemple: /api/v2/simple/articles/deleted/?boutique_id=2&since=2025-12-01T00:00:00
+    """
+    boutique_id = request.GET.get('boutique_id')
+    since = request.GET.get('since')
+    
+    # Si pas de boutique_id, essayer via le numéro de série
+    if not boutique_id:
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.META.get('HTTP_X_DEVICE_SERIAL')
+        )
+        
+        if numero_serie:
+            try:
+                terminal = Client.objects.select_related('boutique').filter(
+                    numero_serie=numero_serie,
+                    est_actif=True
+                ).first()
+                
+                if terminal and terminal.boutique:
+                    boutique_id = terminal.boutique.id
+            except Exception as e:
+                logger.error(f"❌ Erreur recherche terminal: {str(e)}")
+    
+    if not boutique_id:
+        return Response({
+            'error': 'Paramètre boutique_id requis',
+            'code': 'MISSING_BOUTIQUE_ID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        
+        # Récupérer les articles désactivés de cette boutique
+        articles_query = Article.objects.filter(
+            boutique=boutique,
+            est_actif=False,
+            date_suppression__isnull=False
+        )
+        
+        # Filtrer par date si fourni
+        if since:
+            try:
+                since_date = parse_datetime(since)
+                if since_date:
+                    articles_query = articles_query.filter(date_suppression__gte=since_date)
+            except Exception:
+                pass
+        
+        # Récupérer les IDs et infos minimales
+        deleted_articles = articles_query.values('id', 'code', 'nom', 'date_suppression')
+        
+        deleted_data = []
+        for article in deleted_articles:
+            deleted_data.append({
+                'id': article['id'],
+                'code': article['code'],
+                'nom': article['nom'],
+                'date_suppression': article['date_suppression'].isoformat() if article['date_suppression'] else None
+            })
+        
+        logger.info(f"📍 Articles supprimés récupérés pour boutique {boutique_id}: {len(deleted_data)}")
+        
+        return Response({
+            'success': True,
+            'boutique_id': boutique.id,
+            'count': len(deleted_data),
+            'deleted_articles': deleted_data,
+            'message': 'MAUI doit supprimer ces articles de son cache local'
+        })
+        
+    except Exception as e:
+        logger.error(f"Erreur récupération articles supprimés: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
 def categories_list_simple(request):
     """
     Liste des catégories d'une boutique (sans authentification)
@@ -966,6 +1056,35 @@ def sync_ventes_simple(request):
     ]
     """
     try:
+        # ⭐ CORRECTION CHUNKED ENCODING: Lire le body brut si request.data est vide
+        # Django runserver ne gère pas bien Transfer-Encoding: chunked
+        raw_body = request.body
+        
+        # Logging conditionnel (seulement en mode DEBUG)
+        from django.conf import settings
+        if settings.DEBUG:
+            logger.debug(f"🔍 === SYNC VENTES ===")
+            logger.debug(f"🔍 Content-Type: {request.content_type}")
+            logger.debug(f"🔍 Body length: {len(raw_body) if raw_body else 0} bytes")
+            if raw_body and len(raw_body) < 2000:
+                logger.debug(f"🔍 Body: {raw_body.decode('utf-8', errors='ignore')}")
+        
+        # Parser le JSON depuis le body brut si request.data est vide
+        import json
+        if raw_body and (not request.data or (isinstance(request.data, dict) and len(request.data) == 0)):
+            try:
+                parsed_data = json.loads(raw_body.decode('utf-8'))
+                logger.info(f"✅ Body parsé manuellement: {type(parsed_data)}")
+                logger.info(f"✅ Clés trouvées: {list(parsed_data.keys()) if isinstance(parsed_data, dict) else 'list'}")
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Erreur parsing JSON: {e}")
+                parsed_data = request.data
+        else:
+            parsed_data = request.data
+            
+        logger.info(f"🔍 Data type final: {type(parsed_data)}")
+        logger.info(f"🔍 Data preview: {str(parsed_data)[:500] if parsed_data else 'EMPTY'}")
+        
         # Récupérer le numéro de série du terminal depuis les headers
         numero_serie = (
             request.headers.get('X-Device-Serial') or 
@@ -975,8 +1094,11 @@ def sync_ventes_simple(request):
             request.META.get('HTTP_DEVICE_SERIAL')
         )
         
+        logger.info(f"🔍 Numéro de série détecté: {numero_serie}")
+        
         if not numero_serie:
             logger.warning("⚠️ Tentative de synchronisation sans numéro de série")
+            logger.warning(f"⚠️ Headers disponibles: {list(request.headers.keys())}")
             return Response({
                 'error': 'Numéro de série du terminal requis dans les headers',
                 'code': 'MISSING_SERIAL',
@@ -1008,11 +1130,60 @@ def sync_ventes_simple(request):
             }, status=status.HTTP_404_NOT_FOUND)
         
         # Récupérer les données des ventes
-        ventes_data = request.data
+        # ⭐ COMPATIBILITÉ MAUI: Accepter les deux formats + PascalCase
+        # Format 1 (Django): [{"numero_facture": "...", "lignes": [...]}]
+        # Format 2 (MAUI snake_case): {"pos_id": "...", "ventes": [...]}
+        # Format 3 (MAUI PascalCase): {"PosId": "...", "Ventes": [...]}
+        # ⭐ Utiliser parsed_data (body parsé manuellement si chunked encoding)
+        raw_data = parsed_data
         
-        if not isinstance(ventes_data, list):
+        # ⭐ CORRECTION: Accepter PascalCase (Ventes) et snake_case (ventes)
+        ventes_key = None
+        pos_id_key = None
+        if isinstance(raw_data, dict):
+            # Chercher la clé ventes (PascalCase ou snake_case)
+            if 'Ventes' in raw_data:
+                ventes_key = 'Ventes'
+                pos_id_key = 'PosId'
+            elif 'ventes' in raw_data:
+                ventes_key = 'ventes'
+                pos_id_key = 'pos_id'
+        
+        if ventes_key:
+            # Format MAUI: extraire le tableau de ventes et convertir les champs
+            pos_id = raw_data.get(pos_id_key) or raw_data.get('PosId') or raw_data.get('pos_id', 'N/A')
+            logger.info(f"📱 Format MAUI détecté (pos_id: {pos_id}, clé: {ventes_key})")
+            ventes_maui = raw_data.get(ventes_key, [])
+            ventes_data = []
+            for v in ventes_maui:
+                # ⭐ Accepter PascalCase et snake_case pour chaque champ
+                vente_convertie = {
+                    'numero_facture': v.get('VenteUid') or v.get('vente_uid') or v.get('numero_facture'),
+                    'date_vente': v.get('Date') or v.get('date') or v.get('date_vente'),
+                    'montant_total': v.get('Total') or v.get('total') or v.get('montant_total'),
+                    'mode_paiement': v.get('ModePaiement') or v.get('mode_paiement', 'CASH'),
+                    'paye': v.get('Paye') if 'Paye' in v else v.get('paye', True),
+                    'lignes': v.get('Items') or v.get('items') or v.get('lignes', [])
+                }
+                # ⭐ Convertir aussi les lignes (Items) en format Django
+                lignes_converties = []
+                for item in vente_convertie.get('lignes', []):
+                    ligne_convertie = {
+                        'article_id': item.get('ArticleId') or item.get('article_id'),
+                        'quantite': item.get('Quantite') or item.get('quantite'),
+                        'prix_unitaire': item.get('PrixUnitaire') or item.get('prix_unitaire')
+                    }
+                    lignes_converties.append(ligne_convertie)
+                vente_convertie['lignes'] = lignes_converties
+                ventes_data.append(vente_convertie)
+            logger.info(f"📱 {len(ventes_data)} ventes MAUI converties")
+        elif isinstance(raw_data, list):
+            # Format Django standard
+            ventes_data = raw_data
+        else:
+            logger.error(f"❌ Format invalide reçu: {type(raw_data)} - clés: {list(raw_data.keys()) if isinstance(raw_data, dict) else 'N/A'}")
             return Response({
-                'error': 'Format invalide: un tableau de ventes est attendu',
+                'error': 'Format invalide: un tableau de ventes ou un objet {ventes: [...]} est attendu',
                 'code': 'INVALID_FORMAT'
             }, status=status.HTTP_400_BAD_REQUEST)
         
@@ -1036,153 +1207,151 @@ def sync_ventes_simple(request):
                     
                     # ⭐ VALIDATION CRITIQUE: Vérifier le boutique_id si fourni
                     boutique_id_recu = vente_data.get('boutique_id')
-                
-                if boutique_id_recu:
-                    # Si boutique_id est fourni, vérifier qu'il correspond à la boutique du terminal
-                    if int(boutique_id_recu) != boutique.id:
-                        logger.error(f"❌ SÉCURITÉ: Tentative d'accès à une autre boutique!")
-                        logger.error(f"   Terminal boutique: {boutique.id}, Demandé: {boutique_id_recu}")
+                    
+                    if boutique_id_recu:
+                        # Si boutique_id est fourni, vérifier qu'il correspond à la boutique du terminal
+                        if int(boutique_id_recu) != boutique.id:
+                            logger.error(f"❌ SÉCURITÉ: Tentative d'accès à une autre boutique!")
+                            logger.error(f"   Terminal boutique: {boutique.id}, Demandé: {boutique_id_recu}")
+                            ventes_erreurs.append({
+                                'numero_facture': vente_data.get('numero_facture', f'vente_{index}'),
+                                'erreur': 'Accès refusé: boutique non autorisée',
+                                'code': 'BOUTIQUE_MISMATCH'
+                            })
+                            continue
+                        logger.info(f"✅ Boutique ID validé: {boutique_id_recu}")
+                    else:
+                        logger.info(f"ℹ️ Boutique ID non fourni, utilisation de la boutique du terminal: {boutique.id}")
+                    
+                    # Générer le numéro de facture si absent
+                    numero_facture = vente_data.get('numero_facture')
+                    if not numero_facture:
+                        from datetime import datetime
+                        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+                        numero_facture = f"VENTE-{boutique.id}-{timestamp}-{index}"
+                        logger.info(f"📝 Numéro de facture généré: {numero_facture}")
+                    
+                    # ⭐ ISOLATION: Vérifier si la vente existe déjà DANS CETTE BOUTIQUE
+                    vente_existante = Vente.objects.filter(
+                        numero_facture=numero_facture,
+                        client_maui=terminal
+                    ).first()
+                    
+                    if vente_existante:
+                        logger.warning(f"⚠️ Vente {numero_facture} existe déjà dans boutique {boutique.id}")
                         ventes_erreurs.append({
-                            'numero_facture': vente_data.get('numero_facture', f'vente_{index}'),
-                            'erreur': 'Accès refusé: boutique non autorisée',
-                            'code': 'BOUTIQUE_MISMATCH'
+                            'numero_facture': numero_facture,
+                            'erreur': 'Vente déjà existante',
+                            'status': 'already_exists'
                         })
                         continue
-                    logger.info(f"✅ Boutique ID validé: {boutique_id_recu}")
-                else:
-                    logger.info(f"ℹ️ Boutique ID non fourni, utilisation de la boutique du terminal: {boutique.id}")
-                
-                # Générer le numéro de facture si absent
-                numero_facture = vente_data.get('numero_facture')
-                if not numero_facture:
-                    from datetime import datetime
-                    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-                    numero_facture = f"VENTE-{boutique.id}-{timestamp}-{index}"
-                    logger.info(f"📝 Numéro de facture généré: {numero_facture}")
-                
-                # ⭐ ISOLATION: Vérifier si la vente existe déjà DANS CETTE BOUTIQUE
-                vente_existante = Vente.objects.filter(
-                    numero_facture=numero_facture,
-                    client_maui=terminal
-                ).first()
-                
-                if vente_existante:
-                    logger.warning(f"⚠️ Vente {numero_facture} existe déjà dans boutique {boutique.id}")
-                    ventes_erreurs.append({
-                        'numero_facture': numero_facture,
-                        'erreur': 'Vente déjà existante',
-                        'status': 'already_exists'
-                    })
-                    continue
-                
-                # ⭐ CRÉER LA VENTE AVEC ISOLATION STRICTE
-                date_str = vente_data.get('date_vente') or vente_data.get('date')
-                if date_str:
-                    date_vente = parse_datetime(date_str)
-                    if date_vente is None:
-                        date_vente = timezone.now()
-                    elif timezone.is_naive(date_vente):
-                        # Interpréter la date naïve comme étant dans le timezone de Django (Europe/Paris)
-                        date_vente = timezone.make_aware(date_vente)
+                    
+                    # ⭐ CRÉER LA VENTE AVEC ISOLATION STRICTE
+                    date_str = vente_data.get('date_vente') or vente_data.get('date')
+                    if date_str:
+                        date_vente = parse_datetime(date_str)
+                        if date_vente is None:
+                            date_vente = timezone.now()
+                        elif timezone.is_naive(date_vente):
+                            # Interpréter la date naïve comme étant dans le timezone de Django (Europe/Paris)
+                            date_vente = timezone.make_aware(date_vente)
+                        else:
+                            # Si la date est déjà aware, s'assurer qu'elle est dans le bon timezone
+                            date_vente = date_vente.astimezone(timezone.get_current_timezone())
                     else:
-                        # Si la date est déjà aware, s'assurer qu'elle est dans le bon timezone
-                        date_vente = date_vente.astimezone(timezone.get_current_timezone())
-                else:
-                    date_vente = timezone.now()
-                
-                vente = Vente.objects.create(
-                    numero_facture=numero_facture,
-                    date_vente=date_vente,
-                    montant_total=0,  # Sera calculé avec les lignes
-                    mode_paiement=vente_data.get('mode_paiement', 'CASH'),
-                    paye=vente_data.get('paye', True),
-                    boutique=boutique,  # ⭐ ISOLATION: Lien direct avec la boutique
-                    client_maui=terminal,
-                    adresse_ip_client=request.META.get('REMOTE_ADDR'),
-                    version_app_maui=terminal.version_app_maui
-                )
-                logger.info(f"✅ Vente créée: {numero_facture} (ID: {vente.id}) → Boutique {boutique.nom} (ID: {boutique.id})")
-                
-                montant_total = 0
-                lignes_creees = []
-                
-                # Traiter chaque ligne de vente
-                for ligne_data in vente_data.get('lignes', []):
-                    article_id = ligne_data.get('article_id')
-                    quantite = ligne_data.get('quantite', 1)
+                        date_vente = timezone.now()
                     
-                    # Vérifier que l'article appartient à la boutique
-                    try:
-                        article = Article.objects.get(
-                            id=article_id,
-                            boutique=boutique,
-                            est_actif=True
+                    vente = Vente.objects.create(
+                        numero_facture=numero_facture,
+                        date_vente=date_vente,
+                        montant_total=0,  # Sera calculé avec les lignes
+                        mode_paiement=vente_data.get('mode_paiement', 'CASH'),
+                        paye=vente_data.get('paye', True),
+                        boutique=boutique,  # ⭐ ISOLATION: Lien direct avec la boutique
+                        client_maui=terminal,
+                        adresse_ip_client=request.META.get('REMOTE_ADDR'),
+                        version_app_maui=terminal.version_app_maui
+                    )
+                    logger.info(f"✅ Vente créée: {numero_facture} (ID: {vente.id}) → Boutique {boutique.nom} (ID: {boutique.id})")
+                    
+                    montant_total = 0
+                    lignes_creees = []
+                    
+                    # Traiter chaque ligne de vente
+                    for ligne_data in vente_data.get('lignes', []):
+                        article_id = ligne_data.get('article_id')
+                        quantite = ligne_data.get('quantite', 1)
+                        
+                        # Vérifier que l'article appartient à la boutique
+                        try:
+                            article = Article.objects.get(
+                                id=article_id,
+                                boutique=boutique,
+                                est_actif=True
+                            )
+                        except Article.DoesNotExist:
+                            raise Exception(f'Article {article_id} non trouvé dans cette boutique')
+                        
+                        # Vérifier le stock disponible
+                        if article.quantite_stock < quantite:
+                            raise Exception(f'Stock insuffisant pour {article.nom}')
+                        
+                        # Créer la ligne de vente
+                        prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
+                        ligne_vente = LigneVente.objects.create(
+                            vente=vente,
+                            article=article,
+                            quantite=quantite,
+                            prix_unitaire=prix_unitaire
                         )
-                    except Article.DoesNotExist:
-                        vente.delete()
-                        raise Exception(f'Article {article_id} non trouvé dans cette boutique')
+                        
+                        # Mettre à jour le stock
+                        stock_avant = article.quantite_stock  # ⭐ Capturer AVANT la modification
+                        article.quantite_stock -= quantite
+                        article.save(update_fields=['quantite_stock'])
+                        
+                        # Créer un mouvement de stock avec traçabilité complète
+                        MouvementStock.objects.create(
+                            article=article,
+                            type_mouvement='VENTE',
+                            quantite=-quantite,
+                            stock_avant=stock_avant,  # ⭐ NOUVEAU
+                            stock_apres=article.quantite_stock,  # ⭐ NOUVEAU
+                            reference_document=vente.numero_facture,  # ⭐ NOUVEAU
+                            utilisateur=terminal.nom_terminal,  # ⭐ NOUVEAU
+                            commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
+                        )
+                        
+                        montant_total += prix_unitaire * quantite
+                        lignes_creees.append({
+                            'article_nom': article.nom,
+                            'article_code': article.code,
+                            'quantite': quantite,
+                            'prix_unitaire': str(prix_unitaire),
+                            'sous_total': str(prix_unitaire * quantite)
+                        })
                     
-                    # Vérifier le stock disponible
-                    if article.quantite_stock < quantite:
-                        vente.delete()
-                        raise Exception(f'Stock insuffisant pour {article.nom}')
+                    # Mettre à jour le montant total de la vente
+                    logger.info(f"💰 SYNC - Montant total calculé: {montant_total} CDF")
+                    vente.montant_total = montant_total
+                    vente.save(update_fields=['montant_total'])
+                    logger.info(f"✅ SYNC - Montant sauvegardé: {vente.montant_total} CDF")
                     
-                    # Créer la ligne de vente
-                    prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
-                    ligne_vente = LigneVente.objects.create(
-                        vente=vente,
-                        article=article,
-                        quantite=quantite,
-                        prix_unitaire=prix_unitaire
-                    )
-                    
-                    # Mettre à jour le stock
-                    stock_avant = article.quantite_stock  # ⭐ Capturer AVANT la modification
-                    article.quantite_stock -= quantite
-                    article.save(update_fields=['quantite_stock'])
-                    
-                    # Créer un mouvement de stock avec traçabilité complète
-                    MouvementStock.objects.create(
-                        article=article,
-                        type_mouvement='VENTE',
-                        quantite=-quantite,
-                        stock_avant=stock_avant,  # ⭐ NOUVEAU
-                        stock_apres=article.quantite_stock,  # ⭐ NOUVEAU
-                        reference_document=vente.numero_facture,  # ⭐ NOUVEAU
-                        utilisateur=terminal.nom_terminal,  # ⭐ NOUVEAU
-                        commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
-                    )
-                    
-                    montant_total += prix_unitaire * quantite
-                    lignes_creees.append({
-                        'article_nom': article.nom,
-                        'article_code': article.code,
-                        'quantite': quantite,
-                        'prix_unitaire': str(prix_unitaire),
-                        'sous_total': str(prix_unitaire * quantite)
+                    ventes_creees.append({
+                        'numero_facture': vente.numero_facture,
+                        'status': 'created',
+                        'id': vente.id,
+                        'boutique_id': boutique.id,
+                        'boutique_nom': boutique.nom,
+                        'montant_total': str(vente.montant_total),
+                        'lignes_count': len(lignes_creees),
+                        'lignes': lignes_creees
                     })
-                
-                # Mettre à jour le montant total de la vente
-                logger.info(f"💰 SYNC - Montant total calculé: {montant_total} CDF")
-                vente.montant_total = montant_total
-                vente.save(update_fields=['montant_total'])
-                logger.info(f"✅ SYNC - Montant sauvegardé: {vente.montant_total} CDF")
-                
-                ventes_creees.append({
-                    'numero_facture': vente.numero_facture,
-                    'status': 'created',
-                    'id': vente.id,
-                    'boutique_id': boutique.id,
-                    'boutique_nom': boutique.nom,
-                    'montant_total': str(vente.montant_total),
-                    'lignes_count': len(lignes_creees),
-                    'lignes': lignes_creees
-                })
-                
-                logger.info(f"✅ Vente {numero_facture} synchronisée:")
-                logger.info(f"   - Boutique: {boutique.id} ({boutique.nom})")
-                logger.info(f"   - Lignes: {len(lignes_creees)}")
-                logger.info(f"   - Montant: {montant_total} CDF")
+                    
+                    logger.info(f"✅ Vente {numero_facture} synchronisée:")
+                    logger.info(f"   - Boutique: {boutique.id} ({boutique.nom})")
+                    logger.info(f"   - Lignes: {len(lignes_creees)}")
+                    logger.info(f"   - Montant: {montant_total} CDF")
                 
             except Exception as e:
                 logger.error(f"❌ Erreur création vente {index + 1}: {str(e)}")
@@ -1197,9 +1366,20 @@ def sync_ventes_simple(request):
         logger.info(f"   - Créées: {len(ventes_creees)}")
         logger.info(f"   - Erreurs: {len(ventes_erreurs)}")
         
+        # ⭐ COMPATIBILITÉ MAUI: Inclure les champs "accepted" et "rejected" attendus par MAUI
+        accepted_list = [v['numero_facture'] for v in ventes_creees]
+        rejected_list = [
+            {'vente_uid': e.get('numero_facture', 'N/A'), 'reason': e.get('erreur', 'Erreur inconnue')}
+            for e in ventes_erreurs
+        ]
+        
         return Response({
             'success': True,
             'message': f'{len(ventes_creees)} vente(s) synchronisée(s) avec succès',
+            # ⭐ Format MAUI
+            'accepted': accepted_list,
+            'rejected': rejected_list,
+            # Format Django (rétrocompatibilité)
             'ventes_creees': len(ventes_creees),
             'ventes_erreurs': len(ventes_erreurs),
             'details': {
@@ -1499,3 +1679,133 @@ def historique_retours_articles_simple(request):
         'par_terminal': bool(par_terminal and par_terminal.lower() in ('1', 'true', 'yes', 'on')),
         'results': serializer.data,
     }, status=status.HTTP_200_OK)
+
+
+# =============================================================================
+# ⭐ RÉCONCILIATION : Vérifier la cohérence entre MAUI et Django
+# =============================================================================
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reconcilier_ventes(request):
+    """
+    Endpoint de réconciliation pour vérifier la cohérence entre MAUI et Django.
+    
+    MAUI envoie la liste de ses ventes locales (références) et Django répond :
+    - Quelles ventes sont présentes dans Django mais pas dans MAUI
+    - Quelles ventes MAUI a mais Django n'a pas
+    - Le total des ventes Django pour la période
+    
+    Payload attendu:
+    {
+        "references_maui": ["REF-001", "REF-002", ...],
+        "date_debut": "2024-12-17T00:00:00",  // optionnel
+        "date_fin": "2024-12-17T23:59:59"     // optionnel
+    }
+    """
+    try:
+        # Récupérer le terminal via le header
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.META.get('HTTP_X_DEVICE_SERIAL')
+        )
+        
+        if not numero_serie:
+            return Response({
+                'error': 'Numéro de série requis',
+                'code': 'MISSING_SERIAL'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            terminal = Client.objects.select_related('boutique').get(
+                numero_serie=numero_serie,
+                est_actif=True
+            )
+            boutique = terminal.boutique
+        except Client.DoesNotExist:
+            return Response({
+                'error': 'Terminal non trouvé',
+                'code': 'TERMINAL_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Parser les données
+        data = request.data
+        references_maui = set(data.get('references_maui', []) or data.get('ReferencesMaui', []))
+        date_debut_str = data.get('date_debut') or data.get('DateDebut')
+        date_fin_str = data.get('date_fin') or data.get('DateFin')
+        
+        # Construire la requête pour les ventes Django
+        ventes_django_qs = Vente.objects.filter(
+            client_maui=terminal,
+            boutique=boutique
+        )
+        
+        # Filtrer par date si fourni
+        if date_debut_str:
+            date_debut = parse_datetime(date_debut_str)
+            if date_debut:
+                if timezone.is_naive(date_debut):
+                    date_debut = timezone.make_aware(date_debut)
+                ventes_django_qs = ventes_django_qs.filter(date_vente__gte=date_debut)
+        
+        if date_fin_str:
+            date_fin = parse_datetime(date_fin_str)
+            if date_fin:
+                if timezone.is_naive(date_fin):
+                    date_fin = timezone.make_aware(date_fin)
+                ventes_django_qs = ventes_django_qs.filter(date_vente__lte=date_fin)
+        
+        # Récupérer toutes les ventes Django pour ce terminal
+        ventes_django = list(ventes_django_qs.values('numero_facture', 'montant_total', 'date_vente'))
+        references_django = {v['numero_facture'] for v in ventes_django}
+        
+        # Calculer les différences
+        dans_django_pas_maui = references_django - references_maui
+        dans_maui_pas_django = references_maui - references_django
+        en_commun = references_django & references_maui
+        
+        # Calculer les totaux
+        total_django = sum(float(v['montant_total']) for v in ventes_django)
+        
+        # Détails des ventes manquantes dans MAUI
+        ventes_manquantes_details = [
+            {
+                'reference': v['numero_facture'],
+                'montant': float(v['montant_total']),
+                'date': v['date_vente'].isoformat() if v['date_vente'] else None
+            }
+            for v in ventes_django if v['numero_facture'] in dans_django_pas_maui
+        ]
+        
+        logger.info(f"🔄 Réconciliation pour {terminal.nom_terminal}:")
+        logger.info(f"   - Ventes Django: {len(references_django)}")
+        logger.info(f"   - Ventes MAUI: {len(references_maui)}")
+        logger.info(f"   - En commun: {len(en_commun)}")
+        logger.info(f"   - Dans Django, pas MAUI: {len(dans_django_pas_maui)}")
+        logger.info(f"   - Dans MAUI, pas Django: {len(dans_maui_pas_django)}")
+        
+        return Response({
+            'success': True,
+            'terminal': terminal.nom_terminal,
+            'boutique': boutique.nom,
+            'coherent': len(dans_django_pas_maui) == 0 and len(dans_maui_pas_django) == 0,
+            'stats': {
+                'ventes_django': len(references_django),
+                'ventes_maui': len(references_maui),
+                'en_commun': len(en_commun),
+                'total_django': total_django
+            },
+            'differences': {
+                'dans_django_pas_maui': list(dans_django_pas_maui),
+                'dans_maui_pas_django': list(dans_maui_pas_django),
+                'ventes_manquantes_details': ventes_manquantes_details
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur réconciliation: {str(e)}")
+        return Response({
+            'error': str(e),
+            'code': 'RECONCILIATION_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

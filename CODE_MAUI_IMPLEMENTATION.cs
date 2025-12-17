@@ -304,6 +304,16 @@ public class Article
     
     // Propriété calculée pour affichage
     public decimal PrixVenteDecimal => decimal.TryParse(PrixVente, out var prix) ? prix : 0;
+    
+    // ⭐ NOUVEAU: Index pour les couleurs alternées
+    [JsonIgnore]
+    public int Index { get; set; }
+    
+    // ⭐ NOUVEAU: Couleur de fond calculée selon l'index
+    [JsonIgnore]
+    public Color BackgroundColor => Index % 2 == 0 
+        ? Color.FromArgb("#FFFFFF")   // Couleur A - Blanc
+        : Color.FromArgb("#E8F4FD");  // Couleur B - Bleu clair
 }
 
 public class CategorieInfo
@@ -384,8 +394,10 @@ public class ArticlesViewModel : BaseViewModel
             var articles = await _articleService.LoadArticlesAsync();
             
             Articles.Clear();
+            int index = 0;  // ⭐ NOUVEAU: Compteur pour couleurs alternées
             foreach (var article in articles)
             {
+                article.Index = index++;  // ⭐ Attribuer l'index pour la couleur alternée
                 Articles.Add(article);
             }
             
@@ -406,6 +418,99 @@ public class ArticlesViewModel : BaseViewModel
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// ÉTAPE 6 : XAML - Affichage des cartes avec COULEURS ALTERNÉES
+// ═══════════════════════════════════════════════════════════════════════
+
+/*
+<!-- ArticlesPage.xaml -->
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="VotreApplication.Pages.ArticlesPage"
+             Title="Articles">
+    
+    <CollectionView ItemsSource="{Binding Articles}"
+                    SelectionMode="Single">
+        
+        <CollectionView.ItemTemplate>
+            <DataTemplate>
+                <!-- ⭐ CARTE AVEC COULEUR ALTERNÉE via BackgroundColor -->
+                <Frame Margin="10,5" 
+                       Padding="15" 
+                       CornerRadius="12"
+                       HasShadow="True"
+                       BorderColor="#E0E0E0"
+                       BackgroundColor="{Binding BackgroundColor}">
+                    
+                    <Grid ColumnDefinitions="70,*,Auto" 
+                          RowDefinitions="Auto,Auto,Auto"
+                          ColumnSpacing="15">
+                        
+                        <!-- Image article -->
+                        <Frame Grid.RowSpan="3" 
+                               CornerRadius="8"
+                               Padding="0"
+                               IsClippedToBounds="True"
+                               HasShadow="False">
+                            <Image Source="{Binding ImageUrl}"
+                                   WidthRequest="70"
+                                   HeightRequest="70"
+                                   Aspect="AspectFill"/>
+                        </Frame>
+                        
+                        <!-- Nom article -->
+                        <Label Grid.Column="1" 
+                               Text="{Binding Nom}"
+                               FontSize="18"
+                               FontAttributes="Bold"
+                               TextColor="#333333"
+                               LineBreakMode="TailTruncation"/>
+                        
+                        <!-- Code article -->
+                        <Label Grid.Column="1" 
+                               Grid.Row="1"
+                               Text="{Binding Code, StringFormat='Code: {0}'}"
+                               FontSize="13"
+                               TextColor="#666666"/>
+                        
+                        <!-- Stock -->
+                        <Label Grid.Column="1" 
+                               Grid.Row="2"
+                               Text="{Binding QuantiteStock, StringFormat='Stock: {0}'}"
+                               FontSize="12"
+                               TextColor="#888888"/>
+                        
+                        <!-- Prix -->
+                        <Label Grid.Column="2" 
+                               Grid.RowSpan="3"
+                               Text="{Binding PrixVente, StringFormat='{0} CDF'}"
+                               FontSize="17"
+                               FontAttributes="Bold"
+                               TextColor="#007AFF"
+                               VerticalOptions="Center"/>
+                        
+                    </Grid>
+                </Frame>
+            </DataTemplate>
+        </CollectionView.ItemTemplate>
+        
+    </CollectionView>
+</ContentPage>
+*/
+
+// ═══════════════════════════════════════════════════════════════════════
+// PERSONNALISATION DES COULEURS ALTERNÉES
+// ═══════════════════════════════════════════════════════════════════════
+// Modifiez ces couleurs dans la propriété BackgroundColor de la classe Article:
+//
+// Style Bleu/Blanc (actuel):  "#FFFFFF" et "#E8F4FD"
+// Style Vert/Blanc:           "#FFFFFF" et "#E8F5E9"
+// Style Gris/Blanc:           "#FFFFFF" et "#F5F5F5"
+// Style Orange/Blanc:         "#FFFFFF" et "#FFF3E0"
+// Style Violet/Blanc:         "#FFFFFF" et "#F3E5F5"
+// ═══════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════
 // RÉSULTAT ATTENDU POUR VOTRE BOUTIQUE TEST
