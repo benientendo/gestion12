@@ -173,7 +173,7 @@ class Article(models.Model):
 class Vente(models.Model):
     """Ventes."""
     
-    numero_facture = models.CharField(max_length=50, unique=True)
+    numero_facture = models.CharField(max_length=100, unique=True)
     date_vente = models.DateTimeField(default=timezone.now)
     montant_total = models.DecimalField(max_digits=12, decimal_places=2)
     paye = models.BooleanField(default=False)
