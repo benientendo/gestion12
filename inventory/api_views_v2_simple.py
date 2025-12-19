@@ -19,7 +19,7 @@ from django.conf import settings
 import json
 import logging
 
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee
 from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 
 logger = logging.getLogger(__name__)
@@ -1290,11 +1290,13 @@ def sync_ventes_simple(request):
                                 est_actif=True
                             )
                         except Article.DoesNotExist:
-                            raise Exception(f'Article {article_id} non trouvé dans cette boutique')
+                            # Erreur enrichie avec détails pour traçabilité
+                            raise ValueError(f'ARTICLE_NOT_FOUND|{article_id}||0|0|Article {article_id} non trouvé dans cette boutique')
                         
                         # Vérifier le stock disponible
                         if article.quantite_stock < quantite:
-                            raise Exception(f'Stock insuffisant pour {article.nom}')
+                            # Erreur enrichie: RAISON|article_id|article_nom|stock_demande|stock_dispo|message
+                            raise ValueError(f'INSUFFICIENT_STOCK|{article.id}|{article.nom}|{quantite}|{article.quantite_stock}|Stock insuffisant pour {article.nom} (dispo: {article.quantite_stock}, demandé: {quantite})')
                         
                         # Créer la ligne de vente
                         prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
@@ -1353,12 +1355,83 @@ def sync_ventes_simple(request):
                     logger.info(f"   - Lignes: {len(lignes_creees)}")
                     logger.info(f"   - Montant: {montant_total} CDF")
                 
-            except Exception as e:
-                logger.error(f"❌ Erreur création vente {index + 1}: {str(e)}")
+            except ValueError as ve:
+                # Erreur de validation enrichie (format: RAISON|article_id|article_nom|stock_demande|stock_dispo|message)
+                error_str = str(ve)
+                error_parts = error_str.split('|')
+                
+                if len(error_parts) >= 6:
+                    raison_code = error_parts[0]
+                    article_id_err = int(error_parts[1]) if error_parts[1] else None
+                    article_nom_err = error_parts[2]
+                    stock_demande = int(error_parts[3]) if error_parts[3] else None
+                    stock_dispo = int(error_parts[4]) if error_parts[4] else None
+                    message_err = error_parts[5]
+                else:
+                    raison_code = 'OTHER'
+                    article_id_err = None
+                    article_nom_err = ''
+                    stock_demande = None
+                    stock_dispo = None
+                    message_err = error_str
+                
+                logger.error(f"❌ Erreur validation vente {index + 1}: {message_err}")
+                
+                # Sauvegarder dans VenteRejetee pour traçabilité
+                try:
+                    VenteRejetee.objects.create(
+                        vente_uid=vente_data.get('numero_facture', f'UNKNOWN_{index}'),
+                        terminal=terminal,
+                        boutique=boutique,
+                        date_vente_originale=parse_datetime(vente_data.get('date_vente') or vente_data.get('date') or ''),
+                        donnees_vente=vente_data,
+                        raison_rejet=raison_code,
+                        message_erreur=message_err,
+                        article_concerne_id=article_id_err,
+                        article_concerne_nom=article_nom_err,
+                        stock_demande=stock_demande,
+                        stock_disponible=stock_dispo,
+                        action_requise='NOTIFY_USER'
+                    )
+                    logger.info(f"📝 Vente rejetée enregistrée: {vente_data.get('numero_facture', 'N/A')}")
+                except Exception as save_err:
+                    logger.warning(f"⚠️ Impossible de sauvegarder le rejet: {save_err}")
+                
+                # Ajouter à la liste des erreurs avec détails enrichis
                 ventes_erreurs.append({
                     'index': index + 1,
                     'numero_facture': vente_data.get('numero_facture', 'N/A'),
-                    'erreur': str(e)
+                    'erreur': message_err,
+                    'code': raison_code,
+                    'article_id': article_id_err,
+                    'article_nom': article_nom_err,
+                    'stock_demande': stock_demande,
+                    'stock_disponible': stock_dispo
+                })
+                
+            except Exception as e:
+                # Autres erreurs non prévues
+                logger.error(f"❌ Erreur création vente {index + 1}: {str(e)}")
+                
+                # Sauvegarder dans VenteRejetee
+                try:
+                    VenteRejetee.objects.create(
+                        vente_uid=vente_data.get('numero_facture', f'UNKNOWN_{index}'),
+                        terminal=terminal,
+                        boutique=boutique,
+                        donnees_vente=vente_data,
+                        raison_rejet='OTHER',
+                        message_erreur=str(e),
+                        action_requise='NOTIFY_MANAGER'
+                    )
+                except Exception as save_err:
+                    logger.warning(f"⚠️ Impossible de sauvegarder le rejet: {save_err}")
+                
+                ventes_erreurs.append({
+                    'index': index + 1,
+                    'numero_facture': vente_data.get('numero_facture', 'N/A'),
+                    'erreur': str(e),
+                    'code': 'OTHER'
                 })
         
         # Retourner le résumé avec informations d'isolation
@@ -1368,10 +1441,43 @@ def sync_ventes_simple(request):
         
         # ⭐ COMPATIBILITÉ MAUI: Inclure les champs "accepted" et "rejected" attendus par MAUI
         accepted_list = [v['numero_facture'] for v in ventes_creees]
-        rejected_list = [
-            {'vente_uid': e.get('numero_facture', 'N/A'), 'reason': e.get('erreur', 'Erreur inconnue')}
-            for e in ventes_erreurs
-        ]
+        
+        # Enrichir rejected avec plus de détails pour le client MAUI
+        rejected_list = []
+        for e in ventes_erreurs:
+            rejected_item = {
+                'vente_uid': e.get('numero_facture', 'N/A'),
+                'reason': e.get('code', 'OTHER'),
+                'message': e.get('erreur', 'Erreur inconnue'),
+                'action': 'NOTIFY_USER'
+            }
+            # Ajouter les détails si disponibles
+            if e.get('article_id'):
+                rejected_item['article_id'] = e['article_id']
+                rejected_item['article_nom'] = e.get('article_nom', '')
+            if e.get('stock_disponible') is not None:
+                rejected_item['stock_disponible'] = e['stock_disponible']
+            if e.get('stock_demande') is not None:
+                rejected_item['stock_demande'] = e['stock_demande']
+            rejected_list.append(rejected_item)
+        
+        # ⭐ NOUVEAU: Collecter les mises à jour de stock pour les articles concernés par des rejets
+        stock_updates = []
+        articles_en_erreur = set()
+        for e in ventes_erreurs:
+            if e.get('article_id'):
+                articles_en_erreur.add(e['article_id'])
+        
+        if articles_en_erreur:
+            articles_actuels = Article.objects.filter(id__in=articles_en_erreur, boutique=boutique)
+            for art in articles_actuels:
+                stock_updates.append({
+                    'article_id': art.id,
+                    'code': art.code,
+                    'nom': art.nom,
+                    'stock_actuel': art.quantite_stock,
+                    'prix_actuel': str(art.prix_vente)
+                })
         
         return Response({
             'success': True,
@@ -1379,6 +1485,8 @@ def sync_ventes_simple(request):
             # ⭐ Format MAUI
             'accepted': accepted_list,
             'rejected': rejected_list,
+            # ⭐ NOUVEAU: Mises à jour de stock pour les articles en erreur
+            'stock_updates': stock_updates,
             # Format Django (rétrocompatibilité)
             'ventes_creees': len(ventes_creees),
             'ventes_erreurs': len(ventes_erreurs),

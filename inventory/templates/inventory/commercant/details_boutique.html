@@ -17,6 +17,12 @@
                     <a href="{% url 'inventory:commercant_dashboard' %}" class="btn btn-outline-secondary me-2">
                         <i class="fas fa-arrow-left"></i> Retour au tableau de bord
                     </a>
+                    <a href="{% url 'inventory:commercant_ventes_refusees_boutique' boutique.id %}" class="btn btn-danger me-2">
+                        <i class="fas fa-ban"></i> Ventes Refusées
+                        {% if nb_ventes_refusees_jour > 0 %}
+                        <span class="badge bg-light text-danger">{{ nb_ventes_refusees_jour }}</span>
+                        {% endif %}
+                    </a>
                     <a href="{% url 'inventory:modifier_boutique' boutique.id %}" class="btn btn-primary me-2">
                         <i class="fas fa-edit"></i> Modifier
                     </a>

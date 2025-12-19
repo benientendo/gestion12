@@ -1,0 +1,279 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Ventes Refusées - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stats-card {
+        border-radius: 10px;
+        transition: transform 0.2s;
+    }
+    .stats-card:hover {
+        transform: translateY(-2px);
+    }
+    .stats-refusees {
+        background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        color: white;
+    }
+    .stats-recette {
+        background: linear-gradient(135deg, #28a745 0%, #218838 100%);
+        color: white;
+    }
+    .stats-combine {
+        background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+        color: white;
+    }
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+    }
+    .stat-label {
+        font-size: 0.85rem;
+        opacity: 0.9;
+    }
+    .vente-refusee-card {
+        border-left: 4px solid #dc3545;
+        margin-bottom: 10px;
+        transition: all 0.2s;
+    }
+    .vente-refusee-card:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .raison-badge {
+        font-size: 0.75rem;
+    }
+    .article-list {
+        font-size: 0.85rem;
+        color: #666;
+    }
+    .filter-section {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <h1><i class="fas fa-ban text-danger"></i> Ventes Refusées</h1>
+                    <p class="text-muted mb-0">{{ boutique.nom }} - Suivi des ventes non validées</p>
+                </div>
+                <div class="mt-2 mt-md-0">
+                    <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour à la boutique
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistiques du jour -->
+    <div class="row mb-4">
+        <div class="col-md-4 mb-3">
+            <div class="card stats-card stats-refusees">
+                <div class="card-body text-center">
+                    <div class="stat-value">{{ total_refusees_jour|floatformat:2|intcomma }} CDF</div>
+                    <div class="stat-label">
+                        <i class="fas fa-times-circle"></i> Ventes Refusées du Jour
+                        <span class="badge bg-light text-dark ms-1">{{ nb_refusees_jour }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card stats-card stats-recette">
+                <div class="card-body text-center">
+                    <div class="stat-value">{{ recette_jour|floatformat:2|intcomma }} CDF</div>
+                    <div class="stat-label">
+                        <i class="fas fa-check-circle"></i> Recette Normale du Jour
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card stats-card stats-combine">
+                <div class="card-body text-center">
+                    <div class="stat-value">{{ total_combine|floatformat:2|intcomma }} CDF</div>
+                    <div class="stat-label">
+                        <i class="fas fa-calculator"></i> Total Combiné (Recette + Refusées)
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtre par date -->
+    <div class="filter-section">
+        <form method="get" class="row align-items-end">
+            <div class="col-md-4">
+                <label for="date" class="form-label"><i class="fas fa-calendar"></i> Filtrer par date</label>
+                <input type="date" name="date" id="date" class="form-control" 
+                       value="{{ date_filter }}" max="{{ aujourd_hui }}">
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-filter"></i> Filtrer
+                </button>
+                {% if date_filter %}
+                <a href="{% url 'inventory:commercant_ventes_refusees_boutique' boutique.id %}" class="btn btn-outline-secondary ms-2">
+                    <i class="fas fa-times"></i> Réinitialiser
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <div class="row">
+        <!-- Liste des ventes refusées -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="fas fa-list"></i> Liste des Ventes Refusées
+                        <span class="badge bg-danger ms-2">{{ nb_refusees_total }}</span>
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if ventes_details %}
+                        {% for detail in ventes_details %}
+                        <div class="card vente-refusee-card">
+                            <div class="card-body py-3">
+                                <div class="row align-items-center">
+                                    <div class="col-md-3">
+                                        <small class="text-muted">
+                                            <i class="fas fa-clock"></i> {{ detail.vente.date_tentative|date:"d/m/Y H:i" }}
+                                        </small>
+                                        <div class="fw-bold">{{ detail.vente.vente_uid|truncatechars:20 }}</div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <span class="badge raison-badge 
+                                            {% if detail.vente.raison_rejet == 'INSUFFICIENT_STOCK' %}bg-warning text-dark
+                                            {% elif detail.vente.raison_rejet == 'ARTICLE_NOT_FOUND' %}bg-secondary
+                                            {% elif detail.vente.raison_rejet == 'PRIX_MODIFIE' %}bg-info
+                                            {% elif detail.vente.raison_rejet == 'DUPLICATE' %}bg-primary
+                                            {% else %}bg-danger{% endif %}">
+                                            {{ detail.raison_display }}
+                                        </span>
+                                        {% if detail.vente.article_concerne_nom %}
+                                        <div class="small text-muted mt-1">
+                                            <i class="fas fa-box"></i> {{ detail.vente.article_concerne_nom }}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="article-list">
+                                            {% if detail.articles %}
+                                                {% for art in detail.articles|slice:":3" %}
+                                                <div>{{ art.nom }} x{{ art.quantite }}</div>
+                                                {% endfor %}
+                                                {% if detail.articles|length > 3 %}
+                                                <div class="text-muted">+{{ detail.articles|length|add:"-3" }} autres...</div>
+                                                {% endif %}
+                                            {% else %}
+                                                <span class="text-muted">Détails non disponibles</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3 text-end">
+                                        <div class="fw-bold text-danger fs-5">
+                                            {{ detail.montant|floatformat:2|intcomma }} CDF
+                                        </div>
+                                        {% if detail.vente.terminal %}
+                                        <small class="text-muted">
+                                            <i class="fas fa-mobile-alt"></i> {{ detail.vente.terminal.nom_terminal }}
+                                        </small>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% if detail.vente.message_erreur %}
+                                <div class="mt-2 p-2 bg-light rounded small">
+                                    <i class="fas fa-info-circle text-muted"></i> {{ detail.vente.message_erreur|truncatechars:150 }}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                            <h5>Aucune vente refusée</h5>
+                            <p class="text-muted">
+                                {% if date_filter %}
+                                    Aucune vente refusée pour cette date.
+                                {% else %}
+                                    Toutes les ventes ont été validées avec succès.
+                                {% endif %}
+                            </p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistiques par raison -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Répartition par Cause</h5>
+                </div>
+                <div class="card-body">
+                    {% if stats_par_raison %}
+                        {% for stat in stats_par_raison %}
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span class="badge 
+                                {% if stat.raison_rejet == 'INSUFFICIENT_STOCK' %}bg-warning text-dark
+                                {% elif stat.raison_rejet == 'ARTICLE_NOT_FOUND' %}bg-secondary
+                                {% elif stat.raison_rejet == 'PRIX_MODIFIE' %}bg-info
+                                {% elif stat.raison_rejet == 'DUPLICATE' %}bg-primary
+                                {% else %}bg-danger{% endif %}">
+                                {{ stat.raison_display }}
+                            </span>
+                            <span class="badge bg-dark">{{ stat.count }}</span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted text-center">Aucune donnée disponible</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Résumé rapide -->
+            <div class="card mt-3">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Résumé du Jour</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-sm mb-0">
+                        <tr>
+                            <td><i class="fas fa-times-circle text-danger"></i> Refusées</td>
+                            <td class="text-end fw-bold">{{ total_refusees_jour|floatformat:2|intcomma }} CDF</td>
+                        </tr>
+                        <tr>
+                            <td><i class="fas fa-check-circle text-success"></i> Recette</td>
+                            <td class="text-end fw-bold">{{ recette_jour|floatformat:2|intcomma }} CDF</td>
+                        </tr>
+                        <tr class="table-info">
+                            <td><strong><i class="fas fa-calculator"></i> Total</strong></td>
+                            <td class="text-end fw-bold">{{ total_combine|floatformat:2|intcomma }} CDF</td>
+                        </tr>
+                    </table>
+                    <hr>
+                    <div class="small text-muted">
+                        <i class="fas fa-lightbulb"></i> 
+                        Le total combiné représente ce que la recette aurait pu être si toutes les ventes avaient été validées.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

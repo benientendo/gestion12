@@ -517,3 +517,80 @@ class RetourArticle(models.Model):
 
     class Meta:
         ordering = ['-date_operation', '-created_at']
+
+
+class VenteRejetee(models.Model):
+    """
+    Ventes rejetées lors de la synchronisation pour traçabilité et conformité.
+    Permet de suivre les ventes offline qui n'ont pas pu être validées par le serveur.
+    """
+    
+    RAISONS_REJET = [
+        ('INSUFFICIENT_STOCK', 'Stock insuffisant'),
+        ('ARTICLE_NOT_FOUND', 'Article non trouvé'),
+        ('PRIX_MODIFIE', 'Prix modifié'),
+        ('TOTAL_INCOHERENT', 'Total incohérent'),
+        ('BOUTIQUE_MISMATCH', 'Boutique non autorisée'),
+        ('DUPLICATE', 'Vente déjà existante'),
+        ('INVALID_FORMAT', 'Format invalide'),
+        ('OTHER', 'Autre erreur'),
+    ]
+    
+    ACTIONS_REQUISES = [
+        ('NOTIFY_USER', 'Notifier l\'utilisateur'),
+        ('NOTIFY_MANAGER', 'Notifier le gérant'),
+        ('ANNULATION', 'Annulation requise'),
+        ('REGULARISATION', 'Régularisation requise'),
+        ('AUCUNE', 'Aucune action requise'),
+    ]
+    
+    # Identifiant unique de la vente rejetée
+    vente_uid = models.CharField(max_length=100, db_index=True, 
+                                 help_text="Numéro de facture/UID de la vente rejetée")
+    
+    # Liens avec terminal et boutique
+    terminal = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='ventes_rejetees')
+    boutique = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name='ventes_rejetees')
+    
+    # Date et données de la tentative
+    date_tentative = models.DateTimeField(default=timezone.now, 
+                                          help_text="Date de la tentative de synchronisation")
+    date_vente_originale = models.DateTimeField(null=True, blank=True,
+                                                help_text="Date originale de la vente côté client")
+    donnees_vente = models.JSONField(help_text="Snapshot complet des données de vente envoyées")
+    
+    # Informations sur le rejet
+    raison_rejet = models.CharField(max_length=50, choices=RAISONS_REJET, default='OTHER')
+    message_erreur = models.TextField(help_text="Message d'erreur détaillé")
+    
+    # Détails pour faciliter le diagnostic
+    article_concerne_id = models.IntegerField(null=True, blank=True,
+                                              help_text="ID de l'article concerné si applicable")
+    article_concerne_nom = models.CharField(max_length=100, blank=True)
+    stock_demande = models.IntegerField(null=True, blank=True)
+    stock_disponible = models.IntegerField(null=True, blank=True)
+    
+    # Gestion du traitement
+    action_requise = models.CharField(max_length=20, choices=ACTIONS_REQUISES, default='NOTIFY_USER')
+    traitee = models.BooleanField(default=False, help_text="Le rejet a-t-il été traité/résolu?")
+    date_traitement = models.DateTimeField(null=True, blank=True)
+    traite_par = models.CharField(max_length=100, blank=True, help_text="Utilisateur ayant traité le rejet")
+    notes_traitement = models.TextField(blank=True, help_text="Notes sur le traitement effectué")
+    
+    # Métadonnées
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Rejet {self.vente_uid} - {self.get_raison_rejet_display()} ({self.boutique.nom})"
+    
+    class Meta:
+        verbose_name = "Vente rejetée"
+        verbose_name_plural = "Ventes rejetées"
+        ordering = ['-date_tentative']
+        indexes = [
+            models.Index(fields=['boutique', 'date_tentative'], name='rejet_boutique_date_idx'),
+            models.Index(fields=['raison_rejet'], name='rejet_raison_idx'),
+            models.Index(fields=['traitee'], name='rejet_traitee_idx'),
+        ]
+

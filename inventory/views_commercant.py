@@ -11,7 +11,7 @@ from django.db import transaction
 from django.utils import timezone
 from datetime import datetime, timedelta
 from decimal import Decimal
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee
 from .forms import BoutiqueForm, ArticleForm
 import json
 import qrcode
@@ -153,8 +153,18 @@ def dashboard_commercant(request):
         print(f"DEBUG: Boutique '{b.nom}' - est_active: {b.est_active}")
     
     # Utiliser toutes les boutiques pour le moment
-    boutiques = boutiques_toutes
-    total_boutiques = boutiques.count()
+    boutiques_list = list(boutiques_toutes)
+    total_boutiques = len(boutiques_list)
+    
+    # Ajouter le compteur des ventes refusées du jour pour chaque boutique
+    aujourd_hui = timezone.now().date()
+    for boutique in boutiques_list:
+        boutique.nb_ventes_refusees_jour = VenteRejetee.objects.filter(
+            boutique=boutique,
+            date_tentative__date=aujourd_hui
+        ).count()
+    
+    boutiques = boutiques_list
     
     # Statistiques des 30 derniers jours
     date_debut = timezone.now() - timedelta(days=30)
@@ -235,7 +245,7 @@ def dashboard_commercant(request):
         'recette_jour': ca_jour,
         'valeur_marchandise': valeur_marchandise,
         'depenses_totales': depenses_totales,
-        'boutiques_avec_clients': boutiques.filter(clients__isnull=False).distinct().count(),
+        'boutiques_avec_clients': boutiques_toutes.filter(clients__isnull=False).distinct().count(),
         'stats_boutiques': stats_boutiques,
         'articles_stock_bas': articles_stock_bas,
         'peut_ajouter_boutique': commercant.peut_creer_boutique()
@@ -347,6 +357,13 @@ def detail_boutique(request, boutique_id):
     # Ventes récentes limitées pour affichage
     ventes_recentes_display = ventes_recentes[:10]
     
+    # Compteur des ventes refusées du jour
+    aujourd_hui = timezone.now().date()
+    nb_ventes_refusees_jour = VenteRejetee.objects.filter(
+        boutique=boutique,
+        date_tentative__date=aujourd_hui
+    ).count()
+    
     context = {
         'boutique': boutique,
         'nb_ventes': nb_ventes,
@@ -359,7 +376,8 @@ def detail_boutique(request, boutique_id):
         'total_categories': total_categories,
         'total_ventes': total_ventes,
         'chiffre_affaires': chiffre_affaires,
-        'ventes_recentes': ventes_recentes_display
+        'ventes_recentes': ventes_recentes_display,
+        'nb_ventes_refusees_jour': nb_ventes_refusees_jour
     }
     
     return render(request, 'inventory/commercant/details_boutique.html', context)
@@ -2175,3 +2193,114 @@ def ventes_boutique(request, boutique_id):
     }
     
     return render(request, 'inventory/commercant/ventes_boutique.html', context)
+
+
+# ===== VENTES REFUSÉES =====
+
+@login_required
+@commercant_required
+@boutique_access_required
+def ventes_refusees_boutique(request, boutique_id):
+    """Affiche les ventes refusées de la boutique avec statistiques"""
+    boutique = request.boutique
+    aujourd_hui = timezone.now().date()
+    
+    # Récupérer les ventes refusées de la boutique
+    ventes_refusees = VenteRejetee.objects.filter(
+        boutique=boutique
+    ).select_related('terminal').order_by('-date_tentative')
+    
+    # Filtrer par date si demandé
+    date_filter = request.GET.get('date', '')
+    if date_filter:
+        try:
+            date_obj = datetime.strptime(date_filter, '%Y-%m-%d').date()
+            ventes_refusees = ventes_refusees.filter(date_tentative__date=date_obj)
+        except ValueError:
+            pass
+    
+    # Ventes refusées du jour
+    ventes_refusees_jour = VenteRejetee.objects.filter(
+        boutique=boutique,
+        date_tentative__date=aujourd_hui
+    )
+    
+    # Calculer la somme des articles refusés du jour (extraire du JSON)
+    total_refusees_jour = Decimal('0')
+    for vente in ventes_refusees_jour:
+        try:
+            donnees = vente.donnees_vente
+            if isinstance(donnees, dict):
+                montant = donnees.get('montant_total', 0)
+                total_refusees_jour += Decimal(str(montant))
+        except (TypeError, ValueError, KeyError):
+            pass
+    
+    # Recette normale du jour (ventes payées)
+    recette_jour = Vente.objects.filter(
+        client_maui__boutique=boutique,
+        date_vente__date=aujourd_hui,
+        paye=True
+    ).aggregate(total=Sum('montant_total'))['total'] or Decimal('0')
+    
+    # Total combiné (recette + ventes refusées)
+    total_combine = recette_jour + total_refusees_jour
+    
+    # Statistiques par raison de rejet
+    stats_par_raison = ventes_refusees.values('raison_rejet').annotate(
+        count=Count('id')
+    ).order_by('-count')
+    
+    # Mapping des raisons pour l'affichage
+    raisons_display = dict(VenteRejetee.RAISONS_REJET)
+    for stat in stats_par_raison:
+        stat['raison_display'] = raisons_display.get(stat['raison_rejet'], stat['raison_rejet'])
+    
+    # Préparer les données détaillées des ventes refusées
+    ventes_details = []
+    for vente in ventes_refusees[:50]:  # Limiter à 50 pour la performance
+        try:
+            donnees = vente.donnees_vente
+            montant = Decimal('0')
+            articles_info = []
+            
+            if isinstance(donnees, dict):
+                montant = Decimal(str(donnees.get('montant_total', 0)))
+                lignes = donnees.get('lignes', donnees.get('articles', []))
+                for ligne in lignes:
+                    if isinstance(ligne, dict):
+                        articles_info.append({
+                            'nom': ligne.get('nom', ligne.get('article_nom', 'N/A')),
+                            'quantite': ligne.get('quantite', 1),
+                            'prix': ligne.get('prix_unitaire', ligne.get('prix', 0))
+                        })
+            
+            ventes_details.append({
+                'vente': vente,
+                'montant': montant,
+                'articles': articles_info,
+                'raison_display': raisons_display.get(vente.raison_rejet, vente.raison_rejet)
+            })
+        except (TypeError, ValueError, KeyError):
+            ventes_details.append({
+                'vente': vente,
+                'montant': Decimal('0'),
+                'articles': [],
+                'raison_display': raisons_display.get(vente.raison_rejet, vente.raison_rejet)
+            })
+    
+    context = {
+        'boutique': boutique,
+        'ventes_refusees': ventes_refusees,
+        'ventes_details': ventes_details,
+        'total_refusees_jour': total_refusees_jour,
+        'recette_jour': recette_jour,
+        'total_combine': total_combine,
+        'nb_refusees_jour': ventes_refusees_jour.count(),
+        'nb_refusees_total': ventes_refusees.count(),
+        'stats_par_raison': stats_par_raison,
+        'date_filter': date_filter,
+        'aujourd_hui': aujourd_hui.strftime('%Y-%m-%d'),
+    }
+    
+    return render(request, 'inventory/commercant/ventes_refusees_boutique.html', context)

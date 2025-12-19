@@ -82,6 +82,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier-prix/', views_commercant.modifier_prix_article, name='modifier_prix_article'),
     path('commercant/boutiques/<int:boutique_id>/categories/', views_commercant.categories_boutique, name='commercant_categories_boutique'),
     path('commercant/boutiques/<int:boutique_id>/ventes/', views_commercant.ventes_boutique, name='commercant_ventes_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/ventes-refusees/', views_commercant.ventes_refusees_boutique, name='commercant_ventes_refusees_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/', views_commercant.rapports_caisse_boutique, name='commercant_rapports_caisse_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/articles-negocies/', views_commercant.articles_negocies_boutique, name='commercant_articles_negocies_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/retours-articles/', views_commercant.retours_articles_boutique, name='commercant_retours_articles_boutique'),
