@@ -1242,7 +1242,7 @@ def sync_ventes_simple(request):
                         ventes_erreurs.append({
                             'numero_facture': numero_facture,
                             'erreur': 'Vente déjà existante',
-                            'status': 'already_exists'
+                            'code': 'DUPLICATE'  # ⭐ CORRECTION: utiliser 'code' pour cohérence avec rejected_list
                         })
                         continue
                     
