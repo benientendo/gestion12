@@ -192,6 +192,12 @@ class Vente(models.Model):
     adresse_ip_client = models.GenericIPAddressField(null=True, blank=True, help_text="Adresse IP du client MAUI")
     version_app_maui = models.CharField(max_length=50, blank=True, help_text="Version de l'app MAUI utilisée")
     
+    # ⭐ ANNULATION DE VENTE
+    est_annulee = models.BooleanField(default=False, help_text="La vente a-t-elle été annulée?")
+    date_annulation = models.DateTimeField(null=True, blank=True, help_text="Date et heure de l'annulation")
+    motif_annulation = models.TextField(blank=True, help_text="Raison de l'annulation")
+    annulee_par = models.CharField(max_length=100, blank=True, help_text="Terminal ou utilisateur ayant annulé")
+    
     def __str__(self):
         return f"Vente {self.numero_facture} - {self.date_vente.strftime('%d/%m/%Y')}"
     

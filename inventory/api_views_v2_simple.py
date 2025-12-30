@@ -1917,3 +1917,161 @@ def reconcilier_ventes(request):
             'error': str(e),
             'code': 'RECONCILIATION_ERROR'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ⭐ ANNULATION DE VENTE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def annuler_vente_simple(request):
+    """
+    Annule une vente et restaure le stock des articles concernés.
+    
+    Format attendu:
+    {
+        "numero_facture": "VENTE-001",
+        "motif": "Erreur de caisse"  // Optionnel
+    }
+    
+    Retourne:
+    {
+        "success": true,
+        "message": "Vente annulée avec succès",
+        "vente": {...},
+        "stock_restaure": [...]
+    }
+    """
+    try:
+        # Récupérer le numéro de série du terminal depuis les headers
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.META.get('HTTP_X_DEVICE_SERIAL')
+        )
+        
+        if not numero_serie:
+            return Response({
+                'error': 'Numéro de série du terminal requis',
+                'code': 'MISSING_SERIAL'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Récupérer le terminal
+        try:
+            terminal = Client.objects.select_related('boutique').get(
+                numero_serie=numero_serie,
+                est_actif=True
+            )
+            boutique = terminal.boutique
+        except Client.DoesNotExist:
+            return Response({
+                'error': 'Terminal non trouvé ou inactif',
+                'code': 'TERMINAL_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Récupérer les données de la requête
+        data = request.data
+        numero_facture = data.get('numero_facture') or data.get('NumeroFacture') or data.get('reference')
+        motif = data.get('motif') or data.get('Motif') or 'Annulation demandée par le terminal'
+        
+        if not numero_facture:
+            return Response({
+                'error': 'Numéro de facture requis',
+                'code': 'MISSING_NUMERO_FACTURE'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.info(f"🔄 Demande d'annulation vente: {numero_facture} par {terminal.nom_terminal}")
+        
+        # Rechercher la vente
+        try:
+            vente = Vente.objects.select_related('boutique').prefetch_related('lignes__article').get(
+                numero_facture=numero_facture,
+                boutique=boutique
+            )
+        except Vente.DoesNotExist:
+            return Response({
+                'error': f'Vente {numero_facture} non trouvée dans cette boutique',
+                'code': 'VENTE_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Vérifier si déjà annulée
+        if vente.est_annulee:
+            return Response({
+                'error': 'Cette vente a déjà été annulée',
+                'code': 'ALREADY_CANCELLED',
+                'date_annulation': vente.date_annulation.isoformat() if vente.date_annulation else None
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ⭐ TRANSACTION ATOMIQUE : Annulation + Restauration stock
+        with transaction.atomic():
+            stock_restaure = []
+            
+            # Restaurer le stock pour chaque ligne de vente
+            for ligne in vente.lignes.all():
+                article = ligne.article
+                quantite = ligne.quantite
+                stock_avant = article.quantite_stock
+                
+                # Restaurer le stock
+                article.quantite_stock += quantite
+                article.save(update_fields=['quantite_stock'])
+                
+                # Créer un mouvement de stock pour traçabilité
+                MouvementStock.objects.create(
+                    article=article,
+                    type_mouvement='RETOUR',
+                    quantite=quantite,  # Positif car c'est un retour
+                    stock_avant=stock_avant,
+                    stock_apres=article.quantite_stock,
+                    reference_document=f"ANNUL-{vente.numero_facture}",
+                    utilisateur=terminal.nom_terminal,
+                    commentaire=f"Annulation vente #{vente.numero_facture} - Motif: {motif}"
+                )
+                
+                stock_restaure.append({
+                    'article_id': article.id,
+                    'code': article.code,
+                    'nom': article.nom,
+                    'quantite_restauree': quantite,
+                    'stock_avant': stock_avant,
+                    'stock_apres': article.quantite_stock
+                })
+                
+                logger.info(f"   ↩️ Stock restauré: {article.nom} +{quantite} ({stock_avant} → {article.quantite_stock})")
+            
+            # Marquer la vente comme annulée
+            vente.est_annulee = True
+            vente.date_annulation = timezone.now()
+            vente.motif_annulation = motif
+            vente.annulee_par = terminal.nom_terminal
+            vente.save(update_fields=['est_annulee', 'date_annulation', 'motif_annulation', 'annulee_par'])
+            
+            logger.info(f"✅ Vente {numero_facture} annulée avec succès")
+        
+        return Response({
+            'success': True,
+            'message': f'Vente {numero_facture} annulée avec succès',
+            'vente': {
+                'numero_facture': vente.numero_facture,
+                'montant_total': str(vente.montant_total),
+                'date_vente': vente.date_vente.isoformat(),
+                'date_annulation': vente.date_annulation.isoformat(),
+                'motif': motif
+            },
+            'stock_restaure': stock_restaure,
+            'boutique': {
+                'id': boutique.id,
+                'nom': boutique.nom
+            }
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur annulation vente: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback:\n{traceback.format_exc()}")
+        return Response({
+            'error': 'Erreur lors de l\'annulation',
+            'code': 'CANCELLATION_ERROR',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

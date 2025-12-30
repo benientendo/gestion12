@@ -35,6 +35,8 @@ urlpatterns = [
     path('ventes/sync/', api_views_v2_simple.sync_ventes_simple, name='sync_ventes'),
     path('ventes/historique/', api_views_v2_simple.historique_ventes_simple, name='historique_ventes'),
     path('ventes/reconciliation/', api_views_v2_simple.reconcilier_ventes, name='reconcilier_ventes'),
+    path('ventes/annuler', api_views_v2_simple.annuler_vente_simple, name='annuler_vente_no_slash'),  # Sans slash pour MAUI
+    path('ventes/annuler/', api_views_v2_simple.annuler_vente_simple, name='annuler_vente'),
     
     # ===== RAPPORTS DE CAISSE =====
     path('rapports-caisse/', RapportCaisseListCreateView.as_view(), name='rapports_caisse_simple'),
