@@ -178,12 +178,13 @@ def dashboard_commercant(request):
     total_ca = 0
     
     for boutique in boutiques:
-        # Récupérer les ventes via les clients MAUI de la boutique
+        # Récupérer les ventes via les clients MAUI de la boutique (exclure les ventes annulées)
         try:
             ventes_boutique = Vente.objects.filter(
                 client_maui__boutique=boutique,
                 date_vente__gte=date_debut,
-                paye=True
+                paye=True,
+                est_annulee=False
             )
             nb_ventes = ventes_boutique.count()
             ca_boutique = ventes_boutique.aggregate(total=Sum('montant_total'))['total'] or 0
@@ -203,11 +204,12 @@ def dashboard_commercant(request):
         total_ventes += nb_ventes
         total_ca += ca_boutique
     
-    # Recette du jour (toutes boutiques, ventes payées)
+    # Recette du jour (toutes boutiques, ventes payées, non annulées)
     ventes_jour = Vente.objects.filter(
         client_maui__boutique__in=boutiques,
         date_vente__date=aujourd_hui,
-        paye=True
+        paye=True,
+        est_annulee=False
     )
     ca_jour = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
 
@@ -315,12 +317,13 @@ def detail_boutique(request, boutique_id):
     # Statistiques des 30 derniers jours
     date_debut = timezone.now() - timedelta(days=30)
     
-    # Récupérer les ventes via les clients MAUI de la boutique
+    # Récupérer les ventes via les clients MAUI de la boutique (exclure les ventes annulées)
     try:
         ventes_recentes = Vente.objects.filter(
             client_maui__boutique=boutique,
             date_vente__gte=date_debut,
-            paye=True
+            paye=True,
+            est_annulee=False
         )
     except (ValueError, TypeError):
         # Relations pas encore mises à jour après migration
@@ -657,13 +660,14 @@ def entrer_boutique(request, boutique_id):
     nb_articles = boutique.articles.count()
     nb_terminaux = boutique.clients.count()
     
-    # Ventes d'aujourd'hui
+    # Ventes d'aujourd'hui (exclure les ventes annulées)
     date_aujourd_hui = timezone.now().date()
     try:
         ventes_aujourd_hui = Vente.objects.filter(
             boutique=boutique,
             date_vente__date=date_aujourd_hui,
-            paye=True
+            paye=True,
+            est_annulee=False
         )
         nb_ventes_aujourd_hui = ventes_aujourd_hui.count()
         ca_aujourd_hui_brut = ventes_aujourd_hui.aggregate(total=Sum('montant_total'))['total'] or 0
@@ -679,13 +683,14 @@ def entrer_boutique(request, boutique_id):
 
     ca_aujourd_hui = ca_aujourd_hui_brut - depenses_appliquees_ca_jour
     
-    # Ventes du mois en cours
+    # Ventes du mois en cours (exclure les ventes annulées)
     try:
         premier_jour_mois = timezone.now().date().replace(day=1)
         ventes_mois = Vente.objects.filter(
             boutique=boutique,
             date_vente__date__gte=premier_jour_mois,
-            paye=True
+            paye=True,
+            est_annulee=False
         )
         nb_ventes_mois = ventes_mois.count()
         ca_mois_brut = ventes_mois.aggregate(total=Sum('montant_total'))['total'] or 0
@@ -730,10 +735,11 @@ def entrer_boutique(request, boutique_id):
     # Articles populaires (vides pour l'instant)
     articles_populaires = boutique.articles.none()
     
-    # Ventes récentes
+    # Ventes récentes (exclure les ventes annulées)
     try:
         ventes_recentes = Vente.objects.filter(
-            client_maui__boutique=boutique
+            client_maui__boutique=boutique,
+            est_annulee=False
         ).order_by('-date_vente')[:10]
     except:
         ventes_recentes = Vente.objects.none()
@@ -823,7 +829,8 @@ def rapport_ca_quotidien(request, boutique_id):
     ventes = Vente.objects.filter(
         boutique=boutique,
         date_vente__date=date_cible,
-        paye=True
+        paye=True,
+        est_annulee=False
     ).select_related('client_maui').prefetch_related('lignes__article')
 
     total_ventes = ventes.count()
@@ -898,7 +905,8 @@ def rapport_ca_mensuel(request, boutique_id):
         ventes_jour = Vente.objects.filter(
             boutique=boutique,
             date_vente__date=current_date,
-            paye=True
+            paye=True,
+            est_annulee=False
         )
         nb_ventes = ventes_jour.count()
         ca_jour_brut = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
