@@ -308,6 +308,8 @@ def creer_boutique(request):
         if form.is_valid():
             boutique = form.save(commit=False)
             boutique.commercant = commercant
+            # Forcer le flag dépôt si le type sélectionné est "DEPOT"
+            boutique.est_depot = boutique.type_commerce == 'DEPOT'
             boutique.save()
             messages.success(request, f"Boutique '{boutique.nom}' créée avec succès!")
             return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
