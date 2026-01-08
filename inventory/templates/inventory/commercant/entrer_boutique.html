@@ -159,7 +159,7 @@
 
                 <!-- Stocks -->
                 <div class="col-md-6 mb-4">
-                    <div class="card module-card h-100 text-center p-4" onclick="window.location.href='#'">
+                    <div class="card module-card h-100 text-center p-4" onclick="window.location.href='{% url 'inventory:historique_mouvements_stock' boutique.id %}'">
                         <div class="card-body">
                             <i class="fas fa-warehouse module-icon text-info"></i>
                             <h4>Stocks</h4>
@@ -172,6 +172,27 @@
                                 <div class="col-6">
                                     <strong>{{ articles_stock_bas }}</strong><br>
                                     <small>Alertes</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Rapports -->
+                <div class="col-md-6 mb-4">
+                    <div class="card module-card h-100 text-center p-4" onclick="window.location.href='{% url 'inventory:rapport_ca_quotidien' boutique.id %}'">
+                        <div class="card-body">
+                            <i class="fas fa-chart-bar module-icon text-success"></i>
+                            <h4>Rapports</h4>
+                            <p class="text-muted">CA et bénéfices</p>
+                            <div class="row text-center mt-3">
+                                <div class="col-6">
+                                    <strong>Quotidien</strong><br>
+                                    <small>Ventes du jour</small>
+                                </div>
+                                <div class="col-6">
+                                    <strong>Mensuel</strong><br>
+                                    <small>Vue d'ensemble</small>
                                 </div>
                             </div>
                         </div>

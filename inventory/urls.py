@@ -82,6 +82,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier-prix/', views_commercant.modifier_prix_article, name='modifier_prix_article'),
     path('commercant/boutiques/<int:boutique_id>/categories/', views_commercant.categories_boutique, name='commercant_categories_boutique'),
     path('commercant/boutiques/<int:boutique_id>/ventes/', views_commercant.ventes_boutique, name='commercant_ventes_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/mouvements-stock/', views_commercant.historique_mouvements_stock, name='historique_mouvements_stock'),
     path('commercant/boutiques/<int:boutique_id>/ventes-refusees/', views_commercant.ventes_refusees_boutique, name='commercant_ventes_refusees_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/', views_commercant.rapports_caisse_boutique, name='commercant_rapports_caisse_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/articles-negocies/', views_commercant.articles_negocies_boutique, name='commercant_articles_negocies_boutique'),
@@ -94,4 +95,17 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/export-ca-pdf/', views_commercant.exporter_ca_quotidien_pdf, name='exporter_ca_quotidien_pdf'),
     path('commercant/boutiques/<int:boutique_id>/export-ca-mensuel-pdf/', views_commercant.exporter_ca_mensuel_pdf, name='exporter_ca_mensuel_pdf'),
     path('commercant/api/boutique/<int:boutique_id>/stats/', views_commercant.api_stats_boutique, name='commercant_api_stats_boutique'),
+    path('commercant/api/vente/<int:vente_id>/details/', views_commercant.api_vente_details, name='api_vente_details'),
+    
+    # Gestion des dépôts
+    path('commercant/depots/', views_commercant.liste_depots, name='commercant_liste_depots'),
+    path('commercant/depots/<int:depot_id>/', views_commercant.detail_depot, name='detail_depot'),
+    path('commercant/depots/<int:depot_id>/transfert/creer/', views_commercant.creer_transfert_stock, name='creer_transfert_stock'),
+    path('commercant/depots/<int:depot_id>/approvisionner/', views_commercant.approvisionner_depot, name='approvisionner_depot'),
+    path('commercant/depots/<int:depot_id>/transferts/historique/', views_commercant.historique_transferts, name='historique_transferts'),
+    path('commercant/depots/<int:depot_id>/transfert-multiple/', views_commercant.transfert_multiple, name='transfert_multiple'),
+    path('commercant/depots/<int:depot_id>/valider-transferts-multiples/', views_commercant.valider_transferts_multiples, name='valider_transferts_multiples'),
+    path('commercant/transferts/<int:transfert_id>/', views_commercant.detail_transfert, name='detail_transfert'),
+    path('commercant/transferts/<int:transfert_id>/valider/', views_commercant.valider_transfert, name='valider_transfert'),
+    path('commercant/transferts/<int:transfert_id>/annuler/', views_commercant.annuler_transfert, name='annuler_transfert'),
 ]

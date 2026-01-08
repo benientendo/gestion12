@@ -1,0 +1,122 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Mes Dépôts - {{ commercant.nom_entreprise }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .depot-card {
+        background: white;
+        border-radius: 15px;
+        padding: 25px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        border-left: 5px solid #f5576c;
+        transition: transform 0.3s ease;
+    }
+    .depot-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    }
+    .depot-header {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+    }
+    .depot-stat {
+        text-align: center;
+        padding: 15px;
+    }
+    .depot-stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #f5576c;
+    }
+    .depot-stat-label {
+        font-size: 0.85rem;
+        color: #6c757d;
+        text-transform: uppercase;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="depot-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h2><i class="fas fa-warehouse me-2"></i>Mes Dépôts Centraux</h2>
+                <p class="mb-0 opacity-75">Gérez vos stocks centraux et distribuez vers vos boutiques</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="{% url 'inventory:commercant_dashboard' %}" class="btn btn-light">
+                    <i class="fas fa-arrow-left"></i> Retour au dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% if depots %}
+        <div class="row">
+            {% for depot in depots %}
+            <div class="col-md-6 col-lg-4">
+                <div class="depot-card">
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div>
+                            <h4 class="mb-1">{{ depot.nom }}</h4>
+                            <small class="text-muted">
+                                <i class="fas fa-map-marker-alt"></i> {{ depot.ville|default:"Non spécifié" }}
+                            </small>
+                        </div>
+                        <span class="badge bg-warning text-dark">
+                            <i class="fas fa-warehouse"></i> DÉPÔT
+                        </span>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-4">
+                            <div class="depot-stat">
+                                <div class="depot-stat-value">{{ depot.nb_articles }}</div>
+                                <div class="depot-stat-label">Articles</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="depot-stat">
+                                <div class="depot-stat-value">{{ depot.valeur_stock|floatformat:0 }}</div>
+                                <div class="depot-stat-label">Valeur (CDF)</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="depot-stat">
+                                <div class="depot-stat-value">{{ depot.nb_transferts_mois }}</div>
+                                <div class="depot-stat-label">Transferts</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-primary">
+                            <i class="fas fa-eye"></i> Gérer le dépôt
+                        </a>
+                        <a href="{% url 'inventory:historique_transferts' depot.id %}" class="btn btn-outline-secondary btn-sm">
+                            <i class="fas fa-history"></i> Historique des transferts
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info">
+            <h5><i class="fas fa-info-circle"></i> Aucun dépôt créé</h5>
+            <p class="mb-0">Vous n'avez pas encore de dépôt central. Créez une boutique de type "Dépôt central" pour commencer à gérer vos stocks centralisés.</p>
+            <hr>
+            <a href="{% url 'inventory:commercant_creer_boutique' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Créer un dépôt
+            </a>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -47,7 +47,8 @@ if DEBUG:
         "13.113.224.224",
         "192.168.142.224",
         "10.130.132.224",
-        "192.168.167.118",
+        "10.48.247.118",
+    
     ])
     
 
@@ -92,6 +93,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'inventory.context_processors.alertes_stock',
             ],
         },
     },

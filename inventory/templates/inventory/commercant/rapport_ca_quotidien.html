@@ -60,6 +60,57 @@
     .ca-nul {
         color: #6c757d;
     }
+    .table-rapport tbody tr {
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .table-rapport tbody tr:hover {
+        background-color: #e7f3ff;
+        transform: scale(1.01);
+    }
+    .detail-row {
+        display: none;
+        background-color: #f8f9fa;
+    }
+    .detail-row.show {
+        display: table-row;
+    }
+    .detail-content {
+        padding: 20px;
+    }
+    .detail-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 10px 15px;
+        border-radius: 5px;
+        margin-bottom: 15px;
+    }
+    .article-item {
+        background: white;
+        padding: 10px;
+        margin-bottom: 8px;
+        border-radius: 5px;
+        border-left: 4px solid #667eea;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .article-info {
+        flex: 1;
+    }
+    .article-prix {
+        text-align: right;
+        font-weight: bold;
+        color: #667eea;
+    }
+    .loading-spinner {
+        text-align: center;
+        padding: 20px;
+    }
+    .spinner-border {
+        width: 2rem;
+        height: 2rem;
+    }
 </style>
 {% endblock %}
 
@@ -94,27 +145,57 @@
 
     <!-- Statistiques du jour -->
     <div class="row mb-4">
-        <div class="col-md-6">
+        <div class="col-6 col-md-3">
             <div class="stat-card">
                 <div class="stat-value">{{ total_ventes }}</div>
-                <div class="stat-label">VENTES SUR LA JOURNÉE</div>
+                <div class="stat-label">VENTES</div>
             </div>
         </div>
-        <div class="col-md-6">
+        <div class="col-6 col-md-3">
             <div class="stat-card">
-                <div class="stat-value">{{ total_ca|floatformat:0 }} CDF</div>
-                <div class="stat-label">CHIFFRE D'AFFAIRES NET DE LA JOURNÉE</div>
+                <div class="stat-value">{{ total_ca|floatformat:0 }}</div>
+                <div class="stat-label">CA NET (CDF)</div>
                 {% if total_depenses_appliquees %}
-                <div class="mt-2">
-                    <small class="text-muted">
-                        Brut: {{ total_ca_brut|floatformat:0 }} CDF -
-                        <span class="text-danger fw-semibold">Dépenses appliquées: {{ total_depenses_appliquees|floatformat:0 }} CDF</span>
-                    </small>
+                <div class="mt-1">
+                    <small class="text-muted">Brut: {{ total_ca_brut|floatformat:0 }}</small>
                 </div>
                 {% endif %}
             </div>
         </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card" style="border-left: 4px solid {% if benefice_incomplet %}#ffc107{% else %}#28a745{% endif %};">
+                <div class="stat-value {% if benefice_incomplet %}text-warning{% else %}text-success{% endif %}">{{ total_benefice_net|floatformat:0 }}</div>
+                <div class="stat-label">BÉNÉFICE NET (CDF) {% if benefice_incomplet %}<i class="fas fa-exclamation-triangle text-warning" title="Calcul incomplet"></i>{% endif %}</div>
+                <div class="mt-1">
+                    <small class="text-muted">Brut: {{ total_benefice_brut|floatformat:0 }}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card" style="border-left: 4px solid {% if benefice_incomplet %}#ffc107{% else %}#17a2b8{% endif %};">
+                <div class="stat-value" style="color: {% if benefice_incomplet %}#ffc107{% else %}#17a2b8{% endif %};">{{ marge_beneficiaire|floatformat:1 }}%</div>
+                <div class="stat-label">MARGE {% if benefice_incomplet %}<i class="fas fa-exclamation-triangle text-warning" title="Calcul incomplet"></i>{% endif %}</div>
+                <div class="mt-1">
+                    <small class="text-muted">Coût: {{ total_cout_achat|floatformat:0 }} CDF</small>
+                </div>
+            </div>
+        </div>
     </div>
+    
+    {% if benefice_incomplet %}
+    <div class="alert alert-warning d-flex align-items-start mb-4">
+        <i class="fas fa-exclamation-triangle me-3 mt-1"></i>
+        <div>
+            <strong>Calcul des bénéfices incomplet</strong><br>
+            Les articles suivants n'ont pas de prix d'achat renseigné : 
+            <strong>{{ articles_sans_prix_achat|join:", " }}</strong><br>
+            <small>Pour un calcul précis, veuillez renseigner le prix d'achat de ces articles.</small>
+            <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="alert-link ms-2">
+                <i class="fas fa-edit"></i> Modifier les articles
+            </a>
+        </div>
+    </div>
+    {% endif %}
 
     {% if total_depenses_appliquees %}
     <div class="alert alert-warning">
@@ -143,7 +224,7 @@
             <tbody>
                 {% if ventes %}
                     {% for vente in ventes %}
-                    <tr>
+                    <tr class="vente-row" data-vente-id="{{ vente.id }}" onclick="showVenteModal({{ vente.id }})" style="cursor: pointer;">
                         <td>{{ vente.date_vente|date:"d/m/Y H:i" }}</td>
                         <td>{{ vente.numero_facture }}</td>
                         <td>
@@ -176,4 +257,122 @@
         </table>
     </div>
 </div>
+
+<!-- Modal Détails Vente -->
+<div class="modal fade" id="venteDetailModal" tabindex="-1" aria-labelledby="venteDetailModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="venteDetailModalLabel">Détails Vente</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            <div class="modal-body" id="venteDetailModalBody">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Chargement...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let venteModal = null;
+let venteCache = {};
+
+document.addEventListener('DOMContentLoaded', function() {
+    venteModal = new bootstrap.Modal(document.getElementById('venteDetailModal'));
+});
+
+function showVenteModal(venteId) {
+    const modalBody = document.getElementById('venteDetailModalBody');
+    const modalTitle = document.getElementById('venteDetailModalLabel');
+    
+    // Afficher le modal avec spinner
+    modalBody.innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Chargement...</span>
+            </div>
+        </div>
+    `;
+    venteModal.show();
+    
+    // Vérifier le cache
+    if (venteCache[venteId]) {
+        renderModalContent(venteCache[venteId], modalTitle, modalBody);
+        return;
+    }
+    
+    // Charger les détails
+    fetch(`/commercant/api/vente/${venteId}/details/`)
+        .then(response => response.json().then(data => ({ok: response.ok, data})))
+        .then(({ok, data}) => {
+            if (!ok || data.error) {
+                throw new Error(data.error || 'Erreur lors du chargement des détails');
+            }
+            venteCache[venteId] = data;
+            renderModalContent(data, modalTitle, modalBody);
+        })
+        .catch(error => {
+            console.error('Erreur API:', error);
+            modalBody.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> ${error.message}
+                </div>
+            `;
+        });
+}
+
+function renderModalContent(data, modalTitle, modalBody) {
+    modalTitle.innerHTML = `<i class="fas fa-receipt me-2"></i>Détails Vente #${data.numero_facture}`;
+    
+    let articlesHtml = '';
+    data.lignes.forEach(ligne => {
+        articlesHtml += `
+            <tr>
+                <td>${ligne.article_nom}</td>
+                <td class="text-center">${ligne.quantite}</td>
+                <td class="text-end">${ligne.prix_unitaire} CDF</td>
+                <td class="text-end">${ligne.total_ligne} CDF</td>
+            </tr>
+        `;
+    });
+    
+    modalBody.innerHTML = `
+        <!-- Informations -->
+        <div class="mb-3">
+            <p><strong>Date:</strong> ${data.date_vente}</p>
+            <p><strong>Terminal:</strong> ${data.terminal || 'Manuel'}</p>
+            <p><strong>Mode:</strong> ${data.mode_paiement}</p>
+        </div>
+
+        <!-- Articles -->
+        <h6 class="mb-3">Articles (${data.lignes.length})</h6>
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Article</th>
+                    <th class="text-center">Qté</th>
+                    <th class="text-end">Prix</th>
+                    <th class="text-end">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${articlesHtml}
+            </tbody>
+            <tfoot>
+                <tr class="fw-bold">
+                    <td colspan="3" class="text-end">TOTAL:</td>
+                    <td class="text-end text-success">${data.montant_total} CDF</td>
+                </tr>
+            </tfoot>
+        </table>
+    `;
+}
+</script>
 {% endblock %}

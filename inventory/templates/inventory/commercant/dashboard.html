@@ -86,6 +86,43 @@
         background: #e7f1ff;
         border-color: #0056b3;
     }
+    /* Styles pour les cartes de dépôt */
+    .depot-card {
+        transition: transform 0.2s;
+        border-left: 4px solid #f5576c;
+        cursor: pointer;
+        background: linear-gradient(135deg, #fff5f5 0%, #ffffff 100%);
+    }
+    .depot-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(245, 87, 108, 0.2);
+    }
+    .depot-icon {
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.5rem;
+        margin-right: 15px;
+    }
+    .depot-stat {
+        text-align: center;
+        padding: 8px;
+    }
+    .depot-stat-value {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #f5576c;
+    }
+    .depot-stat-label {
+        font-size: 0.7rem;
+        color: #6c757d;
+        text-transform: uppercase;
+    }
 </style>
 {% endblock %}
 
@@ -151,8 +188,90 @@
         </div>
     </div>
 
+    <!-- Section Dépôts -->
+    {% if depots %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <h4 class="mb-3"><i class="fas fa-warehouse text-danger"></i> Mes Dépôts Centraux</h4>
+        </div>
+        {% for depot in depots %}
+        <div class="col-12 col-sm-6 col-lg-4 mb-4">
+            <div class="card depot-card h-100" 
+                 onclick="window.location.href='{% url 'inventory:detail_depot' depot.id %}'">
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="depot-icon">
+                            <i class="fas fa-warehouse"></i>
+                        </div>
+                        <div>
+                            <h5 class="card-title mb-1">{{ depot.nom }}</h5>
+                            <span class="badge bg-danger">Dépôt Central</span>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            <i class="fas fa-map-marker-alt"></i> {{ depot.ville|default:"Non spécifié" }}<br>
+                            <i class="fas fa-calendar"></i> Créé le {{ depot.date_creation|date:"d/m/Y" }}
+                        </small>
+                    </div>
+                    
+                    <!-- Statistiques du dépôt -->
+                    <div class="row mb-3">
+                        <div class="col-4">
+                            <div class="depot-stat">
+                                <div class="depot-stat-value">{{ depot.nb_articles }}</div>
+                                <div class="depot-stat-label">Articles</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="depot-stat">
+                                <div class="depot-stat-value">{{ depot.valeur_stock|floatformat:0 }}</div>
+                                <div class="depot-stat-label">Valeur CDF</div>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="depot-stat">
+                                <div class="depot-stat-value">{{ depot.nb_transferts_mois }}</div>
+                                <div class="depot-stat-label">Transferts</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Actions -->
+                    <div class="d-grid gap-2">
+                        <a href="{% url 'inventory:detail_depot' depot.id %}" 
+                           class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation();">
+                            <i class="fas fa-boxes"></i> Gérer le stock
+                        </a>
+                        <a href="{% url 'inventory:historique_transferts' depot.id %}" 
+                           class="btn btn-outline-secondary btn-sm" onclick="event.stopPropagation();">
+                            <i class="fas fa-history"></i> Historique transferts
+                        </a>
+                    </div>
+                </div>
+                
+                <!-- Footer -->
+                <div class="card-footer bg-transparent">
+                    <div class="text-center">
+                        <small class="text-muted">
+                            <i class="fas fa-truck"></i> Distribuer vers {{ commercant.boutiques.count|add:"-1" }} boutique(s)
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <hr class="my-4">
+    {% endif %}
+
     <!-- Liste des boutiques -->
     <div class="row">
+        <div class="col-12 mb-3">
+            <h4><i class="fas fa-store text-success"></i> Mes Boutiques</h4>
+        </div>
         {% for boutique in boutiques %}
         <div class="col-12 col-sm-6 col-lg-4 mb-4">
             <div class="card boutique-card h-100 {% if not boutique.est_active %}boutique-inactive{% endif %}" 

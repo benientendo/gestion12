@@ -96,7 +96,7 @@ class Categorie(models.Model):
 class Article(models.Model):
     """Articles de vente."""
     
-    code = models.CharField(max_length=50, unique=True)
+    code = models.CharField(max_length=50)
     nom = models.CharField(max_length=100)
     description = models.TextField(blank=True)
     prix_vente = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
@@ -168,6 +168,7 @@ class Article(models.Model):
         verbose_name = "Article"
         verbose_name_plural = "Articles"
         ordering = ['nom']
+        unique_together = [['code', 'boutique']]
 
 
 class Vente(models.Model):
@@ -335,12 +336,28 @@ class Commercant(models.Model):
         return f"{self.nom_entreprise} ({self.nom_responsable})"
     
     def nombre_boutiques(self):
-        """Retourne le nombre de boutiques de ce commerçant"""
-        return self.boutiques.count()
+        """Retourne le nombre de boutiques de ce commerçant (hors dépôts)"""
+        return self.boutiques.filter(est_depot=False).count()
     
     def peut_creer_boutique(self):
-        """Vérifie si le commerçant peut créer une nouvelle boutique"""
+        """Vérifie si le commerçant peut créer une nouvelle boutique (hors dépôts)"""
         return self.nombre_boutiques() < self.max_boutiques
+    
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        
+        # Créer un dépôt par défaut pour les nouveaux commerçants
+        if is_new:
+            Boutique.objects.create(
+                nom=f"Dépôt Central - {self.nom_entreprise}",
+                description=f"Dépôt central de stockage pour {self.nom_entreprise}",
+                commercant=self,
+                type_commerce='DEPOT',
+                est_depot=True,
+                est_active=True,
+                ville=self.adresse.split(',')[0] if self.adresse else '',
+            )
     
     class Meta:
         verbose_name = "Commerçant"
@@ -364,6 +381,7 @@ class Boutique(models.Model):
     
     # Type et catégorie de commerce
     type_commerce = models.CharField(max_length=50, choices=[
+        ('DEPOT', 'Dépôt central'),
         ('PHARMACIE', 'Pharmacie'),
         ('ALIMENTATION', 'Alimentation générale'),
         ('SUPERMARCHE', 'Supermarché'),
@@ -396,6 +414,7 @@ class Boutique(models.Model):
     
     # Statut et paramètres
     est_active = models.BooleanField(default=True, help_text="La boutique est-elle active?")
+    est_depot = models.BooleanField(default=False, help_text="Est-ce un dépôt central de stockage?")
     pos_autorise = models.BooleanField(default=True)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_mise_a_jour = models.DateTimeField(auto_now=True)
@@ -598,5 +617,115 @@ class VenteRejetee(models.Model):
             models.Index(fields=['boutique', 'date_tentative'], name='rejet_boutique_date_idx'),
             models.Index(fields=['raison_rejet'], name='rejet_raison_idx'),
             models.Index(fields=['traitee'], name='rejet_traitee_idx'),
+        ]
+
+
+class TransfertStock(models.Model):
+    """Transfert de stock du dépôt vers une boutique."""
+    
+    STATUT_CHOICES = [
+        ('EN_ATTENTE', 'En attente'),
+        ('VALIDE', 'Validé'),
+        ('ANNULE', 'Annulé')
+    ]
+    
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='transferts')
+    depot_source = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name='transferts_sortants',
+                                    help_text="Dépôt d'origine")
+    boutique_destination = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name='transferts_entrants',
+                                            help_text="Boutique de destination")
+    
+    quantite = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    date_transfert = models.DateTimeField(auto_now_add=True)
+    date_validation = models.DateTimeField(null=True, blank=True)
+    
+    effectue_par = models.CharField(max_length=100, help_text="Utilisateur ayant effectué le transfert")
+    valide_par = models.CharField(max_length=100, blank=True, help_text="Utilisateur ayant validé le transfert")
+    
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_ATTENTE')
+    commentaire = models.TextField(blank=True)
+    
+    stock_depot_avant = models.IntegerField(null=True, blank=True, help_text="Stock du dépôt avant transfert")
+    stock_depot_apres = models.IntegerField(null=True, blank=True, help_text="Stock du dépôt après transfert")
+    stock_boutique_avant = models.IntegerField(null=True, blank=True, help_text="Stock de la boutique avant transfert")
+    stock_boutique_apres = models.IntegerField(null=True, blank=True, help_text="Stock de la boutique après transfert")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    def __str__(self):
+        return f"Transfert {self.article.nom} - {self.depot_source.nom} → {self.boutique_destination.nom} ({self.quantite})"
+    
+    def valider_transfert(self, valide_par_user):
+        """Valide le transfert et met à jour les stocks"""
+        if self.statut != 'EN_ATTENTE':
+            raise ValidationError("Ce transfert a déjà été traité")
+        
+        article_depot = self.article
+        
+        if article_depot.quantite_stock < self.quantite:
+            raise ValidationError(f"Stock insuffisant au dépôt. Disponible: {article_depot.quantite_stock}, Demandé: {self.quantite}")
+        
+        self.stock_depot_avant = article_depot.quantite_stock
+        article_depot.quantite_stock -= self.quantite
+        article_depot.save()
+        self.stock_depot_apres = article_depot.quantite_stock
+        
+        MouvementStock.objects.create(
+            article=article_depot,
+            type_mouvement='SORTIE',
+            quantite=-self.quantite,
+            stock_avant=self.stock_depot_avant,
+            stock_apres=self.stock_depot_apres,
+            commentaire=f"Transfert vers {self.boutique_destination.nom}",
+            reference_document=f"TRANSFERT-{self.id}",
+            utilisateur=valide_par_user
+        )
+        
+        try:
+            article_boutique = Article.objects.get(code=article_depot.code, boutique=self.boutique_destination)
+            self.stock_boutique_avant = article_boutique.quantite_stock
+            article_boutique.quantite_stock += self.quantite
+            article_boutique.save()
+            self.stock_boutique_apres = article_boutique.quantite_stock
+        except Article.DoesNotExist:
+            article_boutique = Article.objects.create(
+                code=article_depot.code,
+                nom=article_depot.nom,
+                description=article_depot.description,
+                prix_vente=article_depot.prix_vente,
+                prix_achat=article_depot.prix_achat,
+                categorie=article_depot.categorie,
+                boutique=self.boutique_destination,
+                quantite_stock=self.quantite,
+                est_actif=True
+            )
+            self.stock_boutique_avant = 0
+            self.stock_boutique_apres = self.quantite
+        
+        MouvementStock.objects.create(
+            article=article_boutique,
+            type_mouvement='ENTREE',
+            quantite=self.quantite,
+            stock_avant=self.stock_boutique_avant,
+            stock_apres=self.stock_boutique_apres,
+            commentaire=f"Transfert depuis {self.depot_source.nom}",
+            reference_document=f"TRANSFERT-{self.id}",
+            utilisateur=valide_par_user
+        )
+        
+        self.statut = 'VALIDE'
+        self.date_validation = timezone.now()
+        self.valide_par = valide_par_user
+        self.save()
+    
+    class Meta:
+        verbose_name = "Transfert de stock"
+        verbose_name_plural = "Transferts de stock"
+        ordering = ['-date_transfert']
+        indexes = [
+            models.Index(fields=['depot_source', 'date_transfert'], name='transfert_depot_date_idx'),
+            models.Index(fields=['boutique_destination', 'date_transfert'], name='transfert_boutique_date_idx'),
+            models.Index(fields=['statut'], name='transfert_statut_idx'),
         ]
 

@@ -1,0 +1,196 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Détail du transfert - {{ transfert.article.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .transfert-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .info-card {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid #e9ecef;
+    }
+    .info-row:last-child {
+        border-bottom: none;
+    }
+    .info-label {
+        font-weight: bold;
+        color: #6c757d;
+    }
+    .info-value {
+        color: #212529;
+    }
+    .badge-en_attente {
+        background-color: #ffc107;
+        color: #000;
+    }
+    .badge-valide {
+        background-color: #28a745;
+        color: #fff;
+    }
+    .badge-annule {
+        background-color: #6c757d;
+        color: #fff;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="transfert-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h2><i class="fas fa-exchange-alt me-2"></i>Détail du transfert</h2>
+                <p class="mb-0 opacity-75">{{ transfert.article.nom }}</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <span class="badge badge-{{ transfert.statut|lower }} fs-5">
+                    {{ transfert.get_statut_display }}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="info-card">
+                <h5 class="mb-3"><i class="fas fa-info-circle text-primary"></i> Informations générales</h5>
+                
+                <div class="info-row">
+                    <span class="info-label">Article:</span>
+                    <span class="info-value">{{ transfert.article.nom }}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Code article:</span>
+                    <span class="info-value"><code>{{ transfert.article.code }}</code></span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Quantité:</span>
+                    <span class="info-value"><strong>{{ transfert.quantite }}</strong> unités</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Dépôt source:</span>
+                    <span class="info-value">{{ transfert.depot_source.nom }}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Boutique destination:</span>
+                    <span class="info-value">{{ transfert.boutique_destination.nom }}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Date de création:</span>
+                    <span class="info-value">{{ transfert.date_transfert|date:"d/m/Y à H:i" }}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Créé par:</span>
+                    <span class="info-value">{{ transfert.effectue_par }}</span>
+                </div>
+                
+                {% if transfert.commentaire %}
+                <div class="info-row">
+                    <span class="info-label">Commentaire:</span>
+                    <span class="info-value">{{ transfert.commentaire }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            {% if transfert.statut == 'VALIDE' %}
+            <div class="info-card">
+                <h5 class="mb-3"><i class="fas fa-check-circle text-success"></i> Validation</h5>
+                
+                <div class="info-row">
+                    <span class="info-label">Date de validation:</span>
+                    <span class="info-value">{{ transfert.date_validation|date:"d/m/Y à H:i" }}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Validé par:</span>
+                    <span class="info-value">{{ transfert.valide_par }}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Stock dépôt avant:</span>
+                    <span class="info-value">{{ transfert.stock_depot_avant }}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Stock dépôt après:</span>
+                    <span class="info-value">{{ transfert.stock_depot_apres }}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Stock boutique avant:</span>
+                    <span class="info-value">{{ transfert.stock_boutique_avant }}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="info-label">Stock boutique après:</span>
+                    <span class="info-value">{{ transfert.stock_boutique_apres }}</span>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="info-card">
+                <h5 class="mb-3"><i class="fas fa-cogs text-info"></i> Actions</h5>
+                
+                {% if transfert.statut == 'EN_ATTENTE' %}
+                <div class="d-grid gap-2">
+                    <form method="post" action="{% url 'inventory:valider_transfert' transfert.id %}" 
+                          onsubmit="return confirm('Confirmer la validation de ce transfert ?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success btn-lg w-100">
+                            <i class="fas fa-check"></i> Valider le transfert
+                        </button>
+                    </form>
+                    
+                    <form method="post" action="{% url 'inventory:annuler_transfert' transfert.id %}"
+                          onsubmit="return confirm('Confirmer l\'annulation de ce transfert ?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-times"></i> Annuler le transfert
+                        </button>
+                    </form>
+                </div>
+                {% elif transfert.statut == 'VALIDE' %}
+                <div class="alert alert-success mb-0">
+                    <i class="fas fa-check-circle"></i> Ce transfert a été validé avec succès.
+                </div>
+                {% elif transfert.statut == 'ANNULE' %}
+                <div class="alert alert-secondary mb-0">
+                    <i class="fas fa-ban"></i> Ce transfert a été annulé.
+                </div>
+                {% endif %}
+                
+                <hr>
+                
+                <a href="{% url 'inventory:detail_depot' transfert.depot_source.id %}" class="btn btn-outline-primary w-100">
+                    <i class="fas fa-arrow-left"></i> Retour au dépôt
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

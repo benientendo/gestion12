@@ -14,7 +14,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.db.models import Sum, Q
-from django.db import transaction  # ⭐ NOUVEAU : Pour les transactions atomiques
+from django.db import transaction, IntegrityError  # ⭐ Pour les transactions atomiques et gestion des doublons
 from django.conf import settings
 import json
 import logging
@@ -1231,18 +1231,18 @@ def sync_ventes_simple(request):
                         numero_facture = f"VENTE-{boutique.id}-{timestamp}-{index}"
                         logger.info(f"📝 Numéro de facture généré: {numero_facture}")
                     
-                    # ⭐ ISOLATION: Vérifier si la vente existe déjà DANS CETTE BOUTIQUE
+                    # ⭐ Vérifier si la vente existe déjà GLOBALEMENT (contrainte unique)
                     vente_existante = Vente.objects.filter(
-                        numero_facture=numero_facture,
-                        client_maui=terminal
+                        numero_facture=numero_facture
                     ).first()
                     
                     if vente_existante:
-                        logger.warning(f"⚠️ Vente {numero_facture} existe déjà dans boutique {boutique.id}")
+                        logger.warning(f"⚠️ Vente {numero_facture} existe déjà (ID: {vente_existante.id}, boutique: {vente_existante.boutique_id})")
                         ventes_erreurs.append({
                             'numero_facture': numero_facture,
                             'erreur': 'Vente déjà existante',
-                            'code': 'DUPLICATE'  # ⭐ CORRECTION: utiliser 'code' pour cohérence avec rejected_list
+                            'code': 'DUPLICATE',
+                            'vente_existante_id': vente_existante.id
                         })
                         continue
                     
@@ -1408,6 +1408,33 @@ def sync_ventes_simple(request):
                     'stock_demande': stock_demande,
                     'stock_disponible': stock_dispo
                 })
+                
+            except IntegrityError as ie:
+                # ⭐ Erreur de duplication (race condition ou contrainte unique)
+                logger.warning(f"⚠️ IntegrityError pour vente {index + 1}: {str(ie)}")
+                
+                # Vérifier si c'est un doublon de numero_facture
+                numero_facture = vente_data.get('numero_facture', f'UNKNOWN_{index}')
+                vente_existante = Vente.objects.filter(numero_facture=numero_facture).first()
+                
+                if vente_existante:
+                    logger.info(f"✅ Vente {numero_facture} existe déjà (ID: {vente_existante.id}) - considérée comme succès")
+                    # Traiter comme un succès (la vente existe déjà)
+                    ventes_creees.append({
+                        'numero_facture': numero_facture,
+                        'status': 'already_exists',
+                        'id': vente_existante.id,
+                        'boutique_id': vente_existante.boutique_id,
+                        'message': 'Vente déjà synchronisée précédemment'
+                    })
+                else:
+                    # Vraie erreur d'intégrité (autre contrainte)
+                    ventes_erreurs.append({
+                        'index': index + 1,
+                        'numero_facture': numero_facture,
+                        'erreur': f'Erreur intégrité: {str(ie)}',
+                        'code': 'INTEGRITY_ERROR'
+                    })
                 
             except Exception as e:
                 # Autres erreurs non prévues
@@ -2001,6 +2028,20 @@ def annuler_vente_simple(request):
                 'error': 'Cette vente a déjà été annulée',
                 'code': 'ALREADY_CANCELLED',
                 'date_annulation': vente.date_annulation.isoformat() if vente.date_annulation else None
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ⭐ VÉRIFIER LE DÉLAI D'ANNULATION (1 HEURE)
+        from datetime import timedelta
+        delai_annulation = timedelta(hours=1)
+        temps_ecoule = timezone.now() - vente.date_vente
+        
+        if temps_ecoule > delai_annulation:
+            return Response({
+                'error': 'Le délai d\'annulation (1 heure) est dépassé',
+                'code': 'CANCELLATION_TIMEOUT',
+                'date_vente': vente.date_vente.isoformat(),
+                'temps_ecoule_minutes': int(temps_ecoule.total_seconds() / 60),
+                'delai_max_minutes': 60
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # ⭐ TRANSACTION ATOMIQUE : Annulation + Restauration stock

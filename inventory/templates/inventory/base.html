@@ -46,25 +46,60 @@
                             
                             <!-- Topbar Navbar -->
                             <ul class="navbar-nav ms-auto">
+                                <!-- Alertes Stock Bas -->
                                 <li class="nav-item dropdown no-arrow mx-1">
-                                    <a class="nav-link dropdown-toggle" href="#" id="alertsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                        <i class="bi bi-bell fa-fw"></i>
-                                        <span class="badge bg-danger badge-counter">3+</span>
+                                    <a class="nav-link dropdown-toggle position-relative" href="#" id="alertsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="bi bi-exclamation-triangle fa-fw {% if alertes_stock_count > 0 %}text-warning{% endif %}"></i>
+                                        {% if alertes_stock_count > 0 %}
+                                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.65rem;">
+                                            {{ alertes_stock_count }}
+                                        </span>
+                                        {% endif %}
                                     </a>
-                                    <div class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="alertsDropdown">
-                                        <h6 class="dropdown-header">Notifications</h6>
-                                        <a class="dropdown-item d-flex align-items-center" href="#">
-                                            <div class="me-3">
-                                                <div class="icon-circle bg-primary">
-                                                    <i class="bi bi-file-text text-white"></i>
+                                    <div class="dropdown-menu dropdown-menu-end shadow" style="width: 320px; max-height: 400px; overflow-y: auto;" aria-labelledby="alertsDropdown">
+                                        <h6 class="dropdown-header bg-warning text-dark">
+                                            <i class="bi bi-exclamation-triangle me-1"></i> Alertes Stock
+                                            {% if alertes_stock_rupture > 0 %}
+                                            <span class="badge bg-danger ms-2">{{ alertes_stock_rupture }} rupture(s)</span>
+                                            {% endif %}
+                                        </h6>
+                                        {% if alertes_stock_articles %}
+                                            {% for article in alertes_stock_articles %}
+                                            <a class="dropdown-item d-flex align-items-center py-2 {% if article.quantite_stock <= 0 %}bg-danger bg-opacity-10{% endif %}" href="{% url 'inventory:commercant_articles_boutique' article.boutique.id %}?stock=bas">
+                                                <div class="me-3">
+                                                    {% if article.quantite_stock <= 0 %}
+                                                    <span class="badge bg-danger rounded-circle p-2">
+                                                        <i class="bi bi-x-lg"></i>
+                                                    </span>
+                                                    {% else %}
+                                                    <span class="badge bg-warning rounded-circle p-2">
+                                                        <i class="bi bi-arrow-down"></i>
+                                                    </span>
+                                                    {% endif %}
                                                 </div>
+                                                <div class="flex-grow-1">
+                                                    <div class="fw-bold text-truncate" style="max-width: 180px;">{{ article.nom }}</div>
+                                                    <small class="text-muted">{{ article.boutique.nom }}</small>
+                                                </div>
+                                                <div class="text-end">
+                                                    <span class="badge {% if article.quantite_stock <= 0 %}bg-danger{% else %}bg-warning text-dark{% endif %}">
+                                                        {{ article.quantite_stock }}
+                                                    </span>
+                                                </div>
+                                            </a>
+                                            {% endfor %}
+                                            {% if alertes_stock_count > 10 %}
+                                            <div class="dropdown-divider"></div>
+                                            <a class="dropdown-item text-center text-primary fw-bold" href="{% url 'inventory:commercant_dashboard' %}">
+                                                <i class="bi bi-eye me-1"></i> Voir les {{ alertes_stock_count }} alertes
+                                            </a>
+                                            {% endif %}
+                                        {% else %}
+                                            <div class="dropdown-item text-center text-muted py-3">
+                                                <i class="bi bi-check-circle text-success fs-4 d-block mb-2"></i>
+                                                Aucune alerte de stock
                                             </div>
-                                            <div>
-                                                <div class="small text-gray-500">23 Mai, 2025</div>
-                                                <span>Stocks bas pour certains articles</span>
-                                            </div>
-                                        </a>
-                                        <a class="dropdown-item text-center small text-gray-500" href="#">Voir toutes les notifications</a>
+                                        {% endif %}
                                     </div>
                                 </li>
                                 

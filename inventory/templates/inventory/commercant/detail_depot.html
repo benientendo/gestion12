@@ -1,0 +1,404 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Dépôt {{ depot.nom }} - {{ depot.commercant.nom_entreprise }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .depot-header {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #f5576c;
+    }
+    .stat-label {
+        color: #6c757d;
+        font-size: 0.9rem;
+        margin-top: 5px;
+    }
+    .article-row {
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .article-row:hover {
+        background-color: #f8f9fa;
+    }
+    .stock-badge {
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-size: 0.85rem;
+        font-weight: bold;
+    }
+    .stock-ok {
+        background-color: #d4edda;
+        color: #155724;
+    }
+    .stock-bas {
+        background-color: #fff3cd;
+        color: #856404;
+    }
+    .stock-zero {
+        background-color: #f8d7da;
+        color: #721c24;
+    }
+    .transfert-item {
+        background: white;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 8px;
+        border-left: 4px solid #f5576c;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+    .badge-en-attente {
+        background-color: #ffc107;
+        color: #000;
+    }
+    .badge-valide {
+        background-color: #28a745;
+        color: #fff;
+    }
+    .badge-annule {
+        background-color: #6c757d;
+        color: #fff;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête du dépôt -->
+    <div class="depot-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h2><i class="fas fa-warehouse me-2"></i>{{ depot.nom }}</h2>
+                <p class="mb-0 opacity-75">{{ depot.commercant.nom_entreprise }}</p>
+                <small class="opacity-75">{{ depot.adresse }}{% if depot.ville %}, {{ depot.ville }}{% endif %}</small>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="{% url 'inventory:commercant_liste_depots' %}" class="btn btn-light btn-sm me-2">
+                    <i class="fas fa-arrow-left"></i> Retour
+                </a>
+                <a href="{% url 'inventory:historique_transferts' depot.id %}" class="btn btn-light btn-sm me-2">
+                    <i class="fas fa-history"></i> Historique
+                </a>
+                <a href="{% url 'inventory:transfert_multiple' depot.id %}" class="btn btn-warning btn-sm me-2">
+                    <i class="fas fa-exchange-alt"></i> Transfert Multiple
+                </a>
+                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#approvisionnementModal">
+                    <i class="fas fa-plus-circle"></i> Approvisionner
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistiques -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-value">{{ total_articles }}</div>
+                <div class="stat-label">ARTICLES EN STOCK</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-value">{{ valeur_stock|floatformat:0 }} CDF</div>
+                <div class="stat-label">VALEUR DU STOCK</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-value">{{ articles_stock_bas }}</div>
+                <div class="stat-label">ARTICLES EN STOCK BAS</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-value">{{ transferts_recents|length }}</div>
+                <div class="stat-label">TRANSFERTS RÉCENTS</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Liste des articles -->
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-boxes"></i> Articles du dépôt</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Article</th>
+                                    <th>Code</th>
+                                    <th class="text-center">Stock</th>
+                                    <th class="text-end">Prix achat</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for article in articles %}
+                                <tr class="article-row" data-article-id="{{ article.id }}">
+                                    <td>
+                                        <strong>{{ article.nom }}</strong>
+                                        {% if article.categorie %}
+                                        <br><small class="text-muted">{{ article.categorie.nom }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td><code>{{ article.code }}</code></td>
+                                    <td class="text-center">
+                                        {% if article.quantite_stock == 0 %}
+                                        <span class="stock-badge stock-zero">{{ article.quantite_stock }}</span>
+                                        {% elif article.quantite_stock <= depot.alerte_stock_bas %}
+                                        <span class="stock-badge stock-bas">{{ article.quantite_stock }}</span>
+                                        {% else %}
+                                        <span class="stock-badge stock-ok">{{ article.quantite_stock }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">{{ article.prix_achat|floatformat:0 }} CDF</td>
+                                    <td class="text-center">
+                                        <button class="btn btn-sm btn-primary" 
+                                                onclick="openTransfertModal({{ article.id }}, '{{ article.nom|escapejs }}', {{ article.quantite_stock }})">
+                                            <i class="fas fa-exchange-alt"></i> Transférer
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-4">
+                                        Aucun article dans ce dépôt
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transferts récents -->
+        <div class="col-md-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-truck"></i> Transferts récents</h5>
+                </div>
+                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                    {% for transfert in transferts_recents %}
+                    <div class="transfert-item">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <strong>{{ transfert.article.nom }}</strong>
+                            <span class="badge badge-{{ transfert.statut|lower }}">
+                                {{ transfert.get_statut_display }}
+                            </span>
+                        </div>
+                        <div class="text-muted small">
+                            <i class="fas fa-arrow-right"></i> {{ transfert.boutique_destination.nom }}<br>
+                            <i class="fas fa-box"></i> Quantité: {{ transfert.quantite }}<br>
+                            <i class="fas fa-clock"></i> {{ transfert.date_transfert|date:"d/m/Y H:i" }}
+                        </div>
+                        {% if transfert.statut == 'EN_ATTENTE' %}
+                        <div class="mt-2">
+                            <a href="{% url 'inventory:detail_transfert' transfert.id %}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i> Voir
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% empty %}
+                    <p class="text-muted text-center">Aucun transfert récent</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de transfert -->
+<div class="modal fade" id="transfertModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'inventory:creer_transfert_stock' depot.id %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-exchange-alt"></i> Transférer un article</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="article_id" id="article_id">
+                    
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Article:</strong></label>
+                        <p id="article_nom" class="form-control-plaintext"></p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label"><strong>Stock disponible:</strong></label>
+                        <p id="article_stock" class="form-control-plaintext text-primary"></p>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="boutique_destination" class="form-label">Boutique de destination *</label>
+                        <select class="form-select" name="boutique_destination" id="boutique_destination" required>
+                            <option value="">-- Sélectionner une boutique --</option>
+                            {% for boutique in boutiques_destination %}
+                            <option value="{{ boutique.id }}">{{ boutique.nom }} - {{ boutique.ville }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="quantite" class="form-label">Quantité à transférer *</label>
+                        <input type="number" class="form-control" name="quantite" id="quantite" 
+                               min="1" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="commentaire" class="form-label">Commentaire (optionnel)</label>
+                        <textarea class="form-control" name="commentaire" id="commentaire" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-check"></i> Créer le transfert
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal d'approvisionnement -->
+<div class="modal fade" id="approvisionnementModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="{% url 'inventory:approvisionner_depot' depot.id %}" id="approForm">
+                {% csrf_token %}
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="fas fa-plus-circle"></i> Approvisionner le dépôt</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <ul class="nav nav-tabs mb-3" id="approTab" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="nouveau-tab" data-bs-toggle="tab" data-bs-target="#nouveau" type="button">
+                                <i class="fas fa-plus"></i> Nouvel article
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="existant-tab" data-bs-toggle="tab" data-bs-target="#existant" type="button">
+                                <i class="fas fa-box"></i> Article existant
+                            </button>
+                        </li>
+                    </ul>
+                    
+                    <input type="hidden" name="type_appro" id="type_appro" value="nouveau">
+                    
+                    <div class="tab-content" id="approTabContent">
+                        <!-- Nouvel article -->
+                        <div class="tab-pane fade show active" id="nouveau" role="tabpanel">
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="code" class="form-label">Code article *</label>
+                                    <input type="text" class="form-control" name="code" id="code">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="nom" class="form-label">Nom de l'article *</label>
+                                    <input type="text" class="form-control" name="nom" id="nom">
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <label for="prix_achat" class="form-label">Prix d'achat (CDF) *</label>
+                                    <input type="number" class="form-control" name="prix_achat" id="prix_achat" min="0" step="0.01">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label for="prix_vente" class="form-label">Prix de vente (CDF) *</label>
+                                    <input type="number" class="form-control" name="prix_vente" id="prix_vente" min="0" step="0.01">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label for="quantite_initiale" class="form-label">Quantité *</label>
+                                    <input type="number" class="form-control" name="quantite_initiale" id="quantite_initiale" min="1" value="1">
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="description" class="form-label">Description (optionnel)</label>
+                                <textarea class="form-control" name="description" id="description" rows="2"></textarea>
+                            </div>
+                        </div>
+                        
+                        <!-- Article existant -->
+                        <div class="tab-pane fade" id="existant" role="tabpanel">
+                            <div class="mb-3">
+                                <label for="article_existant" class="form-label">Sélectionner un article *</label>
+                                <select class="form-select" name="article_existant" id="article_existant">
+                                    <option value="">-- Choisir un article --</option>
+                                    {% for article in articles %}
+                                    <option value="{{ article.id }}">{{ article.nom }} ({{ article.code }}) - Stock: {{ article.quantite_stock }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="quantite_ajout" class="form-label">Quantité à ajouter *</label>
+                                <input type="number" class="form-control" name="quantite_ajout" id="quantite_ajout" min="1" value="1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-check"></i> Approvisionner
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openTransfertModal(articleId, articleNom, articleStock) {
+    document.getElementById('article_id').value = articleId;
+    document.getElementById('article_nom').textContent = articleNom;
+    document.getElementById('article_stock').textContent = articleStock + ' unités';
+    document.getElementById('quantite').max = articleStock;
+    
+    var modal = new bootstrap.Modal(document.getElementById('transfertModal'));
+    modal.show();
+}
+
+// Gérer le changement d'onglet pour le type d'approvisionnement
+document.querySelectorAll('#approTab button').forEach(function(tab) {
+    tab.addEventListener('shown.bs.tab', function() {
+        var target = this.getAttribute('data-bs-target');
+        document.getElementById('type_appro').value = (target === '#nouveau') ? 'nouveau' : 'existant';
+        console.log('Type appro changé:', document.getElementById('type_appro').value);
+    });
+});
+</script>
+{% endblock %}

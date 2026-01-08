@@ -203,13 +203,13 @@
                     </a>
                 </div>
                 <div class="col-md-6">
-                    <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}?populaires=1" class="text-decoration-none">
+                    <a href="{% url 'inventory:historique_mouvements_stock' boutique.id %}" class="text-decoration-none">
                         <div class="card metric-card text-center p-3 card-hover">
                             <div class="card-body">
-                                <i class="fas fa-star fa-2x text-success mb-2"></i>
-                                <h4>{{ articles_populaires.count }}</h4>
-                                <p class="text-muted mb-0">Articles Populaires</p>
-                                <small class="text-primary"><i class="fas fa-arrow-right"></i> Voir les articles</small>
+                                <i class="fas fa-history fa-2x text-info mb-2"></i>
+                                <h4>{{ mouvements_recents|default:0 }}</h4>
+                                <p class="text-muted mb-0">Mouvements de Stock (7j)</p>
+                                <small class="text-primary"><i class="fas fa-arrow-right"></i> Voir l'historique</small>
                             </div>
                         </div>
                     </a>
@@ -238,6 +238,9 @@
                         </a>
                         <a href="{% url 'inventory:commercant_rapports_caisse_boutique' boutique.id %}" class="btn btn-outline-secondary">
                             <i class="fas fa-cash-register"></i> Rapports
+                        </a>
+                        <a href="{% url 'inventory:historique_mouvements_stock' boutique.id %}" class="btn btn-outline-info">
+                            <i class="fas fa-history"></i> Historique Stocks
                         </a>
                     </div>
                 </div>

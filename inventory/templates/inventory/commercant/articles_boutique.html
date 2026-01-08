@@ -4,312 +4,194 @@
 {% block title %}Articles - {{ boutique.nom }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <!-- En-tête -->
-    <div class="row mb-4">
-        <div class="col-12">
+<div class="articles-page">
+    <!-- Header fixe -->
+    <div class="page-header">
+        <div class="container-fluid">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h1>
-                        <i class="fas fa-box"></i> Gestion des Articles
-                        {% if stock_filter == 'bas' %}
-                        <span class="badge bg-warning">Stock Bas</span>
-                        {% elif populaires_filter %}
-                        <span class="badge bg-success">Articles Populaires</span>
-                        {% endif %}
-                    </h1>
-                    <p class="text-muted">Boutique : {{ boutique.nom }} - {{ boutique.ville }}</p>
+                    <h4 class="mb-0">
+                        <i class="fas fa-box text-primary"></i> Articles
+                        <span class="text-muted fw-normal">| {{ boutique.nom }}</span>
+                    </h4>
                 </div>
-                <div>
-                    <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary me-2">
-                        <i class="fas fa-arrow-left"></i> Retour au tableau de bord
+                <div class="d-flex align-items-center gap-2">
+                    <!-- Stats compactes -->
+                    <div class="stats-badges d-none d-md-flex gap-2 me-3">
+                        <span class="badge bg-primary"><i class="fas fa-box"></i> {{ articles.count }} Total</span>
+                        <span class="badge bg-warning text-dark"><i class="fas fa-exclamation-triangle"></i> {{ articles_stock_bas|default:0 }} Stock bas</span>
+                    </div>
+                    <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-arrow-left"></i> Retour
                     </a>
-                    <a href="{% url 'inventory:generer_pdf_qr_codes' boutique.id %}" class="btn btn-outline-primary me-2" target="_blank">
-                        <i class="fas fa-qrcode"></i> QR Codes PDF
+                    <a href="{% url 'inventory:historique_mouvements_stock' boutique.id %}" class="btn btn-outline-info btn-sm" title="Historique des mouvements de stock">
+                        <i class="fas fa-history"></i> Historique
                     </a>
-                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
-                        <i class="fas fa-plus"></i> Ajouter Article Rapide
+                    <a href="{% url 'inventory:generer_pdf_qr_codes' boutique.id %}" class="btn btn-outline-primary btn-sm" target="_blank">
+                        <i class="fas fa-qrcode"></i> PDF
+                    </a>
+                    <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
+                        <i class="fas fa-plus"></i> Ajouter
                     </button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Filtres et recherche en temps réel -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-5">
-                            <label for="searchRealTime" class="form-label">
-                                <i class="fas fa-search"></i> Rechercher en temps réel
-                            </label>
-                            <div class="position-relative">
-                                <input type="text" class="form-control" id="searchRealTime" 
-                                       placeholder="Nom, code, catégorie ou description..." autocomplete="off">
-                                
-                                <!-- Dropdown des actions rapides -->
-                                <div class="search-actions-dropdown" id="searchActionsDropdown" style="display: none;">
-                                    <div class="search-actions-content">
-                                        <!-- Action: Ajouter un nouvel article -->
-                                        <div class="action-item action-add" id="actionAddArticle" style="display: none;">
-                                            <button type="button" class="btn btn-success btn-sm w-100 text-start" 
-                                                    data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
-                                                <i class="fas fa-plus-circle"></i> 
-                                                <strong>Ajouter un nouvel article</strong> 
-                                                "<span id="searchTermDisplay"></span>"
-                                            </button>
-                                        </div>
-                                        
-                                        <!-- Liste des résultats rapides -->
-                                        <div class="action-results" id="quickResults">
-                                            <div class="action-header">Résultats de la recherche</div>
-                                            <div id="quickResultsList"></div>
-                                        </div>
-                                    </div>
+    <!-- Barre de filtres fixe -->
+    <div class="filters-bar">
+        <div class="container-fluid">
+            <div class="row g-2 align-items-center">
+                <div class="col-md-5 col-lg-4">
+                    <div class="position-relative">
+                        <i class="fas fa-search search-icon"></i>
+                        <input type="text" class="form-control form-control-sm search-input" id="searchRealTime" 
+                               placeholder="Rechercher un article..." autocomplete="off">
+                        
+                        <!-- Dropdown des actions rapides -->
+                        <div class="search-actions-dropdown" id="searchActionsDropdown" style="display: none;">
+                            <div class="search-actions-content">
+                                <div class="action-item action-add" id="actionAddArticle" style="display: none;">
+                                    <button type="button" class="btn btn-success btn-sm w-100 text-start" 
+                                            data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
+                                        <i class="fas fa-plus-circle"></i> 
+                                        <strong>Ajouter</strong> "<span id="searchTermDisplay"></span>"
+                                    </button>
+                                </div>
+                                <div class="action-results" id="quickResults">
+                                    <div class="action-header">Résultats</div>
+                                    <div id="quickResultsList"></div>
                                 </div>
                             </div>
-                            <small class="text-muted">La recherche se fait automatiquement pendant que vous tapez</small>
-                        </div>
-                        <div class="col-md-3">
-                            <label for="filterCategorie" class="form-label">
-                                <i class="fas fa-folder"></i> Catégorie
-                            </label>
-                            <select class="form-select" id="filterCategorie">
-                                <option value="">Toutes les catégories</option>
-                                {% for cat in categories %}
-                                <option value="{{ cat.nom }}">{{ cat.nom }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label for="filterStock" class="form-label">
-                                <i class="fas fa-boxes"></i> Stock
-                            </label>
-                            <select class="form-select" id="filterStock">
-                                <option value="">Tous les stocks</option>
-                                <option value="bas">Stock bas</option>
-                                <option value="zero">Stock épuisé</option>
-                                <option value="normal">Stock normal</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label">&nbsp;</label>
-                            <div class="d-grid">
-                                <button type="button" class="btn btn-outline-secondary" id="btnResetFilters">
-                                    <i class="fas fa-redo"></i> Réinitialiser
-                                </button>
-                            </div>
                         </div>
                     </div>
-                    <div class="mt-3">
-                        <span class="badge bg-info" id="resultCount">{{ articles|length }} article(s) trouvé(s)</span>
-                    </div>
+                </div>
+                <div class="col-md-3 col-lg-2">
+                    <select class="form-select form-select-sm" id="filterCategorie">
+                        <option value="">Toutes catégories</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.nom }}">{{ cat.nom }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 col-lg-2">
+                    <select class="form-select form-select-sm" id="filterStock">
+                        <option value="">Tous stocks</option>
+                        <option value="bas">Stock bas</option>
+                        <option value="zero">Épuisé</option>
+                        <option value="normal">Normal</option>
+                    </select>
+                </div>
+                <div class="col-md-2 col-lg-1">
+                    <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="btnResetFilters">
+                        <i class="fas fa-redo"></i>
+                    </button>
+                </div>
+                <div class="col-lg-3 d-none d-lg-block text-end">
+                    <span class="badge bg-dark" id="resultCount">{{ articles|length }} article(s)</span>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Statistiques rapides -->
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card bg-primary text-white">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h4>{{ articles.count }}</h4>
-                            <p class="mb-0">Articles Total</p>
-                        </div>
-                        <div class="align-self-center">
-                            <i class="fas fa-box fa-2x"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <!-- Wrapper du tableau avec header fixe -->
+    <div class="table-wrapper">
+        {% if articles %}
+        <!-- En-tête du tableau FIXE -->
+        <div class="table-header">
+            <table>
+                <thead>
+                    <tr>
+                        <th class="col-img">Image</th>
+                        <th class="col-nom">Article</th>
+                        <th class="col-code">Code</th>
+                        <th class="col-cat">Catégorie</th>
+                        <th class="col-prix">Prix</th>
+                        <th class="col-stock">Stock</th>
+                        <th class="col-actions">Actions</th>
+                    </tr>
+                </thead>
+            </table>
         </div>
-        <div class="col-md-3">
-            <div class="card bg-success text-white">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h4>{{ categories.count }}</h4>
-                            <p class="mb-0">Catégories</p>
-                        </div>
-                        <div class="align-self-center">
-                            <i class="fas fa-tags fa-2x"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card bg-warning text-white">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h4>{{ articles|length }}</h4>
-                            <p class="mb-0">Articles Filtrés</p>
-                        </div>
-                        <div class="align-self-center">
-                            <i class="fas fa-filter fa-2x"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card bg-info text-white">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h4>{{ articles_stock_bas|default:0 }}</h4>
-                            <p class="mb-0">Stock Bas</p>
-                        </div>
-                        <div class="align-self-center">
-                            <i class="fas fa-exclamation-triangle fa-2x"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Liste des articles -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5><i class="fas fa-list"></i> Liste des Articles</h5>
-                    <div class="btn-group" role="group">
-                        <a href="{% url 'inventory:generer_pdf_qr_codes' boutique.id %}" class="btn btn-outline-primary btn-sm">
-                            <i class="fas fa-qrcode"></i> QR Codes PDF
-                        </a>
-                    </div>
-                </div>
-                <div class="card-body">
-                    {% if articles %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead class="table-dark">
-                                <tr>
-                                    <th>Image</th>
-                                    <th>Nom</th>
-                                    <th>Code</th>
-                                    <th>Catégorie</th>
-                                    <th>Prix Vente</th>
-                                    <th>Stock</th>
-                                    <th>QR Code</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for article in articles %}
-                                <tr data-article-id="{{ article.id }}" 
-                                    data-article-nom="{{ article.nom }}" 
-                                    data-article-stock="{{ article.quantite_stock }}" 
-                                    data-article-prix="{{ article.prix_vente }}">
-                                    <td>
-                                        {% if article.image %}
-                                        <img src="{{ article.image.url }}" alt="{{ article.nom }}" 
-                                             class="img-thumbnail" style="width: 50px; height: 50px; object-fit: cover;">
-                                        {% else %}
-                                        <div class="bg-light d-flex align-items-center justify-content-center" 
-                                             style="width: 50px; height: 50px; border-radius: 4px;">
-                                            <i class="fas fa-image text-muted"></i>
-                                        </div>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <strong>{{ article.nom }}</strong>
-                                        {% if article.description %}
-                                        <br><small class="text-muted">{{ article.description|truncatechars:50 }}</small>
-                                        {% endif %}
-                                    </td>
-                                    <td><code>{{ article.code }}</code></td>
-                                    <td>
-                                        {% if article.categorie %}
-                                        <span class="badge bg-secondary">{{ article.categorie.nom }}</span>
-                                        {% else %}
-                                        <span class="text-muted">Aucune</span>
-                                        {% endif %}
-                                    </td>
-                                    <td><strong>{{ article.prix_vente|floatformat:0 }} CDF</strong></td>
-                                    <td>
-                                        {% if article.quantite_stock <= 0 %}
-                                        <span class="badge bg-danger">{{ article.quantite_stock }}</span>
-                                        {% elif article.quantite_stock <= boutique.alerte_stock_bas %}
-                                        <span class="badge bg-warning">{{ article.quantite_stock }}</span>
-                                        {% else %}
-                                        <span class="badge bg-success">{{ article.quantite_stock }}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if article.qr_code %}
-                                        <i class="fas fa-qrcode text-success" title="QR Code généré"></i>
-                                        {% else %}
-                                        <i class="fas fa-qrcode text-muted" title="Pas de QR Code"></i>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <div class="btn-group btn-group-sm" role="group">
-                                            <button type="button" class="btn btn-outline-primary" 
-                                                    data-bs-toggle="modal" data-bs-target="#articleModal{{ article.id }}"
-                                                    title="Voir détails">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button type="button" class="btn btn-outline-success" 
-                                                    data-bs-toggle="modal" data-bs-target="#ajusterStockModal"
-                                                    onclick="setArticleForStock({{ article.id }}, '{{ article.nom }}', {{ article.quantite_stock }})"
-                                                    title="Ajuster le stock">
-                                                <i class="fas fa-boxes"></i>
-                                            </button>
-                                            <button type="button" class="btn btn-outline-info" 
-                                                    data-bs-toggle="modal" data-bs-target="#modifierPrixModal"
-                                                    onclick="setArticleForPrice({{ article.id }}, '{{ article.nom }}', {{ article.prix_vente }})"
-                                                    title="Modifier le prix">
-                                                <i class="fas fa-dollar-sign"></i>
-                                            </button>
-                                            <a href="{% url 'inventory:modifier_article_boutique' boutique.id article.id %}" 
-                                               class="btn btn-outline-warning"
-                                               title="Modifier tout">
-                                                <i class="fas fa-edit"></i>
-                                            </a>
-                                            <form method="post" action="{% url 'inventory:supprimer_article_boutique' boutique.id article.id %}" style="display: inline;">
-                                                {% csrf_token %}
-                                                <button type="submit" 
-                                                        class="btn btn-outline-danger"
-                                                        onclick="return confirm('Êtes-vous sûr de vouloir supprimer cet article ?')"
-                                                        title="Supprimer">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </form>
-                                        </div>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <div class="text-center py-5">
-                        <i class="fas fa-box-open fa-3x text-muted mb-3"></i>
-                        <h5>Aucun article trouvé</h5>
-                        <p class="text-muted">
-                            {% if search or categorie_id or stock_filter %}
-                            Aucun article ne correspond aux critères de recherche.
+        <!-- Corps du tableau SCROLLABLE -->
+        <div class="table-body">
+            <table>
+                <tbody>
+                    {% for article in articles %}
+                    <tr data-article-id="{{ article.id }}" 
+                        data-article-nom="{{ article.nom }}" 
+                        data-article-stock="{{ article.quantite_stock }}" 
+                        data-article-prix="{{ article.prix_vente }}">
+                        <td class="col-img">
+                            {% if article.image %}
+                            <img src="{{ article.image.url }}" alt="{{ article.nom }}" class="article-img">
                             {% else %}
-                            Cette boutique n'a pas encore d'articles.
+                            <div class="article-img-placeholder">
+                                <i class="fas fa-image"></i>
+                            </div>
                             {% endif %}
-                        </p>
-                        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
-                            <i class="fas fa-plus"></i> Ajouter le premier article
-                        </button>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
+                        </td>
+                        <td class="col-nom">
+                            <div class="article-name">{{ article.nom }}</div>
+                            {% if article.description %}
+                            <div class="article-desc">{{ article.description|truncatechars:35 }}</div>
+                            {% endif %}
+                        </td>
+                        <td class="col-code"><code class="article-code">{{ article.code }}</code></td>
+                        <td class="col-cat">
+                            {% if article.categorie %}
+                            <span class="badge bg-secondary">{{ article.categorie.nom }}</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="col-prix fw-semibold">{{ article.prix_vente|floatformat:0 }} <small>CDF</small></td>
+                        <td class="col-stock">
+                            {% if article.quantite_stock <= 0 %}
+                            <span class="badge bg-danger">{{ article.quantite_stock }}</span>
+                            {% elif article.quantite_stock <= boutique.alerte_stock_bas %}
+                            <span class="badge bg-warning text-dark">{{ article.quantite_stock }}</span>
+                            {% else %}
+                            <span class="badge bg-success">{{ article.quantite_stock }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="col-actions">
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-outline-primary btn-sm" 
+                                        data-bs-toggle="modal" data-bs-target="#articleModal{{ article.id }}" title="Détails">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-success btn-sm" 
+                                        data-bs-toggle="modal" data-bs-target="#ajusterStockModal"
+                                        onclick="setArticleForStock({{ article.id }}, '{{ article.nom }}', {{ article.quantite_stock }})" title="Stock">
+                                    <i class="fas fa-boxes"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-info btn-sm" 
+                                        data-bs-toggle="modal" data-bs-target="#modifierPrixModal"
+                                        onclick="setArticleForPrice({{ article.id }}, '{{ article.nom }}', {{ article.prix_vente }})" title="Prix">
+                                    <i class="fas fa-tag"></i>
+                                </button>
+                                <a href="{% url 'inventory:modifier_article_boutique' boutique.id article.id %}" 
+                                   class="btn btn-outline-warning btn-sm" title="Modifier">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
+        {% else %}
+        <div class="empty-state">
+            <i class="fas fa-box-open"></i>
+            <h5>Aucun article</h5>
+            <p>Commencez par ajouter votre premier article</p>
+            <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
+                <i class="fas fa-plus"></i> Ajouter un article
+            </button>
+        </div>
+        {% endif %}
     </div>
 </div>
 
@@ -561,169 +443,304 @@
 </div>
 
 <style>
-.card {
-    border-radius: 12px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+/* ========== LAYOUT PRINCIPAL - PAGE FIXE ========== */
+.articles-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 56px);
+    overflow: hidden;
+    background: #f8f9fa;
 }
 
-.btn {
-    border-radius: 8px;
+/* Header fixe */
+.page-header {
+    background: #fff;
+    padding: 10px 0;
+    border-bottom: 1px solid #e9ecef;
+    flex-shrink: 0;
 }
 
-.table th {
-    border-top: none;
+.page-header h4 {
+    font-size: 1.1rem;
     font-weight: 600;
 }
 
-.img-thumbnail {
-    border-radius: 8px;
+.stats-badges .badge {
+    font-weight: 500;
+    font-size: 0.75rem;
+    padding: 6px 10px;
 }
 
-/* Styles pour la recherche en temps réel */
-#searchRealTime {
-    transition: all 0.3s ease;
-    border: 2px solid #dee2e6;
+/* Barre de filtres fixe */
+.filters-bar {
+    background: #fff;
+    padding: 10px 0;
+    border-bottom: 1px solid #e9ecef;
+    flex-shrink: 0;
 }
 
-#searchRealTime:focus {
-    border-color: #0d6efd;
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.15);
-    transform: scale(1.02);
+.search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6c757d;
+    font-size: 0.85rem;
+    z-index: 2;
 }
 
-.search-focused {
-    animation: pulse 0.5s ease;
+.search-input {
+    padding-left: 32px;
+    border-radius: 6px;
 }
 
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.02); }
-    100% { transform: scale(1); }
+/* ========== STRUCTURE TABLEAU FIXE ========== */
+.table-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #fff;
 }
 
-/* Animation pour les lignes du tableau */
-tbody tr {
-    transition: opacity 0.3s ease, transform 0.3s ease;
+/* En-tête du tableau FIXE */
+.table-header {
+    flex-shrink: 0;
+    background: #343a40;
 }
 
-tbody tr[style*="display: none"] {
-    opacity: 0;
-    transform: scale(0.95);
+.table-header table {
+    width: 100%;
+    table-layout: fixed;
+    margin: 0;
 }
 
-/* Badge de comptage */
-#resultCount {
+.table-header th {
+    background: #343a40;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 12px 10px;
+    border: none;
+    white-space: nowrap;
+}
+
+/* Corps du tableau SCROLLABLE */
+.table-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.table-body table {
+    width: 100%;
+    table-layout: fixed;
+    margin: 0;
+}
+
+.table-body tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.table-body tbody tr:hover {
+    background-color: #f1f3f4;
+}
+
+.table-body tbody td {
+    padding: 10px;
+    vertical-align: middle;
+    border-bottom: 1px solid #e9ecef;
+    font-size: 0.85rem;
+}
+
+/* Largeurs des colonnes synchronisées */
+.col-img { width: 60px; }
+.col-nom { width: auto; }
+.col-code { width: 110px; }
+.col-cat { width: 120px; }
+.col-prix { width: 110px; }
+.col-stock { width: 70px; }
+.col-actions { width: 140px; }
+
+/* ========== ÉLÉMENTS DU TABLEAU ========== */
+.article-img {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+}
+
+.article-img-placeholder {
+    width: 40px;
+    height: 40px;
+    background: #f1f3f4;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #adb5bd;
     font-size: 0.9rem;
-    padding: 0.5rem 1rem;
-    animation: fadeIn 0.3s ease;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-10px); }
-    to { opacity: 1; transform: translateY(0); }
+.article-name {
+    font-weight: 600;
+    color: #212529;
+    line-height: 1.3;
 }
 
-/* Message aucun résultat */
-.no-result-row {
-    animation: slideDown 0.3s ease;
+.article-desc {
+    font-size: 0.75rem;
+    color: #6c757d;
+    margin-top: 2px;
 }
 
-@keyframes slideDown {
-    from { opacity: 0; transform: translateY(-20px); }
-    to { opacity: 1; transform: translateY(0); }
+.article-code {
+    font-size: 0.8rem;
+    background: #f1f3f4;
+    padding: 3px 6px;
+    border-radius: 4px;
+    color: #495057;
 }
 
-/* Highlight effect sur le hover des filtres */
-.form-select:hover, .form-control:hover {
-    border-color: #0d6efd;
+/* ========== BADGES ========== */
+.badge {
+    font-weight: 500;
+    font-size: 0.75rem;
+    padding: 4px 8px;
 }
 
-/* Dropdown des actions de recherche */
+/* ========== BOUTONS D'ACTION ========== */
+.btn-group-sm .btn {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border-radius: 4px;
+}
+
+/* ========== ÉTAT VIDE ========== */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: #6c757d;
+}
+
+.empty-state i {
+    font-size: 3rem;
+    margin-bottom: 15px;
+    opacity: 0.5;
+}
+
+.empty-state h5 {
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.empty-state p {
+    margin-bottom: 15px;
+    font-size: 0.9rem;
+}
+
+/* ========== DROPDOWN RECHERCHE ========== */
 .search-actions-dropdown {
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
-    background: white;
-    border: 2px solid #0d6efd;
-    border-radius: 8px;
-    margin-top: 5px;
-    box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    margin-top: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     z-index: 1000;
-    max-height: 400px;
+    max-height: 300px;
     overflow-y: auto;
-    animation: slideDown 0.3s ease;
 }
 
 .search-actions-content {
-    padding: 10px;
-}
-
-.action-item {
-    margin-bottom: 10px;
-}
-
-.action-item:last-child {
-    margin-bottom: 0;
-}
-
-.action-add .btn {
-    padding: 12px 15px;
-    font-size: 0.95rem;
-    box-shadow: 0 2px 4px rgba(40, 167, 69, 0.2);
-}
-
-.action-add .btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+    padding: 8px;
 }
 
 .action-header {
     font-weight: 600;
     color: #6c757d;
-    font-size: 0.85rem;
+    font-size: 0.7rem;
     text-transform: uppercase;
-    padding: 8px 10px;
-    border-bottom: 1px solid #dee2e6;
-    margin-bottom: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #e9ecef;
+    margin-bottom: 6px;
+}
+
+.action-item {
+    margin-bottom: 6px;
 }
 
 .quick-result-item {
-    padding: 10px;
+    padding: 8px;
     border: 1px solid #e9ecef;
-    border-radius: 6px;
-    margin-bottom: 8px;
+    border-radius: 4px;
+    margin-bottom: 4px;
     background: #f8f9fa;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
 }
 
 .quick-result-item:hover {
     background: #e9ecef;
     border-color: #0d6efd;
-    transform: translateX(5px);
 }
 
 .quick-result-item .result-name {
     font-weight: 600;
-    color: #212529;
-    margin-bottom: 4px;
+    font-size: 0.85rem;
 }
 
 .quick-result-item .result-info {
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     color: #6c757d;
 }
 
-.quick-result-item .result-actions {
-    margin-top: 8px;
-    display: flex;
-    gap: 5px;
+/* ========== RESPONSIVE ========== */
+@media (max-width: 768px) {
+    .page-header h4 {
+        font-size: 1rem;
+    }
+    
+    .stats-badges {
+        display: none !important;
+    }
+    
+    .table-header th,
+    .table-body td {
+        padding: 8px 6px;
+        font-size: 0.8rem;
+    }
+    
+    .col-code, .col-cat {
+        display: none;
+    }
 }
 
-.quick-result-item .btn-xs {
-    padding: 3px 8px;
-    font-size: 0.75rem;
+/* ========== SCROLLBAR PERSONNALISÉE ========== */
+.table-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.table-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.table-body::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.table-body::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
 }
 </style>
 {% endblock %}

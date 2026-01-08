@@ -1,0 +1,297 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Historique Mouvements Stock - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stats-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px;
+        padding: 20px;
+    }
+    .stat-item {
+        text-align: center;
+        padding: 10px;
+    }
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+    }
+    .stat-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        opacity: 0.9;
+    }
+    .mouvement-entree { border-left: 4px solid #28a745; }
+    .mouvement-sortie { border-left: 4px solid #dc3545; }
+    .mouvement-vente { border-left: 4px solid #007bff; }
+    .mouvement-ajustement { border-left: 4px solid #ffc107; }
+    .mouvement-retour { border-left: 4px solid #17a2b8; }
+    .badge-entree { background-color: #28a745; }
+    .badge-sortie { background-color: #dc3545; }
+    .badge-vente { background-color: #007bff; }
+    .badge-ajustement { background-color: #ffc107; color: #212529; }
+    .badge-retour { background-color: #17a2b8; }
+    .quantite-positive { color: #28a745; font-weight: bold; }
+    .quantite-negative { color: #dc3545; font-weight: bold; }
+    .filter-card {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    .table-mouvements {
+        font-size: 0.9rem;
+    }
+    .table-mouvements th {
+        background: #343a40;
+        color: white;
+        font-weight: 500;
+        white-space: nowrap;
+    }
+    .stock-change {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .stock-arrow {
+        font-size: 0.8rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h2 class="mb-1">
+                        <i class="fas fa-history text-primary"></i> Historique Mouvements Stock
+                    </h2>
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb mb-0">
+                            <li class="breadcrumb-item"><a href="{% url 'inventory:commercant_dashboard' %}">Dashboard</a></li>
+                            <li class="breadcrumb-item"><a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}">{{ boutique.nom }}</a></li>
+                            <li class="breadcrumb-item active">Mouvements Stock</li>
+                        </ol>
+                    </nav>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-outline-primary">
+                        <i class="fas fa-box"></i> Articles
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistiques -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="stats-card">
+                <div class="row">
+                    <div class="col-6 col-md-2">
+                        <div class="stat-item">
+                            <div class="stat-value">{{ stats.total_mouvements }}</div>
+                            <div class="stat-label">Total</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <div class="stat-item">
+                            <div class="stat-value text-success">{{ stats.entrees }}</div>
+                            <div class="stat-label">Entrées</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <div class="stat-item">
+                            <div class="stat-value text-danger">{{ stats.sorties }}</div>
+                            <div class="stat-label">Sorties</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <div class="stat-item">
+                            <div class="stat-value text-info">{{ stats.ventes }}</div>
+                            <div class="stat-label">Ventes</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <div class="stat-item">
+                            <div class="stat-value text-warning">{{ stats.ajustements }}</div>
+                            <div class="stat-label">Ajustements</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <div class="stat-item">
+                            <div class="stat-value">{{ stats.retours }}</div>
+                            <div class="stat-label">Retours</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtres -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="filter-card">
+                <form method="get" class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Type de mouvement</label>
+                        <select name="type" class="form-select">
+                            <option value="">Tous les types</option>
+                            {% for code, label in types_mouvement %}
+                            <option value="{{ code }}" {% if type_filter == code %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold">Article</label>
+                        <select name="article" class="form-select">
+                            <option value="">Tous les articles</option>
+                            {% for article in articles %}
+                            <option value="{{ article.id }}" {% if article_filter == article.id %}selected{% endif %}>{{ article.nom }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold">Date début</label>
+                        <input type="date" name="date_debut" class="form-control" value="{{ date_debut }}">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold">Date fin</label>
+                        <input type="date" name="date_fin" class="form-control" value="{{ date_fin }}">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-search"></i> Filtrer
+                        </button>
+                    </div>
+                </form>
+                {% if type_filter or article_filter or date_debut or date_fin %}
+                <div class="mt-2">
+                    <a href="{% url 'inventory:historique_mouvements_stock' boutique.id %}" class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-times"></i> Réinitialiser les filtres
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Tableau des mouvements -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-dark text-white">
+                    <i class="fas fa-list"></i> Liste des mouvements ({{ stats.total_mouvements }} résultats)
+                </div>
+                <div class="card-body p-0">
+                    {% if mouvements %}
+                    <div class="table-responsive">
+                        <table class="table table-hover table-mouvements mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date/Heure</th>
+                                    <th>Type</th>
+                                    <th>Article</th>
+                                    <th class="text-center">Quantité</th>
+                                    <th class="text-center">Stock Avant → Après</th>
+                                    <th>Référence</th>
+                                    <th>Utilisateur</th>
+                                    <th>Commentaire</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for mouvement in mouvements %}
+                                <tr class="mouvement-{{ mouvement.type_mouvement|lower }}">
+                                    <td class="text-nowrap">
+                                        <strong>{{ mouvement.date_mouvement|date:"d/m/Y" }}</strong><br>
+                                        <small class="text-muted">{{ mouvement.date_mouvement|time:"H:i" }}</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-{{ mouvement.type_mouvement|lower }}">
+                                            {% if mouvement.type_mouvement == 'ENTREE' %}
+                                                <i class="fas fa-arrow-down"></i>
+                                            {% elif mouvement.type_mouvement == 'SORTIE' %}
+                                                <i class="fas fa-arrow-up"></i>
+                                            {% elif mouvement.type_mouvement == 'VENTE' %}
+                                                <i class="fas fa-shopping-cart"></i>
+                                            {% elif mouvement.type_mouvement == 'AJUSTEMENT' %}
+                                                <i class="fas fa-balance-scale"></i>
+                                            {% elif mouvement.type_mouvement == 'RETOUR' %}
+                                                <i class="fas fa-undo"></i>
+                                            {% endif %}
+                                            {{ mouvement.get_type_mouvement_display }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <strong>{{ mouvement.article.nom }}</strong><br>
+                                        <small class="text-muted">{{ mouvement.article.code }}</small>
+                                    </td>
+                                    <td class="text-center">
+                                        {% if mouvement.quantite > 0 %}
+                                            <span class="quantite-positive">+{{ mouvement.quantite }}</span>
+                                        {% else %}
+                                            <span class="quantite-negative">{{ mouvement.quantite }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if mouvement.stock_avant is not None and mouvement.stock_apres is not None %}
+                                        <div class="stock-change justify-content-center">
+                                            <span class="badge bg-secondary">{{ mouvement.stock_avant }}</span>
+                                            <i class="fas fa-arrow-right stock-arrow text-muted"></i>
+                                            <span class="badge {% if mouvement.stock_apres > mouvement.stock_avant %}bg-success{% elif mouvement.stock_apres < mouvement.stock_avant %}bg-danger{% else %}bg-secondary{% endif %}">
+                                                {{ mouvement.stock_apres }}
+                                            </span>
+                                        </div>
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if mouvement.reference_document %}
+                                            <code class="small">{{ mouvement.reference_document }}</code>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if mouvement.utilisateur %}
+                                            <small><i class="fas fa-user"></i> {{ mouvement.utilisateur }}</small>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if mouvement.commentaire %}
+                                            <small class="text-muted" title="{{ mouvement.commentaire }}">
+                                                {{ mouvement.commentaire|truncatechars:30 }}
+                                            </small>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Aucun mouvement de stock trouvé</h5>
+                        <p class="text-muted">Les mouvements de stock apparaîtront ici après des ventes, ajustements ou transferts.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

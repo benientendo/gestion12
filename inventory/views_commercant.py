@@ -9,9 +9,10 @@ from django.http import JsonResponse, HttpResponseForbidden
 from django.db.models import Count, Sum, Q, F
 from django.db import transaction
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from datetime import datetime, timedelta
 from decimal import Decimal
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock
 from .forms import BoutiqueForm, ArticleForm
 import json
 import qrcode
@@ -145,6 +146,10 @@ def dashboard_commercant(request):
     boutiques_toutes = commercant.boutiques.all()
     boutiques_actives = commercant.boutiques.filter(est_active=True)
     
+    # Séparer les dépôts des boutiques normales
+    depots = commercant.boutiques.filter(est_depot=True)
+    boutiques_normales = commercant.boutiques.filter(est_depot=False)
+    
     print(f"DEBUG: Commerçant {commercant.nom_entreprise}")
     print(f"DEBUG: Total boutiques: {boutiques_toutes.count()}")
     print(f"DEBUG: Boutiques actives: {boutiques_actives.count()}")
@@ -152,9 +157,21 @@ def dashboard_commercant(request):
     for b in boutiques_toutes:
         print(f"DEBUG: Boutique '{b.nom}' - est_active: {b.est_active}")
     
-    # Utiliser toutes les boutiques pour le moment
-    boutiques_list = list(boutiques_toutes)
+    # Utiliser les boutiques normales (sans dépôts) pour l'affichage principal
+    boutiques_list = list(boutiques_normales)
     total_boutiques = len(boutiques_list)
+    
+    # Ajouter les statistiques pour chaque dépôt
+    depots_list = list(depots)
+    for depot in depots_list:
+        depot.nb_articles = depot.articles.filter(est_actif=True).count()
+        depot.valeur_stock = depot.articles.filter(est_actif=True).aggregate(
+            total=Sum(F('quantite_stock') * F('prix_achat'))
+        )['total'] or 0
+        depot.nb_transferts_mois = TransfertStock.objects.filter(
+            depot_source=depot,
+            date_transfert__gte=timezone.now().replace(day=1)
+        ).count()
     
     # Ajouter le compteur des ventes refusées du jour pour chaque boutique
     aujourd_hui = timezone.now().date()
@@ -240,6 +257,7 @@ def dashboard_commercant(request):
     context = {
         'commercant': commercant,
         'boutiques': boutiques,  # Ajouter la liste des boutiques
+        'depots': depots_list,  # Ajouter la liste des dépôts
         'total_boutiques': total_boutiques,
         'total_ventes': total_ventes,
         'total_ca': total_ca,
@@ -732,8 +750,15 @@ def entrer_boutique(request, boutique_id):
     except:
         articles_stock_faible = boutique.articles.none()
     
-    # Articles populaires (vides pour l'instant)
-    articles_populaires = boutique.articles.none()
+    # Mouvements de stock des 7 derniers jours
+    try:
+        date_7_jours = timezone.now() - timezone.timedelta(days=7)
+        mouvements_recents = MouvementStock.objects.filter(
+            article__boutique=boutique,
+            date_mouvement__gte=date_7_jours
+        ).count()
+    except:
+        mouvements_recents = 0
     
     # Ventes récentes (exclure les ventes annulées)
     try:
@@ -764,7 +789,7 @@ def entrer_boutique(request, boutique_id):
         'ca_jour': ca_jour,
         'valeur_stock_disponible': valeur_stock_disponible,
         'articles_stock_faible': articles_stock_faible,
-        'articles_populaires': articles_populaires,
+        'mouvements_recents': mouvements_recents,
         'ventes_recentes': ventes_recentes,
         'labels_jours': labels_jours,
         'ca_quotidien': ca_quotidien
@@ -850,6 +875,36 @@ def rapport_ca_quotidien(request, boutique_id):
         count=Count('id'),
         total=Sum('montant_total')
     )
+    
+    # ===== CALCUL DES BÉNÉFICES =====
+    # Calculer le coût d'achat total et le bénéfice brut
+    total_cout_achat = Decimal('0')
+    total_benefice_brut = Decimal('0')
+    articles_sans_prix_achat = []  # Articles avec prix_achat = 0
+    
+    for vente in ventes:
+        for ligne in vente.lignes.all():
+            if ligne.article:
+                prix_achat = ligne.article.prix_achat or Decimal('0')
+                cout_achat_ligne = prix_achat * ligne.quantite
+                prix_vente_ligne = ligne.prix_unitaire * ligne.quantite
+                total_cout_achat += cout_achat_ligne
+                total_benefice_brut += (prix_vente_ligne - cout_achat_ligne)
+                
+                # Détecter les articles sans prix d'achat
+                if prix_achat <= 0 and ligne.article.nom not in articles_sans_prix_achat:
+                    articles_sans_prix_achat.append(ligne.article.nom)
+    
+    # Bénéfice net = Bénéfice brut - Dépenses appliquées
+    total_benefice_net = total_benefice_brut - total_depenses_appliquees
+    
+    # Marge bénéficiaire en pourcentage
+    marge_beneficiaire = 0
+    if total_ca_brut > 0:
+        marge_beneficiaire = (total_benefice_brut / total_ca_brut) * 100
+    
+    # Avertissement si calcul incomplet
+    benefice_incomplet = len(articles_sans_prix_achat) > 0
 
     context = {
         'boutique': boutique,
@@ -860,6 +915,13 @@ def rapport_ca_quotidien(request, boutique_id):
         'total_ca_brut': total_ca_brut,
         'total_depenses_appliquees': total_depenses_appliquees,
         'ventes_par_mode': ventes_par_mode,
+        # Données de bénéfices
+        'total_cout_achat': total_cout_achat,
+        'total_benefice_brut': total_benefice_brut,
+        'total_benefice_net': total_benefice_net,
+        'marge_beneficiaire': marge_beneficiaire,
+        'benefice_incomplet': benefice_incomplet,
+        'articles_sans_prix_achat': articles_sans_prix_achat,
     }
 
     return render(request, 'inventory/commercant/rapport_ca_quotidien.html', context)
@@ -1652,15 +1714,29 @@ def ajouter_article_boutique(request, boutique_id):
                     code = base_code
                 
                 # Créer l'article
+                stock_initial = int(quantite_stock) if quantite_stock else 0
                 article = Article.objects.create(
                     boutique=boutique,
                     nom=nom,
                     code=code,
                     prix_vente=float(prix_vente),
                     prix_achat=0,  # Prix d'achat non calculé
-                    quantite_stock=int(quantite_stock) if quantite_stock else 0,
+                    quantite_stock=stock_initial,
                     est_actif=True
                 )
+                
+                # ⭐ Créer un mouvement de stock pour le stock initial si > 0
+                if stock_initial > 0:
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='ENTREE',
+                        quantite=stock_initial,
+                        stock_avant=0,
+                        stock_apres=stock_initial,
+                        reference_document=f"INIT-{boutique.code_boutique}-{article.id}",
+                        utilisateur=request.user.username,
+                        commentaire=f"Stock initial à la création de l'article"
+                    )
                 
                 # Ajouter la catégorie si fournie
                 if categorie_id:
@@ -1695,7 +1771,21 @@ def ajouter_article_boutique(request, boutique_id):
         if form.is_valid():
             article = form.save(commit=False)
             article.boutique = boutique
+            stock_initial = article.quantite_stock
             article.save()
+            
+            # ⭐ Créer un mouvement de stock pour le stock initial si > 0
+            if stock_initial > 0:
+                MouvementStock.objects.create(
+                    article=article,
+                    type_mouvement='ENTREE',
+                    quantite=stock_initial,
+                    stock_avant=0,
+                    stock_apres=stock_initial,
+                    reference_document=f"INIT-{boutique.code_boutique}-{article.id}",
+                    utilisateur=request.user.username,
+                    commentaire=f"Stock initial à la création de l'article"
+                )
             
             # Générer le code QR automatiquement
             try:
@@ -1802,7 +1892,7 @@ def supprimer_article_boutique(request, boutique_id, article_id):
 @commercant_required
 @boutique_access_required
 def ajuster_stock_article(request, boutique_id, article_id):
-    """Ajuster rapidement le stock d'un article"""
+    """Ajuster rapidement le stock d'un article avec traçabilité complète"""
     from django.http import JsonResponse
     
     boutique = request.boutique
@@ -1815,21 +1905,44 @@ def ajuster_stock_article(request, boutique_id, article_id):
             quantite = int(request.POST.get('quantite', 0))
             commentaire = request.POST.get('commentaire', '')
             
-            ancien_stock = article.quantite_stock
+            # Capturer le stock avant modification
+            stock_avant = article.quantite_stock
             
+            # Calculer la différence et le type de mouvement
             if type_ajustement == 'ajouter':
                 article.quantite_stock += quantite
+                type_mouvement = 'ENTREE'
+                quantite_mouvement = quantite
             elif type_ajustement == 'retirer':
                 article.quantite_stock = max(0, article.quantite_stock - quantite)
+                type_mouvement = 'SORTIE'
+                quantite_mouvement = -(stock_avant - article.quantite_stock)  # Négatif pour sortie
             elif type_ajustement == 'definir':
                 article.quantite_stock = quantite
+                difference = quantite - stock_avant
+                type_mouvement = 'AJUSTEMENT'
+                quantite_mouvement = difference
+            else:
+                return JsonResponse({'success': False, 'message': 'Type d\'ajustement invalide'})
             
-            article.save()
+            article.save(update_fields=['quantite_stock'])
+            
+            # ⭐ Créer le mouvement de stock pour traçabilité
+            MouvementStock.objects.create(
+                article=article,
+                type_mouvement=type_mouvement,
+                quantite=quantite_mouvement,
+                stock_avant=stock_avant,
+                stock_apres=article.quantite_stock,
+                reference_document=f"AJUST-{boutique.code_boutique}-{article.id}",
+                utilisateur=request.user.username,
+                commentaire=commentaire or f"Ajustement {type_ajustement}: {stock_avant} → {article.quantite_stock}"
+            )
             
             return JsonResponse({
                 'success': True,
-                'message': f'Stock ajusté: {ancien_stock} → {article.quantite_stock}',
-                'ancien_stock': ancien_stock,
+                'message': f'Stock ajusté: {stock_avant} → {article.quantite_stock}',
+                'ancien_stock': stock_avant,
                 'nouveau_stock': article.quantite_stock
             })
             
@@ -2312,3 +2425,560 @@ def ventes_refusees_boutique(request, boutique_id):
     }
     
     return render(request, 'inventory/commercant/ventes_refusees_boutique.html', context)
+
+@login_required
+@commercant_required
+def api_vente_details(request, vente_id):
+    """API pour récupérer les détails d'une vente avec ses articles"""
+    try:
+        vente = get_object_or_404(Vente, id=vente_id)
+        
+        # Vérifier que le commerçant a accès à cette vente
+        commercant = request.user.profil_commercant
+        if vente.boutique.commercant != commercant:
+            return JsonResponse({'error': 'Accès non autorisé'}, status=403)
+        
+        # Récupérer les lignes de vente avec les articles
+        lignes = vente.lignes.select_related('article').all()
+        
+        # Construire les lignes avec gestion des articles supprimés
+        lignes_data = []
+        for ligne in lignes:
+            try:
+                lignes_data.append({
+                    'article_nom': ligne.article.nom if ligne.article else 'Article supprimé',
+                    'article_code': getattr(ligne.article, 'code', '') or '-' if ligne.article else '-',
+                    'quantite': ligne.quantite,
+                    'prix_unitaire': f"{ligne.prix_unitaire:,.0f}",
+                    'total_ligne': f"{ligne.total_ligne:,.0f}"
+                })
+            except Exception:
+                lignes_data.append({
+                    'article_nom': 'Article inconnu',
+                    'article_code': '-',
+                    'quantite': ligne.quantite,
+                    'prix_unitaire': f"{ligne.prix_unitaire:,.0f}",
+                    'total_ligne': f"{ligne.total_ligne:,.0f}"
+                })
+        
+        # Construire la réponse JSON
+        data = {
+            'id': vente.id,
+            'numero_facture': vente.numero_facture,
+            'date_vente': vente.date_vente.strftime('%d/%m/%Y %H:%M'),
+            'mode_paiement': vente.get_mode_paiement_display(),
+            'terminal': vente.client_maui.nom_terminal if vente.client_maui else None,
+            'montant_total': f"{vente.montant_total:,.0f}",
+            'lignes': lignes_data
+        }
+        
+        return JsonResponse(data)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+# ===== GESTION DU DÉPÔT CENTRAL =====
+
+@login_required
+@commercant_required
+def liste_depots(request):
+    """Liste des dépôts du commerçant"""
+    commercant = request.user.profil_commercant
+    depots = commercant.boutiques.filter(est_depot=True)
+    
+    # Statistiques pour chaque dépôt
+    for depot in depots:
+        depot.nb_articles = depot.articles.filter(est_actif=True).count()
+        depot.valeur_stock = depot.articles.filter(est_actif=True).aggregate(
+            total=Sum(F('quantite_stock') * F('prix_achat'))
+        )['total'] or 0
+        depot.nb_transferts_mois = TransfertStock.objects.filter(
+            depot_source=depot,
+            date_transfert__gte=timezone.now().replace(day=1)
+        ).count()
+    
+    context = {
+        'commercant': commercant,
+        'depots': depots,
+    }
+    
+    return render(request, 'inventory/commercant/liste_depots.html', context)
+
+@login_required
+@commercant_required
+def detail_depot(request, depot_id):
+    """Détail d'un dépôt avec ses articles et statistiques"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    # Articles du dépôt
+    articles = depot.articles.filter(est_actif=True).select_related('categorie').order_by('nom')
+    
+    # Statistiques
+    total_articles = articles.count()
+    valeur_stock = articles.aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
+    articles_stock_bas = articles.filter(quantite_stock__lte=depot.alerte_stock_bas).count()
+    
+    # Transferts récents
+    transferts_recents = TransfertStock.objects.filter(
+        depot_source=depot
+    ).select_related('article', 'boutique_destination').order_by('-date_transfert')[:20]
+    
+    # Boutiques de destination disponibles (non-dépôts)
+    boutiques_destination = commercant.boutiques.filter(est_depot=False, est_active=True)
+    
+    context = {
+        'depot': depot,
+        'articles': articles,
+        'total_articles': total_articles,
+        'valeur_stock': valeur_stock,
+        'articles_stock_bas': articles_stock_bas,
+        'transferts_recents': transferts_recents,
+        'boutiques_destination': boutiques_destination,
+    }
+    
+    return render(request, 'inventory/commercant/detail_depot.html', context)
+
+@login_required
+@commercant_required
+def creer_transfert_stock(request, depot_id):
+    """Créer un transfert de stock du dépôt vers une boutique"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    if request.method == 'POST':
+        try:
+            article_id = request.POST.get('article_id')
+            boutique_dest_id = request.POST.get('boutique_destination')
+            quantite = int(request.POST.get('quantite', 0))
+            commentaire = request.POST.get('commentaire', '')
+            
+            article = get_object_or_404(Article, id=article_id, boutique=depot)
+            boutique_dest = get_object_or_404(Boutique, id=boutique_dest_id, commercant=commercant, est_depot=False)
+            
+            if quantite <= 0:
+                messages.error(request, "La quantité doit être supérieure à 0")
+                return redirect('inventory:detail_depot', depot_id=depot.id)
+            
+            if article.quantite_stock < quantite:
+                messages.error(request, f"Stock insuffisant. Disponible: {article.quantite_stock}")
+                return redirect('inventory:detail_depot', depot_id=depot.id)
+            
+            # Créer le transfert
+            transfert = TransfertStock.objects.create(
+                article=article,
+                depot_source=depot,
+                boutique_destination=boutique_dest,
+                quantite=quantite,
+                effectue_par=request.user.username,
+                commentaire=commentaire,
+                statut='EN_ATTENTE'
+            )
+            
+            messages.success(request, f"Transfert créé: {quantite} x {article.nom} vers {boutique_dest.nom}")
+            return redirect('inventory:detail_transfert', transfert_id=transfert.id)
+            
+        except Exception as e:
+            messages.error(request, f"Erreur lors de la création du transfert: {str(e)}")
+            return redirect('inventory:detail_depot', depot_id=depot.id)
+    
+    return redirect('inventory:detail_depot', depot_id=depot.id)
+
+@login_required
+@commercant_required
+def detail_transfert(request, transfert_id):
+    """Détail d'un transfert de stock"""
+    commercant = request.user.profil_commercant
+    transfert = get_object_or_404(TransfertStock, id=transfert_id)
+    
+    # Vérifier l'accès
+    if transfert.depot_source.commercant != commercant:
+        messages.error(request, "Accès non autorisé")
+        return redirect('inventory:commercant_dashboard')
+    
+    context = {
+        'transfert': transfert,
+    }
+    
+    return render(request, 'inventory/commercant/detail_transfert.html', context)
+
+@login_required
+@commercant_required
+def valider_transfert(request, transfert_id):
+    """Valider un transfert de stock"""
+    commercant = request.user.profil_commercant
+    transfert = get_object_or_404(TransfertStock, id=transfert_id)
+    
+    # Vérifier l'accès
+    if transfert.depot_source.commercant != commercant:
+        messages.error(request, "Accès non autorisé")
+        return redirect('inventory:commercant_dashboard')
+    
+    if request.method == 'POST':
+        try:
+            with transaction.atomic():
+                transfert.valider_transfert(request.user.username)
+            
+            messages.success(request, f"Transfert validé avec succès! {transfert.quantite} x {transfert.article.nom} transféré vers {transfert.boutique_destination.nom}")
+            return redirect('inventory:detail_depot', depot_id=transfert.depot_source.id)
+            
+        except ValidationError as e:
+            messages.error(request, str(e))
+        except Exception as e:
+            messages.error(request, f"Erreur lors de la validation: {str(e)}")
+    
+    return redirect('inventory:detail_transfert', transfert_id=transfert.id)
+
+@login_required
+@commercant_required
+def annuler_transfert(request, transfert_id):
+    """Annuler un transfert de stock en attente"""
+    commercant = request.user.profil_commercant
+    transfert = get_object_or_404(TransfertStock, id=transfert_id)
+    
+    # Vérifier l'accès
+    if transfert.depot_source.commercant != commercant:
+        messages.error(request, "Accès non autorisé")
+        return redirect('inventory:commercant_dashboard')
+    
+    if request.method == 'POST':
+        if transfert.statut == 'EN_ATTENTE':
+            transfert.statut = 'ANNULE'
+            transfert.save()
+            messages.success(request, "Transfert annulé")
+        else:
+            messages.error(request, "Ce transfert ne peut plus être annulé")
+    
+    return redirect('inventory:detail_depot', depot_id=transfert.depot_source.id)
+
+@login_required
+@commercant_required
+def approvisionner_depot(request, depot_id):
+    """Approvisionner le dépôt avec de nouveaux articles ou ajouter du stock"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    if request.method == 'POST':
+        type_appro = request.POST.get('type_appro', 'nouveau')
+        
+        try:
+            if type_appro == 'nouveau':
+                # Créer un nouvel article
+                code = request.POST.get('code', '').strip()
+                nom = request.POST.get('nom', '').strip()
+                prix_achat = Decimal(request.POST.get('prix_achat', '0'))
+                prix_vente = Decimal(request.POST.get('prix_vente', '0'))
+                quantite = int(request.POST.get('quantite_initiale', '1'))
+                description = request.POST.get('description', '')
+                
+                if not code or not nom:
+                    messages.error(request, "Le code et le nom de l'article sont obligatoires")
+                    return redirect('inventory:detail_depot', depot_id=depot.id)
+                
+                # Vérifier si l'article existe déjà dans ce dépôt
+                if Article.objects.filter(code=code, boutique=depot).exists():
+                    messages.error(request, f"Un article avec le code '{code}' existe déjà dans ce dépôt")
+                    return redirect('inventory:detail_depot', depot_id=depot.id)
+                
+                # Créer l'article
+                article = Article.objects.create(
+                    code=code,
+                    nom=nom,
+                    description=description,
+                    prix_achat=prix_achat,
+                    prix_vente=prix_vente,
+                    quantite_stock=quantite,
+                    boutique=depot,
+                    est_actif=True
+                )
+                
+                # Enregistrer le mouvement de stock
+                MouvementStock.objects.create(
+                    article=article,
+                    type_mouvement='ENTREE',
+                    quantite=quantite,
+                    stock_avant=0,
+                    stock_apres=quantite,
+                    commentaire=f"Approvisionnement initial du dépôt",
+                    reference_document=f"APPRO-{depot.id}-{article.id}",
+                    utilisateur=request.user.username
+                )
+                
+                messages.success(request, f"Article '{nom}' créé avec {quantite} unités en stock")
+                
+            else:
+                # Ajouter du stock à un article existant
+                article_id = request.POST.get('article_existant')
+                quantite_ajout = int(request.POST.get('quantite_ajout', '1'))
+                
+                if not article_id:
+                    messages.error(request, "Veuillez sélectionner un article")
+                    return redirect('inventory:detail_depot', depot_id=depot.id)
+                
+                article = get_object_or_404(Article, id=article_id, boutique=depot)
+                stock_avant = article.quantite_stock
+                article.quantite_stock += quantite_ajout
+                article.save()
+                
+                # Enregistrer le mouvement de stock
+                MouvementStock.objects.create(
+                    article=article,
+                    type_mouvement='ENTREE',
+                    quantite=quantite_ajout,
+                    stock_avant=stock_avant,
+                    stock_apres=article.quantite_stock,
+                    commentaire=f"Approvisionnement du dépôt",
+                    reference_document=f"APPRO-{depot.id}-{article.id}",
+                    utilisateur=request.user.username
+                )
+                
+                messages.success(request, f"{quantite_ajout} unités ajoutées à '{article.nom}' (nouveau stock: {article.quantite_stock})")
+                
+        except Exception as e:
+            messages.error(request, f"Erreur lors de l'approvisionnement: {str(e)}")
+    
+    return redirect('inventory:detail_depot', depot_id=depot.id)
+
+@login_required
+@commercant_required
+def historique_transferts(request, depot_id):
+    """Historique des transferts d'un dépôt"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    # Filtres
+    statut = request.GET.get('statut', '')
+    boutique_dest = request.GET.get('boutique', '')
+    
+    transferts = TransfertStock.objects.filter(depot_source=depot).select_related(
+        'article', 'boutique_destination'
+    ).order_by('-date_transfert')
+    
+    if statut:
+        transferts = transferts.filter(statut=statut)
+    if boutique_dest:
+        transferts = transferts.filter(boutique_destination_id=boutique_dest)
+    
+    # Statistiques
+    stats = {
+        'total': transferts.count(),
+        'en_attente': transferts.filter(statut='EN_ATTENTE').count(),
+        'valides': transferts.filter(statut='VALIDE').count(),
+        'annules': transferts.filter(statut='ANNULE').count(),
+    }
+    
+    boutiques = commercant.boutiques.filter(est_depot=False, est_active=True)
+    
+    context = {
+        'depot': depot,
+        'transferts': transferts[:100],
+        'stats': stats,
+        'boutiques': boutiques,
+        'statut_filter': statut,
+        'boutique_filter': boutique_dest,
+    }
+    
+    return render(request, 'inventory/commercant/historique_transferts.html', context)
+
+
+# ===== TRANSFERT MULTIPLE =====
+
+@login_required
+@commercant_required
+def transfert_multiple(request, depot_id):
+    """Page de transfert multiple d'articles du dépôt vers une boutique"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    # Articles disponibles dans le dépôt (avec stock > 0)
+    articles = depot.articles.filter(
+        est_actif=True,
+        quantite_stock__gt=0
+    ).select_related('categorie').order_by('nom')
+    
+    # Boutiques de destination
+    boutiques_destination = commercant.boutiques.filter(est_depot=False, est_active=True)
+    
+    if request.method == 'POST':
+        boutique_dest_id = request.POST.get('boutique_destination')
+        commentaire_global = request.POST.get('commentaire', '')
+        
+        if not boutique_dest_id:
+            messages.error(request, "Veuillez sélectionner une boutique de destination")
+            return redirect('inventory:transfert_multiple', depot_id=depot.id)
+        
+        boutique_dest = get_object_or_404(Boutique, id=boutique_dest_id, commercant=commercant, est_depot=False)
+        
+        # Récupérer les articles sélectionnés avec leurs quantités
+        articles_selectionnes = request.POST.getlist('articles_selectionnes')
+        
+        if not articles_selectionnes:
+            messages.error(request, "Veuillez sélectionner au moins un article à transférer")
+            return redirect('inventory:transfert_multiple', depot_id=depot.id)
+        
+        transferts_crees = []
+        erreurs = []
+        
+        try:
+            with transaction.atomic():
+                for article_id in articles_selectionnes:
+                    quantite_key = f'quantite_{article_id}'
+                    quantite = int(request.POST.get(quantite_key, 0))
+                    
+                    if quantite <= 0:
+                        continue
+                    
+                    try:
+                        article = Article.objects.get(id=article_id, boutique=depot)
+                        
+                        if article.quantite_stock < quantite:
+                            erreurs.append(f"{article.nom}: stock insuffisant (dispo: {article.quantite_stock}, demandé: {quantite})")
+                            continue
+                        
+                        # Créer le transfert
+                        transfert = TransfertStock.objects.create(
+                            article=article,
+                            depot_source=depot,
+                            boutique_destination=boutique_dest,
+                            quantite=quantite,
+                            effectue_par=request.user.username,
+                            commentaire=commentaire_global,
+                            statut='EN_ATTENTE'
+                        )
+                        transferts_crees.append(transfert)
+                        
+                    except Article.DoesNotExist:
+                        erreurs.append(f"Article ID {article_id} introuvable")
+                
+                if not transferts_crees and erreurs:
+                    raise Exception("Aucun transfert créé")
+        
+        except Exception as e:
+            for erreur in erreurs:
+                messages.error(request, erreur)
+            return redirect('inventory:transfert_multiple', depot_id=depot.id)
+        
+        # Messages de résultat
+        if transferts_crees:
+            messages.success(request, f"{len(transferts_crees)} transfert(s) créé(s) vers {boutique_dest.nom}")
+        
+        for erreur in erreurs:
+            messages.warning(request, erreur)
+        
+        return redirect('inventory:detail_depot', depot_id=depot.id)
+    
+    context = {
+        'depot': depot,
+        'articles': articles,
+        'boutiques_destination': boutiques_destination,
+    }
+    
+    return render(request, 'inventory/commercant/transfert_multiple.html', context)
+
+
+@login_required
+@commercant_required
+def valider_transferts_multiples(request, depot_id):
+    """Valider plusieurs transferts en attente en une seule fois"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    if request.method == 'POST':
+        transferts_ids = request.POST.getlist('transferts_selectionnes')
+        
+        if not transferts_ids:
+            messages.error(request, "Veuillez sélectionner au moins un transfert à valider")
+            return redirect('inventory:historique_transferts', depot_id=depot.id)
+        
+        valides = 0
+        erreurs = []
+        
+        for transfert_id in transferts_ids:
+            try:
+                transfert = TransfertStock.objects.get(id=transfert_id, depot_source=depot, statut='EN_ATTENTE')
+                with transaction.atomic():
+                    transfert.valider_transfert(request.user.username)
+                valides += 1
+            except TransfertStock.DoesNotExist:
+                erreurs.append(f"Transfert {transfert_id} introuvable ou déjà traité")
+            except Exception as e:
+                erreurs.append(f"Erreur transfert {transfert_id}: {str(e)}")
+        
+        if valides:
+            messages.success(request, f"{valides} transfert(s) validé(s) avec succès")
+        for erreur in erreurs:
+            messages.warning(request, erreur)
+    
+    return redirect('inventory:historique_transferts', depot_id=depot.id)
+
+
+# ===== HISTORIQUE DES MOUVEMENTS DE STOCK =====
+
+@login_required
+@commercant_required
+@boutique_access_required
+def historique_mouvements_stock(request, boutique_id):
+    """Historique des mouvements de stock d'une boutique"""
+    boutique = request.boutique
+    
+    # Filtres
+    type_mouvement = request.GET.get('type', '')
+    article_id = request.GET.get('article', '')
+    date_debut = request.GET.get('date_debut', '')
+    date_fin = request.GET.get('date_fin', '')
+    
+    # Récupérer les mouvements de stock pour les articles de cette boutique
+    mouvements = MouvementStock.objects.filter(
+        article__boutique=boutique
+    ).select_related('article', 'article__categorie').order_by('-date_mouvement')
+    
+    # Appliquer les filtres
+    if type_mouvement:
+        mouvements = mouvements.filter(type_mouvement=type_mouvement)
+    
+    if article_id:
+        mouvements = mouvements.filter(article_id=article_id)
+    
+    if date_debut:
+        try:
+            date_debut_parsed = datetime.strptime(date_debut, '%Y-%m-%d')
+            mouvements = mouvements.filter(date_mouvement__date__gte=date_debut_parsed)
+        except ValueError:
+            pass
+    
+    if date_fin:
+        try:
+            date_fin_parsed = datetime.strptime(date_fin, '%Y-%m-%d')
+            mouvements = mouvements.filter(date_mouvement__date__lte=date_fin_parsed)
+        except ValueError:
+            pass
+    
+    # Statistiques
+    stats = {
+        'total_mouvements': mouvements.count(),
+        'entrees': mouvements.filter(type_mouvement='ENTREE').count(),
+        'sorties': mouvements.filter(type_mouvement='SORTIE').count(),
+        'ventes': mouvements.filter(type_mouvement='VENTE').count(),
+        'ajustements': mouvements.filter(type_mouvement='AJUSTEMENT').count(),
+        'retours': mouvements.filter(type_mouvement='RETOUR').count(),
+    }
+    
+    # Liste des articles pour le filtre
+    articles = boutique.articles.filter(est_actif=True).order_by('nom')
+    
+    # Types de mouvement pour le filtre
+    types_mouvement = MouvementStock.TYPES
+    
+    context = {
+        'boutique': boutique,
+        'mouvements': mouvements[:200],  # Limiter à 200 pour performance
+        'stats': stats,
+        'articles': articles,
+        'types_mouvement': types_mouvement,
+        'type_filter': type_mouvement,
+        'article_filter': int(article_id) if article_id else None,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+    }
+    
+    return render(request, 'inventory/commercant/historique_mouvements_stock.html', context)
