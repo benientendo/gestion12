@@ -8,31 +8,32 @@
     <!-- Header fixe -->
     <div class="page-header">
         <div class="container-fluid">
-            <div class="d-flex justify-content-between align-items-center">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-2">
                 <div>
                     <h4 class="mb-0">
                         <i class="fas fa-box text-primary"></i> Articles
-                        <span class="text-muted fw-normal">| {{ boutique.nom }}</span>
+                        <span class="text-muted fw-normal d-none d-sm-inline">| {{ boutique.nom }}</span>
                     </h4>
                 </div>
-                <div class="d-flex align-items-center gap-2">
+                <div class="header-actions d-flex flex-wrap align-items-center gap-2">
                     <!-- Stats compactes -->
-                    <div class="stats-badges d-none d-md-flex gap-2 me-3">
+                    <div class="stats-badges d-none d-lg-flex gap-2 me-2">
                         <span class="badge bg-primary"><i class="fas fa-box"></i> {{ articles.count }} Total</span>
                         <span class="badge bg-warning text-dark"><i class="fas fa-exclamation-triangle"></i> {{ articles_stock_bas|default:0 }} Stock bas</span>
                     </div>
-                    <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary btn-sm">
-                        <i class="fas fa-arrow-left"></i> Retour
-                    </a>
-                    <a href="{% url 'inventory:historique_mouvements_stock' boutique.id %}" class="btn btn-outline-info btn-sm" title="Historique des mouvements de stock">
-                        <i class="fas fa-history"></i> Historique
-                    </a>
-                    <a href="{% url 'inventory:generer_pdf_qr_codes' boutique.id %}" class="btn btn-outline-primary btn-sm" target="_blank">
-                        <i class="fas fa-qrcode"></i> PDF
-                    </a>
-                    <button type="button" class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
-                        <i class="fas fa-plus"></i> Ajouter
+                    <!-- Bouton Ajouter en premier sur mobile -->
+                    <button type="button" class="btn btn-success btn-sm order-first order-md-last" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
+                        <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Ajouter</span>
                     </button>
+                    <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-arrow-left"></i> <span class="d-none d-sm-inline">Retour</span>
+                    </a>
+                    <a href="{% url 'inventory:historique_mouvements_stock' boutique.id %}" class="btn btn-outline-info btn-sm d-none d-sm-inline-flex" title="Historique des mouvements de stock">
+                        <i class="fas fa-history"></i> <span class="d-none d-md-inline">Historique</span>
+                    </a>
+                    <a href="{% url 'inventory:generer_pdf_qr_codes' boutique.id %}" class="btn btn-outline-primary btn-sm d-none d-sm-inline-flex" target="_blank">
+                        <i class="fas fa-qrcode"></i> <span class="d-none d-md-inline">PDF</span>
+                    </a>
                 </div>
             </div>
         </div>
@@ -705,7 +706,116 @@
 }
 
 /* ========== RESPONSIVE ========== */
-@media (max-width: 768px) {
+
+/* Très petits écrans (< 480px) */
+@media (max-width: 480px) {
+    .articles-page {
+        height: calc(100vh - 50px);
+    }
+    
+    .page-header {
+        padding: 8px 0;
+    }
+    
+    .page-header h4 {
+        font-size: 0.95rem;
+    }
+    
+    .header-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    .header-actions .btn {
+        padding: 6px 10px;
+        font-size: 0.75rem;
+    }
+    
+    .filters-bar {
+        padding: 8px 0;
+    }
+    
+    .filters-bar .form-control,
+    .filters-bar .form-select {
+        font-size: 0.8rem;
+    }
+    
+    /* Tableau en mode carte sur très petit écran */
+    .table-header {
+        display: none;
+    }
+    
+    .table-body table {
+        display: block;
+    }
+    
+    .table-body tbody {
+        display: block;
+    }
+    
+    .table-body tbody tr {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 10px;
+        margin-bottom: 8px;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    
+    .table-body tbody td {
+        border: none;
+        padding: 4px 6px;
+    }
+    
+    .table-body tbody td.col-img {
+        width: 50px;
+        order: 1;
+    }
+    
+    .table-body tbody td.col-nom {
+        width: calc(100% - 60px);
+        order: 2;
+    }
+    
+    .table-body tbody td.col-prix {
+        width: 50%;
+        order: 3;
+        font-size: 0.9rem;
+    }
+    
+    .table-body tbody td.col-stock {
+        width: 50%;
+        order: 4;
+        text-align: right;
+    }
+    
+    .table-body tbody td.col-actions {
+        width: 100%;
+        order: 5;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #e9ecef;
+    }
+    
+    .table-body tbody td.col-code,
+    .table-body tbody td.col-cat {
+        display: none;
+    }
+    
+    .col-actions .btn-group {
+        width: 100%;
+        display: flex;
+    }
+    
+    .col-actions .btn-group .btn {
+        flex: 1;
+    }
+}
+
+/* Écrans moyens (481px - 768px) */
+@media (min-width: 481px) and (max-width: 768px) {
     .page-header h4 {
         font-size: 1rem;
     }
@@ -723,6 +833,21 @@
     .col-code, .col-cat {
         display: none;
     }
+    
+    .col-img { width: 50px; }
+    .col-nom { width: auto; }
+    .col-prix { width: 100px; }
+    .col-stock { width: 60px; }
+    .col-actions { width: 120px; }
+}
+
+/* Tablettes (769px - 991px) */
+@media (min-width: 769px) and (max-width: 991px) {
+    .col-cat {
+        display: none;
+    }
+    
+    .col-actions { width: 130px; }
 }
 
 /* ========== SCROLLBAR PERSONNALISÉE ========== */

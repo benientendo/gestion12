@@ -23,6 +23,103 @@
     .article-actions {
         white-space: nowrap;
     }
+    .article-actions-group {
+        display: flex;
+        gap: 4px;
+        flex-wrap: wrap;
+    }
+    .articles-header-actions {
+        flex-wrap: wrap;
+    }
+    
+    /* Responsive pour la page articles */
+    @media (max-width: 576px) {
+        .boutique-header {
+            border-radius: 10px;
+            padding: 12px !important;
+        }
+        .boutique-header h1 {
+            font-size: 1.2rem;
+        }
+        .boutique-header p {
+            font-size: 0.75rem;
+        }
+        .stats-card .card-body {
+            padding: 12px;
+        }
+        .stats-card h3 {
+            font-size: 1.3rem;
+        }
+        .stats-card i {
+            font-size: 1.5rem !important;
+        }
+        .articles-header-actions {
+            justify-content: flex-start !important;
+        }
+        .articles-header-actions .btn {
+            flex: 1;
+            min-width: 80px;
+        }
+        /* Tableau responsive en mode carte */
+        .articles-table thead {
+            display: none;
+        }
+        .articles-table tbody tr {
+            display: block;
+            margin-bottom: 12px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 10px;
+            background: #fff;
+        }
+        .articles-table tbody td {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border: none;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .articles-table tbody td:last-child {
+            border-bottom: none;
+            padding-top: 10px;
+        }
+        .articles-table tbody td::before {
+            content: attr(data-label);
+            font-weight: 600;
+            color: #6c757d;
+            font-size: 0.8rem;
+        }
+        .articles-table tbody td[data-label="Actions"]::before {
+            display: none;
+        }
+        .articles-table tbody td[data-label="Actions"] {
+            justify-content: center;
+        }
+        .article-actions-group {
+            width: 100%;
+            justify-content: space-around;
+        }
+        .article-actions-group .btn {
+            flex: 1;
+        }
+    }
+    
+    @media (min-width: 577px) and (max-width: 768px) {
+        .articles-table th:nth-child(3),
+        .articles-table td:nth-child(3),
+        .articles-table th:nth-child(6),
+        .articles-table td:nth-child(6) {
+            display: none;
+        }
+    }
+    
+    @media (min-width: 769px) and (max-width: 991px) {
+        .articles-table th:nth-child(6),
+        .articles-table td:nth-child(6) {
+            display: none;
+        }
+    }
 </style>
 {% endblock %}
 
