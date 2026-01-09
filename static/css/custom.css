@@ -258,6 +258,27 @@ body {
     background-color: rgba(78, 115, 223, 0.05);
 }
 
+.table th,
+.table td {
+    word-break: break-word;
+}
+
+.articles-header-actions {
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.articles-header-actions .btn {
+    flex: 1 1 auto;
+}
+
+.article-actions-group {
+    display: flex;
+    gap: 0.35rem;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
 /* Forms */
 .form-control, .form-select {
     border-radius: var(--border-radius);
@@ -448,44 +469,43 @@ body {
         font-size: 0.8rem;
     }
     
-    /* Masquer certaines colonnes sur mobile */
-    .table th:nth-child(3),
-    .table td:nth-child(3),
-    .table th:nth-child(4),
-    .table td:nth-child(4) {
-        display: none;
+    /* Entête des articles */
+    .articles-header-actions {
+        width: 100%;
+        flex-direction: column;
+    }
+    
+    .articles-header-actions .btn {
+        width: 100%;
+        justify-content: center;
+        font-size: 0.85rem;
     }
     
     /* Actions des articles */
     .article-actions {
         display: flex;
         flex-direction: column;
-        gap: 0.3rem;
+        gap: 0.5rem;
     }
     
     .article-actions .btn {
         width: 100%;
-        padding: 0.3rem 0.5rem;
-        font-size: 0.75rem;
+        padding: 0.45rem 0.5rem;
+        font-size: 0.8rem;
+    }
+    
+    .article-actions-group {
+        width: 100%;
     }
     
     /* Boutons */
     .btn {
-        padding: 0.4rem 0.7rem;
+        padding: 0.45rem 0.7rem;
         font-size: 0.85rem;
     }
     
     .btn i {
         margin-right: 0.2rem;
-    }
-    
-    .btn-group {
-        flex-direction: column;
-        width: 100%;
-    }
-    
-    .btn-group .btn {
-        margin-bottom: 0.3rem;
     }
     
     /* Formulaires */
@@ -548,6 +568,80 @@ body {
         padding-left: 0.5rem;
         padding-right: 0.5rem;
     }
+    
+    /* Tables responsive type cartes */
+    .articles-table {
+        border: none;
+    }
+    
+    .articles-table thead {
+        display: none;
+    }
+    
+    .articles-table tbody tr {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        margin-bottom: 1rem;
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        border-radius: var(--border-radius);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.05);
+        padding: 0.85rem;
+        background: #fff;
+    }
+    
+    .articles-table tbody td {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 0.35rem 0;
+        border: none;
+        font-size: 0.9rem;
+    }
+    
+    .articles-table tbody td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: var(--dark-color);
+        margin-bottom: 0.25rem;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+        opacity: 0.8;
+    }
+    
+    .articles-table .article-actions .btn {
+        flex: 1 1 100%;
+    }
+    
+    /* DataTables layout */
+    .dataTables_wrapper .row {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .dataTables_wrapper .row > div {
+        width: 100%;
+        text-align: left;
+    }
+    
+    .dataTables_length label,
+    .dataTables_filter label {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .dataTables_filter input,
+    .dataTables_length select {
+        width: 100% !important;
+    }
+    
+    .dataTables_paginate {
+        display: flex;
+        justify-content: center;
+    }
 }
 
 /* SM - Smartphones en paysage / Petites tablettes (576px - 767px) */
@@ -571,6 +665,63 @@ body {
     
     .stats-overview h1 {
         font-size: 1.75rem;
+    }
+    
+    .articles-table thead {
+        display: none;
+    }
+    
+    .articles-table tbody tr {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        border-radius: var(--border-radius);
+        padding: 0.75rem;
+        margin-bottom: 1rem;
+        gap: 0.35rem;
+    }
+    
+    .articles-table tbody td {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        border: none;
+        padding: 0.45rem;
+    }
+    
+    .articles-table tbody td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: var(--dark-color);
+        margin-bottom: 0.25rem;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .articles-table .article-actions {
+        flex-direction: row;
+        gap: 0.5rem;
+        width: 100%;
+    }
+    
+    .articles-table .article-actions .btn {
+        flex: 1 1 calc(33% - 0.5rem);
+    }
+    
+    .dataTables_wrapper .row {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .dataTables_wrapper .row > div {
+        width: 100%;
+    }
+    
+    .dataTables_filter label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
     }
 }
 

@@ -115,7 +115,7 @@
                         <h6 class="m-0 font-weight-bold text-primary">Liste des Articles</h6>
                     </div>
                     <div class="col-12 col-md-6">
-                        <div class="d-flex flex-column flex-sm-row gap-2 justify-content-md-end">
+                        <div class="d-flex flex-column flex-sm-row gap-2 justify-content-md-end articles-header-actions">
                             <a href="{% url 'inventory:ajouter_article' %}?boutique={{ boutique.id }}" class="btn btn-primary btn-sm">
                                 <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Ajouter</span>
                             </a>
@@ -131,7 +131,7 @@
             </div>
                 <div class="card-body">
                     <div class="table-responsive">
-                        <table class="table table-bordered table-striped table-hover" id="dataTable" width="100%" cellspacing="0">
+                        <table class="table table-bordered table-striped table-hover articles-table" id="dataTable" width="100%" cellspacing="0">
                             <thead class="thead-light">
                                 <tr>
                                     <th>Code</th>
@@ -147,22 +147,24 @@
                             <tbody>
                                 {% for article in articles %}
                                 <tr>
-                                    <td><strong class="text-primary">{{ article.code_barre|default:article.code }}</strong></td>
-                                    <td>
+                                    <td data-label="Code">
+                                        <strong class="text-primary">{{ article.code_barre|default:article.code }}</strong>
+                                    </td>
+                                    <td data-label="Nom">
                                         <strong>{{ article.nom }}</strong>
                                         {% if article.description %}
                                         <br><small class="text-muted">{{ article.description|truncatechars:30 }}</small>
                                         {% endif %}
                                     </td>
-                                    <td><span class="badge bg-primary">{{ article.categorie.nom }}</span></td>
-                                    <td><strong class="text-success">{{ article.prix_vente }} CDF</strong></td>
-                                    <td>
+                                    <td data-label="Catégorie"><span class="badge bg-primary">{{ article.categorie.nom }}</span></td>
+                                    <td data-label="Prix vente"><strong class="text-success">{{ article.prix_vente }} CDF</strong></td>
+                                    <td data-label="Stock actuel">
                                         <span class="badge {% if article.stock_actuel <= article.stock_minimum %}bg-danger{% elif article.stock_actuel <= 10 %}bg-warning{% else %}bg-success{% endif %}">
                                             {{ article.stock_actuel|default:article.quantite_stock }}
                                         </span>
                                     </td>
-                                    <td><span class="text-muted">{{ article.stock_minimum|default:5 }}</span></td>
-                                    <td>
+                                    <td data-label="Stock min"><span class="text-muted">{{ article.stock_minimum|default:5 }}</span></td>
+                                    <td data-label="Statut">
                                         {% if article.stock_actuel <= article.stock_minimum %}
                                             <span class="badge bg-danger"><i class="fas fa-exclamation-triangle"></i> Critique</span>
                                         {% elif article.stock_actuel <= 10 %}
@@ -171,8 +173,8 @@
                                             <span class="badge bg-success"><i class="fas fa-check"></i> OK</span>
                                         {% endif %}
                                     </td>
-                                    <td class="article-actions">
-                                        <div class="btn-group" role="group">
+                                    <td class="article-actions" data-label="Actions">
+                                        <div class="article-actions-group" role="group">
                                             <button class="btn btn-sm btn-info" onclick="voirDetails('{{ article.id }}')" title="Voir détails">
                                                 <i class="fas fa-eye"></i>
                                             </button>
