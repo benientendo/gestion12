@@ -2,7 +2,7 @@
 {% load static %}
 {% load humanize %}
 
-{% block title %}Mes Boutiques - {{ commercant.nom_entreprise }}{% endblock %}
+{% block title %}Mes Points de Vente - {{ commercant.nom_entreprise }}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -123,6 +123,62 @@
         color: #6c757d;
         text-transform: uppercase;
     }
+    
+    /* Responsive Mobile */
+    @media (max-width: 576px) {
+        .stats-overview {
+            padding: 15px 10px;
+        }
+        .stats-overview h1 {
+            font-size: 1.2rem;
+        }
+        .stats-overview p {
+            font-size: 0.8rem;
+        }
+        .small-stat-number {
+            font-size: 0.75rem;
+        }
+        .small-stat-label {
+            font-size: 0.55rem;
+        }
+        .boutique-card .card-body,
+        .depot-card .card-body {
+            padding: 12px;
+        }
+        .boutique-card h5,
+        .depot-card h5 {
+            font-size: 1rem;
+        }
+        .boutique-actions {
+            opacity: 1;
+        }
+        .depot-icon {
+            width: 45px;
+            height: 45px;
+            font-size: 1.2rem;
+            margin-right: 10px;
+        }
+        .depot-stat-value {
+            font-size: 0.9rem;
+        }
+        .add-boutique-card {
+            min-height: 150px;
+        }
+        .add-boutique-card h5 {
+            font-size: 1rem;
+        }
+        .add-boutique-card p {
+            font-size: 0.8rem;
+        }
+        .btn-sm {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+        }
+        .alert {
+            font-size: 0.85rem;
+            padding: 10px;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -140,17 +196,17 @@
                                 <i class="fas fa-eye-slash"></i>
                             </button>
                         </div>
-                        <p class="mb-0">Bienvenue dans votre espace de gestion multi-boutiques</p>
+                        <p class="mb-0">Bienvenue dans votre espace de gestion multi-points de vente</p>
                     </div>
                     <div class="col-12 col-md-4 text-center text-md-end">
                         <div class="row text-center">
                             <div class="col-4 mb-2">
                                 <div class="small-stat-number small-stat-number-neutral">{{ total_boutiques }}</div>
-                                <div class="small-stat-label">Boutiques totales</div>
+                                <div class="small-stat-label">Points de vente</div>
                             </div>
                             <div class="col-4 mb-2">
                                 <div class="small-stat-number small-stat-number-neutral">{{ boutiques_avec_clients }}</div>
-                                <div class="small-stat-label">Boutiques connectées</div>
+                                <div class="small-stat-label">PDV connectés</div>
                             </div>
                             <div class="col-4 mb-2">
                                 <div class="small-stat-number small-stat-number-success sensitive-amount">{{ recette_jour|floatformat:2|intcomma }} CDF</div>
@@ -182,8 +238,8 @@
             <div class="alert alert-info">
                 <i class="fas fa-info-circle"></i>
                 <strong>Comment ça marche :</strong> 
-                Cliquez sur une boutique pour accéder à ses articles, ventes et statistiques. 
-                Chaque boutique peut avoir son propre terminal MAUI pour les ventes.
+                Cliquez sur un point de vente pour accéder à ses articles, ventes et statistiques. 
+                Chaque point de vente peut avoir son propre terminal MAUI pour les ventes.
             </div>
         </div>
     </div>
@@ -270,7 +326,7 @@
     <!-- Liste des boutiques -->
     <div class="row">
         <div class="col-12 mb-3">
-            <h4><i class="fas fa-store text-success"></i> Mes Boutiques</h4>
+            <h4><i class="fas fa-store text-success"></i> Mes Points de Vente</h4>
         </div>
         {% for boutique in boutiques %}
         <div class="col-12 col-sm-6 col-lg-4 mb-4">
@@ -289,7 +345,7 @@
                                 </button>
                                 <ul class="dropdown-menu">
                                     <li><a class="dropdown-item" href="{% url 'inventory:entrer_boutique' boutique.id %}">
-                                        <i class="fas fa-sign-in-alt"></i> Entrer dans la boutique
+                                        <i class="fas fa-sign-in-alt"></i> Entrer dans le point de vente
                                     </a></li>
                                     <li><a class="dropdown-item" href="{% url 'inventory:modifier_boutique' boutique.id %}">
                                         <i class="fas fa-edit"></i> Modifier
@@ -341,7 +397,7 @@
                     <div class="d-grid gap-2">
                         <a href="{% url 'inventory:entrer_boutique' boutique.id %}" 
                            class="btn btn-primary btn-sm" onclick="event.stopPropagation();">
-                            <i class="fas fa-sign-in-alt"></i> Entrer dans la boutique
+                            <i class="fas fa-sign-in-alt"></i> Entrer dans le point de vente
                         </a>
                         <a href="{% url 'inventory:commercant_ventes_refusees_boutique' boutique.id %}" 
                            class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation();">
@@ -385,8 +441,8 @@
             <div class="card add-boutique-card h-100" onclick="window.location.href='{% url 'inventory:commercant_creer_boutique' %}'">
                 <div class="text-center">
                     <i class="fas fa-plus fa-3x text-primary mb-3"></i>
-                    <h5 class="text-primary">Ajouter une boutique</h5>
-                    <p class="text-muted">Créez une nouvelle boutique pour étendre votre activité</p>
+                    <h5 class="text-primary">Ajouter un point de vente</h5>
+                    <p class="text-muted">Créez un nouveau point de vente pour étendre votre activité</p>
                 </div>
             </div>
         </div>
@@ -394,7 +450,7 @@
         <div class="col-12">
             <div class="alert alert-warning">
                 <i class="fas fa-exclamation-triangle"></i>
-                Vous avez atteint la limite de {{ commercant.max_boutiques }} boutiques. 
+                Vous avez atteint la limite de {{ commercant.max_boutiques }} points de vente. 
                 Contactez l'administrateur pour augmenter cette limite.
             </div>
         </div>
@@ -407,11 +463,11 @@
         <div class="col-12">
             <div class="text-center py-5">
                 <i class="fas fa-store fa-4x text-muted mb-4"></i>
-                <h3>Aucune boutique créée</h3>
-                <p class="text-muted mb-4">Commencez par créer votre première boutique pour gérer vos articles et ventes.</p>
+                <h3>Aucun point de vente créé</h3>
+                <p class="text-muted mb-4">Commencez par créer votre premier point de vente pour gérer vos articles et ventes.</p>
                 {% if peut_ajouter_boutique %}
                 <a href="{% url 'inventory:commercant_creer_boutique' %}" class="btn btn-primary btn-lg">
-                    <i class="fas fa-plus"></i> Créer ma première boutique
+                    <i class="fas fa-plus"></i> Créer mon premier point de vente
                 </a>
                 {% endif %}
             </div>
@@ -428,7 +484,7 @@
         const deleteLinks = document.querySelectorAll('a[href*="supprimer"]');
         deleteLinks.forEach(link => {
             link.addEventListener('click', function(e) {
-                if (!confirm('Êtes-vous sûr de vouloir supprimer cette boutique ? Cette action est irréversible.')) {
+                if (!confirm('Êtes-vous sûr de vouloir supprimer ce point de vente ? Cette action est irréversible.')) {
                     e.preventDefault();
                 }
             });

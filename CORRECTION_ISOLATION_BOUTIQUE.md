@@ -41,7 +41,7 @@ class Vente(models.Model):
 
 **Avantages :**
 - ✅ Lien direct entre Vente et Boutique
-- ✅ Filtrage simple et rapide : `Vente.objects.filter(boutique=boutique)`
+- ✅ Filtrage simple et rapide : `Vente.o bjects.filter(boutique=boutique)`
 - ✅ Pas de jointure complexe nécessaire
 - ✅ Isolation garantie au niveau de la base de données
 

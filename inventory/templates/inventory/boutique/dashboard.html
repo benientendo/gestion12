@@ -85,6 +85,83 @@
         cursor: default;
         opacity: 0.7;
     }
+    
+    /* Responsive Mobile */
+    @media (max-width: 576px) {
+        .stats-card {
+            padding: 15px !important;
+            border-radius: 10px;
+        }
+        .stats-card h1 {
+            font-size: 1.1rem;
+        }
+        .stats-card h2 {
+            font-size: 1rem;
+        }
+        .stats-card h3 {
+            font-size: 0.95rem;
+        }
+        .stats-card p {
+            font-size: 0.75rem;
+            margin-bottom: 0.3rem;
+        }
+        .stats-card .row.text-center .col-md-3 {
+            margin-bottom: 10px;
+        }
+        .metric-card {
+            padding: 10px !important;
+        }
+        .metric-card h4 {
+            font-size: 1.2rem;
+        }
+        .metric-card p {
+            font-size: 0.8rem;
+        }
+        .metric-card i.fa-2x {
+            font-size: 1.3rem !important;
+        }
+        .card-header h5 {
+            font-size: 0.95rem;
+        }
+        .card-body .btn {
+            font-size: 0.8rem;
+            padding: 8px 10px;
+        }
+        .offcanvas {
+            width: 100% !important;
+        }
+        .offcanvas .btn-lg {
+            padding: 15px 10px;
+            font-size: 0.9rem;
+        }
+        .offcanvas .btn-lg i.fa-2x {
+            font-size: 1.3rem !important;
+        }
+        .card-hover-ca .card-body {
+            padding: 10px;
+        }
+        .card-hover-ca h3 {
+            font-size: 0.9rem;
+        }
+        .card-hover-ca p {
+            font-size: 0.7rem;
+        }
+        .card-hover-ca small {
+            font-size: 0.65rem;
+        }
+        .table {
+            font-size: 0.8rem;
+        }
+        .badge {
+            font-size: 0.7rem;
+        }
+    }
+    
+    @media (max-width: 768px) {
+        .col-md-8, .col-md-4 {
+            margin-bottom: 15px;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -213,6 +290,62 @@
                             </div>
                         </div>
                     </a>
+                </div>
+            </div>
+
+            <!-- Bouton Articles populaires -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <button class="btn btn-success w-100 p-3 card-hover" type="button" data-bs-toggle="collapse" data-bs-target="#articlesPopulaires" aria-expanded="false">
+                        <i class="fas fa-fire fa-2x mb-2 d-block"></i>
+                        <strong>Articles Populaires</strong>
+                        <br><small>Top 5 des ventes (30 jours)</small>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Contenu Articles populaires (caché par défaut) -->
+            <div class="collapse mb-4" id="articlesPopulaires">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="fas fa-fire"></i> Articles Populaires (30 derniers jours)</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        {% if articles_populaires %}
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Article</th>
+                                        <th class="text-center">Vendus</th>
+                                        <th class="text-end">Revenus</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for article in articles_populaires %}
+                                    <tr>
+                                        <td>
+                                            <strong>{{ article.nom }}</strong>
+                                            <br><small class="text-muted">{{ article.code }}</small>
+                                        </td>
+                                        <td class="text-center">
+                                            <span class="badge bg-primary">{{ article.total_vendus }}</span>
+                                        </td>
+                                        <td class="text-end">
+                                            <strong>{{ article.total_revenus|floatformat:0 }} CDF</strong>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-4 text-muted">
+                            <i class="fas fa-chart-line fa-2x mb-2"></i>
+                            <p class="mb-0">Aucune vente enregistrée</p>
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
 

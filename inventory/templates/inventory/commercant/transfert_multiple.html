@@ -73,6 +73,68 @@
         transform: translateY(-50%);
         color: #6c757d;
     }
+    
+    /* Responsive Mobile */
+    @media (max-width: 576px) {
+        .page-header {
+            padding: 15px;
+            border-radius: 10px;
+        }
+        .page-header h2 {
+            font-size: 1.2rem;
+        }
+        .page-header p {
+            font-size: 0.8rem;
+        }
+        .page-header .btn {
+            font-size: 0.75rem;
+            padding: 6px 10px;
+        }
+        .article-select-card {
+            padding: 10px;
+        }
+        .article-select-card h6 {
+            font-size: 0.9rem;
+        }
+        .article-select-card small {
+            font-size: 0.75rem;
+        }
+        .quantite-input {
+            width: 70px;
+            font-size: 0.85rem;
+        }
+        .stock-badge {
+            font-size: 0.7rem;
+            padding: 3px 8px;
+        }
+        .summary-card {
+            position: relative;
+            top: 0;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .summary-card h5 {
+            font-size: 1rem;
+        }
+        .summary-card .form-label {
+            font-size: 0.85rem;
+        }
+        .article-checkbox {
+            width: 18px;
+            height: 18px;
+        }
+        .btn-select-all {
+            font-size: 0.75rem;
+            padding: 5px 10px;
+        }
+    }
+    
+    @media (max-width: 768px) {
+        .summary-card {
+            position: relative;
+            top: 0;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -83,7 +145,7 @@
         <div class="row align-items-center">
             <div class="col-md-8">
                 <h2><i class="fas fa-exchange-alt me-2"></i> Transfert Multiple</h2>
-                <p class="mb-0 opacity-75">Transférer plusieurs articles du dépôt "{{ depot.nom }}" vers une boutique</p>
+                <p class="mb-0 opacity-75">Transférer plusieurs articles du dépôt "{{ depot.nom }}" vers un point de vente</p>
             </div>
             <div class="col-md-4 text-end">
                 <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light">
@@ -174,9 +236,9 @@
                     <h5><i class="fas fa-clipboard-list"></i> Résumé du transfert</h5>
                     <hr style="border-color: rgba(255,255,255,0.3);">
                     
-                    <!-- Boutique de destination -->
+                    <!-- Point de vente de destination -->
                     <div class="mb-4">
-                        <label class="form-label"><strong>Boutique de destination *</strong></label>
+                        <label class="form-label"><strong>Point de vente de destination *</strong></label>
                         <select class="form-select" name="boutique_destination" required>
                             <option value="">-- Sélectionner --</option>
                             {% for boutique in boutiques_destination %}

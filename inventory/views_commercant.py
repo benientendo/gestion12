@@ -771,6 +771,21 @@ def entrer_boutique(request, boutique_id):
     except:
         ventes_recentes = Vente.objects.none()
     
+    # Articles populaires (top 5 des articles les plus vendus sur 30 jours)
+    try:
+        date_30_jours = timezone.now() - timezone.timedelta(days=30)
+        articles_populaires = Article.objects.filter(
+            boutique=boutique,
+            est_actif=True,
+            lignes_vente__vente__est_annulee=False,
+            lignes_vente__vente__date_vente__gte=date_30_jours
+        ).annotate(
+            total_vendus=Sum('lignes_vente__quantite'),
+            total_revenus=Sum(F('lignes_vente__quantite') * F('lignes_vente__prix_unitaire'))
+        ).filter(total_vendus__gt=0).order_by('-total_vendus')[:5]
+    except:
+        articles_populaires = []
+    
     # Données pour graphiques (simplifiées)
     labels_jours = []
     ca_quotidien = []
@@ -793,6 +808,7 @@ def entrer_boutique(request, boutique_id):
         'articles_stock_faible': articles_stock_faible,
         'mouvements_recents': mouvements_recents,
         'ventes_recentes': ventes_recentes,
+        'articles_populaires': articles_populaires,
         'labels_jours': labels_jours,
         'ca_quotidien': ca_quotidien
     }
@@ -2673,9 +2689,14 @@ def approvisionner_depot(request, depot_id):
                 quantite = int(request.POST.get('quantite_initiale', '1'))
                 description = request.POST.get('description', '')
                 
-                if not code or not nom:
-                    messages.error(request, "Le code et le nom de l'article sont obligatoires")
+                if not nom:
+                    messages.error(request, "Le nom de l'article est obligatoire")
                     return redirect('inventory:detail_depot', depot_id=depot.id)
+                
+                # Générer un code unique si non renseigné
+                if not code:
+                    import uuid
+                    code = f"ART-{uuid.uuid4().hex[:8].upper()}"
                 
                 # Vérifier si l'article existe déjà dans ce dépôt
                 if Article.objects.filter(code=code, boutique=depot).exists():
@@ -2837,7 +2858,7 @@ def transfert_multiple(request, depot_id):
                             erreurs.append(f"{article.nom}: stock insuffisant (dispo: {article.quantite_stock}, demandé: {quantite})")
                             continue
                         
-                        # Créer le transfert
+                        # Créer le transfert et le valider immédiatement
                         transfert = TransfertStock.objects.create(
                             article=article,
                             depot_source=depot,
@@ -2847,6 +2868,8 @@ def transfert_multiple(request, depot_id):
                             commentaire=commentaire_global,
                             statut='EN_ATTENTE'
                         )
+                        # Validation directe - mise à jour des stocks
+                        transfert.valider_transfert(request.user.username)
                         transferts_crees.append(transfert)
                         
                     except Article.DoesNotExist:
@@ -2862,7 +2885,7 @@ def transfert_multiple(request, depot_id):
         
         # Messages de résultat
         if transferts_crees:
-            messages.success(request, f"{len(transferts_crees)} transfert(s) créé(s) vers {boutique_dest.nom}")
+            messages.success(request, f"{len(transferts_crees)} transfert(s) validé(s) vers {boutique_dest.nom} - Stock mis à jour")
         
         for erreur in erreurs:
             messages.warning(request, erreur)

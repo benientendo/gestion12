@@ -79,6 +79,70 @@
         background-color: #6c757d;
         color: #fff;
     }
+    
+    /* Responsive Mobile */
+    @media (max-width: 576px) {
+        .depot-header {
+            padding: 15px;
+            border-radius: 10px;
+        }
+        .depot-header h2 {
+            font-size: 1.2rem;
+        }
+        .depot-header p, .depot-header small {
+            font-size: 0.8rem;
+        }
+        .depot-header .btn-sm {
+            font-size: 0.7rem;
+            padding: 4px 8px;
+            margin-bottom: 5px;
+        }
+        .depot-header .col-md-4 {
+            text-align: center !important;
+            margin-top: 10px;
+        }
+        .stat-card {
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+        .stat-value {
+            font-size: 1.3rem;
+        }
+        .stat-label {
+            font-size: 0.75rem;
+        }
+        .table {
+            font-size: 0.8rem;
+        }
+        .table th, .table td {
+            padding: 8px 5px;
+        }
+        .stock-badge {
+            font-size: 0.7rem;
+            padding: 3px 6px;
+        }
+        .transfert-item {
+            padding: 10px;
+        }
+        .transfert-item .text-muted {
+            font-size: 0.75rem;
+        }
+        .card-header h5 {
+            font-size: 0.95rem;
+        }
+        .modal-dialog {
+            margin: 10px;
+        }
+        .modal-body {
+            padding: 15px;
+        }
+        .form-label {
+            font-size: 0.85rem;
+        }
+        .form-control, .form-select {
+            font-size: 0.85rem;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -258,9 +322,9 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label for="boutique_destination" class="form-label">Boutique de destination *</label>
+                        <label for="boutique_destination" class="form-label">Point de vente de destination *</label>
                         <select class="form-select" name="boutique_destination" id="boutique_destination" required>
-                            <option value="">-- Sélectionner une boutique --</option>
+                            <option value="">-- Sélectionner un point de vente --</option>
                             {% for boutique in boutiques_destination %}
                             <option value="{{ boutique.id }}">{{ boutique.nom }} - {{ boutique.ville }}</option>
                             {% endfor %}
@@ -321,8 +385,8 @@
                             
                             <div class="row">
                                 <div class="col-md-6 mb-3">
-                                    <label for="code" class="form-label">Code article *</label>
-                                    <input type="text" class="form-control" name="code" id="code">
+                                    <label for="code" class="form-label">Code article <small class="text-muted">(optionnel - généré auto si vide)</small></label>
+                                    <input type="text" class="form-control" name="code" id="code" placeholder="Laissez vide pour générer automatiquement">
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label for="nom" class="form-label">Nom de l'article *</label>
