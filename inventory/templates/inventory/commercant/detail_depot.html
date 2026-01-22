@@ -667,6 +667,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (qty && !qty.value) {
             qty.value = 1;
         }
+        if (qty) {
+            qty.focus();
+            qty.select();
+        }
 
         approTargetArticleId = null;
     });
@@ -678,6 +682,15 @@ document.querySelectorAll('#approTab button').forEach(function(tab) {
         var target = this.getAttribute('data-bs-target');
         document.getElementById('type_appro').value = (target === '#nouveau') ? 'nouveau' : 'existant';
         console.log('Type appro changé:', document.getElementById('type_appro').value);
+        
+        // Autofocus sur le champ quantité quand on passe à l'onglet existant
+        if (target === '#existant') {
+            var qty = document.getElementById('quantite_ajout');
+            if (qty) {
+                qty.focus();
+                qty.select();
+            }
+        }
     });
 });
 </script>
