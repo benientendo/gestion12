@@ -1,0 +1,180 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Mes Boutiques - {{ commercant.nom_entreprise }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 15px;
+        margin-bottom: 25px;
+    }
+    .boutique-card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        overflow: hidden;
+    }
+    .boutique-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    }
+    .boutique-card .card-header {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+        padding: 15px 20px;
+        border: none;
+    }
+    .boutique-card.depot .card-header {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+    .boutique-card .card-body {
+        padding: 20px;
+    }
+    .stat-mini {
+        text-align: center;
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    .stat-mini .value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #333;
+    }
+    .stat-mini .label {
+        font-size: 0.75rem;
+        color: #6c757d;
+        text-transform: uppercase;
+    }
+    .badge-depot {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+    }
+    .badge-boutique {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="page-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h2><i class="fas fa-store me-2"></i>Mes Points de Vente</h2>
+                <p class="mb-0 opacity-75">{{ commercant.nom_entreprise }}</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="{% url 'inventory:commercant_dashboard' %}" class="btn btn-light me-2">
+                    <i class="fas fa-arrow-left"></i> Tableau de bord
+                </a>
+                {% if peut_ajouter_boutique %}
+                <a href="{% url 'inventory:commercant_creer_boutique' %}" class="btn btn-success">
+                    <i class="fas fa-plus"></i> Nouvelle Boutique
+                </a>
+                {% else %}
+                <button class="btn btn-secondary" disabled title="Limite atteinte">
+                    <i class="fas fa-plus"></i> Limite atteinte
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Liste des boutiques -->
+    <div class="row">
+        {% for boutique in boutiques %}
+        <div class="col-lg-4 col-md-6 mb-4">
+            <div class="card boutique-card {% if boutique.est_depot %}depot{% endif %}">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0">
+                            {% if boutique.est_depot %}
+                            <i class="fas fa-warehouse me-2"></i>
+                            {% else %}
+                            <i class="fas fa-store me-2"></i>
+                            {% endif %}
+                            {{ boutique.nom }}
+                        </h5>
+                        <small class="opacity-75">{{ boutique.ville }}</small>
+                    </div>
+                    {% if boutique.est_depot %}
+                    <span class="badge badge-depot">Dépôt</span>
+                    {% else %}
+                    <span class="badge badge-boutique">{{ boutique.get_type_commerce_display }}</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <div class="stat-mini">
+                                <div class="value">{{ boutique.nb_articles|default:0 }}</div>
+                                <div class="label">Articles</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="stat-mini">
+                                <div class="value">{{ boutique.nb_terminaux|default:0 }}</div>
+                                <div class="label">Terminaux</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            <i class="fas fa-map-marker-alt me-1"></i> {{ boutique.adresse|default:"Adresse non renseignée" }}
+                        </small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between align-items-center">
+                        {% if boutique.est_active %}
+                        <span class="badge bg-success"><i class="fas fa-check-circle"></i> Active</span>
+                        {% else %}
+                        <span class="badge bg-danger"><i class="fas fa-times-circle"></i> Inactive</span>
+                        {% endif %}
+                        
+                        <div class="btn-group btn-group-sm">
+                            {% if boutique.est_depot %}
+                            <a href="{% url 'inventory:detail_depot' boutique.id %}" class="btn btn-outline-primary" title="Voir le dépôt">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            {% else %}
+                            <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-success" title="Entrer">
+                                <i class="fas fa-sign-in-alt"></i>
+                            </a>
+                            <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-outline-primary" title="Détails">
+                                <i class="fas fa-info-circle"></i>
+                            </a>
+                            {% endif %}
+                            <a href="{% url 'inventory:modifier_boutique' boutique.id %}" class="btn btn-outline-warning" title="Modifier">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="alert alert-info text-center py-5">
+                <i class="fas fa-store fa-3x mb-3 text-muted"></i>
+                <h4>Aucune boutique</h4>
+                <p class="text-muted">Vous n'avez pas encore créé de boutique.</p>
+                {% if peut_ajouter_boutique %}
+                <a href="{% url 'inventory:commercant_creer_boutique' %}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Créer ma première boutique
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

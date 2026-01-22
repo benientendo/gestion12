@@ -1,0 +1,304 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Importer des articles - {{ depot.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .article-card {
+        border: 2px solid #e9ecef;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 15px;
+        transition: all 0.3s ease;
+        background: white;
+    }
+    .article-card:hover {
+        border-color: #007bff;
+        box-shadow: 0 4px 12px rgba(0,123,255,0.15);
+    }
+    .article-card.selected {
+        border-color: #28a745;
+        background-color: #f0fff4;
+    }
+    .article-checkbox {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+    }
+    .quantite-input {
+        max-width: 120px;
+    }
+    .depot-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 15px;
+        margin-bottom: 25px;
+    }
+    .info-badge {
+        background-color: #e7f3ff;
+        color: #0066cc;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+    .article-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    .article-details {
+        flex-grow: 1;
+    }
+    .badge-boutique {
+        background-color: #6c757d;
+        color: white;
+        padding: 3px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        margin-right: 5px;
+        display: inline-block;
+        margin-top: 3px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="depot-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h2><i class="fas fa-file-import me-2"></i>Importer des articles vers {{ depot.nom }}</h2>
+                <p class="mb-0 opacity-75">Sélectionnez les articles existants dans vos points de vente pour les ajouter au dépôt</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light">
+                    <i class="fas fa-arrow-left"></i> Retour au dépôt
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% if articles_uniques %}
+    <div class="info-badge">
+        <i class="fas fa-info-circle me-2"></i>
+        <strong>{{ articles_uniques|length }}</strong> article(s) disponible(s) pour l'import. 
+        Les articles déjà présents dans le dépôt ne sont pas affichés.
+    </div>
+
+    <form method="post" id="importForm">
+        {% csrf_token %}
+        
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-boxes"></i> Articles disponibles</h5>
+                <div>
+                    <button type="button" class="btn btn-light btn-sm me-2" onclick="selectAll()">
+                        <i class="fas fa-check-square"></i> Tout sélectionner
+                    </button>
+                    <button type="button" class="btn btn-light btn-sm" onclick="deselectAll()">
+                        <i class="fas fa-square"></i> Tout désélectionner
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" class="form-control" id="searchArticle" 
+                                   placeholder="Rechercher un article..." 
+                                   onkeyup="filterArticles()">
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <span id="selectedCount" class="badge bg-success" style="font-size: 1rem;">0 article(s) sélectionné(s)</span>
+                    </div>
+                </div>
+
+                <div id="articlesContainer">
+                    {% for nom, info in articles_uniques.items %}
+                    <div class="article-card" data-article-name="{{ nom|lower }}">
+                        <div class="article-info">
+                            <div>
+                                <input type="checkbox" 
+                                       class="article-checkbox form-check-input" 
+                                       name="articles_selectionnes" 
+                                       value="{{ info.article.id }}"
+                                       id="article_{{ info.article.id }}"
+                                       onchange="updateSelection(this)">
+                            </div>
+                            <div class="article-details">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h6 class="mb-1">
+                                            <label for="article_{{ info.article.id }}" style="cursor: pointer;">
+                                                {{ nom }}
+                                            </label>
+                                        </h6>
+                                        <div class="text-muted small">
+                                            <code>{{ info.article.code }}</code>
+                                            {% if info.article.categorie %}
+                                            | <i class="fas fa-tag"></i> {{ info.article.categorie.nom }}
+                                            {% endif %}
+                                        </div>
+                                        <div class="mt-2">
+                                            {% for boutique in info.boutiques %}
+                                            <span class="badge-boutique">
+                                                <i class="fas fa-store"></i> {{ boutique }}
+                                            </span>
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    <div class="text-end">
+                                        <div class="mb-1">
+                                            {% if info.article.devise == 'USD' %}
+                                            <span class="badge bg-success">USD</span><br>
+                                            <strong class="text-success">$ {{ info.article.prix_vente|floatformat:2 }}</strong>
+                                            {% else %}
+                                            <span class="badge bg-primary">CDF</span><br>
+                                            <strong>{{ info.article.prix_vente|floatformat:0 }} FC</strong>
+                                            {% endif %}
+                                        </div>
+                                        <small class="text-muted">Prix d'achat: 
+                                            {% if info.article.devise == 'USD' %}
+                                            $ {{ info.article.prix_achat|floatformat:2 }}
+                                            {% else %}
+                                            {{ info.article.prix_achat|floatformat:0 }} FC
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                </div>
+                                <div class="mt-3">
+                                    <label class="form-label small mb-1">Quantité initiale dans le dépôt:</label>
+                                    <input type="number" 
+                                           class="form-control form-control-sm quantite-input" 
+                                           name="quantite_{{ info.article.id }}" 
+                                           min="0" 
+                                           value="0"
+                                           placeholder="0">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div id="noResults" class="alert alert-warning d-none">
+                    <i class="fas fa-exclamation-triangle"></i> Aucun article trouvé pour cette recherche.
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-body text-center">
+                <button type="submit" class="btn btn-success btn-lg" id="submitBtn">
+                    <i class="fas fa-check-circle"></i> Importer les articles sélectionnés
+                </button>
+                <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-secondary btn-lg ms-2">
+                    <i class="fas fa-times"></i> Annuler
+                </a>
+            </div>
+        </div>
+    </form>
+
+    {% else %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>
+        <strong>Aucun article disponible pour l'import.</strong>
+        <p class="mb-0 mt-2">
+            Tous les articles de vos points de vente sont déjà présents dans ce dépôt, 
+            ou vous n'avez pas encore créé d'articles dans vos points de vente.
+        </p>
+        <div class="mt-3">
+            <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-primary">
+                <i class="fas fa-arrow-left"></i> Retour au dépôt
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function updateSelection(checkbox) {
+    const card = checkbox.closest('.article-card');
+    if (checkbox.checked) {
+        card.classList.add('selected');
+    } else {
+        card.classList.remove('selected');
+    }
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const checkedBoxes = document.querySelectorAll('.article-checkbox:checked');
+    const count = checkedBoxes.length;
+    document.getElementById('selectedCount').textContent = count + ' article(s) sélectionné(s)';
+    
+    const submitBtn = document.getElementById('submitBtn');
+    if (count > 0) {
+        submitBtn.disabled = false;
+    } else {
+        submitBtn.disabled = true;
+    }
+}
+
+function selectAll() {
+    const visibleCheckboxes = document.querySelectorAll('.article-card:not([style*="display: none"]) .article-checkbox');
+    visibleCheckboxes.forEach(checkbox => {
+        checkbox.checked = true;
+        updateSelection(checkbox);
+    });
+}
+
+function deselectAll() {
+    const checkboxes = document.querySelectorAll('.article-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+        updateSelection(checkbox);
+    });
+}
+
+function filterArticles() {
+    const searchText = document.getElementById('searchArticle').value.toLowerCase();
+    const cards = document.querySelectorAll('.article-card');
+    let visibleCount = 0;
+    
+    cards.forEach(card => {
+        const articleName = card.getAttribute('data-article-name');
+        const articleCode = card.querySelector('code').textContent.toLowerCase();
+        
+        if (articleName.includes(searchText) || articleCode.includes(searchText)) {
+            card.style.display = '';
+            visibleCount++;
+        } else {
+            card.style.display = 'none';
+        }
+    });
+    
+    const noResults = document.getElementById('noResults');
+    if (visibleCount === 0 && cards.length > 0) {
+        noResults.classList.remove('d-none');
+    } else {
+        noResults.classList.add('d-none');
+    }
+}
+
+// Initialiser le compteur au chargement
+document.addEventListener('DOMContentLoaded', function() {
+    updateSelectedCount();
+    
+    // Validation du formulaire
+    document.getElementById('importForm').addEventListener('submit', function(e) {
+        const checkedBoxes = document.querySelectorAll('.article-checkbox:checked');
+        if (checkedBoxes.length === 0) {
+            e.preventDefault();
+            alert('Veuillez sélectionner au moins un article à importer.');
+            return false;
+        }
+    });
+});
+</script>
+{% endblock %}

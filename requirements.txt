@@ -22,5 +22,8 @@ qrcode==7.4.2
 requests==2.31.0
 python-decouple==3.8
 
+# Import Excel
+openpyxl==3.1.2
+
 # Variables d'environnement
 python-dotenv==1.0.0

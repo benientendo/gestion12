@@ -1,0 +1,129 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Modifier {{ article.nom }} - {{ depot.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-edit"></i> Modifier l'article</h1>
+                    <p class="text-muted">
+                        <i class="fas fa-warehouse"></i> {{ depot.nom }} • 
+                        <i class="fas fa-box"></i> {{ article.nom }}
+                    </p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour au dépôt
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Formulaire de modification -->
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-box"></i> Informations de l'article</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label for="nom" class="form-label">Nom de l'article *</label>
+                                <input type="text" class="form-control" id="nom" name="nom" value="{{ article.nom }}" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="code" class="form-label">Code</label>
+                                <input type="text" class="form-control" id="code" name="code" value="{{ article.code }}">
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-12">
+                                <label for="description" class="form-label">Description</label>
+                                <textarea class="form-control" id="description" name="description" rows="2">{{ article.description }}</textarea>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-12">
+                                <label for="devise" class="form-label"><i class="fas fa-coins"></i> Devise principale *</label>
+                                <select class="form-select" id="devise" name="devise" onchange="toggleDeviseLabels()">
+                                    <option value="CDF" {% if article.devise == 'CDF' %}selected{% endif %}>CDF (Franc Congolais)</option>
+                                    <option value="USD" {% if article.devise == 'USD' %}selected{% endif %}>USD (Dollar US)</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="prix_achat" class="form-label">
+                                    <i class="fas fa-shopping-cart"></i> Prix d'achat <span id="devise_achat">({{ article.devise }})</span> *
+                                </label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="prix_achat" name="prix_achat" 
+                                           value="{{ article.prix_achat|floatformat:2 }}" step="0.01" min="0" required>
+                                    <span class="input-group-text" id="symbol_achat">{% if article.devise == 'USD' %}${% else %}FC{% endif %}</span>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="prix_vente" class="form-label">
+                                    <i class="fas fa-tag"></i> Prix de vente <span id="devise_vente">({{ article.devise }})</span> *
+                                </label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="prix_vente" name="prix_vente" 
+                                           value="{{ article.prix_vente|floatformat:2 }}" step="0.01" min="0" required>
+                                    <span class="input-group-text" id="symbol_vente">{% if article.devise == 'USD' %}${% else %}FC{% endif %}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label for="quantite_stock" class="form-label">
+                                    <i class="fas fa-cubes"></i> Quantité en stock *
+                                </label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="quantite_stock" name="quantite_stock" 
+                                           value="{{ article.quantite_stock }}" min="0" required>
+                                    <span class="input-group-text">unités</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-save"></i> Enregistrer les modifications
+                            </button>
+                            <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Annuler
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleDeviseLabels() {
+    const devise = document.getElementById('devise').value;
+    const isCDF = devise === 'CDF';
+    
+    document.getElementById('devise_achat').textContent = isCDF ? '(CDF)' : '(USD)';
+    document.getElementById('devise_vente').textContent = isCDF ? '(CDF)' : '(USD)';
+    document.getElementById('symbol_achat').textContent = isCDF ? 'FC' : '$';
+    document.getElementById('symbol_vente').textContent = isCDF ? 'FC' : '$';
+}
+</script>
+{% endblock %}

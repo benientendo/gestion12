@@ -79,6 +79,93 @@
         background-color: #6c757d;
         color: #fff;
     }
+
+    .depot-sidebar {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        overflow: hidden;
+        position: sticky;
+        top: 1rem;
+        max-height: calc(100vh - 2rem);
+        display: flex;
+        flex-direction: column;
+    }
+    .depot-sidebar-header {
+        background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%);
+        color: #fff;
+        padding: 12px 14px;
+        font-weight: 700;
+    }
+    .depot-sidebar-body {
+        overflow-y: auto;
+    }
+    .depot-sidebar .list-group-item {
+        border: 0;
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+    }
+    .depot-sidebar .list-group-item:last-child {
+        border-bottom: 0;
+    }
+    .depot-sidebar .pdv-name {
+        font-weight: 600;
+    }
+    .depot-sidebar .pdv-meta {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+    .depot-sidebar-toggle {
+        border-radius: 10px;
+    }
+
+    .depot-articles-table {
+        font-size: 0.9rem;
+    }
+    .depot-articles-table th,
+    .depot-articles-table td {
+        vertical-align: middle;
+    }
+
+    .article-actions {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        justify-content: center;
+    }
+    .article-actions .btn {
+        font-size: 0.75rem;
+        padding: 0.2rem 0.4rem;
+        line-height: 1.1;
+    }
+
+    .depot-sidebar-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.35);
+        z-index: 1040;
+    }
+
+    @media (max-width: 991.98px) {
+        .depot-sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 280px;
+            max-height: 100vh;
+            border-radius: 0;
+            z-index: 1050;
+            transform: translateX(-110%);
+            transition: transform 0.25s ease;
+        }
+        .depot-sidebar.show {
+            transform: translateX(0);
+        }
+        .depot-sidebar-overlay.show {
+            display: block;
+        }
+    }
     
     /* Responsive Mobile */
     @media (max-width: 576px) {
@@ -148,6 +235,39 @@
 
 {% block content %}
 <div class="container-fluid py-4">
+    <div class="depot-sidebar-overlay" id="depotSidebarOverlay" onclick="toggleDepotSidebar()"></div>
+
+    <div class="row g-3">
+        <div class="col-lg-3">
+            <button class="btn btn-dark btn-sm w-100 d-lg-none depot-sidebar-toggle" type="button" onclick="toggleDepotSidebar()">
+                <i class="fas fa-store me-2"></i>Points de vente
+            </button>
+
+            <div class="depot-sidebar" id="depotSidebar">
+                <div class="depot-sidebar-header">
+                    <i class="fas fa-store me-2"></i>Points de vente
+                </div>
+                <div class="depot-sidebar-body">
+                    <div class="list-group list-group-flush">
+                        {% for boutique in boutiques_destination %}
+                        <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="list-group-item list-group-item-action">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <div class="pdv-name">{{ boutique.nom }}</div>
+                                    <div class="pdv-meta">{% if boutique.ville %}{{ boutique.ville }}{% endif %}</div>
+                                </div>
+                                <span class="badge bg-secondary">{{ boutique.articles.count }}</span>
+                            </div>
+                        </a>
+                        {% empty %}
+                        <div class="list-group-item text-muted text-center py-3">Aucun point de vente</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-9">
     <!-- En-tête du dépôt -->
     <div class="depot-header">
         <div class="row align-items-center">
@@ -166,7 +286,13 @@
                 <a href="{% url 'inventory:transfert_multiple' depot.id %}" class="btn btn-warning btn-sm me-2">
                     <i class="fas fa-exchange-alt"></i> Transfert Multiple
                 </a>
-                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#approvisionnementModal">
+                <a href="{% url 'inventory:importer_articles_vers_depot' depot.id %}" class="btn btn-info btn-sm me-2" title="Importer des articles depuis vos points de vente">
+                    <i class="fas fa-file-import"></i> Importer Articles
+                </a>
+                <a href="{% url 'inventory:importer_excel_depot' depot.id %}" class="btn btn-success btn-sm me-2" title="Importer des articles depuis un fichier Excel">
+                    <i class="fas fa-file-excel"></i> Import Excel
+                </a>
+                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#approvisionnementModal" title="Approvisionner le dépôt">
                     <i class="fas fa-plus-circle"></i> Approvisionner
                 </button>
             </div>
@@ -175,48 +301,52 @@
 
     <!-- Statistiques -->
     <div class="row mb-4">
-        <div class="col-md-3">
+        <div class="col-6 col-md-4">
             <div class="stat-card">
                 <div class="stat-value">{{ total_articles }}</div>
                 <div class="stat-label">ARTICLES EN STOCK</div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-6 col-md-4">
             <div class="stat-card">
                 <div class="stat-value">{{ valeur_stock|floatformat:0 }} CDF</div>
                 <div class="stat-label">VALEUR DU STOCK</div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-6 col-md-4">
             <div class="stat-card">
                 <div class="stat-value">{{ articles_stock_bas }}</div>
                 <div class="stat-label">ARTICLES EN STOCK BAS</div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="stat-card">
-                <div class="stat-value">{{ transferts_recents|length }}</div>
-                <div class="stat-label">TRANSFERTS RÉCENTS</div>
             </div>
         </div>
     </div>
 
     <div class="row">
         <!-- Liste des articles -->
-        <div class="col-md-8">
+        <div class="col-12">
             <div class="card shadow-sm">
                 <div class="card-header bg-primary text-white">
                     <h5 class="mb-0"><i class="fas fa-boxes"></i> Articles du dépôt</h5>
                 </div>
                 <div class="card-body">
+                    <div class="row g-2 align-items-center mb-3">
+                        <div class="col-12 col-md-6 col-lg-5">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" class="form-control" id="searchArticle" placeholder="Rechercher (nom ou code)">
+                                <button class="btn btn-outline-secondary" type="button" id="clearSearch">X</button>
+                            </div>
+                        </div>
+                    </div>
                     <div class="table-responsive">
-                        <table class="table table-hover">
+                        <table class="table table-hover table-sm depot-articles-table" id="articlesTable">
                             <thead>
                                 <tr>
                                     <th>Article</th>
                                     <th>Code</th>
                                     <th class="text-center">Stock</th>
-                                    <th class="text-end">Prix achat</th>
+                                    <th class="text-end">Achat</th>
+                                    <th class="text-end">Vente</th>
                                     <th class="text-center">Action</th>
                                 </tr>
                             </thead>
@@ -240,16 +370,30 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-end">{{ article.prix_achat|floatformat:0 }} CDF</td>
+                                    <td class="text-end">{{ article.prix_vente|floatformat:0 }} CDF</td>
                                     <td class="text-center">
-                                        <button class="btn btn-sm btn-primary" 
-                                                onclick="openTransfertModal({{ article.id }}, '{{ article.nom|escapejs }}', {{ article.quantite_stock }})">
-                                            <i class="fas fa-exchange-alt"></i> Transférer
-                                        </button>
+                                        <div class="article-actions">
+                                            <button type="button" class="btn btn-success" title="Ajouter stock" aria-label="Ajouter stock"
+                                                    onclick="openApprovisionnementForArticle({{ article.id }})">
+                                                <i class="fas fa-plus"></i>
+                                            </button>
+                                            <a href="{% url 'inventory:modifier_article_depot' depot.id article.id %}" class="btn btn-warning" title="Modifier" aria-label="Modifier">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <a href="{% url 'inventory:supprimer_article_depot' depot.id article.id %}" class="btn btn-danger" title="Supprimer" aria-label="Supprimer"
+                                               onclick="return confirm('Supprimer cet article du dépôt ?');">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-primary" title="Transférer" aria-label="Transférer"
+                                                    onclick="openTransfertModal({{ article.id }}, '{{ article.nom|escapejs }}', {{ article.quantite_stock }})">
+                                                <i class="fas fa-exchange-alt"></i>
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                                 {% empty %}
                                 <tr>
-                                    <td colspan="5" class="text-center text-muted py-4">
+                                    <td colspan="6" class="text-center text-muted py-4">
                                         Aucun article dans ce dépôt
                                     </td>
                                 </tr>
@@ -260,40 +404,7 @@
                 </div>
             </div>
         </div>
-
-        <!-- Transferts récents -->
-        <div class="col-md-4">
-            <div class="card shadow-sm">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0"><i class="fas fa-truck"></i> Transferts récents</h5>
-                </div>
-                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
-                    {% for transfert in transferts_recents %}
-                    <div class="transfert-item">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <strong>{{ transfert.article.nom }}</strong>
-                            <span class="badge badge-{{ transfert.statut|lower }}">
-                                {{ transfert.get_statut_display }}
-                            </span>
-                        </div>
-                        <div class="text-muted small">
-                            <i class="fas fa-arrow-right"></i> {{ transfert.boutique_destination.nom }}<br>
-                            <i class="fas fa-box"></i> Quantité: {{ transfert.quantite }}<br>
-                            <i class="fas fa-clock"></i> {{ transfert.date_transfert|date:"d/m/Y H:i" }}
-                        </div>
-                        {% if transfert.statut == 'EN_ATTENTE' %}
-                        <div class="mt-2">
-                            <a href="{% url 'inventory:detail_transfert' transfert.id %}" class="btn btn-sm btn-outline-primary">
-                                <i class="fas fa-eye"></i> Voir
-                            </a>
-                        </div>
-                        {% endif %}
-                    </div>
-                    {% empty %}
-                    <p class="text-muted text-center">Aucun transfert récent</p>
-                    {% endfor %}
-                </div>
-            </div>
+    </div>
         </div>
     </div>
 </div>
@@ -446,6 +557,25 @@
 </div>
 
 <script>
+function toggleDepotSidebar() {
+    var sidebar = document.getElementById('depotSidebar');
+    var overlay = document.getElementById('depotSidebarOverlay');
+    if (!sidebar || !overlay) {
+        return;
+    }
+    sidebar.classList.toggle('show');
+    overlay.classList.toggle('show');
+}
+
+window.addEventListener('resize', function() {
+    if (window.innerWidth >= 992) {
+        var sidebar = document.getElementById('depotSidebar');
+        var overlay = document.getElementById('depotSidebarOverlay');
+        if (sidebar) sidebar.classList.remove('show');
+        if (overlay) overlay.classList.remove('show');
+    }
+});
+
 function openTransfertModal(articleId, articleNom, articleStock) {
     document.getElementById('article_id').value = articleId;
     document.getElementById('article_nom').textContent = articleNom;
@@ -455,6 +585,75 @@ function openTransfertModal(articleId, articleNom, articleStock) {
     var modal = new bootstrap.Modal(document.getElementById('transfertModal'));
     modal.show();
 }
+
+function filterDepotArticles() {
+    var q = (document.getElementById('searchArticle')?.value || '').toLowerCase();
+    var rows = document.querySelectorAll('#articlesTable tbody tr.article-row');
+    rows.forEach(function(row) {
+        var name = (row.querySelector('td strong')?.textContent || '').toLowerCase();
+        var code = (row.querySelector('td code')?.textContent || '').toLowerCase();
+        var show = !q || name.includes(q) || code.includes(q);
+        row.style.display = show ? '' : 'none';
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var input = document.getElementById('searchArticle');
+    var clear = document.getElementById('clearSearch');
+    if (input) {
+        input.addEventListener('input', filterDepotArticles);
+    }
+    if (clear && input) {
+        clear.addEventListener('click', function() {
+            input.value = '';
+            filterDepotArticles();
+            input.focus();
+        });
+    }
+});
+
+var approTargetArticleId = null;
+
+function openApprovisionnementForArticle(articleId) {
+    approTargetArticleId = articleId;
+    var modalEl = document.getElementById('approvisionnementModal');
+    if (!modalEl) {
+        return;
+    }
+    var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var modalEl = document.getElementById('approvisionnementModal');
+    if (!modalEl) {
+        return;
+    }
+
+    modalEl.addEventListener('shown.bs.modal', function() {
+        if (!approTargetArticleId) {
+            return;
+        }
+
+        var existTabBtn = document.getElementById('existant-tab');
+        if (existTabBtn) {
+            var tab = new bootstrap.Tab(existTabBtn);
+            tab.show();
+        }
+
+        var select = document.getElementById('article_existant');
+        if (select) {
+            select.value = String(approTargetArticleId);
+        }
+
+        var qty = document.getElementById('quantite_ajout');
+        if (qty && !qty.value) {
+            qty.value = 1;
+        }
+
+        approTargetArticleId = null;
+    });
+});
 
 // Gérer le changement d'onglet pour le type d'approvisionnement
 document.querySelectorAll('#approTab button').forEach(function(tab) {

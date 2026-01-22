@@ -146,7 +146,13 @@
                             <span class="text-muted">-</span>
                             {% endif %}
                         </td>
-                        <td class="col-prix fw-semibold">{{ article.prix_vente|floatformat:0 }} <small>CDF</small></td>
+                        <td class="col-prix fw-semibold">
+                            {% if article.devise == 'USD' %}
+                            <span class="text-success">$ {{ article.prix_vente|floatformat:2 }}</span>
+                            {% else %}
+                            {{ article.prix_vente|floatformat:0 }} <small>FC</small>
+                            {% endif %}
+                        </td>
                         <td class="col-stock">
                             {% if article.quantite_stock <= 0 %}
                             <span class="badge bg-danger">{{ article.quantite_stock }}</span>
@@ -169,7 +175,7 @@
                                 </button>
                                 <button type="button" class="btn btn-outline-info btn-sm" 
                                         data-bs-toggle="modal" data-bs-target="#modifierPrixModal"
-                                        onclick="setArticleForPrice({{ article.id }}, '{{ article.nom }}', {{ article.prix_vente }})" title="Prix">
+                                        onclick="setArticleForPrice({{ article.id }}, '{{ article.nom }}', {{ article.prix_vente }}, '{{ article.devise }}')" title="Prix">
                                     <i class="fas fa-tag"></i>
                                 </button>
                                 <a href="{% url 'inventory:modifier_article_boutique' boutique.id article.id %}" 
@@ -228,7 +234,13 @@
                             </tr>
                             <tr>
                                 <th>Prix de vente:</th>
-                                <td><strong>{{ article.prix_vente|floatformat:0 }} CDF</strong></td>
+                                <td><strong>
+                                    {% if article.devise == 'USD' %}
+                                    $ {{ article.prix_vente|floatformat:2 }}
+                                    {% else %}
+                                    {{ article.prix_vente|floatformat:0 }} FC
+                                    {% endif %}
+                                </strong></td>
                             </tr>
                             <tr>
                                 <th>Stock:</th>
@@ -286,13 +298,33 @@
                     </div>
                     
                     <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="prix_vente" class="form-label"><i class="fas fa-money-bill"></i> Prix de vente (CDF) *</label>
-                            <input type="number" class="form-control" id="prix_vente" name="prix_vente" 
-                                   required min="0" step="0.01" placeholder="Ex: 1500">
+                        <div class="col-md-4 mb-3">
+                            <label for="devise" class="form-label"><i class="fas fa-coins"></i> Devise *</label>
+                            <select class="form-select" id="devise" name="devise" onchange="updateDeviseLabels()">
+                                <option value="CDF" selected>CDF (Franc Congolais)</option>
+                                <option value="USD">USD (Dollar US)</option>
+                            </select>
                         </div>
-                        
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-4 mb-3" id="prixVenteContainer">
+                            <label for="prix_vente" class="form-label" id="labelPrixVente"><i class="fas fa-money-bill"></i> Prix de vente <span id="devisePrixVente">(CDF)</span> *</label>
+                            <div class="input-group">
+                                <span class="input-group-text" id="symbolePrixVente">FC</span>
+                                <input type="number" class="form-control" id="prix_vente" name="prix_vente" 
+                                       required min="0" step="0.01" placeholder="Ex: 1500">
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3" id="prixAchatContainer">
+                            <label for="prix_achat" class="form-label" id="labelPrixAchat"><i class="fas fa-shopping-cart"></i> Prix d'achat <span id="devisePrixAchat">(CDF)</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text" id="symbolePrixAchat">FC</span>
+                                <input type="number" class="form-control" id="prix_achat" name="prix_achat" 
+                                       min="0" step="0.01" placeholder="Optionnel">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
                             <label for="quantite_stock" class="form-label"><i class="fas fa-boxes"></i> Stock initial *</label>
                             <input type="number" class="form-control" id="quantite_stock" name="quantite_stock" 
                                    required min="0" value="0" placeholder="Ex: 50">
@@ -315,6 +347,32 @@
                         <strong>Ajout rapide :</strong> Seuls les champs essentiels sont demandés. 
                         Vous pourrez compléter les détails (description, image, etc.) plus tard.
                     </div>
+                    
+                    <script>
+                    function updateDeviseLabels() {
+                        const devise = document.getElementById('devise').value;
+                        const isCDF = devise === 'CDF';
+                        
+                        // Mise à jour des labels de devise
+                        document.getElementById('devisePrixVente').textContent = isCDF ? '(CDF)' : '(USD)';
+                        document.getElementById('devisePrixAchat').textContent = isCDF ? '(CDF)' : '(USD)';
+                        
+                        // Mise à jour des symboles
+                        document.getElementById('symbolePrixVente').textContent = isCDF ? 'FC' : '$';
+                        document.getElementById('symbolePrixAchat').textContent = isCDF ? 'FC' : '$';
+                        
+                        // Highlight visuel du container
+                        const prixVenteContainer = document.getElementById('prixVenteContainer');
+                        if (prixVenteContainer) {
+                            prixVenteContainer.style.backgroundColor = '#f8fff8';
+                            prixVenteContainer.style.border = '2px solid #28a745';
+                            prixVenteContainer.style.borderRadius = '8px';
+                            prixVenteContainer.style.padding = '10px';
+                        }
+                    }
+                    // Initialiser au chargement
+                    document.addEventListener('DOMContentLoaded', updateDeviseLabels);
+                    </script>
                 </form>
             </div>
             <div class="modal-footer">
@@ -407,17 +465,24 @@
             <div class="modal-body">
                 <div class="alert alert-info">
                     <strong id="prixArticleName"></strong><br>
-                    <small>Prix actuel: <span id="prixActuel" class="badge bg-primary"></span> CDF</small>
+                    <small>Prix actuel: <span id="prixActuel" class="badge bg-primary"></span> <span id="prixDeviseActuelle">CDF</span></small>
                 </div>
                 
                 <form id="formModifierPrix">
                     {% csrf_token %}
                     <input type="hidden" id="prixArticleId" name="article_id">
+                    <input type="hidden" id="prixArticleDevise" name="devise" value="CDF">
                     
                     <div class="mb-3">
-                        <label for="nouveau_prix" class="form-label"><i class="fas fa-money-bill"></i> Nouveau Prix de Vente (CDF)</label>
-                        <input type="number" class="form-control form-control-lg text-center" id="nouveau_prix" 
-                               name="prix_vente" required min="0" step="0.01" autofocus>
+                        <label for="nouveau_prix" class="form-label">
+                            <i class="fas fa-money-bill"></i> Nouveau Prix de Vente 
+                            <span id="prixDeviseLabel">(CDF)</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text" id="prixDeviseSymbole">FC</span>
+                            <input type="number" class="form-control form-control-lg text-center" id="nouveau_prix" 
+                                   name="prix_vente" required min="0" step="0.01" autofocus>
+                        </div>
                     </div>
                     
                     <div class="mb-3">
@@ -1299,6 +1364,14 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.getElementById('quantite_ajustement').addEventListener('input', updateStockPreview);
     
+    // Validation par touche Enter pour le formulaire de stock
+    document.getElementById('formAjusterStock').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('btnAjusterStock').click();
+        }
+    });
+    
     // Soumission ajustement stock
     document.getElementById('btnAjusterStock').addEventListener('click', function() {
         const form = document.getElementById('formAjusterStock');
@@ -1344,14 +1417,27 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentPrixArticleId = null;
     let currentPrixActuel = 0;
     
-    window.setArticleForPrice = function(articleId, articleNom, prixActuel) {
+    let currentPrixDevise = 'CDF';
+    
+    window.setArticleForPrice = function(articleId, articleNom, prixActuel, devise = 'CDF') {
         currentPrixArticleId = articleId;
         currentPrixActuel = prixActuel;
+        currentPrixDevise = devise;
+        
+        const isUSD = devise === 'USD';
+        const symbole = isUSD ? '$' : 'FC';
+        const deviseText = isUSD ? 'USD' : 'CDF';
+        const decimales = isUSD ? 2 : 0;
         
         document.getElementById('prixArticleId').value = articleId;
+        document.getElementById('prixArticleDevise').value = devise;
         document.getElementById('prixArticleName').textContent = articleNom;
-        document.getElementById('prixActuel').textContent = prixActuel.toFixed(0);
+        document.getElementById('prixActuel').textContent = prixActuel.toFixed(decimales);
+        document.getElementById('prixDeviseActuelle').textContent = deviseText;
+        document.getElementById('prixDeviseLabel').textContent = `(${deviseText})`;
+        document.getElementById('prixDeviseSymbole').textContent = symbole;
         document.getElementById('nouveau_prix').value = prixActuel;
+        document.getElementById('nouveau_prix').step = isUSD ? '0.01' : '1';
         document.getElementById('commentaire_prix').value = '';
         document.getElementById('changementPrixInfo').style.display = 'none';
     };
@@ -1362,21 +1448,33 @@ document.addEventListener('DOMContentLoaded', function() {
         const difference = nouveauPrix - currentPrixActuel;
         const pourcentage = currentPrixActuel > 0 ? ((difference / currentPrixActuel) * 100).toFixed(1) : 0;
         
+        const isUSD = currentPrixDevise === 'USD';
+        const symbole = isUSD ? '$' : 'CDF';
+        const decimales = isUSD ? 2 : 0;
+        
         if (Math.abs(difference) > 0.01) {
             const changementDiv = document.getElementById('changementPrixInfo');
             const changementText = document.getElementById('changementPrixText');
             
             if (difference > 0) {
                 changementDiv.className = 'alert alert-success';
-                changementText.innerHTML = `+${difference.toFixed(0)} CDF (+${pourcentage}%)`;
+                changementText.innerHTML = `+${difference.toFixed(decimales)} ${symbole} (+${pourcentage}%)`;
             } else {
                 changementDiv.className = 'alert alert-danger';
-                changementText.innerHTML = `${difference.toFixed(0)} CDF (${pourcentage}%)`;
+                changementText.innerHTML = `${difference.toFixed(decimales)} ${symbole} (${pourcentage}%)`;
             }
             
             changementDiv.style.display = 'block';
         } else {
             document.getElementById('changementPrixInfo').style.display = 'none';
+        }
+    });
+    
+    // Validation par touche Enter pour le formulaire de prix
+    document.getElementById('formModifierPrix').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('btnModifierPrix').click();
         }
     });
     

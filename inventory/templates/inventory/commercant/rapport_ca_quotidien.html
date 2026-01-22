@@ -145,16 +145,16 @@
 
     <!-- Statistiques du jour -->
     <div class="row mb-4">
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
             <div class="stat-card">
                 <div class="stat-value">{{ total_ventes }}</div>
                 <div class="stat-label">VENTES</div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
             <div class="stat-card">
                 <div class="stat-value">{{ total_ca|floatformat:0 }}</div>
-                <div class="stat-label">CA NET (CDF)</div>
+                <div class="stat-label">CA NET (FC)</div>
                 {% if total_depenses_appliquees %}
                 <div class="mt-1">
                     <small class="text-muted">Brut: {{ total_ca_brut|floatformat:0 }}</small>
@@ -162,22 +162,34 @@
                 {% endif %}
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
+            <div class="stat-card" style="border-left: 4px solid #28a745;">
+                <div class="stat-value text-success">$ {{ total_ca_usd|floatformat:2 }}</div>
+                <div class="stat-label">CA (USD)</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-2">
             <div class="stat-card" style="border-left: 4px solid {% if benefice_incomplet %}#ffc107{% else %}#28a745{% endif %};">
                 <div class="stat-value {% if benefice_incomplet %}text-warning{% else %}text-success{% endif %}">{{ total_benefice_net|floatformat:0 }}</div>
-                <div class="stat-label">BÉNÉFICE NET (CDF) {% if benefice_incomplet %}<i class="fas fa-exclamation-triangle text-warning" title="Calcul incomplet"></i>{% endif %}</div>
+                <div class="stat-label">BÉNÉFICE (FC) {% if benefice_incomplet %}<i class="fas fa-exclamation-triangle text-warning" title="Calcul incomplet"></i>{% endif %}</div>
                 <div class="mt-1">
                     <small class="text-muted">Brut: {{ total_benefice_brut|floatformat:0 }}</small>
                 </div>
             </div>
         </div>
-        <div class="col-6 col-md-3">
+        <div class="col-6 col-md-2">
             <div class="stat-card" style="border-left: 4px solid {% if benefice_incomplet %}#ffc107{% else %}#17a2b8{% endif %};">
                 <div class="stat-value" style="color: {% if benefice_incomplet %}#ffc107{% else %}#17a2b8{% endif %};">{{ marge_beneficiaire|floatformat:1 }}%</div>
                 <div class="stat-label">MARGE {% if benefice_incomplet %}<i class="fas fa-exclamation-triangle text-warning" title="Calcul incomplet"></i>{% endif %}</div>
                 <div class="mt-1">
-                    <small class="text-muted">Coût: {{ total_cout_achat|floatformat:0 }} CDF</small>
+                    <small class="text-muted">Coût: {{ total_cout_achat|floatformat:0 }} FC</small>
                 </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-2">
+            <div class="stat-card">
+                <div class="stat-value text-info">{{ total_depenses_appliquees|floatformat:0 }}</div>
+                <div class="stat-label">DÉPENSES (FC)</div>
             </div>
         </div>
     </div>
@@ -217,8 +229,9 @@
                     <th>N° Facture</th>
                     <th>Terminal</th>
                     <th>Mode de paiement</th>
+                    <th class="text-center">Devise</th>
                     <th class="text-center">Nb Articles</th>
-                    <th class="text-end">Montant (CDF)</th>
+                    <th class="text-end">Montant</th>
                 </tr>
             </thead>
             <tbody>
@@ -235,13 +248,26 @@
                             {% endif %}
                         </td>
                         <td>{{ vente.get_mode_paiement_display }}</td>
+                        <td class="text-center">
+                            {% if vente.devise == 'USD' %}
+                            <span class="badge bg-success">USD</span>
+                            {% else %}
+                            <span class="badge bg-primary">CDF</span>
+                            {% endif %}
+                        </td>
                         <td class="text-center">{{ vente.lignes.count }}</td>
-                        <td class="text-end ca-positif">{{ vente.montant_total|floatformat:0 }}</td>
+                        <td class="text-end ca-positif">
+                            {% if vente.devise == 'USD' %}
+                            $ {{ vente.montant_total_usd|floatformat:2 }}
+                            {% else %}
+                            {{ vente.montant_total|floatformat:0 }} FC
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                 {% else %}
                     <tr>
-                        <td colspan="6" class="text-center ca-nul py-4">
+                        <td colspan="7" class="text-center ca-nul py-4">
                             Aucune vente pour cette journée.
                         </td>
                     </tr>
@@ -249,9 +275,14 @@
             </tbody>
             <tfoot>
                 <tr class="table-active">
-                    <th colspan="4">TOTAL</th>
+                    <th colspan="5">TOTAL</th>
                     <th class="text-center">{{ total_ventes }}</th>
-                    <th class="text-end text-success">{{ total_ca|floatformat:0 }} CDF</th>
+                    <th class="text-end">
+                        <span class="text-success">{{ total_ca|floatformat:0 }} FC</span>
+                        {% if total_ca_usd %}
+                        <br><span class="text-success">$ {{ total_ca_usd|floatformat:2 }}</span>
+                        {% endif %}
+                    </th>
                 </tr>
             </tfoot>
         </table>
@@ -329,16 +360,23 @@ function showVenteModal(venteId) {
 }
 
 function renderModalContent(data, modalTitle, modalBody) {
-    modalTitle.innerHTML = `<i class="fas fa-receipt me-2"></i>Détails Vente #${data.numero_facture}`;
+    // Déterminer le symbole de devise
+    const symboleVente = data.symbole || (data.devise === 'USD' ? '$' : 'FC');
+    const badgeDevise = data.devise === 'USD' 
+        ? '<span class="badge bg-success ms-2">USD</span>' 
+        : '<span class="badge bg-primary ms-2">CDF</span>';
+    
+    modalTitle.innerHTML = `<i class="fas fa-receipt me-2"></i>Détails Vente #${data.numero_facture} ${badgeDevise}`;
     
     let articlesHtml = '';
     data.lignes.forEach(ligne => {
+        const symbole = ligne.symbole || (ligne.devise === 'USD' ? '$' : 'FC');
         articlesHtml += `
             <tr>
                 <td>${ligne.article_nom}</td>
                 <td class="text-center">${ligne.quantite}</td>
-                <td class="text-end">${ligne.prix_unitaire} CDF</td>
-                <td class="text-end">${ligne.total_ligne} CDF</td>
+                <td class="text-end">${ligne.prix_unitaire} ${symbole}</td>
+                <td class="text-end">${ligne.total_ligne} ${symbole}</td>
             </tr>
         `;
     });
@@ -349,6 +387,7 @@ function renderModalContent(data, modalTitle, modalBody) {
             <p><strong>Date:</strong> ${data.date_vente}</p>
             <p><strong>Terminal:</strong> ${data.terminal || 'Manuel'}</p>
             <p><strong>Mode:</strong> ${data.mode_paiement}</p>
+            <p><strong>Devise:</strong> ${data.devise === 'USD' ? 'Dollar US ($)' : 'Franc Congolais (FC)'}</p>
         </div>
 
         <!-- Articles -->
@@ -368,7 +407,7 @@ function renderModalContent(data, modalTitle, modalBody) {
             <tfoot>
                 <tr class="fw-bold">
                     <td colspan="3" class="text-end">TOTAL:</td>
-                    <td class="text-end text-success">${data.montant_total} CDF</td>
+                    <td class="text-end text-success">${data.montant_total} ${symboleVente}</td>
                 </tr>
             </tfoot>
         </table>

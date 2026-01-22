@@ -11,7 +11,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock
 from .forms import BoutiqueForm, ArticleForm
 import json
@@ -164,10 +164,18 @@ def dashboard_commercant(request):
     # Ajouter les statistiques pour chaque dépôt
     depots_list = list(depots)
     for depot in depots_list:
-        depot.nb_articles = depot.articles.filter(est_actif=True).count()
-        depot.valeur_stock = depot.articles.filter(est_actif=True).aggregate(
+        articles_depot = depot.articles.filter(est_actif=True)
+        depot.nb_articles = articles_depot.count()
+        # Valeur stock en CDF (articles avec devise CDF)
+        depot.valeur_stock_cdf = articles_depot.filter(devise='CDF').aggregate(
             total=Sum(F('quantite_stock') * F('prix_achat'))
         )['total'] or 0
+        # Valeur stock en USD (articles avec devise USD)
+        depot.valeur_stock_usd = articles_depot.filter(devise='USD').aggregate(
+            total=Sum(F('quantite_stock') * F('prix_achat'))
+        )['total'] or 0
+        # Valeur totale pour compatibilité
+        depot.valeur_stock = depot.valeur_stock_cdf
         depot.nb_transferts_mois = TransfertStock.objects.filter(
             depot_source=depot,
             date_transfert__gte=timezone.now().replace(day=1)
@@ -221,14 +229,40 @@ def dashboard_commercant(request):
         total_ventes += nb_ventes
         total_ca += ca_boutique
     
-    # Recette du jour (toutes boutiques, ventes payées, non annulées)
+    # Recette du jour - Séparation CDF et USD
     ventes_jour = Vente.objects.filter(
         client_maui__boutique__in=boutiques,
         date_vente__date=aujourd_hui,
         paye=True,
         est_annulee=False
     )
-    ca_jour = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
+    
+    # Recette CDF du jour (ventes en CDF uniquement)
+    ventes_jour_cdf = ventes_jour.filter(devise='CDF')
+    ca_jour_cdf = ventes_jour_cdf.aggregate(total=Sum('montant_total'))['total'] or 0
+    
+    # Recette USD du jour (ventes en USD uniquement)
+    ventes_jour_usd = ventes_jour.filter(devise='USD')
+    ca_jour_usd = ventes_jour_usd.aggregate(total=Sum('montant_total_usd'))['total'] or 0
+    
+    # Total jour (pour compatibilité, on garde le CDF)
+    ca_jour = ca_jour_cdf
+    
+    # Recette 30 jours - Séparation CDF et USD
+    ventes_30j = Vente.objects.filter(
+        client_maui__boutique__in=boutiques,
+        date_vente__gte=date_debut,
+        paye=True,
+        est_annulee=False
+    )
+    
+    # Recette CDF 30 jours
+    ventes_30j_cdf = ventes_30j.filter(devise='CDF')
+    ca_30j_cdf = ventes_30j_cdf.aggregate(total=Sum('montant_total'))['total'] or 0
+    
+    # Recette USD 30 jours
+    ventes_30j_usd = ventes_30j.filter(devise='USD')
+    ca_30j_usd = ventes_30j_usd.aggregate(total=Sum('montant_total_usd'))['total'] or 0
 
     # Valeur totale de la marchandise (stock) en CDF
     articles_commercant = Article.objects.filter(
@@ -261,8 +295,12 @@ def dashboard_commercant(request):
         'total_boutiques': total_boutiques,
         'total_ventes': total_ventes,
         'total_ca': total_ca,
-        'chiffre_affaires_30j': total_ca,  # Alias pour le template
-        'recette_jour': ca_jour,
+        'chiffre_affaires_30j': ca_30j_cdf,  # CDF 30 jours
+        'chiffre_affaires_30j_usd': ca_30j_usd,  # USD 30 jours
+        'recette_jour': ca_jour_cdf,  # CDF du jour
+        'recette_jour_usd': ca_jour_usd,  # USD du jour
+        'nb_ventes_jour_cdf': ventes_jour_cdf.count(),
+        'nb_ventes_jour_usd': ventes_jour_usd.count(),
         'valeur_marchandise': valeur_marchandise,
         'depenses_totales': depenses_totales,
         'boutiques_avec_clients': boutiques_toutes.filter(clients__isnull=False).distinct().count(),
@@ -272,6 +310,25 @@ def dashboard_commercant(request):
     }
     
     return render(request, 'inventory/commercant/dashboard.html', context)
+
+@login_required
+@commercant_required
+def modifier_taux_dollar(request):
+    """Modifier le taux de change USD/CDF du commerçant"""
+    if request.method == 'POST':
+        commercant = request.user.profil_commercant
+        taux = request.POST.get('taux_dollar')
+        try:
+            taux_decimal = Decimal(taux)
+            if taux_decimal >= 1:
+                commercant.taux_dollar = taux_decimal
+                commercant.save(update_fields=['taux_dollar'])
+                messages.success(request, f"Taux de change mis à jour: 1$ = {taux_decimal:,.0f} FC")
+            else:
+                messages.error(request, "Le taux doit être supérieur ou égal à 1")
+        except (ValueError, TypeError, InvalidOperation):
+            messages.error(request, "Veuillez entrer un taux valide")
+    return redirect('inventory:commercant_dashboard')
 
 # ===== GESTION DES BOUTIQUES =====
 
@@ -732,16 +789,49 @@ def entrer_boutique(request, boutique_id):
     total_categories = boutique.categories.count()
     ca_jour = ca_aujourd_hui
     
-    # Valeur totale du stock disponible (prix de vente x quantité)
+    # Chiffre d'affaires en USD
     try:
-        valeur_stock_disponible = boutique.articles.filter(
-            est_actif=True,
-            quantite_stock__gt=0
-        ).aggregate(
+        ventes_usd_jour = Vente.objects.filter(
+            boutique=boutique,
+            date_vente__date=date_aujourd_hui,
+            paye=True,
+            est_annulee=False,
+            devise='USD'
+        )
+        ca_aujourd_hui_usd = ventes_usd_jour.aggregate(total=Sum('montant_total_usd'))['total'] or 0
+        
+        ventes_usd_mois = Vente.objects.filter(
+            boutique=boutique,
+            date_vente__date__gte=premier_jour_mois,
+            paye=True,
+            est_annulee=False,
+            devise='USD'
+        )
+        ca_mois_usd = ventes_usd_mois.aggregate(total=Sum('montant_total_usd'))['total'] or 0
+    except:
+        ca_aujourd_hui_usd = 0
+        ca_mois_usd = 0
+    
+    # Valeur totale du stock disponible (prix de vente x quantité) - séparé par devise
+    try:
+        articles_actifs = boutique.articles.filter(est_actif=True, quantite_stock__gt=0)
+        
+        # Stock en CDF
+        valeur_stock_cdf = articles_actifs.filter(devise='CDF').aggregate(
             total=Sum(F('prix_vente') * F('quantite_stock'))
         )['total'] or 0
+        
+        # Stock en USD
+        valeur_stock_usd = articles_actifs.filter(devise='USD').aggregate(
+            total=Sum(F('prix_vente') * F('quantite_stock'))
+        )['total'] or 0
+        
+        # Valeur totale pour compatibilité (en CDF)
+        valeur_stock_disponible = valeur_stock_cdf
     except Exception:
         valeur_stock_disponible = 0
+        valeur_stock_cdf = 0
+        valeur_stock_usd = 0
     
     # Articles en stock faible
     try:
@@ -797,14 +887,18 @@ def entrer_boutique(request, boutique_id):
         'nb_ventes_aujourd_hui': nb_ventes_aujourd_hui,
         'ca_aujourd_hui': ca_aujourd_hui,
         'ca_aujourd_hui_brut': ca_aujourd_hui_brut,
+        'ca_aujourd_hui_usd': ca_aujourd_hui_usd,
         'depenses_appliquees_ca_jour': depenses_appliquees_ca_jour,
         'total_articles': total_articles,
         'total_categories': total_categories,
         'ca_mois': ca_mois,
         'ca_mois_brut': ca_mois_brut,
+        'ca_mois_usd': ca_mois_usd,
         'depenses_appliquees_ca_mois': depenses_appliquees_ca_mois,
         'ca_jour': ca_jour,
         'valeur_stock_disponible': valeur_stock_disponible,
+        'valeur_stock_cdf': valeur_stock_cdf,
+        'valeur_stock_usd': valeur_stock_usd,
         'articles_stock_faible': articles_stock_faible,
         'mouvements_recents': mouvements_recents,
         'ventes_recentes': ventes_recentes,
@@ -877,7 +971,17 @@ def rapport_ca_quotidien(request, boutique_id):
     ).select_related('client_maui').prefetch_related('lignes__article')
 
     total_ventes = ventes.count()
-    total_ca = ventes.aggregate(total=Sum('montant_total'))['total'] or 0
+    
+    # CA en CDF (ventes en CDF)
+    ventes_cdf = ventes.filter(devise='CDF')
+    total_ca_cdf = ventes_cdf.aggregate(total=Sum('montant_total'))['total'] or 0
+    
+    # CA en USD (ventes en USD)
+    ventes_usd = ventes.filter(devise='USD')
+    total_ca_usd = ventes_usd.aggregate(total=Sum('montant_total_usd'))['total'] or 0
+    
+    # Total CA (pour compatibilité - somme CDF)
+    total_ca = total_ca_cdf
 
     depenses_appliquees_qs = RapportCaisse.objects.filter(
         boutique=boutique,
@@ -886,12 +990,19 @@ def rapport_ca_quotidien(request, boutique_id):
     )
     total_depenses_appliquees = depenses_appliquees_qs.aggregate(total=Sum('depense'))['total'] or 0
 
-    total_ca_brut = total_ca
+    total_ca_brut = total_ca_cdf
+    total_ca_brut_usd = total_ca_usd
     total_ca_net = total_ca_brut - total_depenses_appliquees
 
     ventes_par_mode = ventes.values('mode_paiement').annotate(
         count=Count('id'),
         total=Sum('montant_total')
+    )
+    
+    # Ventes par mode en USD
+    ventes_par_mode_usd = ventes_usd.values('mode_paiement').annotate(
+        count=Count('id'),
+        total=Sum('montant_total_usd')
     )
     
     # ===== CALCUL DES BÉNÉFICES =====
@@ -931,8 +1042,11 @@ def rapport_ca_quotidien(request, boutique_id):
         'total_ventes': total_ventes,
         'total_ca': total_ca_net,
         'total_ca_brut': total_ca_brut,
+        'total_ca_usd': total_ca_usd,
+        'total_ca_brut_usd': total_ca_brut_usd,
         'total_depenses_appliquees': total_depenses_appliquees,
         'ventes_par_mode': ventes_par_mode,
+        'ventes_par_mode_usd': ventes_par_mode_usd,
         # Données de bénéfices
         'total_cout_achat': total_cout_achat,
         'total_benefice_brut': total_benefice_brut,
@@ -1091,9 +1205,10 @@ def rapports_caisse_boutique(request, boutique_id):
 
     terminaux = boutique.clients.all().order_by('nom_terminal')
 
-    # Statistiques simples
-    stats = rapports.aggregate(total_depense=Sum('depense'))
-    total_depense = stats['total_depense'] or 0
+    # Statistiques par devise
+    total_depense_cdf = rapports.filter(devise='CDF').aggregate(total=Sum('depense'))['total'] or 0
+    total_depense_usd = rapports.filter(devise='USD').aggregate(total=Sum('depense'))['total'] or 0
+    total_depense = total_depense_cdf  # Pour compatibilité
 
     # Notifications de rapports non lus (style "Facebook")
     now = timezone.now()
@@ -1133,6 +1248,8 @@ def rapports_caisse_boutique(request, boutique_id):
         'date_fin': date_fin,
         'terminal_selected': terminal_selected,
         'total_depense': total_depense,
+        'total_depense_cdf': total_depense_cdf,
+        'total_depense_usd': total_depense_usd,
         'unread_rapports_count': unread_rapports_count,
         'unread_articles_negocies_count': unread_articles_negocies_count,
         'unread_retours_count': unread_retours_count,
@@ -1705,20 +1822,64 @@ def ajouter_article_boutique(request, boutique_id):
                 # Créer l'article avec les données minimales
                 nom = request.POST.get('nom', '').strip()
                 prix_vente = request.POST.get('prix_vente', '')
+                prix_vente_usd = request.POST.get('prix_vente_usd', '').strip()
+                prix_achat = request.POST.get('prix_achat', '').strip()
+                prix_achat_usd = request.POST.get('prix_achat_usd', '').strip()
                 quantite_stock = request.POST.get('quantite_stock', 0)
                 categorie_id = request.POST.get('categorie', '')
+                devise = request.POST.get('devise', 'CDF')
                 
                 # Validations
                 errors = {}
                 if not nom:
                     errors['nom'] = ['Le nom est requis']
-                if not prix_vente:
-                    errors['prix_vente'] = ['Le prix de vente est requis']
+                
+                # Au moins un prix est requis (CDF ou USD)
+                if not prix_vente and not prix_vente_usd:
+                    errors['prix_vente'] = ['Au moins un prix est requis (CDF ou USD)']
                     
-                # Si un code est fourni (cas évolutif), vérifier qu'il n'existe pas déjà
+                # Si un code est fourni, vérifier s'il existe déjà
                 code = request.POST.get('code', '').strip()
-                if code and Article.objects.filter(code=code).exists():
-                    errors['code'] = ['Ce code-barres existe déjà']
+                if code:
+                    article_existant = Article.objects.filter(code=code, boutique=boutique).first()
+                    if article_existant:
+                        # ⭐ Article existe déjà : proposer uniquement l'ajout de stock
+                        quantite_ajout = int(quantite_stock) if quantite_stock else 0
+                        if quantite_ajout > 0:
+                            stock_avant = article_existant.quantite_stock
+                            article_existant.quantite_stock += quantite_ajout
+                            article_existant.save()
+                            
+                            # Créer un mouvement de stock
+                            MouvementStock.objects.create(
+                                article=article_existant,
+                                type_mouvement='ENTREE',
+                                quantite=quantite_ajout,
+                                stock_avant=stock_avant,
+                                stock_apres=article_existant.quantite_stock,
+                                reference_document=f"AJOUT-{boutique.code_boutique}-{article_existant.id}",
+                                utilisateur=request.user.username,
+                                commentaire=f"Ajout de stock via scan code-barres"
+                            )
+                            
+                            return JsonResponse({
+                                'success': True,
+                                'article_exists': True,
+                                'message': f'Stock ajouté à l\'article "{article_existant.nom}": +{quantite_ajout} unités',
+                                'article_id': article_existant.id,
+                                'article_nom': article_existant.nom,
+                                'stock_avant': stock_avant,
+                                'stock_apres': article_existant.quantite_stock
+                            })
+                        else:
+                            return JsonResponse({
+                                'success': False,
+                                'article_exists': True,
+                                'message': f'L\'article "{article_existant.nom}" existe déjà. Veuillez indiquer une quantité à ajouter.',
+                                'article_id': article_existant.id,
+                                'article_nom': article_existant.nom,
+                                'stock_actuel': article_existant.quantite_stock
+                            })
                 
                 if errors:
                     return JsonResponse({'success': False, 'errors': errors})
@@ -1737,8 +1898,11 @@ def ajouter_article_boutique(request, boutique_id):
                     boutique=boutique,
                     nom=nom,
                     code=code,
-                    prix_vente=float(prix_vente),
-                    prix_achat=0,  # Prix d'achat non calculé
+                    devise=devise,
+                    prix_vente=float(prix_vente) if prix_vente else 0,  # 0 si seulement USD
+                    prix_vente_usd=float(prix_vente_usd) if prix_vente_usd else None,
+                    prix_achat=float(prix_achat) if prix_achat else 0,
+                    prix_achat_usd=float(prix_achat_usd) if prix_achat_usd else None,
                     quantite_stock=stock_initial,
                     est_actif=True
                 )
@@ -1787,6 +1951,37 @@ def ajouter_article_boutique(request, boutique_id):
         # Si ce n'est pas AJAX, utiliser le formulaire normal
         form = ArticleForm(request.POST, request.FILES)
         if form.is_valid():
+            # ⭐ Vérifier si l'article existe déjà par code-barres
+            code = form.cleaned_data.get('code')
+            if code:
+                article_existant = Article.objects.filter(code=code, boutique=boutique).first()
+                if article_existant:
+                    # Article existe : ajouter uniquement le stock
+                    quantite_ajout = form.cleaned_data.get('quantite_stock', 0)
+                    if quantite_ajout > 0:
+                        stock_avant = article_existant.quantite_stock
+                        article_existant.quantite_stock += quantite_ajout
+                        article_existant.save()
+                        
+                        # Créer un mouvement de stock
+                        MouvementStock.objects.create(
+                            article=article_existant,
+                            type_mouvement='ENTREE',
+                            quantite=quantite_ajout,
+                            stock_avant=stock_avant,
+                            stock_apres=article_existant.quantite_stock,
+                            reference_document=f"AJOUT-{boutique.code_boutique}-{article_existant.id}",
+                            utilisateur=request.user.username,
+                            commentaire=f"Ajout de stock via scan code-barres"
+                        )
+                        
+                        messages.success(request, f'✅ Stock ajouté à l\'article "{article_existant.nom}": +{quantite_ajout} unités (Stock: {stock_avant} → {article_existant.quantite_stock})')
+                    else:
+                        messages.warning(request, f'⚠️ L\'article "{article_existant.nom}" existe déjà (Stock actuel: {article_existant.quantite_stock}). Veuillez indiquer une quantité à ajouter.')
+                    
+                    return redirect('inventory:entrer_boutique', boutique_id=boutique.id)
+            
+            # Nouvel article : créer normalement
             article = form.save(commit=False)
             article.boutique = boutique
             stock_initial = article.quantite_stock
@@ -2459,16 +2654,29 @@ def api_vente_details(request, vente_id):
         # Récupérer les lignes de vente avec les articles
         lignes = vente.lignes.select_related('article').all()
         
-        # Construire les lignes avec gestion des articles supprimés
+        # Construire les lignes avec gestion des articles supprimés et devise
         lignes_data = []
         for ligne in lignes:
             try:
+                # Déterminer la devise et le prix à afficher
+                devise_ligne = getattr(ligne, 'devise', vente.devise) or 'CDF'
+                if devise_ligne == 'USD':
+                    prix_affiche = ligne.prix_unitaire_usd or ligne.prix_unitaire
+                    total_affiche = (ligne.prix_unitaire_usd or 0) * ligne.quantite
+                    symbole = '$'
+                else:
+                    prix_affiche = ligne.prix_unitaire
+                    total_affiche = ligne.total_ligne
+                    symbole = 'FC'
+                
                 lignes_data.append({
                     'article_nom': ligne.article.nom if ligne.article else 'Article supprimé',
                     'article_code': getattr(ligne.article, 'code', '') or '-' if ligne.article else '-',
                     'quantite': ligne.quantite,
-                    'prix_unitaire': f"{ligne.prix_unitaire:,.0f}",
-                    'total_ligne': f"{ligne.total_ligne:,.0f}"
+                    'prix_unitaire': f"{prix_affiche:,.2f}" if devise_ligne == 'USD' else f"{prix_affiche:,.0f}",
+                    'total_ligne': f"{total_affiche:,.2f}" if devise_ligne == 'USD' else f"{total_affiche:,.0f}",
+                    'devise': devise_ligne,
+                    'symbole': symbole
                 })
             except Exception:
                 lignes_data.append({
@@ -2476,8 +2684,18 @@ def api_vente_details(request, vente_id):
                     'article_code': '-',
                     'quantite': ligne.quantite,
                     'prix_unitaire': f"{ligne.prix_unitaire:,.0f}",
-                    'total_ligne': f"{ligne.total_ligne:,.0f}"
+                    'total_ligne': f"{ligne.total_ligne:,.0f}",
+                    'devise': 'CDF',
+                    'symbole': 'FC'
                 })
+        
+        # Montant total selon devise
+        if vente.devise == 'USD':
+            montant_affiche = f"{vente.montant_total_usd or 0:,.2f}"
+            symbole_total = '$'
+        else:
+            montant_affiche = f"{vente.montant_total:,.0f}"
+            symbole_total = 'FC'
         
         # Construire la réponse JSON
         data = {
@@ -2486,7 +2704,9 @@ def api_vente_details(request, vente_id):
             'date_vente': vente.date_vente.strftime('%d/%m/%Y %H:%M'),
             'mode_paiement': vente.get_mode_paiement_display(),
             'terminal': vente.client_maui.nom_terminal if vente.client_maui else None,
-            'montant_total': f"{vente.montant_total:,.0f}",
+            'devise': vente.devise,
+            'symbole': symbole_total,
+            'montant_total': montant_affiche,
             'lignes': lignes_data
         }
         
@@ -2506,10 +2726,17 @@ def liste_depots(request):
     
     # Statistiques pour chaque dépôt
     for depot in depots:
-        depot.nb_articles = depot.articles.filter(est_actif=True).count()
-        depot.valeur_stock = depot.articles.filter(est_actif=True).aggregate(
+        articles_depot = depot.articles.filter(est_actif=True)
+        depot.nb_articles = articles_depot.count()
+        # Valeur stock en CDF
+        depot.valeur_stock_cdf = articles_depot.filter(devise='CDF').aggregate(
             total=Sum(F('quantite_stock') * F('prix_achat'))
         )['total'] or 0
+        # Valeur stock en USD
+        depot.valeur_stock_usd = articles_depot.filter(devise='USD').aggregate(
+            total=Sum(F('quantite_stock') * F('prix_achat'))
+        )['total'] or 0
+        depot.valeur_stock = depot.valeur_stock_cdf
         depot.nb_transferts_mois = TransfertStock.objects.filter(
             depot_source=depot,
             date_transfert__gte=timezone.now().replace(day=1)
@@ -2534,7 +2761,23 @@ def detail_depot(request, depot_id):
     
     # Statistiques
     total_articles = articles.count()
-    valeur_stock = articles.aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
+    
+    # Valeur du stock en CDF (articles en CDF + conversion des articles en USD)
+    articles_cdf = articles.filter(devise='CDF')
+    articles_usd = articles.filter(devise='USD')
+    
+    valeur_stock_cdf = articles_cdf.aggregate(
+        total=Sum(F('quantite_stock') * F('prix_achat'))
+    )['total'] or 0
+    
+    # Valeur du stock en USD (articles en USD)
+    valeur_stock_usd = articles_usd.aggregate(
+        total=Sum(F('quantite_stock') * F('prix_achat'))
+    )['total'] or 0
+    
+    # Valeur totale (pour compatibilité - en CDF)
+    valeur_stock = valeur_stock_cdf
+    
     articles_stock_bas = articles.filter(quantite_stock__lte=depot.alerte_stock_bas).count()
     
     # Transferts récents
@@ -2550,6 +2793,8 @@ def detail_depot(request, depot_id):
         'articles': articles,
         'total_articles': total_articles,
         'valeur_stock': valeur_stock,
+        'valeur_stock_cdf': valeur_stock_cdf,
+        'valeur_stock_usd': valeur_stock_usd,
         'articles_stock_bas': articles_stock_bas,
         'transferts_recents': transferts_recents,
         'boutiques_destination': boutiques_destination,
@@ -2684,13 +2929,25 @@ def approvisionner_depot(request, depot_id):
                 # Créer un nouvel article
                 code = request.POST.get('code', '').strip()
                 nom = request.POST.get('nom', '').strip()
+                devise = request.POST.get('devise', 'CDF')
                 prix_achat = Decimal(request.POST.get('prix_achat', '0'))
                 prix_vente = Decimal(request.POST.get('prix_vente', '0'))
                 quantite = int(request.POST.get('quantite_initiale', '1'))
                 description = request.POST.get('description', '')
                 
+                # Prix en USD (optionnels)
+                prix_achat_usd_str = request.POST.get('prix_achat_usd', '').strip()
+                prix_vente_usd_str = request.POST.get('prix_vente_usd', '').strip()
+                prix_achat_usd = Decimal(prix_achat_usd_str) if prix_achat_usd_str else None
+                prix_vente_usd = Decimal(prix_vente_usd_str) if prix_vente_usd_str else None
+                
                 if not nom:
                     messages.error(request, "Le nom de l'article est obligatoire")
+                    return redirect('inventory:detail_depot', depot_id=depot.id)
+                
+                # Valider qu'au moins un prix de vente est fourni (CDF ou USD)
+                if prix_vente == 0 and not prix_vente_usd:
+                    messages.error(request, "Au moins un prix de vente est requis (CDF ou USD)")
                     return redirect('inventory:detail_depot', depot_id=depot.id)
                 
                 # Générer un code unique si non renseigné
@@ -2708,8 +2965,11 @@ def approvisionner_depot(request, depot_id):
                     code=code,
                     nom=nom,
                     description=description,
+                    devise=devise,
                     prix_achat=prix_achat,
                     prix_vente=prix_vente,
+                    prix_achat_usd=prix_achat_usd,
+                    prix_vente_usd=prix_vente_usd,
                     quantite_stock=quantite,
                     boutique=depot,
                     est_actif=True
@@ -2761,6 +3021,410 @@ def approvisionner_depot(request, depot_id):
             messages.error(request, f"Erreur lors de l'approvisionnement: {str(e)}")
     
     return redirect('inventory:detail_depot', depot_id=depot.id)
+
+@login_required
+@commercant_required
+def detail_article_depot(request, depot_id, article_id):
+    """Voir les détails d'un article du dépôt"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    article = get_object_or_404(Article, id=article_id, boutique=depot)
+    
+    # Historique des mouvements de stock
+    mouvements = MouvementStock.objects.filter(article=article).order_by('-date_mouvement')[:50]
+    
+    context = {
+        'depot': depot,
+        'article': article,
+        'mouvements': mouvements,
+    }
+    
+    return render(request, 'inventory/commercant/detail_article_depot.html', context)
+
+@login_required
+@commercant_required
+def modifier_article_depot(request, depot_id, article_id):
+    """Modifier un article du dépôt"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    article = get_object_or_404(Article, id=article_id, boutique=depot)
+    
+    if request.method == 'POST':
+        try:
+            stock_avant = article.quantite_stock
+            
+            article.nom = request.POST.get('nom', article.nom).strip()
+            article.code = request.POST.get('code', article.code).strip()
+            article.description = request.POST.get('description', '')
+            article.devise = request.POST.get('devise', 'CDF')
+            article.prix_achat = Decimal(request.POST.get('prix_achat', '0'))
+            article.prix_vente = Decimal(request.POST.get('prix_vente', '0'))
+            article.quantite_stock = int(request.POST.get('quantite_stock', article.quantite_stock))
+            
+            # Prix USD optionnels
+            prix_achat_usd_str = request.POST.get('prix_achat_usd', '').strip()
+            prix_vente_usd_str = request.POST.get('prix_vente_usd', '').strip()
+            article.prix_achat_usd = Decimal(prix_achat_usd_str) if prix_achat_usd_str else None
+            article.prix_vente_usd = Decimal(prix_vente_usd_str) if prix_vente_usd_str else None
+            
+            article.save()
+            
+            # Enregistrer le mouvement de stock si la quantité a changé
+            if article.quantite_stock != stock_avant:
+                diff = article.quantite_stock - stock_avant
+                MouvementStock.objects.create(
+                    article=article,
+                    type_mouvement='ENTREE' if diff > 0 else 'SORTIE',
+                    quantite=diff,
+                    stock_avant=stock_avant,
+                    stock_apres=article.quantite_stock,
+                    commentaire=f"Modification manuelle du stock",
+                    reference_document=f"MODIF-{depot.id}-{article.id}",
+                    utilisateur=request.user.username
+                )
+            
+            messages.success(request, f"Article '{article.nom}' modifié avec succès")
+            return redirect('inventory:detail_depot', depot_id=depot.id)
+            
+        except Exception as e:
+            messages.error(request, f"Erreur lors de la modification: {str(e)}")
+    
+    context = {
+        'depot': depot,
+        'article': article,
+    }
+    
+    return render(request, 'inventory/commercant/modifier_article_depot.html', context)
+
+@login_required
+@commercant_required
+def supprimer_article_depot(request, depot_id, article_id):
+    """Supprimer un article du dépôt"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    article = get_object_or_404(Article, id=article_id, boutique=depot)
+    
+    nom_article = article.nom
+    article.est_actif = False
+    article.save()
+    
+    messages.success(request, f"Article '{nom_article}' supprimé du dépôt")
+    return redirect('inventory:detail_depot', depot_id=depot.id)
+
+@login_required
+@commercant_required
+def importer_articles_vers_depot(request, depot_id):
+    """Importer des articles existants depuis les points de vente vers le dépôt"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    # Récupérer tous les articles des boutiques du commerçant (sauf ceux du dépôt)
+    articles_boutiques = Article.objects.filter(
+        boutique__commercant=commercant,
+        boutique__est_depot=False,
+        est_actif=True
+    ).select_related('boutique', 'categorie').order_by('nom')
+    
+    # Articles déjà présents dans le dépôt (basé sur le code)
+    codes_depot = set(Article.objects.filter(
+        boutique=depot,
+        est_actif=True
+    ).values_list('code', flat=True))
+    
+    # Grouper par nom d'article pour éviter les doublons visuels
+    articles_uniques = {}
+    for article in articles_boutiques:
+        if article.code not in codes_depot:
+            if article.nom not in articles_uniques:
+                articles_uniques[article.nom] = {
+                    'article': article,
+                    'boutiques': [article.boutique.nom],
+                    'deja_dans_depot': False
+                }
+            else:
+                articles_uniques[article.nom]['boutiques'].append(article.boutique.nom)
+    
+    if request.method == 'POST':
+        articles_selectionnes = request.POST.getlist('articles_selectionnes')
+        
+        if not articles_selectionnes:
+            messages.error(request, "Veuillez sélectionner au moins un article à importer")
+            return redirect('inventory:importer_articles_vers_depot', depot_id=depot.id)
+        
+        articles_importes = 0
+        erreurs = []
+        
+        try:
+            with transaction.atomic():
+                for article_id in articles_selectionnes:
+                    try:
+                        article_source = Article.objects.get(id=article_id)
+                        quantite_key = f'quantite_{article_id}'
+                        quantite_initiale = int(request.POST.get(quantite_key, 0))
+                        
+                        if quantite_initiale < 0:
+                            erreurs.append(f"{article_source.nom}: la quantité ne peut pas être négative")
+                            continue
+                        
+                        # Vérifier si l'article existe déjà dans le dépôt
+                        if Article.objects.filter(code=article_source.code, boutique=depot).exists():
+                            erreurs.append(f"{article_source.nom} (code: {article_source.code}): existe déjà dans le dépôt")
+                            continue
+                        
+                        # Créer l'article dans le dépôt
+                        article_depot = Article.objects.create(
+                            code=article_source.code,
+                            nom=article_source.nom,
+                            description=article_source.description,
+                            devise=article_source.devise,
+                            prix_achat=article_source.prix_achat,
+                            prix_vente=article_source.prix_vente,
+                            prix_achat_usd=article_source.prix_achat_usd,
+                            prix_vente_usd=article_source.prix_vente_usd,
+                            categorie=article_source.categorie,
+                            boutique=depot,
+                            quantite_stock=quantite_initiale,
+                            est_actif=True
+                        )
+                        
+                        # Créer un mouvement de stock si quantité > 0
+                        if quantite_initiale > 0:
+                            MouvementStock.objects.create(
+                                article=article_depot,
+                                type_mouvement='ENTREE',
+                                quantite=quantite_initiale,
+                                stock_avant=0,
+                                stock_apres=quantite_initiale,
+                                commentaire=f"Import depuis point de vente: {article_source.boutique.nom}",
+                                reference_document=f"IMPORT-{depot.id}-{article_depot.id}",
+                                utilisateur=request.user.username
+                            )
+                        
+                        articles_importes += 1
+                        
+                    except Article.DoesNotExist:
+                        erreurs.append(f"Article ID {article_id} introuvable")
+                    except Exception as e:
+                        erreurs.append(f"Erreur lors de l'import de l'article {article_id}: {str(e)}")
+                
+                if articles_importes == 0 and erreurs:
+                    raise Exception("Aucun article importé")
+        
+        except Exception as e:
+            for erreur in erreurs:
+                messages.error(request, erreur)
+            return redirect('inventory:importer_articles_vers_depot', depot_id=depot.id)
+        
+        # Messages de résultat
+        if articles_importes > 0:
+            messages.success(request, f"{articles_importes} article(s) importé(s) avec succès dans le dépôt")
+        
+        for erreur in erreurs:
+            messages.warning(request, erreur)
+        
+        return redirect('inventory:detail_depot', depot_id=depot.id)
+    
+    context = {
+        'depot': depot,
+        'articles_uniques': articles_uniques,
+        'commercant': commercant,
+    }
+    
+    return render(request, 'inventory/commercant/importer_articles_depot.html', context)
+
+@login_required
+@commercant_required
+def importer_excel_depot(request, depot_id):
+    """Importer des articles depuis un fichier Excel vers le dépôt"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    if request.method == 'POST':
+        fichier_excel = request.FILES.get('fichier_excel')
+        
+        if not fichier_excel:
+            messages.error(request, "Veuillez sélectionner un fichier Excel")
+            return redirect('inventory:importer_excel_depot', depot_id=depot.id)
+        
+        # Vérifier l'extension du fichier
+        if not fichier_excel.name.endswith(('.xlsx', '.xls')):
+            messages.error(request, "Le fichier doit être au format Excel (.xlsx ou .xls)")
+            return redirect('inventory:importer_excel_depot', depot_id=depot.id)
+        
+        try:
+            import openpyxl
+            from io import BytesIO
+            
+            # Lire le fichier Excel
+            wb = openpyxl.load_workbook(BytesIO(fichier_excel.read()))
+            ws = wb.active
+            
+            # Récupérer les en-têtes (première ligne)
+            headers = [cell.value.lower().strip() if cell.value else '' for cell in ws[1]]
+            
+            # Mapper les colonnes attendues
+            colonnes = {
+                'code': None,
+                'nom': None,
+                'prix_achat': None,
+                'prix_vente': None,
+                'stock': None,
+                'devise': None,
+            }
+            
+            # Variantes acceptées pour chaque colonne
+            variantes = {
+                'code': ['code', 'code article', 'code_article', 'ref', 'reference', 'référence'],
+                'nom': ['nom', 'nom article', 'nom_article', 'designation', 'désignation', 'libelle', 'libellé', 'article'],
+                'prix_achat': ['prix achat', 'prix_achat', 'prix d\'achat', 'achat', 'pa', 'cout', 'coût'],
+                'prix_vente': ['prix vente', 'prix_vente', 'prix de vente', 'vente', 'pv', 'prix'],
+                'stock': ['stock', 'quantite', 'quantité', 'qte', 'qty', 'quantite_stock'],
+                'devise': ['devise', 'monnaie', 'currency'],
+            }
+            
+            # Trouver les indices des colonnes
+            for i, header in enumerate(headers):
+                for col_name, variants in variantes.items():
+                    if header in variants:
+                        colonnes[col_name] = i
+                        break
+            
+            # Vérifier les colonnes obligatoires
+            if colonnes['nom'] is None:
+                messages.error(request, "Colonne 'Nom' non trouvée dans le fichier Excel. Colonnes attendues: code, nom, prix_achat, prix_vente, stock")
+                return redirect('inventory:importer_excel_depot', depot_id=depot.id)
+            
+            articles_importes = 0
+            articles_mis_a_jour = 0
+            erreurs = []
+            
+            # Parcourir les lignes (à partir de la 2ème)
+            for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                try:
+                    # Extraire les valeurs
+                    code = str(row[colonnes['code']]).strip() if colonnes['code'] is not None and row[colonnes['code']] else None
+                    nom = str(row[colonnes['nom']]).strip() if colonnes['nom'] is not None and row[colonnes['nom']] else None
+                    
+                    if not nom:
+                        continue  # Ignorer les lignes sans nom
+                    
+                    # Prix d'achat
+                    prix_achat = 0
+                    if colonnes['prix_achat'] is not None and row[colonnes['prix_achat']]:
+                        try:
+                            prix_achat = Decimal(str(row[colonnes['prix_achat']]).replace(',', '.').replace(' ', ''))
+                        except:
+                            prix_achat = 0
+                    
+                    # Prix de vente
+                    prix_vente = 0
+                    if colonnes['prix_vente'] is not None and row[colonnes['prix_vente']]:
+                        try:
+                            prix_vente = Decimal(str(row[colonnes['prix_vente']]).replace(',', '.').replace(' ', ''))
+                        except:
+                            prix_vente = 0
+                    
+                    # Stock
+                    stock = 0
+                    if colonnes['stock'] is not None and row[colonnes['stock']]:
+                        try:
+                            stock = int(float(str(row[colonnes['stock']]).replace(',', '.').replace(' ', '')))
+                        except:
+                            stock = 0
+                    
+                    # Devise (par défaut CDF)
+                    devise = 'CDF'
+                    if colonnes['devise'] is not None and row[colonnes['devise']]:
+                        devise_val = str(row[colonnes['devise']]).upper().strip()
+                        if devise_val in ['USD', '$', 'DOLLAR', 'DOLLARS']:
+                            devise = 'USD'
+                    
+                    # Générer un code si non fourni
+                    if not code:
+                        import random
+                        import string
+                        code = 'ART-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+                    
+                    # Vérifier si l'article existe déjà dans le dépôt (par code)
+                    article_existant = Article.objects.filter(code=code, boutique=depot).first()
+                    
+                    if article_existant:
+                        # Mettre à jour le stock existant
+                        stock_avant = article_existant.quantite_stock
+                        article_existant.quantite_stock += stock
+                        article_existant.prix_achat = prix_achat if prix_achat > 0 else article_existant.prix_achat
+                        article_existant.prix_vente = prix_vente if prix_vente > 0 else article_existant.prix_vente
+                        article_existant.save()
+                        
+                        if stock > 0:
+                            MouvementStock.objects.create(
+                                article=article_existant,
+                                type_mouvement='ENTREE',
+                                quantite=stock,
+                                stock_avant=stock_avant,
+                                stock_apres=article_existant.quantite_stock,
+                                commentaire="Import Excel - Mise à jour stock",
+                                reference_document=f"IMPORT-EXCEL-{depot.id}",
+                                utilisateur=request.user.username
+                            )
+                        
+                        articles_mis_a_jour += 1
+                    else:
+                        # Créer un nouvel article
+                        article = Article.objects.create(
+                            code=code,
+                            nom=nom,
+                            devise=devise,
+                            prix_achat=prix_achat,
+                            prix_vente=prix_vente,
+                            boutique=depot,
+                            quantite_stock=stock,
+                            est_actif=True
+                        )
+                        
+                        if stock > 0:
+                            MouvementStock.objects.create(
+                                article=article,
+                                type_mouvement='ENTREE',
+                                quantite=stock,
+                                stock_avant=0,
+                                stock_apres=stock,
+                                commentaire="Import Excel - Nouvel article",
+                                reference_document=f"IMPORT-EXCEL-{depot.id}",
+                                utilisateur=request.user.username
+                            )
+                        
+                        articles_importes += 1
+                        
+                except Exception as e:
+                    erreurs.append(f"Ligne {row_num}: {str(e)}")
+            
+            # Messages de résultat
+            if articles_importes > 0:
+                messages.success(request, f"{articles_importes} nouvel(aux) article(s) importé(s)")
+            if articles_mis_a_jour > 0:
+                messages.success(request, f"{articles_mis_a_jour} article(s) mis à jour (stock ajouté)")
+            if not articles_importes and not articles_mis_a_jour:
+                messages.warning(request, "Aucun article n'a été importé. Vérifiez le format du fichier.")
+            
+            for erreur in erreurs[:10]:  # Limiter à 10 erreurs
+                messages.warning(request, erreur)
+            
+            if len(erreurs) > 10:
+                messages.warning(request, f"... et {len(erreurs) - 10} autres erreurs")
+            
+            return redirect('inventory:detail_depot', depot_id=depot.id)
+            
+        except Exception as e:
+            messages.error(request, f"Erreur lors de la lecture du fichier Excel: {str(e)}")
+            return redirect('inventory:importer_excel_depot', depot_id=depot.id)
+    
+    context = {
+        'depot': depot,
+        'commercant': commercant,
+    }
+    
+    return render(request, 'inventory/commercant/importer_excel_depot.html', context)
 
 @login_required
 @commercant_required

@@ -243,6 +243,7 @@ def articles_by_serial_simple(request, numero_serie):
             'count': articles.count(),
             'boutique_id': boutique.id,
             'boutique_nom': boutique.nom,
+            'taux_dollar': str(boutique.commercant.taux_dollar),
             'terminal': {
                 'numero_serie': terminal.numero_serie,
                 'nom_terminal': terminal.nom_terminal
@@ -328,6 +329,7 @@ def articles_list_simple(request):
             'count': articles.count(),
             'boutique_id': boutique.id,
             'boutique_nom': boutique.nom,
+            'taux_dollar': str(boutique.commercant.taux_dollar),
             'articles': articles_data
         })
         
@@ -633,10 +635,15 @@ def create_vente_simple(request):
             else:
                 date_vente = timezone.now()
             
+            # Déterminer la devise de la vente
+            devise_vente = vente_data.get('devise', 'CDF')
+            
             vente = Vente.objects.create(
                 numero_facture=numero_facture,
                 date_vente=date_vente,
                 montant_total=0,  # Sera calculé avec les lignes
+                montant_total_usd=0 if devise_vente == 'USD' else None,
+                devise=devise_vente,
                 mode_paiement=vente_data.get('mode_paiement', 'CASH'),
                 paye=vente_data.get('paye', True),
                 boutique=boutique,  # ⭐ ISOLATION: Lien direct avec la boutique
@@ -647,6 +654,7 @@ def create_vente_simple(request):
             logger.info(f"✅ Vente créée avec boutique: {boutique.nom} (ID: {boutique.id})")
             
             montant_total = 0
+            montant_total_usd = 0
             lignes_creees = []
             
             # Traiter chaque ligne de vente
@@ -670,13 +678,33 @@ def create_vente_simple(request):
                     # La transaction sera automatiquement annulée
                     raise Exception(f'Stock insuffisant pour {article.nom}')
                 
-                # Créer la ligne de vente
-                prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
+                # Créer la ligne de vente avec support USD
+                devise_ligne = ligne_data.get('devise', devise_vente)
+                
+                # ⭐ Déterminer les prix selon la devise
+                if devise_ligne == 'USD':
+                    # Pour vente USD: le prix principal EST en USD
+                    # Priorité: prix_unitaire_usd > prix_unitaire (si envoyé comme USD) > article.prix_vente_usd
+                    prix_unitaire_usd = (
+                        ligne_data.get('prix_unitaire_usd') or 
+                        ligne_data.get('prix_unitaire') or  # ⭐ MAUI peut envoyer le prix USD ici
+                        article.prix_vente_usd or 
+                        0
+                    )
+                    prix_unitaire = 0  # Pas de CDF pour vente USD
+                    logger.info(f"💵 Ligne USD: prix_unitaire_usd={prix_unitaire_usd}")
+                else:
+                    # Pour vente CDF: utiliser prix_unitaire comme prix principal
+                    prix_unitaire = ligne_data.get('prix_unitaire') or article.prix_vente
+                    prix_unitaire_usd = ligne_data.get('prix_unitaire_usd') or article.prix_vente_usd or 0
+                
                 ligne_vente = LigneVente.objects.create(
                     vente=vente,
                     article=article,
                     quantite=quantite,
-                    prix_unitaire=prix_unitaire
+                    prix_unitaire=prix_unitaire,
+                    prix_unitaire_usd=prix_unitaire_usd,
+                    devise=devise_ligne
                 )
                 
                 # Mettre à jour le stock
@@ -685,30 +713,57 @@ def create_vente_simple(request):
                 article.save(update_fields=['quantite_stock'])
                 
                 # Créer un mouvement de stock avec traçabilité complète
+                symbole_devise = '$' if devise_ligne == 'USD' else 'FC'
+                prix_affiche = prix_unitaire_usd if devise_ligne == 'USD' else prix_unitaire
                 MouvementStock.objects.create(
                     article=article,
                     type_mouvement='VENTE',
                     quantite=-quantite,
-                    stock_avant=stock_avant,  # ⭐ NOUVEAU
-                    stock_apres=article.quantite_stock,  # ⭐ NOUVEAU
-                    reference_document=vente.numero_facture,  # ⭐ NOUVEAU
-                    utilisateur=terminal.nom_terminal,  # ⭐ NOUVEAU
-                    commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
+                    stock_avant=stock_avant,
+                    stock_apres=article.quantite_stock,
+                    reference_document=vente.numero_facture,
+                    utilisateur=terminal.nom_terminal,
+                    commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_affiche} {symbole_devise}"
                 )
                 
-                montant_total += prix_unitaire * quantite
+                # ⭐ Accumuler les montants selon la devise
+                if devise_ligne == 'USD':
+                    # Pour USD: accumuler en USD
+                    montant_total_usd += (prix_unitaire_usd or 0) * quantite
+                    montant_total += prix_unitaire * quantite  # CDF si fourni
+                else:
+                    # Pour CDF: accumuler en CDF
+                    montant_total += prix_unitaire * quantite
+                    if prix_unitaire_usd:
+                        montant_total_usd += prix_unitaire_usd * quantite
+                
+                # Sous-total selon la devise de la ligne
+                sous_total = (prix_unitaire_usd * quantite) if devise_ligne == 'USD' else (prix_unitaire * quantite)
                 lignes_creees.append({
                     'article_nom': article.nom,
                     'quantite': quantite,
-                    'prix_unitaire': prix_unitaire,
-                    'sous_total': prix_unitaire * quantite
+                    'prix_unitaire': str(prix_unitaire),
+                    'prix_unitaire_usd': str(prix_unitaire_usd) if prix_unitaire_usd else None,
+                    'devise': devise_ligne,
+                    'sous_total': str(sous_total)
                 })
             
             # Mettre à jour le montant total de la vente
-            logger.info(f"💰 Montant total calculé: {montant_total} CDF")
+            logger.info(f"💰 Montant total calculé: {montant_total} CDF / {montant_total_usd} USD (devise: {devise_vente})")
             vente.montant_total = montant_total
-            vente.save(update_fields=['montant_total'])
-            logger.info(f"✅ Montant sauvegardé dans la base: {vente.montant_total} CDF")
+            
+            # ⭐ Toujours sauvegarder montant_total_usd pour ventes USD
+            if devise_vente == 'USD':
+                vente.montant_total_usd = montant_total_usd
+                vente.save(update_fields=['montant_total', 'montant_total_usd'])
+            else:
+                # Pour CDF, sauvegarder USD si disponible
+                if montant_total_usd > 0:
+                    vente.montant_total_usd = montant_total_usd
+                    vente.save(update_fields=['montant_total', 'montant_total_usd'])
+                else:
+                    vente.save(update_fields=['montant_total'])
+            logger.info(f"✅ Montant sauvegardé: {vente.montant_total} {vente.devise}")
             
             # Vérification de sécurité - Recharger depuis la base
             vente.refresh_from_db()
@@ -719,7 +774,9 @@ def create_vente_simple(request):
             'vente': {
                 'id': vente.id,
                 'numero_facture': vente.numero_facture,
-                'montant_total': montant_total,
+                'devise': vente.devise,
+                'montant_total': str(montant_total),
+                'montant_total_usd': str(montant_total_usd) if montant_total_usd > 0 else None,
                 'mode_paiement': vente.mode_paiement,
                 'date_vente': vente.date_vente.isoformat(),
                 'lignes': lignes_creees
@@ -1161,6 +1218,8 @@ def sync_ventes_simple(request):
                     'numero_facture': v.get('VenteUid') or v.get('vente_uid') or v.get('numero_facture'),
                     'date_vente': v.get('Date') or v.get('date') or v.get('date_vente'),
                     'montant_total': v.get('Total') or v.get('total') or v.get('montant_total'),
+                    'montant_total_usd': v.get('TotalUsd') or v.get('total_usd') or v.get('montant_total_usd'),
+                    'devise': v.get('Devise') or v.get('devise', 'CDF'),
                     'mode_paiement': v.get('ModePaiement') or v.get('mode_paiement', 'CASH'),
                     'paye': v.get('Paye') if 'Paye' in v else v.get('paye', True),
                     'lignes': v.get('Items') or v.get('items') or v.get('lignes', [])
@@ -1171,7 +1230,9 @@ def sync_ventes_simple(request):
                     ligne_convertie = {
                         'article_id': item.get('ArticleId') or item.get('article_id'),
                         'quantite': item.get('Quantite') or item.get('quantite'),
-                        'prix_unitaire': item.get('PrixUnitaire') or item.get('prix_unitaire')
+                        'prix_unitaire': item.get('PrixUnitaire') or item.get('prix_unitaire'),
+                        'prix_unitaire_usd': item.get('PrixUnitaireUsd') or item.get('prix_unitaire_usd'),
+                        'devise': item.get('Devise') or item.get('devise', 'CDF')
                     }
                     lignes_converties.append(ligne_convertie)
                 vente_convertie['lignes'] = lignes_converties
@@ -1261,10 +1322,15 @@ def sync_ventes_simple(request):
                     else:
                         date_vente = timezone.now()
                     
+                    # Déterminer la devise de la vente
+                    devise_vente = vente_data.get('devise', 'CDF')
+                    
                     vente = Vente.objects.create(
                         numero_facture=numero_facture,
                         date_vente=date_vente,
                         montant_total=0,  # Sera calculé avec les lignes
+                        montant_total_usd=0 if devise_vente == 'USD' else None,
+                        devise=devise_vente,
                         mode_paiement=vente_data.get('mode_paiement', 'CASH'),
                         paye=vente_data.get('paye', True),
                         boutique=boutique,  # ⭐ ISOLATION: Lien direct avec la boutique
@@ -1272,9 +1338,10 @@ def sync_ventes_simple(request):
                         adresse_ip_client=request.META.get('REMOTE_ADDR'),
                         version_app_maui=terminal.version_app_maui
                     )
-                    logger.info(f"✅ Vente créée: {numero_facture} (ID: {vente.id}) → Boutique {boutique.nom} (ID: {boutique.id})")
+                    logger.info(f"✅ Vente créée: {numero_facture} (ID: {vente.id}) → Boutique {boutique.nom} (ID: {boutique.id}) - Devise: {devise_vente}")
                     
                     montant_total = 0
+                    montant_total_usd = 0
                     lignes_creees = []
                     
                     # Traiter chaque ligne de vente
@@ -1298,13 +1365,18 @@ def sync_ventes_simple(request):
                             # Erreur enrichie: RAISON|article_id|article_nom|stock_demande|stock_dispo|message
                             raise ValueError(f'INSUFFICIENT_STOCK|{article.id}|{article.nom}|{quantite}|{article.quantite_stock}|Stock insuffisant pour {article.nom} (dispo: {article.quantite_stock}, demandé: {quantite})')
                         
-                        # Créer la ligne de vente
+                        # Créer la ligne de vente avec support USD
                         prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
+                        prix_unitaire_usd = ligne_data.get('prix_unitaire_usd') or article.prix_vente_usd
+                        devise_ligne = ligne_data.get('devise', devise_vente)
+                        
                         ligne_vente = LigneVente.objects.create(
                             vente=vente,
                             article=article,
                             quantite=quantite,
-                            prix_unitaire=prix_unitaire
+                            prix_unitaire=prix_unitaire,
+                            prix_unitaire_usd=prix_unitaire_usd,
+                            devise=devise_ligne
                         )
                         
                         # Mettre à jour le stock
@@ -1325,19 +1397,26 @@ def sync_ventes_simple(request):
                         )
                         
                         montant_total += prix_unitaire * quantite
+                        montant_total_usd = (montant_total_usd or 0) + (prix_unitaire_usd * quantite if prix_unitaire_usd else 0)
                         lignes_creees.append({
                             'article_nom': article.nom,
                             'article_code': article.code,
                             'quantite': quantite,
                             'prix_unitaire': str(prix_unitaire),
+                            'prix_unitaire_usd': str(prix_unitaire_usd) if prix_unitaire_usd else None,
+                            'devise': devise_ligne,
                             'sous_total': str(prix_unitaire * quantite)
                         })
                     
                     # Mettre à jour le montant total de la vente
-                    logger.info(f"💰 SYNC - Montant total calculé: {montant_total} CDF")
+                    logger.info(f"💰 SYNC - Montant total calculé: {montant_total} CDF / {montant_total_usd} USD")
                     vente.montant_total = montant_total
-                    vente.save(update_fields=['montant_total'])
-                    logger.info(f"✅ SYNC - Montant sauvegardé: {vente.montant_total} CDF")
+                    if devise_vente == 'USD' and montant_total_usd:
+                        vente.montant_total_usd = montant_total_usd
+                        vente.save(update_fields=['montant_total', 'montant_total_usd'])
+                    else:
+                        vente.save(update_fields=['montant_total'])
+                    logger.info(f"✅ SYNC - Montant sauvegardé: {vente.montant_total} {vente.devise}")
                     
                     ventes_creees.append({
                         'numero_facture': vente.numero_facture,

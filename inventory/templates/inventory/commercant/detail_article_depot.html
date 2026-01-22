@@ -1,0 +1,155 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}{{ article.nom }} - {{ depot.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-box"></i> {{ article.nom }}</h1>
+                    <p class="text-muted">
+                        <i class="fas fa-warehouse"></i> {{ depot.nom }} • 
+                        <i class="fas fa-barcode"></i> {{ article.code }}
+                    </p>
+                </div>
+                <div>
+                    <a href="{% url 'inventory:modifier_article_depot' depot.id article.id %}" class="btn btn-warning">
+                        <i class="fas fa-edit"></i> Modifier
+                    </a>
+                    <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour au dépôt
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Informations de l'article -->
+        <div class="col-md-6">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Informations</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table table-borderless">
+                        <tr>
+                            <th width="40%">Nom</th>
+                            <td>{{ article.nom }}</td>
+                        </tr>
+                        <tr>
+                            <th>Code</th>
+                            <td><code>{{ article.code }}</code></td>
+                        </tr>
+                        <tr>
+                            <th>Devise</th>
+                            <td>
+                                {% if article.devise == 'USD' %}
+                                <span class="badge bg-success">USD</span>
+                                {% else %}
+                                <span class="badge bg-primary">CDF</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Stock actuel</th>
+                            <td>
+                                <span class="badge bg-{% if article.quantite_stock == 0 %}danger{% elif article.quantite_stock <= depot.alerte_stock_bas %}warning{% else %}success{% endif %} fs-5">
+                                    {{ article.quantite_stock }} unités
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Prix d'achat</th>
+                            <td>
+                                {% if article.devise == 'USD' %}
+                                <strong class="text-success">$ {{ article.prix_achat|floatformat:2 }}</strong>
+                                {% else %}
+                                <strong>{{ article.prix_achat|floatformat:0 }} FC</strong>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Prix de vente</th>
+                            <td>
+                                {% if article.devise == 'USD' %}
+                                <strong class="text-success">$ {{ article.prix_vente|floatformat:2 }}</strong>
+                                {% else %}
+                                <strong>{{ article.prix_vente|floatformat:0 }} FC</strong>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% if article.description %}
+                        <tr>
+                            <th>Description</th>
+                            <td>{{ article.description }}</td>
+                        </tr>
+                        {% endif %}
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Historique des mouvements -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-history"></i> Historique des mouvements</h5>
+                </div>
+                <div class="card-body p-0">
+                    {% if mouvements %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th class="text-center">Qté</th>
+                                    <th>Commentaire</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for mouvement in mouvements %}
+                                <tr>
+                                    <td><small>{{ mouvement.date_mouvement|date:"d/m/Y H:i" }}</small></td>
+                                    <td>
+                                        {% if mouvement.type_mouvement == 'ENTREE' %}
+                                        <span class="badge bg-success">Entrée</span>
+                                        {% elif mouvement.type_mouvement == 'SORTIE' %}
+                                        <span class="badge bg-danger">Sortie</span>
+                                        {% elif mouvement.type_mouvement == 'VENTE' %}
+                                        <span class="badge bg-info">Vente</span>
+                                        {% elif mouvement.type_mouvement == 'TRANSFERT' %}
+                                        <span class="badge bg-warning">Transfert</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ mouvement.type_mouvement }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if mouvement.quantite > 0 %}
+                                        <span class="text-success">+{{ mouvement.quantite }}</span>
+                                        {% else %}
+                                        <span class="text-danger">{{ mouvement.quantite }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><small class="text-muted">{{ mouvement.commentaire|truncatechars:30 }}</small></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-4">
+                        Aucun mouvement enregistré
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

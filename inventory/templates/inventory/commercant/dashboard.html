@@ -196,7 +196,12 @@
                                 <i class="fas fa-eye-slash"></i>
                             </button>
                         </div>
-                        <p class="mb-0">Bienvenue dans votre espace de gestion multi-points de vente</p>
+                        <p class="mb-0">
+                            Bienvenue dans votre espace de gestion multi-points de vente
+                            <span class="badge bg-success ms-2" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#tauxDollarModal" title="Cliquez pour modifier">
+                                <i class="fas fa-exchange-alt"></i> 1$ = {{ commercant.taux_dollar|floatformat:0 }} FC
+                            </span>
+                        </p>
                     </div>
                     <div class="col-12 col-md-4 text-center text-md-end">
                         <div class="row text-center">
@@ -209,13 +214,15 @@
                                 <div class="small-stat-label">PDV connectés</div>
                             </div>
                             <div class="col-4 mb-2">
-                                <div class="small-stat-number small-stat-number-success sensitive-amount">{{ recette_jour|floatformat:2|intcomma }} CDF</div>
-                                <div class="small-stat-label">Recette jour (toutes)</div>
+                                <div class="small-stat-number small-stat-number-success sensitive-amount">{{ recette_jour|floatformat:0|intcomma }} CDF</div>
+                                <div class="small-stat-number sensitive-amount" style="font-size:0.8rem; color: #28a745;">$ {{ recette_jour_usd|floatformat:2|default:"0.00" }}</div>
+                                <div class="small-stat-label">Recette jour</div>
                             </div>
                             <div class="w-100"></div>
                             <div class="col-4 mt-1">
-                                <div class="small-stat-number small-stat-number-success sensitive-amount">{{ chiffre_affaires_30j|floatformat:2|intcomma }} CDF</div>
-                                <div class="small-stat-label">Recette 30j (toutes)</div>
+                                <div class="small-stat-number small-stat-number-success sensitive-amount">{{ chiffre_affaires_30j|floatformat:0|intcomma }} CDF</div>
+                                <div class="small-stat-number sensitive-amount" style="font-size:0.8rem; color: #28a745;">$ {{ chiffre_affaires_30j_usd|floatformat:2|default:"0.00" }}</div>
+                                <div class="small-stat-label">Recette 30j</div>
                             </div>
                             <div class="col-4 mt-1">
                                 <div class="small-stat-number small-stat-number-info sensitive-amount">{{ valeur_marchandise|floatformat:2|intcomma }} CDF</div>
@@ -274,19 +281,25 @@
                     
                     <!-- Statistiques du dépôt -->
                     <div class="row mb-3">
-                        <div class="col-4">
+                        <div class="col-3">
                             <div class="depot-stat">
                                 <div class="depot-stat-value">{{ depot.nb_articles }}</div>
                                 <div class="depot-stat-label">Articles</div>
                             </div>
                         </div>
-                        <div class="col-4">
+                        <div class="col-3">
                             <div class="depot-stat">
-                                <div class="depot-stat-value">{{ depot.valeur_stock|floatformat:0 }}</div>
-                                <div class="depot-stat-label">Valeur CDF</div>
+                                <div class="depot-stat-value">{{ depot.valeur_stock_cdf|floatformat:0 }}</div>
+                                <div class="depot-stat-label">Stock CDF</div>
                             </div>
                         </div>
-                        <div class="col-4">
+                        <div class="col-3">
+                            <div class="depot-stat">
+                                <div class="depot-stat-value">$ {{ depot.valeur_stock_usd|floatformat:0 }}</div>
+                                <div class="depot-stat-label">Stock USD</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
                             <div class="depot-stat">
                                 <div class="depot-stat-value">{{ depot.nb_transferts_mois }}</div>
                                 <div class="depot-stat-label">Transferts</div>
@@ -474,6 +487,42 @@
         </div>
     </div>
     {% endif %}
+</div>
+
+<!-- Modal Taux Dollar -->
+<div class="modal fade" id="tauxDollarModal" tabindex="-1" aria-labelledby="tauxDollarModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'inventory:modifier_taux_dollar' %}">
+                {% csrf_token %}
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title" id="tauxDollarModalLabel">
+                        <i class="fas fa-exchange-alt"></i> Taux de Change USD/CDF
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted">Ce taux sera appliqué à <strong>tous vos points de vente</strong> pour les conversions entre Dollar US et Franc Congolais.</p>
+                    <div class="mb-3">
+                        <label for="taux_dollar" class="form-label">Taux de change</label>
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text">1 $ =</span>
+                            <input type="number" class="form-control" id="taux_dollar" name="taux_dollar" 
+                                   value="{{ commercant.taux_dollar|floatformat:0 }}" min="1" step="0.01" required>
+                            <span class="input-group-text">FC</span>
+                        </div>
+                        <div class="form-text">Exemple: si 1$ = 2800 FC, entrez 2800</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save"></i> Enregistrer
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 {% endblock %}
 

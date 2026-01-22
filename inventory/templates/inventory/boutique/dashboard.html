@@ -181,7 +181,8 @@
                     <p class="text-muted">
                         <i class="fas fa-map-marker-alt"></i> {{ boutique.ville }} • 
                         <i class="fas fa-tag"></i> {{ boutique.get_type_commerce_display }} • 
-                        <i class="fas fa-calendar"></i> {{ "aujourd'hui"|date:"d/m/Y" }}
+                        <i class="fas fa-calendar"></i> {{ "aujourd'hui"|date:"d/m/Y" }} •
+                        <span class="badge bg-success"><i class="fas fa-exchange-alt"></i> 1$ = {{ boutique.commercant.taux_dollar|floatformat:0 }} FC</span>
                     </p>
                 </div>
                 <div>
@@ -218,7 +219,10 @@
                         <p class="mb-0">Ventes Récentes</p>
                     </div>
                     <div class="col-md-3">
-                        <h2><i class="fas fa-coins me-2"></i><span class="sensitive-amount">{{ valeur_stock_disponible|format_cdf:0 }} CDF</span></h2>
+                        <h2><i class="fas fa-coins me-2"></i><span class="sensitive-amount">{{ valeur_stock_cdf|format_cdf:0 }} FC</span></h2>
+                        {% if valeur_stock_usd %}
+                        <h4 class="mb-1"><i class="fas fa-dollar-sign me-1"></i><span class="sensitive-amount">{{ valeur_stock_usd|floatformat:2 }} USD</span></h4>
+                        {% endif %}
                         <p class="mb-0">Valeur du stock disponible</p>
                     </div>
                 </div>
@@ -230,6 +234,9 @@
                             <div class="card bg-success text-white h-100 card-hover-ca">
                                 <div class="card-body">
                                     <h3><i class="fas fa-calendar-day me-2"></i><span class="sensitive-amount">{{ ca_jour|format_cdf:0 }} CDF</span></h3>
+                                    {% if ca_aujourd_hui_usd %}
+                                    <h4 class="mb-1"><i class="fas fa-dollar-sign me-1"></i><span class="sensitive-amount">{{ ca_aujourd_hui_usd|floatformat:2 }} USD</span></h4>
+                                    {% endif %}
                                     <p class="mb-0">Recette du jour (net) <i class="fas fa-external-link-alt fa-xs"></i></p>
                                     {% if depenses_appliquees_ca_jour %}
                                     <small class="d-block mt-1">
@@ -246,6 +253,9 @@
                             <div class="card bg-warning text-white h-100 card-hover-ca">
                                 <div class="card-body">
                                     <h3><i class="fas fa-coins me-2"></i><span class="sensitive-amount">{{ ca_mois|format_cdf:0 }} CDF</span></h3>
+                                    {% if ca_mois_usd %}
+                                    <h4 class="mb-1"><i class="fas fa-dollar-sign me-1"></i><span class="sensitive-amount">{{ ca_mois_usd|floatformat:2 }} USD</span></h4>
+                                    {% endif %}
                                     <p class="mb-0">Recette du mois (net) de {{ "now"|date:"F Y" }} <i class="fas fa-external-link-alt fa-xs"></i></p>
                                     {% if depenses_appliquees_ca_mois %}
                                     <small class="d-block mt-1">

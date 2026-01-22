@@ -48,12 +48,66 @@
                             </div>
                         </div>
 
+                        <!-- Sélection de la devise -->
                         <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label for="{{ form.prix_vente.id_for_label }}" class="form-label">
-                                    <i class="fas fa-money-bill"></i> Prix de vente (CDF) *
+                            <div class="col-md-6 mb-3">
+                                <label for="devise" class="form-label">
+                                    <i class="fas fa-coins"></i> Devise principale *
                                 </label>
-                                {{ form.prix_vente }}
+                                <select class="form-select" id="devise" name="devise" onchange="updatePrixLabels()">
+                                    <option value="CDF" selected>CDF (Franc Congolais)</option>
+                                    <option value="USD">USD (Dollar US)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.categorie.id_for_label }}" class="form-label">
+                                    <i class="fas fa-folder"></i> Catégorie
+                                </label>
+                                {{ form.categorie }}
+                            </div>
+                        </div>
+
+                        <!-- Prix de vente et d'achat -->
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.prix_vente.id_for_label }}" class="form-label" id="label_prix_vente">
+                                    <i class="fas fa-money-bill"></i> Prix de vente <span id="devise_prix_vente">(CDF)</span> *
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text" id="symbol_prix_vente">FC</span>
+                                    {{ form.prix_vente }}
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="prix_achat" class="form-label" id="label_prix_achat">
+                                    <i class="fas fa-shopping-cart"></i> Prix d'achat <span id="devise_prix_achat">(CDF)</span>
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text" id="symbol_prix_achat">FC</span>
+                                    <input type="number" class="form-control" name="prix_achat" id="prix_achat" min="0" step="0.01" placeholder="Prix d'achat (optionnel)">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Prix dans l'autre devise (optionnel) -->
+                        <div class="row" id="prix_autre_devise_container">
+                            <div class="col-md-6 mb-3">
+                                <label for="prix_vente_autre" class="form-label text-muted" id="label_prix_vente_autre">
+                                    <i class="fas fa-exchange-alt"></i> Prix de vente <span id="devise_autre_vente">(USD)</span> <small>(optionnel)</small>
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text" id="symbol_autre_vente">$</span>
+                                    <input type="number" class="form-control" name="prix_vente_usd" id="prix_vente_autre" min="0" step="0.01" placeholder="Conversion optionnelle">
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="prix_achat_autre" class="form-label text-muted" id="label_prix_achat_autre">
+                                    <i class="fas fa-exchange-alt"></i> Prix d'achat <span id="devise_autre_achat">(USD)</span> <small>(optionnel)</small>
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text" id="symbol_autre_achat">$</span>
+                                    <input type="number" class="form-control" name="prix_achat_usd" id="prix_achat_autre" min="0" step="0.01" placeholder="Conversion optionnelle">
+                                </div>
                             </div>
                         </div>
 
@@ -63,12 +117,6 @@
                                     <i class="fas fa-boxes"></i> Quantité en stock
                                 </label>
                                 {{ form.quantite_stock }}
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.categorie.id_for_label }}" class="form-label">
-                                    <i class="fas fa-folder"></i> Catégorie
-                                </label>
-                                {{ form.categorie }}
                             </div>
                         </div>
 
@@ -174,5 +222,55 @@
 .btn {
     border-radius: 8px;
 }
+
+.devise-highlight {
+    border: 2px solid #28a745 !important;
+    background-color: #f8fff8;
+}
 </style>
+
+<script>
+function updatePrixLabels() {
+    const devise = document.getElementById('devise').value;
+    const isCDF = devise === 'CDF';
+    
+    // Labels et symboles principaux
+    document.getElementById('devise_prix_vente').textContent = isCDF ? '(CDF)' : '(USD)';
+    document.getElementById('devise_prix_achat').textContent = isCDF ? '(CDF)' : '(USD)';
+    document.getElementById('symbol_prix_vente').textContent = isCDF ? 'FC' : '$';
+    document.getElementById('symbol_prix_achat').textContent = isCDF ? 'FC' : '$';
+    
+    // Labels et symboles de l'autre devise
+    document.getElementById('devise_autre_vente').textContent = isCDF ? '(USD)' : '(CDF)';
+    document.getElementById('devise_autre_achat').textContent = isCDF ? '(USD)' : '(CDF)';
+    document.getElementById('symbol_autre_vente').textContent = isCDF ? '$' : 'FC';
+    document.getElementById('symbol_autre_achat').textContent = isCDF ? '$' : 'FC';
+    
+    // Mettre à jour les noms des champs pour l'autre devise
+    const prixVenteAutre = document.getElementById('prix_vente_autre');
+    const prixAchatAutre = document.getElementById('prix_achat_autre');
+    prixVenteAutre.name = isCDF ? 'prix_vente_usd' : 'prix_vente_cdf';
+    prixAchatAutre.name = isCDF ? 'prix_achat_usd' : 'prix_achat_cdf';
+    
+    // Highlight visuel
+    const prixPrincipalContainer = document.querySelector('#label_prix_vente').closest('.col-md-6');
+    const prixAutreContainer = document.getElementById('prix_autre_devise_container');
+    
+    if (prixPrincipalContainer) {
+        prixPrincipalContainer.classList.add('devise-highlight');
+    }
+}
+
+// Initialiser au chargement
+document.addEventListener('DOMContentLoaded', function() {
+    updatePrixLabels();
+    
+    // ⭐ Autofocus sur le champ code-barres pour le lecteur de code-barres
+    const codeField = document.querySelector('input[name="code"]');
+    if (codeField) {
+        codeField.focus();
+        console.log('✅ Autofocus activé sur le champ code-barres');
+    }
+});
+</script>
 {% endblock %}

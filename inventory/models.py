@@ -96,11 +96,22 @@ class Categorie(models.Model):
 class Article(models.Model):
     """Articles de vente."""
     
+    DEVISE_CHOICES = [
+        ('CDF', 'Franc Congolais'),
+        ('USD', 'Dollar US'),
+    ]
+    
     code = models.CharField(max_length=50)
     nom = models.CharField(max_length=100)
     description = models.TextField(blank=True)
-    prix_vente = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
-    prix_achat = models.DecimalField(max_digits=10, decimal_places=2)
+    # Devise principale de l'article (détermine la devise des prix)
+    devise = models.CharField(max_length=3, choices=DEVISE_CHOICES, default='CDF', help_text="Devise des prix de cet article")
+    # Les prix sont dans la devise sélectionnée
+    prix_vente = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], help_text="Prix de vente dans la devise de l'article")
+    prix_achat = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Prix d'achat dans la devise de l'article")
+    # Champs de conversion (optionnels, pour affichage dans l'autre devise)
+    prix_vente_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)], help_text="Prix de vente converti en USD (si devise=CDF)")
+    prix_achat_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix d'achat converti en USD (si devise=CDF)")
     categorie = models.ForeignKey(Categorie, on_delete=models.SET_NULL, null=True, related_name='articles')
     boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='articles', null=True, blank=True)
     quantite_stock = models.IntegerField(default=0)
@@ -177,6 +188,9 @@ class Vente(models.Model):
     numero_facture = models.CharField(max_length=100, unique=True)
     date_vente = models.DateTimeField(default=timezone.now)
     montant_total = models.DecimalField(max_digits=12, decimal_places=2)
+    # Montant en dollars USD
+    montant_total_usd = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, help_text="Montant total en USD")
+    devise = models.CharField(max_length=3, choices=[('CDF', 'Franc Congolais'), ('USD', 'Dollar US')], default='CDF', help_text="Devise utilisée pour cette vente")
     paye = models.BooleanField(default=False)
     mode_paiement = models.CharField(max_length=50, choices=[
         ('CASH', 'Espèces'),
@@ -213,10 +227,19 @@ class LigneVente(models.Model):
     article = models.ForeignKey(Article, on_delete=models.CASCADE)
     quantite = models.PositiveIntegerField()
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
+    # Prix en dollars USD
+    prix_unitaire_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix unitaire en USD")
+    devise = models.CharField(max_length=3, choices=[('CDF', 'Franc Congolais'), ('USD', 'Dollar US')], default='CDF')
     
     @property
     def total_ligne(self):
         return self.quantite * self.prix_unitaire
+    
+    @property
+    def total_ligne_usd(self):
+        if self.prix_unitaire_usd:
+            return self.quantite * self.prix_unitaire_usd
+        return None
     
     def __str__(self):
         return f"{self.article.nom} x{self.quantite}"
@@ -315,6 +338,8 @@ class Commercant(models.Model):
     
     # Paramètres et statut
     est_actif = models.BooleanField(default=True, help_text="Le commerçant peut-il accéder au système?")
+    taux_dollar = models.DecimalField(max_digits=10, decimal_places=2, default=2800, 
+                                      help_text="Taux de change: 1 USD = X CDF (appliqué à tous les points de vente)")
     date_creation = models.DateTimeField(auto_now_add=True)
     date_mise_a_jour = models.DateTimeField(auto_now=True)
     
@@ -727,5 +752,127 @@ class TransfertStock(models.Model):
             models.Index(fields=['depot_source', 'date_transfert'], name='transfert_depot_date_idx'),
             models.Index(fields=['boutique_destination', 'date_transfert'], name='transfert_boutique_date_idx'),
             models.Index(fields=['statut'], name='transfert_statut_idx'),
+        ]
+
+
+class NotificationStock(models.Model):
+    """
+    Notifications pour informer les clients MAUI des ajouts de stock.
+    Créées automatiquement lorsque du stock est ajouté à leur boutique.
+    """
+    
+    TYPE_NOTIFICATION_CHOICES = [
+        ('STOCK_AJOUT', 'Ajout de stock'),
+        ('STOCK_RETRAIT', 'Retrait de stock'),
+        ('STOCK_TRANSFERT', 'Transfert de stock'),
+        ('STOCK_AJUSTEMENT', 'Ajustement de stock'),
+        ('AJUSTEMENT_PRIX', 'Ajustement de prix'),
+    ]
+    
+    client = models.ForeignKey(
+        Client, 
+        on_delete=models.CASCADE, 
+        related_name='notifications',
+        help_text="Client MAUI destinataire de la notification"
+    )
+    boutique = models.ForeignKey(
+        Boutique, 
+        on_delete=models.CASCADE, 
+        related_name='notifications',
+        help_text="Boutique concernée par la notification"
+    )
+    
+    type_notification = models.CharField(
+        max_length=20, 
+        choices=TYPE_NOTIFICATION_CHOICES,
+        default='STOCK_AJOUT'
+    )
+    
+    titre = models.CharField(
+        max_length=200,
+        help_text="Titre court de la notification"
+    )
+    message = models.TextField(
+        help_text="Message détaillé de la notification"
+    )
+    
+    mouvement_stock = models.ForeignKey(
+        MouvementStock,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='notifications',
+        help_text="Mouvement de stock associé"
+    )
+    
+    article = models.ForeignKey(
+        Article,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='notifications',
+        help_text="Article concerné"
+    )
+    
+    quantite_mouvement = models.IntegerField(
+        default=0,
+        help_text="Quantité du mouvement (positif pour ajout, négatif pour retrait)"
+    )
+    
+    stock_avant = models.IntegerField(
+        default=0,
+        help_text="Stock avant le mouvement"
+    )
+    
+    stock_actuel = models.IntegerField(
+        default=0,
+        help_text="Stock actuel après le mouvement"
+    )
+    
+    quantite_ajoutee = models.IntegerField(
+        default=0,
+        help_text="[DEPRECATED] Utiliser quantite_mouvement"
+    )
+    
+    lue = models.BooleanField(
+        default=False,
+        help_text="La notification a-t-elle été lue?"
+    )
+    date_lecture = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Date et heure de lecture"
+    )
+    
+    date_creation = models.DateTimeField(
+        auto_now_add=True,
+        help_text="Date de création de la notification"
+    )
+    
+    donnees_supplementaires = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Données supplémentaires (prix, catégorie, etc.)"
+    )
+    
+    def marquer_comme_lue(self):
+        """Marque la notification comme lue"""
+        if not self.lue:
+            self.lue = True
+            self.date_lecture = timezone.now()
+            self.save(update_fields=['lue', 'date_lecture'])
+    
+    def __str__(self):
+        statut = "✓ Lue" if self.lue else "● Non lue"
+        return f"{statut} - {self.titre} ({self.client.nom_terminal})"
+    
+    class Meta:
+        verbose_name = "Notification de stock"
+        verbose_name_plural = "Notifications de stock"
+        ordering = ['-date_creation']
+        indexes = [
+            models.Index(fields=['client', 'lue', '-date_creation'], name='notif_client_lue_date_idx'),
+            models.Index(fields=['boutique', '-date_creation'], name='notif_boutique_date_idx'),
+            models.Index(fields=['lue', '-date_creation'], name='notif_lue_date_idx'),
         ]
 

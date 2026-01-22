@@ -281,17 +281,26 @@ public class Article
     [JsonPropertyName("description")]
     public string Description { get; set; }
     
+    [JsonPropertyName("devise")]
+    public string Devise { get; set; }
+    
     [JsonPropertyName("prix_vente")]
     public string PrixVente { get; set; }
+    
+    [JsonPropertyName("prix_vente_usd")]
+    public string PrixVenteUsd { get; set; }
     
     [JsonPropertyName("prix_achat")]
     public string PrixAchat { get; set; }
     
+    [JsonPropertyName("prix_achat_usd")]
+    public string PrixAchatUsd { get; set; }
+    
     [JsonPropertyName("quantite_stock")]
     public int QuantiteStock { get; set; }
     
-    [JsonPropertyName("categorie")]
-    public CategorieInfo Categorie { get; set; }
+    [JsonPropertyName("categorie_nom")]
+    public string CategorieNom { get; set; }
     
     [JsonPropertyName("image_url")]
     public string ImageUrl { get; set; }
@@ -302,8 +311,39 @@ public class Article
     [JsonPropertyName("est_actif")]
     public bool EstActif { get; set; }
     
-    // Propriété calculée pour affichage
+    // Propriété calculée pour affichage du prix selon la devise
+    [JsonIgnore]
     public decimal PrixVenteDecimal => decimal.TryParse(PrixVente, out var prix) ? prix : 0;
+    
+    [JsonIgnore]
+    public decimal PrixVenteUsdDecimal => decimal.TryParse(PrixVenteUsd, out var prix) ? prix : 0;
+    
+    // ⭐ Propriété pour afficher le prix avec la bonne devise
+    [JsonIgnore]
+    public string PrixAffichage
+    {
+        get
+        {
+            if (Devise == "USD" && PrixVenteUsdDecimal > 0)
+            {
+                return $"{PrixVenteUsdDecimal:N2} $";
+            }
+            else if (Devise == "CDF" || string.IsNullOrEmpty(Devise))
+            {
+                return $"{PrixVenteDecimal:N0} FC";
+            }
+            // Fallback: afficher les deux si disponibles
+            else if (PrixVenteUsdDecimal > 0)
+            {
+                return $"{PrixVenteUsdDecimal:N2} $";
+            }
+            return $"{PrixVenteDecimal:N0} FC";
+        }
+    }
+    
+    // ⭐ Symbole de devise pour affichage
+    [JsonIgnore]
+    public string SymboleDevise => Devise == "USD" ? "$" : "FC";
     
     // ⭐ NOUVEAU: Index pour les couleurs alternées
     [JsonIgnore]
@@ -353,6 +393,25 @@ public class Categorie
     
     [JsonPropertyName("description")]
     public string Description { get; set; }
+}
+
+public class LigneVenteRequest
+{
+    [JsonPropertyName("article_id")]
+    public int ArticleId { get; set; }
+    
+    [JsonPropertyName("quantite")]
+    public int Quantite { get; set; }
+    
+    [JsonPropertyName("prix_unitaire")]
+    public decimal PrixUnitaire { get; set; }
+    
+    // ⭐ Support USD
+    [JsonPropertyName("prix_unitaire_usd")]
+    public decimal? PrixUnitaireUsd { get; set; }
+    
+    [JsonPropertyName("devise")]
+    public string Devise { get; set; } = "CDF";
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -482,10 +541,10 @@ public class ArticlesViewModel : BaseViewModel
                                FontSize="12"
                                TextColor="#888888"/>
                         
-                        <!-- Prix -->
+                        <!-- Prix avec devise correcte -->
                         <Label Grid.Column="2" 
                                Grid.RowSpan="3"
-                               Text="{Binding PrixVente, StringFormat='{0} CDF'}"
+                               Text="{Binding PrixAffichage}"
                                FontSize="17"
                                FontAttributes="Bold"
                                TextColor="#007AFF"

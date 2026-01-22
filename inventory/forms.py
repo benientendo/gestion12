@@ -32,12 +32,16 @@ class ArticleForm(forms.ModelForm):
 
     class Meta:
         model = Article
-        fields = ['code', 'nom', 'description', 'prix_vente', 'categorie', 'quantite_stock', 'image', 'est_actif']
+        fields = ['code', 'nom', 'description', 'devise', 'prix_vente', 'prix_vente_usd', 'prix_achat', 'prix_achat_usd', 'categorie', 'quantite_stock', 'image', 'est_actif']
         widgets = {
             'code': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Code-barres ou code unique'}),
             'nom': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Nom de l\'article'}),
             'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Description de l\'article'}),
-            'prix_vente': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'placeholder': 'Prix de vente en CDF'}),
+            'devise': forms.Select(attrs={'class': 'form-select'}),
+            'prix_vente': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'placeholder': 'Prix de vente'}),
+            'prix_vente_usd': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'placeholder': 'Prix de vente en USD (optionnel)'}),
+            'prix_achat': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'placeholder': 'Prix d\'achat'}),
+            'prix_achat_usd': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'placeholder': 'Prix d\'achat en USD (optionnel)'}),
             'categorie': forms.Select(attrs={'class': 'form-select'}),
             'quantite_stock': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'Quantité en stock'}),
             'image': forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee
+from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock
 
 @admin.register(Categorie)
 class CategorieAdmin(admin.ModelAdmin):
@@ -125,4 +125,54 @@ class VenteRejeteeAdmin(admin.ModelAdmin):
             traite_par=request.user.username
         )
         self.message_user(request, f"{queryset.count()} vente(s) rejetée(s) marquée(s) comme traitée(s).")
+
+
+@admin.register(NotificationStock)
+class NotificationStockAdmin(admin.ModelAdmin):
+    list_display = ('titre', 'client', 'boutique', 'type_notification', 'lue', 'date_creation', 'article')
+    list_filter = ('type_notification', 'lue', 'date_creation', 'boutique')
+    search_fields = ('titre', 'message', 'client__nom_terminal', 'article__nom', 'article__code')
+    readonly_fields = ('date_creation', 'date_lecture', 'mouvement_stock', 'donnees_supplementaires')
+    date_hierarchy = 'date_creation'
+    
+    fieldsets = (
+        ('Destinataire', {
+            'fields': ('client', 'boutique')
+        }),
+        ('Type et contenu', {
+            'fields': ('type_notification', 'titre', 'message')
+        }),
+        ('Article concerné', {
+            'fields': ('article', 'quantite_ajoutee', 'stock_actuel')
+        }),
+        ('Statut de lecture', {
+            'fields': ('lue', 'date_lecture')
+        }),
+        ('Références', {
+            'fields': ('mouvement_stock', 'donnees_supplementaires'),
+            'classes': ('collapse',)
+        }),
+        ('Dates', {
+            'fields': ('date_creation',)
+        }),
+    )
+    
+    actions = ['marquer_comme_lue', 'marquer_comme_non_lue']
+    
+    @admin.action(description="Marquer les notifications sélectionnées comme lues")
+    def marquer_comme_lue(self, request, queryset):
+        from django.utils import timezone
+        count = queryset.filter(lue=False).update(
+            lue=True, 
+            date_lecture=timezone.now()
+        )
+        self.message_user(request, f"{count} notification(s) marquée(s) comme lue(s).")
+    
+    @admin.action(description="Marquer les notifications sélectionnées comme non lues")
+    def marquer_comme_non_lue(self, request, queryset):
+        count = queryset.filter(lue=True).update(
+            lue=False, 
+            date_lecture=None
+        )
+        self.message_user(request, f"{count} notification(s) marquée(s) comme non lue(s).")
 

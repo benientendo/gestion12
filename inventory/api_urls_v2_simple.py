@@ -3,11 +3,16 @@ URLs API v2 Multi-Boutiques SIMPLIFIÉE (Sans Authentification)
 ==============================================================
 """
 
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from . import api_views_v2_simple
 from .api_views_v2 import RapportCaisseListCreateView
+from .api_views_notifications import NotificationStockViewSet
 
 app_name = 'api_v2_simple'
+
+router = DefaultRouter()
+router.register(r'notifications', NotificationStockViewSet, basename='notification')
 
 urlpatterns = [
     # ===== DIAGNOSTIC =====
@@ -50,4 +55,7 @@ urlpatterns = [
     path('retours-articles/', api_views_v2_simple.creer_retour_article_simple, name='retours_articles_create'),
     path('articles-negocies/historique/', api_views_v2_simple.historique_articles_negocies_simple, name='articles_negocies_history'),
     path('retours-articles/historique/', api_views_v2_simple.historique_retours_articles_simple, name='retours_articles_history'),
+    
+    # ===== NOTIFICATIONS =====
+    path('', include(router.urls)),
 ]

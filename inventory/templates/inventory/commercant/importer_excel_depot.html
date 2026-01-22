@@ -1,0 +1,277 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Import Excel - {{ depot.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .import-header {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 15px;
+        margin-bottom: 25px;
+    }
+    .upload-zone {
+        border: 3px dashed #dee2e6;
+        border-radius: 15px;
+        padding: 40px;
+        text-align: center;
+        transition: all 0.3s ease;
+        background-color: #f8f9fa;
+        cursor: pointer;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+        border-color: #11998e;
+        background-color: #e8f5e9;
+    }
+    .upload-zone i {
+        font-size: 4rem;
+        color: #11998e;
+        margin-bottom: 15px;
+    }
+    .format-info {
+        background-color: #e3f2fd;
+        border-left: 4px solid #2196f3;
+        padding: 15px 20px;
+        border-radius: 0 8px 8px 0;
+        margin-bottom: 20px;
+    }
+    .exemple-table {
+        font-size: 0.85rem;
+    }
+    .exemple-table th {
+        background-color: #11998e;
+        color: white;
+    }
+    .btn-download-template {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        color: white;
+    }
+    .btn-download-template:hover {
+        background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+        color: white;
+    }
+    .file-selected {
+        background-color: #d4edda;
+        border-color: #28a745;
+    }
+    .file-name {
+        font-weight: bold;
+        color: #155724;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="import-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h2><i class="fas fa-file-excel me-2"></i>Import Excel - {{ depot.nom }}</h2>
+                <p class="mb-0 opacity-75">Importez vos articles depuis un fichier Excel (.xlsx)</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light">
+                    <i class="fas fa-arrow-left"></i> Retour au dépôt
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Zone d'upload -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="fas fa-upload"></i> Téléverser le fichier Excel</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data" id="importForm">
+                        {% csrf_token %}
+                        
+                        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fichier_excel').click()">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <h4>Glissez votre fichier Excel ici</h4>
+                            <p class="text-muted">ou cliquez pour sélectionner un fichier</p>
+                            <p class="small text-muted">Formats acceptés: .xlsx, .xls</p>
+                            <input type="file" name="fichier_excel" id="fichier_excel" 
+                                   accept=".xlsx,.xls" style="display: none;" 
+                                   onchange="handleFileSelect(this)">
+                        </div>
+                        
+                        <div id="fileInfo" class="alert alert-success mt-3 d-none">
+                            <i class="fas fa-check-circle me-2"></i>
+                            Fichier sélectionné: <span id="fileName" class="file-name"></span>
+                        </div>
+                        
+                        <div class="text-center mt-4">
+                            <button type="submit" class="btn btn-success btn-lg" id="submitBtn" disabled>
+                                <i class="fas fa-upload me-2"></i>Importer les articles
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <!-- Instructions -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Format du fichier</h5>
+                </div>
+                <div class="card-body">
+                    <div class="format-info">
+                        <strong><i class="fas fa-columns me-1"></i> Colonnes attendues:</strong>
+                        <ul class="mb-0 mt-2">
+                            <li><strong>Code</strong> - Code article (optionnel, généré auto)</li>
+                            <li><strong>Nom</strong> - Nom de l'article <span class="badge bg-danger">Obligatoire</span></li>
+                            <li><strong>Prix Achat</strong> - Prix d'achat</li>
+                            <li><strong>Prix Vente</strong> - Prix de vente</li>
+                            <li><strong>Stock</strong> - Quantité en stock</li>
+                            <li><strong>Devise</strong> - CDF ou USD (optionnel)</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        <strong>Important:</strong>
+                        <ul class="mb-0 small">
+                            <li>La première ligne doit contenir les en-têtes</li>
+                            <li>Si un code existe déjà, le stock sera ajouté</li>
+                            <li>Devise par défaut: CDF</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Exemple -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0"><i class="fas fa-table"></i> Exemple de fichier</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered exemple-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Nom</th>
+                                    <th>Prix Achat</th>
+                                    <th>Prix Vente</th>
+                                    <th>Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>ART001</td>
+                                    <td>Savon</td>
+                                    <td>500</td>
+                                    <td>800</td>
+                                    <td>100</td>
+                                </tr>
+                                <tr>
+                                    <td>ART002</td>
+                                    <td>Lait</td>
+                                    <td>1500</td>
+                                    <td>2000</td>
+                                    <td>50</td>
+                                </tr>
+                                <tr>
+                                    <td>ART003</td>
+                                    <td>Riz 5kg</td>
+                                    <td>8000</td>
+                                    <td>10000</td>
+                                    <td>30</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Gestion du drag & drop
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fichier_excel');
+const fileInfo = document.getElementById('fileInfo');
+const fileName = document.getElementById('fileName');
+const submitBtn = document.getElementById('submitBtn');
+
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    uploadZone.addEventListener(eventName, preventDefaults, false);
+});
+
+function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+['dragenter', 'dragover'].forEach(eventName => {
+    uploadZone.addEventListener(eventName, highlight, false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    uploadZone.addEventListener(eventName, unhighlight, false);
+});
+
+function highlight(e) {
+    uploadZone.classList.add('dragover');
+}
+
+function unhighlight(e) {
+    uploadZone.classList.remove('dragover');
+}
+
+uploadZone.addEventListener('drop', handleDrop, false);
+
+function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    
+    if (files.length > 0) {
+        fileInput.files = files;
+        handleFileSelect(fileInput);
+    }
+}
+
+function handleFileSelect(input) {
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        const validExtensions = ['.xlsx', '.xls'];
+        const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        
+        if (validExtensions.includes(fileExtension)) {
+            fileName.textContent = file.name;
+            fileInfo.classList.remove('d-none');
+            uploadZone.classList.add('file-selected');
+            submitBtn.disabled = false;
+        } else {
+            alert('Veuillez sélectionner un fichier Excel (.xlsx ou .xls)');
+            input.value = '';
+            fileInfo.classList.add('d-none');
+            uploadZone.classList.remove('file-selected');
+            submitBtn.disabled = true;
+        }
+    }
+}
+
+// Validation du formulaire
+document.getElementById('importForm').addEventListener('submit', function(e) {
+    if (!fileInput.files || fileInput.files.length === 0) {
+        e.preventDefault();
+        alert('Veuillez sélectionner un fichier Excel');
+        return false;
+    }
+    
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Import en cours...';
+});
+</script>
+{% endblock %}

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.db import transaction
 import decimal
-from .models import Article, Categorie, Vente, LigneVente, Client, SessionClientMaui, RapportCaisse, ArticleNegocie, RetourArticle
+from .models import Article, Categorie, Vente, LigneVente, Client, SessionClientMaui, RapportCaisse, ArticleNegocie, RetourArticle, NotificationStock
 
 class CategorieSerializer(serializers.ModelSerializer):
     class Meta:
@@ -22,7 +22,8 @@ class ArticleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Article
         fields = [
-            'id', 'code', 'nom', 'description', 'prix_vente', 'prix_achat',
+            'id', 'code', 'nom', 'description', 'devise', 'prix_vente', 'prix_achat',
+            'prix_vente_usd', 'prix_achat_usd',
             'categorie_id', 'categorie_nom', 'quantite_stock', 'qr_code_url', 'image_url',
             'full_details'
         ]
@@ -553,3 +554,159 @@ class RetourArticleSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+
+class NotificationStockSerializer(serializers.ModelSerializer):
+    """Serializer pour les notifications de stock avec détails enrichis."""
+    
+    client_nom = serializers.CharField(source='client.nom_terminal', read_only=True)
+    boutique_nom = serializers.CharField(source='boutique.nom', read_only=True)
+    article_nom = serializers.CharField(source='article.nom', read_only=True, allow_null=True)
+    article_code = serializers.CharField(source='article.code', read_only=True, allow_null=True)
+    type_notification_display = serializers.CharField(source='get_type_notification_display', read_only=True)
+    date_creation_formatee = serializers.SerializerMethodField()
+    date_lecture_formatee = serializers.SerializerMethodField()
+    
+    def get_date_creation_formatee(self, obj):
+        """Retourne la date de création au format lisible français."""
+        if obj.date_creation:
+            return obj.date_creation.strftime('%d/%m/%Y à %H:%M')
+        return None
+    
+    def get_date_lecture_formatee(self, obj):
+        """Retourne la date de lecture au format lisible français."""
+        if obj.date_lecture:
+            return obj.date_lecture.strftime('%d/%m/%Y à %H:%M')
+        return None
+    
+    class Meta:
+        model = NotificationStock
+        fields = [
+            'id',
+            'client_nom',
+            'boutique_nom',
+            'type_notification',
+            'type_notification_display',
+            'titre',
+            'message',
+            'article_nom',
+            'article_code',
+            'quantite_mouvement',
+            'stock_avant',
+            'stock_actuel',
+            'quantite_ajoutee',
+            'lue',
+            'date_lecture',
+            'date_lecture_formatee',
+            'date_creation',
+            'date_creation_formatee',
+            'donnees_supplementaires',
+        ]
+        read_only_fields = [
+            'id', 'client_nom', 'boutique_nom', 'type_notification',
+            'type_notification_display', 'titre', 'message', 'article_nom',
+            'article_code', 'quantite_mouvement', 'stock_avant', 'stock_actuel', 
+            'quantite_ajoutee', 'date_lecture', 'date_lecture_formatee', 
+            'date_creation', 'date_creation_formatee'
+        ]
+
+
+class NotificationStockDetailSerializer(serializers.ModelSerializer):
+    """Serializer détaillé pour une notification de stock avec toutes les informations."""
+    
+    client_info = serializers.SerializerMethodField()
+    boutique_info = serializers.SerializerMethodField()
+    article_info = serializers.SerializerMethodField()
+    mouvement_info = serializers.SerializerMethodField()
+    type_notification_display = serializers.CharField(source='get_type_notification_display', read_only=True)
+    date_creation_formatee = serializers.SerializerMethodField()
+    date_lecture_formatee = serializers.SerializerMethodField()
+    
+    def get_date_creation_formatee(self, obj):
+        """Retourne la date de création au format lisible français."""
+        if obj.date_creation:
+            return obj.date_creation.strftime('%d/%m/%Y à %H:%M')
+        return None
+    
+    def get_date_lecture_formatee(self, obj):
+        """Retourne la date de lecture au format lisible français."""
+        if obj.date_lecture:
+            return obj.date_lecture.strftime('%d/%m/%Y à %H:%M')
+        return None
+    
+    class Meta:
+        model = NotificationStock
+        fields = [
+            'id',
+            'client_info',
+            'boutique_info',
+            'type_notification',
+            'type_notification_display',
+            'titre',
+            'message',
+            'article_info',
+            'mouvement_info',
+            'quantite_mouvement',
+            'stock_avant',
+            'stock_actuel',
+            'quantite_ajoutee',
+            'lue',
+            'date_lecture',
+            'date_lecture_formatee',
+            'date_creation',
+            'date_creation_formatee',
+            'donnees_supplementaires',
+        ]
+    
+    def get_client_info(self, obj):
+        """Retourne les informations du client MAUI."""
+        return {
+            'id': obj.client.id,
+            'nom_terminal': obj.client.nom_terminal,
+            'numero_serie': obj.client.numero_serie,
+        }
+    
+    def get_boutique_info(self, obj):
+        """Retourne les informations de la boutique."""
+        return {
+            'id': obj.boutique.id,
+            'nom': obj.boutique.nom,
+            'code_boutique': obj.boutique.code_boutique,
+        }
+    
+    def get_article_info(self, obj):
+        """Retourne les informations détaillées de l'article."""
+        if not obj.article:
+            return None
+        
+        return {
+            'id': obj.article.id,
+            'code': obj.article.code,
+            'nom': obj.article.nom,
+            'description': obj.article.description,
+            'prix_vente': str(obj.article.prix_vente),
+            'devise': obj.article.devise,
+            'quantite_stock': obj.article.quantite_stock,
+            'categorie': obj.article.categorie.nom if obj.article.categorie else None,
+        }
+    
+    def get_mouvement_info(self, obj):
+        """Retourne les informations du mouvement de stock."""
+        if not obj.mouvement_stock:
+            return None
+        
+        mouvement = obj.mouvement_stock
+        date_formatee = mouvement.date_mouvement.strftime('%d/%m/%Y à %H:%M') if mouvement.date_mouvement else None
+        
+        return {
+            'id': mouvement.id,
+            'type_mouvement': mouvement.type_mouvement,
+            'quantite': mouvement.quantite,
+            'stock_avant': mouvement.stock_avant,
+            'stock_apres': mouvement.stock_apres,
+            'date_mouvement': mouvement.date_mouvement,
+            'date_mouvement_formatee': date_formatee,
+            'commentaire': mouvement.commentaire,
+            'reference_document': mouvement.reference_document,
+            'utilisateur': mouvement.utilisateur,
+        }
