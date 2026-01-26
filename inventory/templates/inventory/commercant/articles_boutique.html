@@ -4,6 +4,7 @@
 {% block title %}Articles - {{ boutique.nom }}{% endblock %}
 
 {% block content %}
+<script id="boutique-config" type="application/json">{"alerte_stock_bas": {{ boutique.alerte_stock_bas|default:0 }}}</script>
 <div class="articles-page">
     <!-- Header fixe -->
     <div class="page-header">
@@ -100,11 +101,14 @@
         {% if articles %}
         <!-- En-tête du tableau FIXE -->
         <div class="table-header">
-            <table>
+            <table class="table table-hover">
                 <thead>
                     <tr>
+                        <th class="col-checkbox">
+                            <input type="checkbox" id="selectAll" class="form-check-input">
+                        </th>
                         <th class="col-img">Image</th>
-                        <th class="col-nom">Article</th>
+                        <th class="col-nom">Nom</th>
                         <th class="col-code">Code</th>
                         <th class="col-cat">Catégorie</th>
                         <th class="col-prix">Prix</th>
@@ -116,13 +120,13 @@
         </div>
         <!-- Corps du tableau SCROLLABLE -->
         <div class="table-body">
-            <table>
+            <table class="table table-hover">
                 <tbody>
                     {% for article in articles %}
-                    <tr data-article-id="{{ article.id }}" 
-                        data-article-nom="{{ article.nom }}" 
-                        data-article-stock="{{ article.quantite_stock }}" 
-                        data-article-prix="{{ article.prix_vente }}">
+                    <tr data-article-id="{{ article.id }}" data-article-nom="{{ article.nom|escapejs }}" data-article-stock="{{ article.quantite_stock }}" data-article-prix="{{ article.prix_vente }}">
+                        <td class="col-checkbox">
+                            <input type="checkbox" class="form-check-input article-checkbox" value="{{ article.id }}">
+                        </td>
                         <td class="col-img">
                             {% if article.image %}
                             <img src="{{ article.image.url }}" alt="{{ article.nom }}" class="article-img">
@@ -135,7 +139,7 @@
                         <td class="col-nom">
                             <div class="article-name">{{ article.nom }}</div>
                             {% if article.description %}
-                            <div class="article-desc">{{ article.description|truncatechars:35 }}</div>
+                            <div class="article-desc">{{ article.description|truncatechars:80 }}</div>
                             {% endif %}
                         </td>
                         <td class="col-code"><code class="article-code">{{ article.code }}</code></td>
@@ -146,7 +150,7 @@
                             <span class="text-muted">-</span>
                             {% endif %}
                         </td>
-                        <td class="col-prix fw-semibold">
+                        <td class="col-prix">
                             {% if article.devise == 'USD' %}
                             <span class="text-success">$ {{ article.prix_vente|floatformat:2 }}</span>
                             {% else %}
@@ -170,14 +174,27 @@
                                 </button>
                                 <button type="button" class="btn btn-outline-success btn-sm" 
                                         data-bs-toggle="modal" data-bs-target="#ajusterStockModal"
-                                        onclick="setArticleForStock({{ article.id }}, '{{ article.nom }}', {{ article.quantite_stock }})" title="Stock">
+                                        data-article-id="{{ article.id }}"
+                                        data-article-nom="{{ article.nom|escapejs }}"
+                                        data-article-stock="{{ article.quantite_stock }}"
+                                        onclick="setArticleForStock(parseInt(this.dataset.articleId), this.dataset.articleNom, parseInt(this.dataset.articleStock))" title="Stock">
                                     <i class="fas fa-boxes"></i>
                                 </button>
                                 <button type="button" class="btn btn-outline-info btn-sm" 
                                         data-bs-toggle="modal" data-bs-target="#modifierPrixModal"
-                                        onclick="setArticleForPrice({{ article.id }}, '{{ article.nom }}', {{ article.prix_vente }}, '{{ article.devise }}')" title="Prix">
+                                        data-article-id="{{ article.id }}"
+                                        data-article-nom="{{ article.nom|escapejs }}"
+                                        data-article-prix="{{ article.prix_vente }}"
+                                        data-article-devise="{{ article.devise }}"
+                                        onclick="setArticleForPrice(parseInt(this.dataset.articleId), this.dataset.articleNom, parseFloat(this.dataset.articlePrix), this.dataset.articleDevise)" title="Prix">
                                     <i class="fas fa-tag"></i>
                                 </button>
+                                <form method="post" action="{% url 'inventory:supprimer_article_boutique' boutique.id article.id %}" style="display:inline;" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer cet article ?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-outline-danger btn-sm" title="Supprimer">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
                                 <a href="{% url 'inventory:modifier_article_boutique' boutique.id article.id %}" 
                                    class="btn btn-outline-warning btn-sm" title="Modifier">
                                     <i class="fas fa-edit"></i>
@@ -199,6 +216,18 @@
             </button>
         </div>
         {% endif %}
+        <!-- Bouton de suppression multiple -->
+        <div id="bulkActions" class="mt-3" style="display: none;">
+            <div class="d-flex align-items-center gap-2">
+                <span class="text-muted"><span id="selectedCount">0</span> sélectionné(s)</span>
+                <button type="button" class="btn btn-danger btn-sm" id="bulkDeleteBtn">
+                    <i class="fas fa-trash"></i> Supprimer la sélection
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="clearSelectionBtn">
+                    <i class="fas fa-times"></i> Désélectionner
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -277,81 +306,119 @@
 
 <!-- Modal d'ajout rapide d'article -->
 <div class="modal fade" id="ajouterArticleModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-success text-white">
                 <h5 class="modal-title"><i class="fas fa-plus-circle"></i> Ajouter un Article (Rapide)</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body p-4">
                 <form id="formAjoutRapide">
                     {% csrf_token %}
                     <input type="hidden" name="boutique_id" value="{{ boutique.id }}">
-                    
-                    <div class="row">
-                        <!-- Champs essentiels seulement -->
-                        <div class="col-md-12 mb-3">
-                            <label for="nom" class="form-label"><i class="fas fa-tag"></i> Nom de l'article *</label>
-                            <input type="text" class="form-control" id="nom" name="nom" required 
-                                   placeholder="Ex: Fanta Orange 1.5L">
+
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div>
+                            <div class="fw-semibold">Informations article</div>
+                            <div class="text-muted small">Saisie rapide et efficace</div>
+                        </div>
+                        <div class="d-flex gap-3">
+                            <div class="form-check form-switch m-0">
+                                <input class="form-check-input" type="checkbox" id="focusCodeBarre" name="focus_code_barre">
+                                <label class="form-check-label" for="focusCodeBarre">Focus code</label>
+                            </div>
+                            <div class="form-check form-switch m-0">
+                                <input type="hidden" id="devise" name="devise" value="CDF">
+                                <input class="form-check-input" type="checkbox" id="devise_usd" name="devise_usd">
+                                <label class="form-check-label" for="devise_usd">USD</label>
+                            </div>
                         </div>
                     </div>
-                    
-                    <div class="row">
-                        <div class="col-md-4 mb-3">
-                            <label for="devise" class="form-label"><i class="fas fa-coins"></i> Devise *</label>
-                            <select class="form-select" id="devise" name="devise" onchange="updateDeviseLabels()">
-                                <option value="CDF" selected>CDF (Franc Congolais)</option>
-                                <option value="USD">USD (Dollar US)</option>
+
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label for="nom" class="form-label">Nom de l'article <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-tag"></i></span>
+                                <input type="text" class="form-control" id="nom" name="nom" required 
+                                       placeholder="Ex: Fanta Orange 1.5L">
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label for="code_barre" class="form-label">Code barre</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-barcode"></i></span>
+                                <input type="text" class="form-control" id="code_barre" name="code" 
+                                       placeholder="Optionnel">
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="p-3 border rounded-3 bg-light">
+                                <div class="fw-semibold mb-2">Prix & stock</div>
+                                <div class="row g-3">
+                                    <div class="col-md-4" id="prixVenteContainer">
+                                        <label for="prix_vente" class="form-label" id="labelPrixVente">Prix de vente <span id="devisePrixVente">(CDF)</span> <span class="text-danger">*</span></label>
+                                        <div class="input-group">
+                                            <span class="input-group-text" id="symbolePrixVente">FC</span>
+                                            <input type="number" class="form-control" id="prix_vente" name="prix_vente" 
+                                                   required min="0" step="0.01" placeholder="Ex: 1500">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4" id="prixAchatContainer">
+                                        <label for="prix_achat" class="form-label" id="labelPrixAchat">Prix d'achat <span id="devisePrixAchat">(CDF)</span></label>
+                                        <div class="input-group">
+                                            <span class="input-group-text" id="symbolePrixAchat">FC</span>
+                                            <input type="number" class="form-control" id="prix_achat" name="prix_achat" 
+                                                   min="0" step="0.01" placeholder="Optionnel">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="quantite_stock" class="form-label">Stock initial <span class="text-danger">*</span></label>
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="fas fa-boxes"></i></span>
+                                            <input type="number" class="form-control" id="quantite_stock" name="quantite_stock" 
+                                                   required min="0" value="0" placeholder="Ex: 50">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <label for="categorie" class="form-label">Catégorie</label>
+                            <select class="form-select" id="categorie" name="categorie">
+                                <option value="">-- Sélectionner une catégorie --</option>
+                                {% for cat in categories %}
+                                <option value="{{ cat.id }}">{{ cat.nom }}</option>
+                                {% endfor %}
                             </select>
+                            <div class="form-text">Optionnel - Vous pourrez la modifier plus tard</div>
                         </div>
-                        <div class="col-md-4 mb-3" id="prixVenteContainer">
-                            <label for="prix_vente" class="form-label" id="labelPrixVente"><i class="fas fa-money-bill"></i> Prix de vente <span id="devisePrixVente">(CDF)</span> *</label>
-                            <div class="input-group">
-                                <span class="input-group-text" id="symbolePrixVente">FC</span>
-                                <input type="number" class="form-control" id="prix_vente" name="prix_vente" 
-                                       required min="0" step="0.01" placeholder="Ex: 1500">
+                    </div>
+
+                    <div class="alert alert-light border mt-3 mb-0">
+                        <div class="d-flex gap-2 align-items-start">
+                            <i class="fas fa-info-circle text-primary mt-1"></i>
+                            <div>
+                                <div class="fw-semibold">Ajout rapide</div>
+                                <div class="text-muted small">Tu pourras compléter les détails (description, image, etc.) plus tard.</div>
                             </div>
                         </div>
-                        <div class="col-md-4 mb-3" id="prixAchatContainer">
-                            <label for="prix_achat" class="form-label" id="labelPrixAchat"><i class="fas fa-shopping-cart"></i> Prix d'achat <span id="devisePrixAchat">(CDF)</span></label>
-                            <div class="input-group">
-                                <span class="input-group-text" id="symbolePrixAchat">FC</span>
-                                <input type="number" class="form-control" id="prix_achat" name="prix_achat" 
-                                       min="0" step="0.01" placeholder="Optionnel">
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="row">
-                        <div class="col-md-4 mb-3">
-                            <label for="quantite_stock" class="form-label"><i class="fas fa-boxes"></i> Stock initial *</label>
-                            <input type="number" class="form-control" id="quantite_stock" name="quantite_stock" 
-                                   required min="0" value="0" placeholder="Ex: 50">
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="categorie" class="form-label"><i class="fas fa-folder"></i> Catégorie</label>
-                        <select class="form-select" id="categorie" name="categorie">
-                            <option value="">-- Sélectionner une catégorie --</option>
-                            {% for cat in categories %}
-                            <option value="{{ cat.id }}">{{ cat.nom }}</option>
-                            {% endfor %}
-                        </select>
-                        <small class="text-muted">Optionnel - Vous pourrez la modifier plus tard</small>
-                    </div>
-                    
-                    <div class="alert alert-info">
-                        <i class="fas fa-info-circle"></i> 
-                        <strong>Ajout rapide :</strong> Seuls les champs essentiels sont demandés. 
-                        Vous pourrez compléter les détails (description, image, etc.) plus tard.
                     </div>
                     
                     <script>
                     function updateDeviseLabels() {
-                        const devise = document.getElementById('devise').value;
-                        const isCDF = devise === 'CDF';
+                        const deviseInput = document.getElementById('devise');
+                        const deviseUsdCheckbox = document.getElementById('devise_usd');
+                        const isUSD = !!(deviseUsdCheckbox && deviseUsdCheckbox.checked);
+                        const isCDF = !isUSD;
+                        const devise = isUSD ? 'USD' : 'CDF';
+
+                        if (deviseInput) {
+                            deviseInput.value = devise;
+                        }
                         
                         // Mise à jour des labels de devise
                         document.getElementById('devisePrixVente').textContent = isCDF ? '(CDF)' : '(USD)';
@@ -372,6 +439,13 @@
                     }
                     // Initialiser au chargement
                     document.addEventListener('DOMContentLoaded', updateDeviseLabels);
+
+                    document.addEventListener('DOMContentLoaded', function() {
+                        const deviseUsdCheckbox = document.getElementById('devise_usd');
+                        if (deviseUsdCheckbox) {
+                            deviseUsdCheckbox.addEventListener('change', updateDeviseLabels);
+                        }
+                    });
                     </script>
                 </form>
             </div>
@@ -622,13 +696,14 @@
 }
 
 /* Largeurs des colonnes synchronisées */
+.col-checkbox { width: 40px; }
 .col-img { width: 60px; }
 .col-nom { width: auto; }
 .col-code { width: 110px; }
 .col-cat { width: 120px; }
 .col-prix { width: 110px; }
 .col-stock { width: 70px; }
-.col-actions { width: 140px; }
+.col-actions { width: 180px; }
 
 /* ========== ÉLÉMENTS DU TABLEAU ========== */
 .article-img {
@@ -938,10 +1013,70 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    let seuilStockBas = 0;
+    try {
+        const cfgEl = document.getElementById('boutique-config');
+        if (cfgEl && cfgEl.textContent) {
+            const cfg = JSON.parse(cfgEl.textContent);
+            seuilStockBas = parseInt(cfg.alerte_stock_bas) || 0;
+        }
+    } catch (e) {
+        seuilStockBas = 0;
+    }
+
     const btnAjouterArticle = document.getElementById('btnAjouterArticle');
     const formAjoutRapide = document.getElementById('formAjoutRapide');
     const modal = document.getElementById('ajouterArticleModal');
+    const nomInput = document.getElementById('nom');
+    const codeBarreInput = document.getElementById('code_barre');
+    const focusCodeBarreCheckbox = document.getElementById('focusCodeBarre');
     let articlesAjoutes = 0; // Compteur d'articles ajoutés
+
+    function getFocusCodeBarrePreference() {
+        try {
+            return localStorage.getItem('ajoutRapideFocusCodeBarre') === '1';
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function setFocusCodeBarrePreference(value) {
+        try {
+            localStorage.setItem('ajoutRapideFocusCodeBarre', value ? '1' : '0');
+        } catch (e) {
+        }
+    }
+
+    function focusAjoutRapideDefault() {
+        const focusOnCode = !!(focusCodeBarreCheckbox && focusCodeBarreCheckbox.checked);
+        if (focusOnCode && codeBarreInput) {
+            codeBarreInput.focus();
+            if (typeof codeBarreInput.select === 'function') {
+                codeBarreInput.select();
+            }
+            return;
+        }
+        if (nomInput) {
+            nomInput.focus();
+            if (typeof nomInput.select === 'function') {
+                nomInput.select();
+            }
+        }
+    }
+
+    if (focusCodeBarreCheckbox) {
+        focusCodeBarreCheckbox.checked = getFocusCodeBarrePreference();
+        focusCodeBarreCheckbox.addEventListener('change', function() {
+            setFocusCodeBarrePreference(this.checked);
+            focusAjoutRapideDefault();
+        });
+    }
+
+    if (modal) {
+        modal.addEventListener('shown.bs.modal', function() {
+            setTimeout(focusAjoutRapideDefault, 50);
+        });
+    }
     
     // Fonction pour soumettre le formulaire
     function soumettreFormulaire() {
@@ -990,13 +1125,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Réinitialiser le formulaire pour ajouter un autre article
                 formAjoutRapide.reset();
+
+                if (typeof window.updateDeviseLabels === 'function') {
+                    window.updateDeviseLabels();
+                }
+
+                if (focusCodeBarreCheckbox) {
+                    focusCodeBarreCheckbox.checked = getFocusCodeBarrePreference();
+                }
                 
                 // Réactiver le bouton
                 btnAjouterArticle.disabled = false;
                 btnAjouterArticle.innerHTML = '<i class="fas fa-save"></i> Ajouter l\'Article';
                 
                 // Focus sur le premier champ pour un ajout rapide
-                document.getElementById('nom').focus();
+                focusAjoutRapideDefault();
                 
                 // Faire disparaître le message après 3 secondes
                 setTimeout(() => {
@@ -1067,6 +1210,10 @@ document.addEventListener('DOMContentLoaded', function() {
         formAjoutRapide.reset();
         btnAjouterArticle.disabled = false;
         btnAjouterArticle.innerHTML = '<i class="fas fa-save"></i> Ajouter l\'Article';
+
+        if (typeof window.updateDeviseLabels === 'function') {
+            window.updateDeviseLabels();
+        }
         
         // Supprimer tous les messages (succès et erreur)
         const alerts = document.querySelectorAll('#ajouterArticleModal .alert');
@@ -1078,6 +1225,91 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
+    // ==================== GESTION SÉLECTION MULTIPLE ====================
+    const selectAllCheckbox = document.getElementById('selectAll');
+    const articleCheckboxes = document.querySelectorAll('.article-checkbox');
+    const bulkActions = document.getElementById('bulkActions');
+    const selectedCount = document.getElementById('selectedCount');
+    const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+    const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+
+    function updateBulkActions() {
+        const checked = document.querySelectorAll('.article-checkbox:checked');
+        const count = checked.length;
+        selectedCount.textContent = count;
+        if (count > 0) {
+            bulkActions.style.display = 'block';
+        } else {
+            bulkActions.style.display = 'none';
+        }
+    }
+
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', function() {
+            articleCheckboxes.forEach(cb => {
+                cb.checked = this.checked;
+            });
+            updateBulkActions();
+        });
+    }
+
+    articleCheckboxes.forEach(cb => {
+        cb.addEventListener('change', function() {
+            // Mettre à jour l'état de "Tout sélectionner"
+            const allChecked = Array.from(articleCheckboxes).every(c => c.checked);
+            const anyChecked = Array.from(articleCheckboxes).some(c => c.checked);
+            selectAllCheckbox.checked = allChecked;
+            selectAllCheckbox.indeterminate = anyChecked && !allChecked;
+            updateBulkActions();
+        });
+    });
+
+    if (clearSelectionBtn) {
+        clearSelectionBtn.addEventListener('click', function() {
+            articleCheckboxes.forEach(cb => cb.checked = false);
+            selectAllCheckbox.checked = false;
+            selectAllCheckbox.indeterminate = false;
+            updateBulkActions();
+        });
+    }
+
+    if (bulkDeleteBtn) {
+        bulkDeleteBtn.addEventListener('click', function() {
+            const checked = document.querySelectorAll('.article-checkbox:checked');
+            if (checked.length === 0) {
+                alert('Veuillez sélectionner au moins un article à supprimer.');
+                return;
+            }
+            if (!confirm(`Êtes-vous sûr de vouloir supprimer les ${checked.length} article(s) sélectionné(s) ?`)) {
+                return;
+            }
+            const ids = Array.from(checked).map(cb => cb.value);
+            // Envoyer en AJAX vers une route de suppression multiple
+            fetch(`/commercant/boutiques/{{ boutique.id }}/articles/bulk-delete/`, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                },
+                body: JSON.stringify({ article_ids: ids })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Recharger la page pour voir les changements
+                    window.location.reload();
+                } else {
+                    alert('Erreur lors de la suppression : ' + (data.message || 'Erreur inconnue'));
+                }
+            })
+            .catch(error => {
+                console.error('Erreur:', error);
+                alert('Une erreur est survenue lors de la suppression.');
+            });
+        });
+    }
+
     // ==================== RECHERCHE EN TEMPS RÉEL ====================
     const searchInput = document.getElementById('searchRealTime');
     const filterCategorie = document.getElementById('filterCategorie');
@@ -1155,11 +1387,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Appliquer le filtre de stock
                 let matchStock = true;
                 if (stockFilter === 'bas') {
-                    matchStock = stock > 0 && stock < {{ boutique.alerte_stock_bas }};
+                    matchStock = stock > 0 && stock < seuilStockBas;
                 } else if (stockFilter === 'zero') {
                     matchStock = stock === 0;
                 } else if (stockFilter === 'normal') {
-                    matchStock = stock >= {{ boutique.alerte_stock_bas }};
+                    matchStock = stock >= seuilStockBas;
                 }
                 
                 // Afficher ou masquer la ligne

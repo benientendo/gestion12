@@ -2081,6 +2081,53 @@ def modifier_article_boutique(request, boutique_id, article_id):
 @login_required
 @commercant_required
 @boutique_access_required
+def bulk_delete_articles(request, boutique_id):
+    """Suppression multiple d'articles (AJAX POST JSON)"""
+    from django.http import JsonResponse
+    from django.views.decorators.csrf import csrf_exempt
+    import json
+    
+    boutique = request.boutique
+    
+    if request.method != 'POST' or request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return JsonResponse({'success': False, 'message': 'Requête invalide.'})
+    
+    try:
+        data = json.loads(request.body)
+        article_ids = data.get('article_ids', [])
+        if not isinstance(article_ids, list):
+            raise ValueError('article_ids doit être une liste')
+        # Convertir en entiers
+        article_ids = [int(i) for i in article_ids]
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Données invalides : {str(e)}'})
+    
+    if not article_ids:
+        return JsonResponse({'success': False, 'message': 'Aucun article à supprimer.'})
+    
+    # Récupérer les articles appartenant à cette boutique
+    articles = Article.objects.filter(id__in=article_ids, boutique=boutique)
+    if not articles.exists():
+        return JsonResponse({'success': False, 'message': 'Aucun article trouvé pour cette boutique.'})
+    
+    deleted_count = 0
+    failed = []
+    for article in articles:
+        try:
+            article.delete()
+            deleted_count += 1
+        except Exception as e:
+            failed.append(f"{article.nom}: {str(e)}")
+    
+    if failed:
+        message = f'{deleted_count} article(s) supprimé(s). Erreurs : {"; ".join(failed)}'
+        return JsonResponse({'success': False, 'message': message})
+    else:
+        return JsonResponse({'success': True, 'message': f'{deleted_count} article(s) supprimé(s) avec succès.'})
+
+@login_required
+@commercant_required
+@boutique_access_required
 def supprimer_article_boutique(request, boutique_id, article_id):
     """Supprimer un article d'une boutique spécifique (interface commerçant)"""
     boutique = request.boutique

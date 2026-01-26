@@ -27,6 +27,7 @@ urlpatterns = [
     path('api/', include('inventory.api_urls')),
     path('api/v2/', include('inventory.api_urls_v2')),  # API v2 multi-boutiques avec isolation par boutique
     path('api/v2/simple/', include('inventory.api_urls_v2_simple')),  # API v2 simplifiée sans authentification
+    path('api/bilan/', include('inventory.api_urls_bilan')),  # API pour les bilans et indicateurs
     path('api-token-auth/', obtain_auth_token, name='api_token_auth'),
     path('test-timezone/', test_timezone),  # Endpoint de test pour les timezone
 ]

@@ -1,0 +1,673 @@
+{% extends "inventory/base.html" %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}{{ bilan.titre }} - Détail du Bilan{% endblock %}
+
+{% block extra_css %}
+<style>
+.bilan-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 32px;
+    margin-bottom: 24px;
+}
+
+.bilan-title {
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.bilan-meta {
+    opacity: 0.9;
+    font-size: 1.1rem;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-top: 16px;
+}
+
+.status-brouillon {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.status-valide {
+    background-color: rgba(39, 174, 96, 0.9);
+    color: white;
+}
+
+.status-archive {
+    background-color: rgba(149, 165, 166, 0.9);
+    color: white;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 32px;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 8px;
+}
+
+.stat-label {
+    color: #7f8c8d;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-trend {
+    font-size: 0.85rem;
+    margin-top: 8px;
+}
+
+.trend-positive {
+    color: #27ae60;
+}
+
+.trend-negative {
+    color: #e74c3c;
+}
+
+.chart-container {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 24px;
+}
+
+.chart-header {
+    display: flex;
+    justify-content: between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.chart-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.table-container {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 24px;
+}
+
+.table-custom {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.table-custom th {
+    background-color: #f8f9fa;
+    padding: 12px;
+    text-align: left;
+    font-weight: 600;
+    color: #2c3e50;
+    border-bottom: 2px solid #ecf0f1;
+}
+
+.table-custom td {
+    padding: 12px;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.table-custom tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: transform 0.2s;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    color: white;
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: transform 0.2s;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-success:hover {
+    transform: translateY(-2px);
+    color: white;
+}
+
+.btn-secondary {
+    background: #ecf0f1;
+    color: #2c3e50;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background-color 0.2s;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-secondary:hover {
+    background: #d5dbdd;
+    color: #2c3e50;
+}
+
+.financial-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 32px;
+}
+
+.financial-card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.financial-card h4 {
+    color: #2c3e50;
+    margin-bottom: 16px;
+    font-size: 1.1rem;
+}
+
+.financial-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #ecf0f1;
+}
+
+.financial-item:last-child {
+    border-bottom: none;
+    font-weight: bold;
+    font-size: 1.1rem;
+    color: #2c3e50;
+    padding-top: 12px;
+}
+
+.financial-label {
+    color: #7f8c8d;
+}
+
+.financial-value {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.positive {
+    color: #27ae60;
+}
+
+.negative {
+    color: #e74c3c;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background-color: #ecf0f1;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    transition: width 0.3s ease;
+}
+
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.kpi-item {
+    text-align: center;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.kpi-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+.kpi-label {
+    font-size: 0.875rem;
+    color: #7f8c8d;
+    margin-top: 4px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête du bilan -->
+    <div class="bilan-header">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h1 class="bilan-title">{{ bilan.titre }}</h1>
+                <div class="bilan-meta">
+                    {{ bilan.get_periode_display }} | 
+                    Du {{ bilan.date_debut|date:"d/m/Y" }} au {{ bilan.date_fin|date:"d/m/Y" }}
+                    {% if bilan.boutique %}
+                        | {{ bilan.boutique.nom }}
+                    {% endif %}
+                </div>
+                <div class="bilan-meta mt-2">
+                    Généré le {{ bilan.date_generation|date:"d/m/Y H:i" }}
+                    {% if bilan.valide_par %}
+                        | Validé par {{ bilan.valide_par }} le {{ bilan.date_validation|date:"d/m/Y H:i" }}
+                    {% endif %}
+                </div>
+            </div>
+            <div>
+                <span class="status-badge status-{{ bilan.statut|lower }}">
+                    {{ bilan.get_statut_display }}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-buttons mb-4">
+        {% if bilan.statut == 'BROUILLON' %}
+            <a href="{% url 'inventory:valider_bilan' bilan.id %}" class="btn-success">
+                <i class="fas fa-check me-2"></i>
+                Valider le Bilan
+            </a>
+        {% endif %}
+        
+        <a href="{% url 'inventory:exporter_bilan' bilan.id %}?format=pdf" class="btn-primary">
+            <i class="fas fa-file-pdf me-2"></i>
+            Exporter PDF
+        </a>
+        
+        <a href="{% url 'inventory:exporter_bilan' bilan.id %}?format=excel" class="btn-primary">
+            <i class="fas fa-file-excel me-2"></i>
+            Exporter Excel
+        </a>
+        
+        <a href="{% url 'inventory:tableau_bord_bilan' %}" class="btn-secondary">
+            <i class="fas fa-arrow-left me-2"></i>
+            Retour
+        </a>
+    </div>
+
+    <!-- Statistiques Principales -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ bilan.chiffre_affaires_total|floatformat:0|intcomma }} CDF</div>
+            <div class="stat-label">Chiffre d'Affaires</div>
+            {% if bilan.chiffre_affaires_total_usd > 0 %}
+            <div class="stat-trend">
+                {{ bilan.chiffre_affaires_total_usd|floatformat:2|intcomma }} USD
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-value">{{ bilan.marge_brute|floatformat:0|intcomma }} CDF</div>
+            <div class="stat-label">Marge Brute</div>
+            <div class="stat-trend trend-positive">
+                {{ bilan.taux_marge_brute|floatformat:1 }}%
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-value">{{ bilan.resultat_net|floatformat:0|intcomma }} CDF</div>
+            <div class="stat-label">Résultat Net</div>
+            <div class="stat-trend {% if bilan.resultat_net > 0 %}trend-positive{% else %}trend-negative{% endif %}">
+                {% if bilan.resultat_net > 0 %}Bénéficiaire{% else %}Déficitaire{% endif %}
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-value">{{ bilan.nombre_ventes }}</div>
+            <div class="stat-label">Nombre de Ventes</div>
+            <div class="stat-trend">
+                Panier moyen: {{ bilan.panier_moyen|floatformat:0|intcomma }} CDF
+            </div>
+        </div>
+    </div>
+
+    <!-- Résumé Financier Détaillé -->
+    <div class="financial-summary">
+        <div class="financial-card">
+            <h4><i class="fas fa-chart-line me-2"></i>Revenus</h4>
+            <div class="financial-item">
+                <span class="financial-label">Chiffre d'affaires CDF</span>
+                <span class="financial-value">{{ bilan.chiffre_affaires_total|floatformat:0|intcomma }} CDF</span>
+            </div>
+            {% if bilan.chiffre_affaires_total_usd > 0 %}
+            <div class="financial-item">
+                <span class="financial-label">Chiffre d'affaires USD</span>
+                <span class="financial-value">{{ bilan.chiffre_affaires_total_usd|floatformat:2|intcomma }} USD</span>
+            </div>
+            {% endif %}
+            <div class="financial-item">
+                <span class="financial-label">Total Revenus</span>
+                <span class="financial-value positive">{{ bilan.chiffre_affaires_total|floatformat:0|intcomma }} CDF</span>
+            </div>
+        </div>
+
+        <div class="financial-card">
+            <h4><i class="fas fa-shopping-cart me-2"></i>Coûts des Ventes</h4>
+            <div class="financial-item">
+                <span class="financial-label">Coût des marchandises</span>
+                <span class="financial-value negative">{{ bilan.cout_achats_marchandises|floatformat:0|intcomma }} CDF</span>
+            </div>
+            <div class="financial-item">
+                <span class="financial-label">Marge brute</span>
+                <span class="financial-value {% if bilan.marge_brute > 0 %}positive{% else %}negative{% endif %}">
+                    {{ bilan.marge_brute|floatformat:0|intcomma }} CDF
+                </span>
+            </div>
+            <div class="financial-item">
+                <span class="financial-label">Taux de marge</span>
+                <span class="financial-value">{{ bilan.taux_marge_brute|floatformat:1 }}%</span>
+            </div>
+        </div>
+
+        <div class="financial-card">
+            <h4><i class="fas fa-coins me-2"></i>Dépenses Opérationnelles</h4>
+            <div class="financial-item">
+                <span class="financial-label">Dépenses personnel</span>
+                <span class="financial-value negative">{{ bilan.depenses_personnel|floatformat:0|intcomma }} CDF</span>
+            </div>
+            <div class="financial-item">
+                <span class="financial-label">Dépenses loyer</span>
+                <span class="financial-value negative">{{ bilan.depenses_loyer|floatformat:0|intcomma }} CDF</span>
+            </div>
+            <div class="financial-item">
+                <span class="financial-label">Dépenses services</span>
+                <span class="financial-value negative">{{ bilan.depenses_services|floatformat:0|intcomma }} CDF</span>
+            </div>
+            <div class="financial-item">
+                <span class="financial-label">Autres dépenses</span>
+                <span class="financial-value negative">{{ bilan.autres_depenses|floatformat:0|intcomma }} CDF</span>
+            </div>
+            <div class="financial-item">
+                <span class="financial-label">Total Dépenses</span>
+                <span class="financial-value negative">{{ bilan.depenses_operationnelles|floatformat:0|intcomma }} CDF</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Indicateurs Clés de Performance -->
+    {% if indicateurs_cles %}
+    <div class="chart-container">
+        <div class="chart-header">
+            <h3 class="chart-title">
+                <i class="fas fa-tachometer-alt me-2"></i>
+                Indicateurs Clés de Performance
+            </h3>
+        </div>
+        <div class="kpi-grid">
+            <div class="kpi-item">
+                <div class="kpi-value">{{ indicateurs_cles.marge_par_vente|floatformat:0|intcomma }} CDF</div>
+                <div class="kpi-label">Marge par vente</div>
+            </div>
+            <div class="kpi-item">
+                <div class="kpi-value">{{ indicateurs_cles.rotation_stock|floatformat:1 }}</div>
+                <div class="kpi-label">Rotation stock</div>
+            </div>
+            <div class="kpi-item">
+                <div class="kpi-value">{{ indicateurs_cles.rentabilite|floatformat:1 }}%</div>
+                <div class="kpi-label">Rentabilité</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Graphique des ventes par jour -->
+    {% if ventes_par_jour %}
+    <div class="chart-container">
+        <div class="chart-header">
+            <h3 class="chart-title">
+                <i class="fas fa-chart-area me-2"></i>
+                Évolution des Ventes
+            </h3>
+        </div>
+        <canvas id="ventesChart" height="100"></canvas>
+    </div>
+    {% endif %}
+
+    <!-- Top Articles -->
+    {% if top_articles %}
+    <div class="table-container">
+        <div class="chart-header">
+            <h3 class="chart-title">
+                <i class="fas fa-trophy me-2"></i>
+                Articles les Plus Vendus
+            </h3>
+        </div>
+        <div class="table-responsive">
+            <table class="table-custom">
+                <thead>
+                    <tr>
+                        <th>Article</th>
+                        <th>Code</th>
+                        <th>Quantité</th>
+                        <th>Total</th>
+                        <th>% du total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for article in top_articles %}
+                    <tr>
+                        <td>{{ article.nom }}</td>
+                        <td>{{ article.code }}</td>
+                        <td>{{ article.quantite }}</td>
+                        <td>{{ article.total|floatformat:0|intcomma }} CDF</td>
+                        <td>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: {{ article.total|div:top_articles.0.total|mul:100|floatformat:0 }}%"></div>
+                            </div>
+                            {{ article.total|div:top_articles.0.total|mul:100|floatformat:1 }}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Performance par Catégorie -->
+    {% if categories_perf %}
+    <div class="table-container">
+        <div class="chart-header">
+            <h3 class="chart-title">
+                <i class="fas fa-tags me-2"></i>
+                Performance par Catégorie
+            </h3>
+        </div>
+        <div class="table-responsive">
+            <table class="table-custom">
+                <thead>
+                    <tr>
+                        <th>Catégorie</th>
+                        <th>Quantité</th>
+                        <th>Total</th>
+                        <th>% du CA</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cat in categories_perf %}
+                    <tr>
+                        <td>{{ cat.categorie }}</td>
+                        <td>{{ cat.quantite }}</td>
+                        <td>{{ cat.total|floatformat:0|intcomma }} CDF</td>
+                        <td>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: {{ cat.total|div:categories_perf.0.total|mul:100|floatformat:0 }}%"></div>
+                            </div>
+                            {{ cat.total|div:categories_perf.0.total|mul:100|floatformat:1 }}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Analyse du Stock -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">{{ bilan.valeur_stock_initiale|floatformat:0|intcomma }} CDF</div>
+            <div class="stat-label">Valeur Stock Initial</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-value">{{ bilan.valeur_stock_finale|floatformat:0|intcomma }} CDF</div>
+            <div class="stat-label">Valeur Stock Final</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-value {% if bilan.variation_stock > 0 %}positive{% else %}negative{% endif %}">
+                {{ bilan.variation_stock|floatformat:0|intcomma }} CDF
+            </div>
+            <div class="stat-label">Variation Stock</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Graphique des ventes par jour
+    {% if ventes_par_jour %}
+    const ctx = document.getElementById('ventesChart').getContext('2d');
+    const ventesData = {{ ventes_par_jour|safe }};
+    
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: ventesData.map(item => item.date),
+            datasets: [{
+                label: 'Chiffre d\'affaires (CDF)',
+                data: ventesData.map(item => item.ca_cdf),
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                tension: 0.4,
+                fill: true
+            }, {
+                label: 'Nombre de ventes',
+                data: ventesData.map(item => item.nb_ventes),
+                borderColor: '#764ba2',
+                backgroundColor: 'rgba(118, 75, 162, 0.1)',
+                tension: 0.4,
+                fill: true,
+                yAxisID: 'y1'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'CA (CDF)'
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Nombre de ventes'
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    }
+                }
+            }
+        }
+    });
+    {% endif %}
+});
+
+// Filtres de template personnalisés
+function div(a, b) {
+    return b !== 0 ? a / b : 0;
+}
+
+function mul(a, b) {
+    return a * b;
+}
+</script>
+{% endblock %}

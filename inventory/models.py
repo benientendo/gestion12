@@ -13,6 +13,9 @@ import uuid
 import random
 import string
 
+# Importer les modèles de bilan
+from .models_bilan import BilanGeneral, IndicateurPerformance
+
 # Create your models here.
 
 class Client(models.Model):

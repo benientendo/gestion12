@@ -1,0 +1,454 @@
+{% extends "inventory/base.html" %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Créer un Bilan{% endblock %}
+
+{% block extra_css %}
+<style>
+.form-container {
+    max-width: 800px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 12px;
+    padding: 32px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+}
+
+.form-header {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.form-header h1 {
+    color: #2c3e50;
+    margin-bottom: 16px;
+}
+
+.form-header p {
+    color: #7f8c8d;
+    font-size: 1.1rem;
+}
+
+.form-section {
+    margin-bottom: 32px;
+}
+
+.form-section h3 {
+    color: #2c3e50;
+    margin-bottom: 20px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #ecf0f1;
+}
+
+.form-group {
+    margin-bottom: 24px;
+}
+
+.form-group label {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.form-control {
+    border: 2px solid #ecf0f1;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 1rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-control:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    outline: none;
+}
+
+.form-select {
+    border: 2px solid #ecf0f1;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 1rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    outline: none;
+}
+
+.form-text {
+    font-size: 0.875rem;
+    color: #6c757d;
+    margin-top: 4px;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 14px 32px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+    cursor: pointer;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+    color: white;
+}
+
+.btn-secondary {
+    background: #ecf0f1;
+    color: #2c3e50;
+    border: none;
+    padding: 14px 32px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 1rem;
+    transition: background-color 0.2s;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.btn-secondary:hover {
+    background: #d5dbdd;
+    color: #2c3e50;
+}
+
+.form-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid #ecf0f1;
+}
+
+.alert {
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 24px;
+}
+
+.alert-info {
+    background-color: #d1ecf1;
+    border-color: #bee5eb;
+    color: #0c5460;
+}
+
+.alert-warning {
+    background-color: #fff3cd;
+    border-color: #ffeaa7;
+    color: #856404;
+}
+
+.date-range {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.help-icon {
+    color: #667eea;
+    cursor: help;
+    margin-left: 4px;
+}
+
+.period-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.period-card {
+    border: 2px solid #ecf0f1;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.period-card:hover {
+    border-color: #667eea;
+    background-color: #f8f9ff;
+}
+
+.period-card.selected {
+    border-color: #667eea;
+    background-color: #667eea;
+    color: white;
+}
+
+.period-card input[type="radio"] {
+    display: none;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="form-container">
+        <div class="form-header">
+            <h1>
+                <i class="fas fa-chart-pie me-3"></i>
+                Créer un Nouveau Bilan
+            </h1>
+            <p>Générez un bilan complet selon les bonnes pratiques de gestion</p>
+        </div>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <form method="post">
+            {% csrf_token %}
+
+            <!-- Informations Générales -->
+            <div class="form-section">
+                <h3>
+                    <i class="fas fa-info-circle me-2"></i>
+                    Informations Générales
+                </h3>
+                
+                <div class="form-group">
+                    <label for="titre">
+                        Titre du bilan *
+                        <i class="fas fa-question-circle help-icon" title="Donnez un titre clair et descriptif à votre bilan"></i>
+                    </label>
+                    <input type="text" class="form-control" id="titre" name="titre" required
+                           placeholder="Ex: Bilan Mensuel - Décembre 2024">
+                    <div class="form-text">
+                        Choisissez un titre qui vous permettra d'identifier facilement ce bilan
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <textarea class="form-control" id="description" name="description" rows="3"
+                              placeholder="Description optionnelle du bilan..."></textarea>
+                    <div class="form-text">
+                        Ajoutez des détails supplémentaires sur ce bilan (contexte, objectifs, etc.)
+                    </div>
+                </div>
+            </div>
+
+            <!-- Période du Bilan -->
+            <div class="form-section">
+                <h3>
+                    <i class="fas fa-calendar-alt me-2"></i>
+                    Période du Bilan
+                </h3>
+
+                <div class="form-group">
+                    <label for="periode">Type de période *</label>
+                    <div class="period-cards">
+                        {% for value, label in periode_choices %}
+                        <div class="period-card">
+                            <input type="radio" name="periode" value="{{ value }}" id="periode_{{ value }}" 
+                                   {% if forloop.first %}checked{% endif %}>
+                            <label for="periode_{{ value }}" class="d-block">
+                                <i class="fas fa-{% if value == 'JOURNALIER' %}calendar-day{% elif value == 'HEBDOMADAIRE' %}calendar-week{% elif value == 'MENSUEL' %}calendar{% elif value == 'TRIMESTRIEL' %}calendar-alt{% elif value == 'SEMESTRIEL' %}calendar-check{% else %}calendar{% endif %} fa-2x mb-2"></i>
+                                <div>{{ label }}</div>
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="date-range">
+                    <div class="form-group">
+                        <label for="date_debut">
+                            Date de début *
+                            <i class="fas fa-question-circle help-icon" title="Date de début de la période analysée"></i>
+                        </label>
+                        <input type="date" class="form-control" id="date_debut" name="date_debut" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="date_fin">
+                            Date de fin *
+                            <i class="fas fa-question-circle help-icon" title="Date de fin de la période analysée"></i>
+                        </label>
+                        <input type="date" class="form-control" id="date_fin" name="date_fin" required>
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Conseil:</strong> Pour un bilan mensuel, sélectionnez le premier et le dernier jour du mois concerné.
+                </div>
+            </div>
+
+            <!-- Scope du Bilan -->
+            <div class="form-section">
+                <h3>
+                    <i class="fas fa-store me-2"></i>
+                    Scope du Bilan
+                </h3>
+
+                <div class="form-group">
+                    <label for="boutique">Boutique concernée</label>
+                    <select class="form-select" id="boutique" name="boutique">
+                        <option value="">Toutes les boutiques (bilan global)</option>
+                        {% for boutique in boutiques %}
+                        <option value="{{ boutique.id }}">{{ boutique.nom }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">
+                        Laissez vide pour générer un bilan consolidé de toutes vos boutiques,
+                        ou sélectionnez une boutique spécifique pour un bilan détaillé.
+                    </div>
+                </div>
+
+                {% if boutiques|length > 1 %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Attention:</strong> Vous avez {{ boutiques|length }} boutiques actives.
+                    Un bilan global prendra plus de temps à générer mais offrira une vue d'ensemble complète.
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Actions -->
+            <div class="form-actions">
+                <a href="{% url 'inventory:tableau_bord_bilan' %}" class="btn-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>
+                    Annuler
+                </a>
+                <button type="submit" class="btn-primary">
+                    <i class="fas fa-chart-line me-2"></i>
+                    Générer le Bilan
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Gestion des cartes de période
+    const periodCards = document.querySelectorAll('.period-card');
+    
+    periodCards.forEach(card => {
+        card.addEventListener('click', function() {
+            // Désélectionner toutes les cartes
+            periodCards.forEach(c => c.classList.remove('selected'));
+            
+            // Sélectionner la carte cliquée
+            this.classList.add('selected');
+            
+            // Cocher le radio correspondant
+            const radio = this.querySelector('input[type="radio"]');
+            radio.checked = true;
+            
+            // Pré-remplir les dates selon la période
+            const periode = radio.value;
+            prefillDates(periode);
+        });
+    });
+
+    // Sélectionner la première carte par défaut
+    if (periodCards.length > 0) {
+        periodCards[0].classList.add('selected');
+        prefillDates(periodCards[0].querySelector('input[type="radio"]').value);
+    }
+
+    // Validation des dates
+    const dateDebut = document.getElementById('date_debut');
+    const dateFin = document.getElementById('date_fin');
+    
+    dateDebut.addEventListener('change', validateDates);
+    dateFin.addEventListener('change', validateDates);
+});
+
+function prefillDates(periode) {
+    const dateDebut = document.getElementById('date_debut');
+    const dateFin = document.getElementById('date_fin');
+    const today = new Date();
+    
+    let debut, fin;
+    
+    switch(periode) {
+        case 'JOURNALIER':
+            debut = new Date(today);
+            fin = new Date(today);
+            break;
+            
+        case 'HEBDOMADAIRE':
+            debut = new Date(today);
+            debut.setDate(today.getDate() - today.getDay()); // Début de la semaine
+            fin = new Date(debut);
+            fin.setDate(debut.getDate() + 6); // Fin de la semaine
+            break;
+            
+        case 'MENSUEL':
+            debut = new Date(today.getFullYear(), today.getMonth(), 1);
+            fin = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            break;
+            
+        case 'TRIMESTRIEL':
+            const quarter = Math.floor(today.getMonth() / 3);
+            debut = new Date(today.getFullYear(), quarter * 3, 1);
+            fin = new Date(today.getFullYear(), quarter * 3 + 3, 0);
+            break;
+            
+        case 'SEMESTRIEL':
+            const semester = Math.floor(today.getMonth() / 6);
+            debut = new Date(today.getFullYear(), semester * 6, 1);
+            fin = new Date(today.getFullYear(), semester * 6 + 6, 0);
+            break;
+            
+        case 'ANNUEL':
+            debut = new Date(today.getFullYear(), 0, 1);
+            fin = new Date(today.getFullYear(), 11, 31);
+            break;
+            
+        default:
+            debut = new Date(today.getFullYear(), today.getMonth(), 1);
+            fin = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    }
+    
+    dateDebut.value = formatDate(debut);
+    dateFin.value = formatDate(fin);
+}
+
+function formatDate(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function validateDates() {
+    const dateDebut = document.getElementById('date_debut');
+    const dateFin = document.getElementById('date_fin');
+    
+    if (dateDebut.value && dateFin.value) {
+        const debut = new Date(dateDebut.value);
+        const fin = new Date(dateFin.value);
+        
+        if (debut >= fin) {
+            dateFin.setCustomValidity('La date de fin doit être postérieure à la date de début');
+        } else {
+            dateFin.setCustomValidity('');
+        }
+    }
+}
+</script>
+{% endblock %}

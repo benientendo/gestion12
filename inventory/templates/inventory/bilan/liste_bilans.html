@@ -1,0 +1,558 @@
+{% extends "inventory/base.html" %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Liste des Bilans{% endblock %}
+
+{% block extra_css %}
+<style>
+.bilans-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.page-header {
+    display: flex;
+    justify-content: between;
+    align-items: center;
+    margin-bottom: 32px;
+}
+
+.page-title {
+    color: #2c3e50;
+    font-size: 2rem;
+    font-weight: bold;
+}
+
+.filters-section {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    margin-bottom: 24px;
+}
+
+.filters-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.filter-group label {
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+}
+
+.form-select {
+    border: 2px solid #ecf0f1;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    transition: border-color 0.2s;
+}
+
+.form-select:focus {
+    border-color: #667eea;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.bilans-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 20px;
+}
+
+.bilan-card {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+    border-left: 4px solid #667eea;
+}
+
+.bilan-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+}
+
+.bilan-card.status-valide {
+    border-left-color: #27ae60;
+}
+
+.bilan-card.status-brouillon {
+    border-left-color: #f39c12;
+}
+
+.bilan-card.status-archive {
+    border-left-color: #95a5a6;
+}
+
+.bilan-header {
+    margin-bottom: 16px;
+}
+
+.bilan-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    line-height: 1.3;
+}
+
+.bilan-meta {
+    font-size: 0.875rem;
+    color: #7f8c8d;
+    margin-bottom: 12px;
+}
+
+.bilan-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.bilan-stat {
+    text-align: center;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.bilan-stat-value {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 4px;
+}
+
+.bilan-stat-label {
+    font-size: 0.75rem;
+    color: #7f8c8d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+}
+
+.status-brouillon {
+    background-color: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.status-valide {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.status-archive {
+    background-color: #e2e3e5;
+    color: #383d41;
+    border: 1px solid #d6d8db;
+}
+
+.bilan-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 0.875rem;
+    border-radius: 6px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.2s;
+    border: none;
+    cursor: pointer;
+}
+
+.btn-primary {
+    background: #667eea;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #5a6fd8;
+    color: white;
+}
+
+.btn-success {
+    background: #27ae60;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #219653;
+    color: white;
+}
+
+.btn-outline-primary {
+    background: transparent;
+    color: #667eea;
+    border: 1px solid #667eea;
+}
+
+.btn-outline-primary:hover {
+    background: #667eea;
+    color: white;
+}
+
+.btn-outline-secondary {
+    background: transparent;
+    color: #6c757d;
+    border: 1px solid #6c757d;
+}
+
+.btn-outline-secondary:hover {
+    background: #6c757d;
+    color: white;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 64px 24px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.empty-state-icon {
+    font-size: 4rem;
+    color: #bdc3c7;
+    margin-bottom: 24px;
+}
+
+.empty-state-title {
+    font-size: 1.5rem;
+    color: #2c3e50;
+    margin-bottom: 16px;
+}
+
+.empty-state-text {
+    color: #7f8c8d;
+    margin-bottom: 32px;
+    line-height: 1.6;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-bottom: 32px;
+}
+
+.btn-lg {
+    padding: 14px 28px;
+    font-size: 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: transform 0.2s;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-primary-gradient {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-primary-gradient:hover {
+    transform: translateY(-2px);
+    color: white;
+}
+
+.btn-secondary {
+    background: #ecf0f1;
+    color: #2c3e50;
+}
+
+.btn-secondary:hover {
+    background: #d5dbdd;
+    color: #2c3e50;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 32px;
+}
+
+.pagination .page-link {
+    color: #667eea;
+    border-color: #ecf0f1;
+    margin: 0 4px;
+    border-radius: 6px;
+}
+
+.pagination .page-item.active .page-link {
+    background: #667eea;
+    border-color: #667eea;
+}
+
+.pagination .page-link:hover {
+    color: #5a6fd8;
+    background: #f8f9fa;
+    border-color: #667eea;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="bilans-container">
+        <!-- En-tête de page -->
+        <div class="page-header">
+            <h1 class="page-title">
+                <i class="fas fa-file-alt me-3"></i>
+                Bilans Généraux
+            </h1>
+        </div>
+
+        <!-- Actions principales -->
+        <div class="action-buttons">
+            <a href="{% url 'inventory:creer_bilan' %}" class="btn-lg btn-primary-gradient">
+                <i class="fas fa-plus me-2"></i>
+                Nouveau Bilan
+            </a>
+            <a href="{% url 'inventory:tableau_bord_bilan' %}" class="btn-lg btn-secondary">
+                <i class="fas fa-arrow-left me-2"></i>
+                Retour au Tableau de Bord
+            </a>
+        </div>
+
+        <!-- Filtres -->
+        <div class="filters-section">
+            <form method="get" class="mb-0">
+                <div class="filters-grid">
+                    <div class="filter-group">
+                        <label for="periode">Période</label>
+                        <select name="periode" id="periode" class="form-select">
+                            <option value="">Toutes les périodes</option>
+                            {% for value, label in bilan_form.fields.periode.choices %}
+                            <option value="{{ value }}" {% if periode_filter == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="statut">Statut</label>
+                        <select name="statut" id="statut" class="form-select">
+                            <option value="">Tous les statuts</option>
+                            <option value="BROUILLON" {% if statut_filter == 'BROUILLON' %}selected{% endif %}>Brouillon</option>
+                            <option value="VALIDE" {% if statut_filter == 'VALIDE' %}selected{% endif %}>Validé</option>
+                            <option value="ARCHIVE" {% if statut_filter == 'ARCHIVE' %}selected{% endif %}>Archivé</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label for="boutique">Boutique</label>
+                        <select name="boutique" id="boutique" class="form-select">
+                            <option value="">Toutes les boutiques</option>
+                            {% for boutique in boutiques %}
+                            <option value="{{ boutique.id }}" {% if boutique_filter == boutique.id|stringformat:"s" %}selected{% endif %}>
+                                {{ boutique.nom }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>&nbsp;</label>
+                        <button type="submit" class="btn-sm btn-primary w-100">
+                            <i class="fas fa-filter me-1"></i>
+                            Filtrer
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- Liste des bilans -->
+        {% if bilans %}
+            <div class="bilans-grid">
+                {% for bilan in bilans %}
+                <div class="bilan-card status-{{ bilan.statut|lower }}">
+                    <div class="bilan-header">
+                        <div class="bilan-title">{{ bilan.titre }}</div>
+                        <div class="bilan-meta">
+                            {{ bilan.get_periode_display }}<br>
+                            Du {{ bilan.date_debut|date:"d/m/Y" }} au {{ bilan.date_fin|date:"d/m/Y" }}
+                            {% if bilan.boutique %}
+                                <br><i class="fas fa-store me-1"></i>{{ bilan.boutique.nom }}
+                            {% endif %}
+                        </div>
+                        <span class="status-badge status-{{ bilan.statut|lower }}">
+                            {{ bilan.get_statut_display }}
+                        </span>
+                    </div>
+
+                    <div class="bilan-stats">
+                        <div class="bilan-stat">
+                            <div class="bilan-stat-value">{{ bilan.chiffre_affaires_total|floatformat:0|intcomma }}</div>
+                            <div class="bilan-stat-label">CA (CDF)</div>
+                        </div>
+                        <div class="bilan-stat">
+                            <div class="bilan-stat-value">{{ bilan.taux_marge_brute|floatformat:1 }}%</div>
+                            <div class="bilan-stat-label">Marge</div>
+                        </div>
+                        <div class="bilan-stat">
+                            <div class="bilan-stat-value">{{ bilan.nombre_ventes }}</div>
+                            <div class="bilan-stat-label">Ventes</div>
+                        </div>
+                        <div class="bilan-stat">
+                            <div class="bilan-stat-value {% if bilan.resultat_net > 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ bilan.resultat_net|floatformat:0|intcomma }}
+                            </div>
+                            <div class="bilan-stat-label">Résultat</div>
+                        </div>
+                    </div>
+
+                    <div class="bilan-actions">
+                        <a href="{% url 'inventory:detail_bilan' bilan.id %}" class="btn-sm btn-primary">
+                            <i class="fas fa-eye me-1"></i>Voir
+                        </a>
+                        
+                        {% if bilan.statut == 'BROUILLON' %}
+                            <a href="{% url 'inventory:valider_bilan' bilan.id %}" class="btn-sm btn-success">
+                                <i class="fas fa-check me-1"></i>Valider
+                            </a>
+                        {% endif %}
+                        
+                        <a href="{% url 'inventory:exporter_bilan' bilan.id %}?format=pdf" class="btn-sm btn-outline-primary">
+                            <i class="fas fa-file-pdf me-1"></i>PDF
+                        </a>
+                        
+                        <a href="{% url 'inventory:exporter_bilan' bilan.id %}?format=excel" class="btn-sm btn-outline-secondary">
+                            <i class="fas fa-file-excel me-1"></i>Excel
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Pagination (si nécessaire) -->
+            {% if is_paginated %}
+            <nav aria-label="Pagination des bilans">
+                <ul class="pagination">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page=1{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">
+                                <i class="fas fa-angle-double-left"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">
+                                <i class="fas fa-angle-left"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+
+                    {% for num in page_obj.paginator.page_range %}
+                        {% if page_obj.number == num %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ num }}</span>
+                            </li>
+                        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ num }}{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">{{ num }}</a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">
+                                <i class="fas fa-angle-right"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">
+                                <i class="fas fa-angle-double-right"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+        {% else %}
+            <!-- État vide -->
+            <div class="empty-state">
+                <div class="empty-state-icon">
+                    <i class="fas fa-chart-bar"></i>
+                </div>
+                <h2 class="empty-state-title">Aucun bilan trouvé</h2>
+                <p class="empty-state-text">
+                    {% if periode_filter or statut_filter or boutique_filter %}
+                        Aucun bilan ne correspond aux critères de filtrage sélectionnés.<br>
+                        Essayez de modifier les filtres ou 
+                        <a href="{% url 'inventory:liste_bilans' %}" class="btn-link">réinitialiser les filtres</a>.
+                    {% else %}
+                        Vous n'avez pas encore créé de bilan.<br>
+                        Commencez par générer votre premier bilan pour analyser la performance de votre activité.
+                    {% endif %}
+                </p>
+                <a href="{% url 'inventory:creer_bilan' %}" class="btn-lg btn-primary-gradient">
+                    <i class="fas fa-plus me-2"></i>
+                    Créer votre premier bilan
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Gestion des filtres
+    const filterForm = document.querySelector('form[method="get"]');
+    const filterSelects = document.querySelectorAll('.form-select');
+    
+    filterSelects.forEach(select => {
+        select.addEventListener('change', function() {
+            // Soumettre automatiquement le formulaire quand un filtre change
+            filterForm.submit();
+        });
+    });
+
+    // Animation des cartes au survol
+    const bilanCards = document.querySelectorAll('.bilan-card');
+    bilanCards.forEach(card => {
+        card.addEventListener('mouseenter', function() {
+            this.style.transform = 'translateY(-4px)';
+        });
+        
+        card.addEventListener('mouseleave', function() {
+            this.style.transform = 'translateY(0)';
+        });
+    });
+});
+</script>
+{% endblock %}

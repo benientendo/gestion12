@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 from . import admin_views
 from . import views_commercant
+from . import views_bilan
 
 app_name = 'inventory'
 
@@ -79,6 +80,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/articles/ajouter/', views_commercant.ajouter_article_boutique, name='ajouter_article_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier/', views_commercant.modifier_article_boutique, name='modifier_article_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/supprimer/', views_commercant.supprimer_article_boutique, name='supprimer_article_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/articles/bulk-delete/', views_commercant.bulk_delete_articles, name='bulk_delete_articles'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/ajuster-stock/', views_commercant.ajuster_stock_article, name='ajuster_stock_article'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier-prix/', views_commercant.modifier_prix_article, name='modifier_prix_article'),
     path('commercant/boutiques/<int:boutique_id>/categories/', views_commercant.categories_boutique, name='commercant_categories_boutique'),
@@ -114,4 +116,14 @@ urlpatterns = [
     path('commercant/transferts/<int:transfert_id>/', views_commercant.detail_transfert, name='detail_transfert'),
     path('commercant/transferts/<int:transfert_id>/valider/', views_commercant.valider_transfert, name='valider_transfert'),
     path('commercant/transferts/<int:transfert_id>/annuler/', views_commercant.annuler_transfert, name='annuler_transfert'),
+    
+    # ===== BILANS GÉNÉRAUX ET INDICATEURS =====
+    path('bilan/tableau-bord/', views_bilan.tableau_bord_bilan, name='tableau_bord_bilan'),
+    path('bilan/creer/', views_bilan.creer_bilan, name='creer_bilan'),
+    path('bilan/liste/', views_bilan.liste_bilans, name='liste_bilans'),
+    path('bilan/<int:bilan_id>/', views_bilan.detail_bilan, name='detail_bilan'),
+    path('bilan/<int:bilan_id>/valider/', views_bilan.valider_bilan, name='valider_bilan'),
+    path('bilan/<int:bilan_id>/exporter/', views_bilan.exporter_bilan, name='exporter_bilan'),
+    path('indicateurs/', views_bilan.tableau_indicateurs, name='tableau_indicateurs'),
+    path('indicateurs/rafraichir/', views_bilan.rafraichir_indicateurs, name='rafraichir_indicateurs'),
 ]
