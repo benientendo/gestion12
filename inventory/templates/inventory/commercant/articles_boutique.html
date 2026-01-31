@@ -336,21 +336,22 @@
                     </div>
 
                     <div class="row g-3">
-                        <div class="col-md-8">
-                            <label for="nom" class="form-label">Nom de l'article <span class="text-danger">*</span></label>
-                            <div class="input-group">
-                                <span class="input-group-text"><i class="fas fa-tag"></i></span>
-                                <input type="text" class="form-control" id="nom" name="nom" required 
-                                       placeholder="Ex: Fanta Orange 1.5L">
-                            </div>
-                        </div>
-
-                        <div class="col-md-4">
+                        <div class="col-md-4" id="codeBarreContainer" style="display: none;">
                             <label for="code_barre" class="form-label">Code barre</label>
                             <div class="input-group">
                                 <span class="input-group-text"><i class="fas fa-barcode"></i></span>
                                 <input type="text" class="form-control" id="code_barre" name="code" 
                                        placeholder="Optionnel">
+                            </div>
+                            <div id="codeBarreFeedback" class="small mt-1" style="display: none;"></div>
+                        </div>
+
+                        <div class="col-md-12" id="nomArticleContainer">
+                            <label for="nom" class="form-label">Nom de l'article <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-tag"></i></span>
+                                <input type="text" class="form-control" id="nom" name="nom" required 
+                                       placeholder="Ex: Fanta Orange 1.5L">
                             </div>
                         </div>
 
@@ -444,6 +445,63 @@
                         const deviseUsdCheckbox = document.getElementById('devise_usd');
                         if (deviseUsdCheckbox) {
                             deviseUsdCheckbox.addEventListener('change', updateDeviseLabels);
+                        }
+                        
+                        // Toggle Code Barre visibility
+                        const focusCodeBarreCheckbox = document.getElementById('focusCodeBarre');
+                        const codeBarreContainer = document.getElementById('codeBarreContainer');
+                        const nomArticleContainer = document.getElementById('nomArticleContainer');
+                        const codeBarreInput = document.getElementById('code_barre');
+                        const nomInput = document.getElementById('nom');
+                        
+                        function toggleCodeBarreVisibility(setFocus = true) {
+                            if (focusCodeBarreCheckbox.checked) {
+                                // Afficher le champ code-barres
+                                codeBarreContainer.style.display = 'block';
+                                nomArticleContainer.classList.remove('col-md-12');
+                                nomArticleContainer.classList.add('col-md-8');
+                                // Sauvegarder l'état
+                                localStorage.setItem('focusCodeBarreEnabled', 'true');
+                                // Autofocus sur le champ code-barres
+                                if (setFocus) {
+                                    setTimeout(() => codeBarreInput.focus(), 100);
+                                }
+                            } else {
+                                // Cacher le champ code-barres
+                                codeBarreContainer.style.display = 'none';
+                                nomArticleContainer.classList.remove('col-md-8');
+                                nomArticleContainer.classList.add('col-md-12');
+                                // Vider le champ code-barres
+                                codeBarreInput.value = '';
+                                // Sauvegarder l'état
+                                localStorage.setItem('focusCodeBarreEnabled', 'false');
+                                // Focus sur le nom
+                                if (setFocus) {
+                                    setTimeout(() => nomInput.focus(), 100);
+                                }
+                            }
+                        }
+                        
+                        if (focusCodeBarreCheckbox) {
+                            // Restaurer l'état depuis localStorage
+                            const savedState = localStorage.getItem('focusCodeBarreEnabled') === 'true';
+                            focusCodeBarreCheckbox.checked = savedState;
+                            
+                            focusCodeBarreCheckbox.addEventListener('change', () => toggleCodeBarreVisibility(true));
+                            // Initialiser l'état au chargement (sans focus)
+                            toggleCodeBarreVisibility(false);
+                        }
+                        
+                        // Autofocus quand le modal s'ouvre
+                        const ajouterArticleModal = document.getElementById('ajouterArticleModal');
+                        if (ajouterArticleModal) {
+                            ajouterArticleModal.addEventListener('shown.bs.modal', function() {
+                                if (focusCodeBarreCheckbox.checked) {
+                                    codeBarreInput.focus();
+                                } else {
+                                    nomInput.focus();
+                                }
+                            });
                         }
                     });
                     </script>
@@ -1029,8 +1087,72 @@ document.addEventListener('DOMContentLoaded', function() {
     const modal = document.getElementById('ajouterArticleModal');
     const nomInput = document.getElementById('nom');
     const codeBarreInput = document.getElementById('code_barre');
+    const codeBarreFeedback = document.getElementById('codeBarreFeedback');
     const focusCodeBarreCheckbox = document.getElementById('focusCodeBarre');
     let articlesAjoutes = 0; // Compteur d'articles ajoutés
+    let codeBarreExiste = false; // Flag pour bloquer la soumission si code existe
+    let articleExistant = null; // Info sur l'article existant
+    
+    // Vérification du code-barres en temps réel
+    let codeBarreTimeout = null;
+    function verifierCodeBarre() {
+        const code = codeBarreInput.value.trim();
+        
+        // Réinitialiser
+        codeBarreExiste = false;
+        articleExistant = null;
+        codeBarreFeedback.style.display = 'none';
+        codeBarreInput.classList.remove('is-invalid', 'is-valid');
+        
+        if (!code) return;
+        
+        // Afficher indicateur de chargement
+        codeBarreFeedback.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Vérification...';
+        codeBarreFeedback.className = 'small mt-1 text-muted';
+        codeBarreFeedback.style.display = 'block';
+        
+        fetch(`{% url "inventory:verifier_code_barre" boutique.id %}?code=${encodeURIComponent(code)}`, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.existe) {
+                codeBarreExiste = true;
+                articleExistant = data.article;
+                codeBarreInput.classList.add('is-invalid');
+                codeBarreFeedback.innerHTML = `<i class="fas fa-exclamation-triangle"></i> <strong>Code existant!</strong> Article: "${data.article.nom}" (Stock: ${data.article.stock})`;
+                codeBarreFeedback.className = 'small mt-1 text-danger';
+                codeBarreFeedback.style.display = 'block';
+            } else {
+                codeBarreExiste = false;
+                codeBarreInput.classList.add('is-valid');
+                codeBarreFeedback.innerHTML = '<i class="fas fa-check"></i> Code disponible';
+                codeBarreFeedback.className = 'small mt-1 text-success';
+                codeBarreFeedback.style.display = 'block';
+                // Masquer après 2 secondes
+                setTimeout(() => {
+                    if (!codeBarreExiste) {
+                        codeBarreFeedback.style.display = 'none';
+                    }
+                }, 2000);
+            }
+        })
+        .catch(error => {
+            console.error('Erreur vérification code:', error);
+            codeBarreFeedback.style.display = 'none';
+        });
+    }
+    
+    if (codeBarreInput) {
+        codeBarreInput.addEventListener('input', function() {
+            clearTimeout(codeBarreTimeout);
+            codeBarreTimeout = setTimeout(verifierCodeBarre, 500); // Délai de 500ms
+        });
+        codeBarreInput.addEventListener('blur', verifierCodeBarre);
+    }
 
     function getFocusCodeBarrePreference() {
         try {
@@ -1084,6 +1206,20 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!formAjoutRapide.checkValidity()) {
             formAjoutRapide.reportValidity();
             return;
+        }
+        
+        // Bloquer si le code-barres existe déjà
+        if (codeBarreExiste && articleExistant) {
+            const confirmer = confirm(
+                `⚠️ Le code-barres "${codeBarreInput.value}" existe déjà!\n\n` +
+                `Article: ${articleExistant.nom}\n` +
+                `Stock actuel: ${articleExistant.stock}\n\n` +
+                `Voulez-vous ajouter du stock à cet article existant?`
+            );
+            if (!confirmer) {
+                codeBarreInput.focus();
+                return;
+            }
         }
         
         // Désactiver le bouton pendant l'envoi

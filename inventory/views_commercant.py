@@ -867,11 +867,11 @@ def entrer_boutique(request, boutique_id):
         articles_populaires = Article.objects.filter(
             boutique=boutique,
             est_actif=True,
-            lignes_vente__vente__est_annulee=False,
-            lignes_vente__vente__date_vente__gte=date_30_jours
+            lignevente__vente__est_annulee=False,
+            lignevente__vente__date_vente__gte=date_30_jours
         ).annotate(
-            total_vendus=Sum('lignes_vente__quantite'),
-            total_revenus=Sum(F('lignes_vente__quantite') * F('lignes_vente__prix_unitaire'))
+            total_vendus=Sum('lignevente__quantite'),
+            total_revenus=Sum(F('lignevente__quantite') * F('lignevente__prix_unitaire'))
         ).filter(total_vendus__gt=0).order_by('-total_vendus')[:5]
     except:
         articles_populaires = []
@@ -1804,6 +1804,35 @@ def exporter_ca_mensuel_pdf(request, boutique_id):
     response['Content-Disposition'] = f'attachment; filename="CA_Mensuel_{nom_mois}_{annee}_{boutique.nom}.pdf"'
     
     return response
+
+@login_required
+@commercant_required
+@boutique_access_required
+def verifier_code_barre(request, boutique_id):
+    """Vérifier si un code-barres existe déjà dans la boutique"""
+    from django.http import JsonResponse
+    
+    boutique = request.boutique
+    code = request.GET.get('code', '').strip()
+    
+    if not code:
+        return JsonResponse({'existe': False})
+    
+    article = Article.objects.filter(code=code, boutique=boutique).first()
+    
+    if article:
+        return JsonResponse({
+            'existe': True,
+            'article': {
+                'id': article.id,
+                'nom': article.nom,
+                'stock': article.quantite_stock,
+                'prix': float(article.prix_vente),
+                'devise': article.devise
+            }
+        })
+    
+    return JsonResponse({'existe': False})
 
 @login_required
 @commercant_required
