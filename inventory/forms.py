@@ -3,7 +3,7 @@ import requests
 import json
 from django.conf import settings
 from django.contrib.auth.models import User
-from .models import Article, Categorie, Vente, Client, Commercant, Boutique
+from .models import Article, Categorie, Vente, Client, Commercant, Boutique, VarianteArticle
 
 
 
@@ -272,4 +272,39 @@ class BoutiqueForm(forms.ModelForm):
             'code_postal': 'Code postal',
             'telephone': 'Téléphone',
             'email': 'Email de contact',
+        }
+
+
+class VarianteArticleForm(forms.ModelForm):
+    """Formulaire pour créer/modifier une variante d'article."""
+    
+    class Meta:
+        model = VarianteArticle
+        fields = ['code_barre', 'nom_variante', 'type_attribut', 'quantite_stock', 'est_actif', 'image']
+        widgets = {
+            'code_barre': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Scanner ou saisir le code-barres',
+                'autofocus': True
+            }),
+            'nom_variante': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Ex: Rouge, 500ml, Vanille...'
+            }),
+            'type_attribut': forms.Select(attrs={'class': 'form-select'}),
+            'quantite_stock': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0',
+                'placeholder': '0'
+            }),
+            'est_actif': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'image': forms.FileInput(attrs={'class': 'form-control', 'accept': 'image/*'}),
+        }
+        labels = {
+            'code_barre': 'Code-barres unique',
+            'nom_variante': 'Nom de la variante',
+            'type_attribut': 'Type d\'attribut',
+            'quantite_stock': 'Stock initial',
+            'est_actif': 'Variante active',
+            'image': 'Image (optionnel)',
         }

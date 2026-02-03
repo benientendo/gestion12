@@ -22,6 +22,10 @@
                         <span class="badge bg-primary"><i class="fas fa-box"></i> {{ articles.count }} Total</span>
                         <span class="badge bg-warning text-dark"><i class="fas fa-exclamation-triangle"></i> {{ articles_stock_bas|default:0 }} Stock bas</span>
                     </div>
+                    <!-- Bouton Recherche & Modification rapide -->
+                    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#rechercheArticleModal" title="Rechercher un article par code-barres">
+                        <i class="fas fa-search"></i> <span class="d-none d-sm-inline">Recherche</span>
+                    </button>
                     <!-- Bouton Ajouter en premier sur mobile -->
                     <button type="button" class="btn btn-success btn-sm order-first order-md-last" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
                         <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Ajouter</span>
@@ -123,7 +127,7 @@
             <table class="table table-hover">
                 <tbody>
                     {% for article in articles %}
-                    <tr data-article-id="{{ article.id }}" data-article-nom="{{ article.nom|escapejs }}" data-article-stock="{{ article.quantite_stock }}" data-article-prix="{{ article.prix_vente }}">
+                    <tr data-article-id="{{ article.id }}" data-article-nom="{{ article.nom|escapejs }}" data-article-stock="{{ article.stock_total }}" data-article-prix="{{ article.prix_vente }}" data-has-variantes="{{ article.a_variantes|yesno:'true,false' }}">
                         <td class="col-checkbox">
                             <input type="checkbox" class="form-check-input article-checkbox" value="{{ article.id }}">
                         </td>
@@ -158,12 +162,15 @@
                             {% endif %}
                         </td>
                         <td class="col-stock">
-                            {% if article.quantite_stock <= 0 %}
-                            <span class="badge bg-danger">{{ article.quantite_stock }}</span>
-                            {% elif article.quantite_stock <= boutique.alerte_stock_bas %}
-                            <span class="badge bg-warning text-dark">{{ article.quantite_stock }}</span>
+                            {% if article.stock_total <= 0 %}
+                            <span class="badge bg-danger">{{ article.stock_total }}</span>
+                            {% elif article.stock_total <= boutique.alerte_stock_bas %}
+                            <span class="badge bg-warning text-dark">{{ article.stock_total }}</span>
                             {% else %}
-                            <span class="badge bg-success">{{ article.quantite_stock }}</span>
+                            <span class="badge bg-success">{{ article.stock_total }}</span>
+                            {% endif %}
+                            {% if article.a_variantes %}
+                            <span class="badge bg-info ms-1" title="{{ article.nb_variantes }} variante(s)"><i class="fas fa-tags"></i> {{ article.nb_variantes }}</span>
                             {% endif %}
                         </td>
                         <td class="col-actions">
@@ -176,8 +183,9 @@
                                         data-bs-toggle="modal" data-bs-target="#ajusterStockModal"
                                         data-article-id="{{ article.id }}"
                                         data-article-nom="{{ article.nom|escapejs }}"
-                                        data-article-stock="{{ article.quantite_stock }}"
-                                        onclick="setArticleForStock(parseInt(this.dataset.articleId), this.dataset.articleNom, parseInt(this.dataset.articleStock))" title="Stock">
+                                        data-article-stock="{{ article.stock_total }}"
+                                        data-has-variantes="{{ article.a_variantes|yesno:'true,false' }}"
+                                        onclick="setArticleForStock(parseInt(this.dataset.articleId), this.dataset.articleNom, parseInt(this.dataset.articleStock), this.dataset.hasVariantes === 'true')" title="Stock">
                                     <i class="fas fa-boxes"></i>
                                 </button>
                                 <button type="button" class="btn btn-outline-info btn-sm" 
@@ -273,7 +281,12 @@
                             </tr>
                             <tr>
                                 <th>Stock:</th>
-                                <td>{{ article.quantite_stock }} unités</td>
+                                <td>
+                                    {{ article.stock_total }} unités
+                                    {% if article.a_variantes %}
+                                    <span class="badge bg-info ms-1"><i class="fas fa-tags"></i> {{ article.nb_variantes }} variante(s)</span>
+                                    {% endif %}
+                                </td>
                             </tr>
                             <tr>
                                 <th>QR Code:</th>
@@ -324,6 +337,10 @@
                         </div>
                         <div class="d-flex gap-3">
                             <div class="form-check form-switch m-0">
+                                <input class="form-check-input" type="checkbox" id="hasVariantes" name="has_variantes">
+                                <label class="form-check-label" for="hasVariantes"><i class="fas fa-tags"></i> Variantes</label>
+                            </div>
+                            <div class="form-check form-switch m-0">
                                 <input class="form-check-input" type="checkbox" id="focusCodeBarre" name="focus_code_barre">
                                 <label class="form-check-label" for="focusCodeBarre">Focus code</label>
                             </div>
@@ -336,6 +353,7 @@
                     </div>
 
                     <div class="row g-3">
+                        <!-- Code-barres (masqué si variantes activées) -->
                         <div class="col-md-4" id="codeBarreContainer" style="display: none;">
                             <label for="code_barre" class="form-label">Code barre</label>
                             <div class="input-group">
@@ -360,20 +378,20 @@
                                 <div class="fw-semibold mb-2">Prix & stock</div>
                                 <div class="row g-3">
                                     <div class="col-md-4" id="prixVenteContainer">
-                                        <label for="prix_vente" class="form-label" id="labelPrixVente">Prix de vente <span id="devisePrixVente">(CDF)</span> <span class="text-danger">*</span></label>
+                                        <label for="prix_vente" class="form-label" id="labelPrixVente">Prix de vente <span id="devisePrixVente">(CDF)</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text" id="symbolePrixVente">FC</span>
                                             <input type="number" class="form-control" id="prix_vente" name="prix_vente" 
-                                                   required min="0" step="0.01" placeholder="Ex: 1500">
-                                        </div>
-                                    </div>
-                                    <div class="col-md-4" id="prixAchatContainer">
-                                        <label for="prix_achat" class="form-label" id="labelPrixAchat">Prix d'achat <span id="devisePrixAchat">(CDF)</span></label>
-                                        <div class="input-group">
-                                            <span class="input-group-text" id="symbolePrixAchat">FC</span>
-                                            <input type="number" class="form-control" id="prix_achat" name="prix_achat" 
                                                    min="0" step="0.01" placeholder="Optionnel">
                                         </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="date_expiration" class="form-label">
+                                            <i class="fas fa-calendar-times text-warning"></i> Date d'expiration
+                                        </label>
+                                        <input type="date" class="form-control" id="date_expiration" name="date_expiration" 
+                                               placeholder="Optionnel">
+                                        <small class="text-muted">Optionnel</small>
                                     </div>
                                     <div class="col-md-4">
                                         <label for="quantite_stock" class="form-label">Stock initial <span class="text-danger">*</span></label>
@@ -396,6 +414,24 @@
                                 {% endfor %}
                             </select>
                             <div class="form-text">Optionnel - Vous pourrez la modifier plus tard</div>
+                        </div>
+
+                        <!-- Section Variantes (visible seulement si checkbox cochée) -->
+                        <div class="col-12" id="sectionVariantesRapide" style="display: none;">
+                            <div class="border border-info rounded-3 overflow-hidden">
+                                <div class="bg-info text-white px-3 py-2">
+                                    <span><i class="fas fa-tags"></i> <strong>Variantes de l'article</strong></span>
+                                </div>
+                                <div class="p-3 bg-light">
+                                    <small class="text-muted d-block mb-2">
+                                        Chaque variante a son propre code-barres (couleur, taille, parfum...)
+                                    </small>
+                                    <div id="listeVariantesRapide"></div>
+                                    <button type="button" class="btn btn-info btn-sm" onclick="ajouterVarianteRapide()">
+                                        <i class="fas fa-plus"></i> Ajouter une variante
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -580,6 +616,152 @@
                 </button>
                 <button type="button" class="btn btn-success" id="btnAjusterStock">
                     <i class="fas fa-check"></i> Confirmer l'Ajustement
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Recherche Article par Code-barres + Ajout Stock/Prix -->
+<div class="modal fade" id="rechercheArticleModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-search me-2"></i>Rechercher & Modifier un Article</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Zone de recherche par code-barres -->
+                <div class="mb-4">
+                    <label for="rechercheCodeBarre" class="form-label fw-bold">
+                        <i class="fas fa-barcode text-primary"></i> Code-barres
+                    </label>
+                    <div class="input-group">
+                        <input type="text" class="form-control form-control-lg" id="rechercheCodeBarre" 
+                               placeholder="Scannez ou saisissez le code-barres..." autofocus>
+                        <button class="btn btn-primary" type="button" id="btnRechercherArticle">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                    <div id="rechercheCodeBarreFeedback" class="mt-2" style="display: none;"></div>
+                </div>
+                
+                <!-- Résultat de recherche - Article trouvé -->
+                <div id="articleTrouveSection" style="display: none;">
+                    <div class="alert alert-success mb-3">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-check-circle fa-2x me-3"></i>
+                            <div>
+                                <strong id="articleTrouveNom">-</strong>
+                                <div class="small">
+                                    Code: <span id="articleTrouveCode">-</span> | 
+                                    Stock actuel: <span id="articleTrouveStock" class="badge bg-info">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Info variante (si c'est une variante) -->
+                    <div id="varianteInfoSection" class="alert alert-info mb-3" style="display: none;">
+                        <i class="fas fa-tags me-2"></i>
+                        <strong>Variante:</strong> <span id="varianteNom">-</span>
+                        <div class="small mt-1">
+                            Code variante: <span id="varianteCode">-</span> | 
+                            Stock variante: <span id="varianteStock" class="badge bg-warning text-dark">-</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Sélecteur de variantes (si article avec variantes) -->
+                    <div id="selecteurVariantesSection" class="mb-3" style="display: none;">
+                        <label class="form-label fw-bold">
+                            <i class="fas fa-list text-info"></i> Sélectionner une variante
+                        </label>
+                        <select id="selectVariante" class="form-select form-select-lg">
+                            <option value="">-- Article principal --</option>
+                        </select>
+                    </div>
+                    
+                    <form id="formModifierArticleExistant">
+                        {% csrf_token %}
+                        <input type="hidden" id="articleTrouveId" name="article_id">
+                        <input type="hidden" id="varianteTrouveId" name="variante_id">
+                        
+                        <div class="row g-3">
+                            <!-- Quantité à ajouter -->
+                            <div class="col-6">
+                                <label for="quantiteAjout" class="form-label fw-bold">
+                                    <i class="fas fa-plus-circle text-success"></i> Quantité à ajouter
+                                </label>
+                                <div class="input-group">
+                                    <button class="btn btn-outline-danger" type="button" id="btnMoinsQte">
+                                        <i class="fas fa-minus"></i>
+                                    </button>
+                                    <input type="number" class="form-control form-control-lg text-center" 
+                                           id="quantiteAjout" name="quantite" value="0" min="0">
+                                    <button class="btn btn-outline-success" type="button" id="btnPlusQte">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Prix (modifiable) -->
+                            <div class="col-6">
+                                <label for="prixModifiable" class="form-label fw-bold">
+                                    <i class="fas fa-money-bill text-warning"></i> Prix de vente
+                                    <span id="prixModifiableDevise" class="text-muted">(FC)</span>
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text" id="prixModifiableSymbole">FC</span>
+                                    <input type="number" class="form-control form-control-lg text-center" 
+                                           id="prixModifiable" name="prix_vente" step="0.01" min="0">
+                                </div>
+                                <small class="text-muted">
+                                    Prix original: <span id="prixOriginal" class="fw-bold">-</span>
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <!-- Aperçu du nouveau stock -->
+                        <div class="alert alert-info mt-3">
+                            <div class="row text-center">
+                                <div class="col-4">
+                                    <div class="small text-muted">Stock actuel</div>
+                                    <div class="fs-5 fw-bold" id="stockActuelApercu">-</div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="small text-muted">+ Ajout</div>
+                                    <div class="fs-5 fw-bold text-success" id="ajoutApercu">+0</div>
+                                </div>
+                                <div class="col-4">
+                                    <div class="small text-muted">= Nouveau</div>
+                                    <div class="fs-5 fw-bold text-primary" id="nouveauStockApercu">-</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Indicateur si prix modifié -->
+                        <div id="prixModifieAlert" class="alert alert-warning mt-2" style="display: none;">
+                            <i class="fas fa-exclamation-triangle"></i> 
+                            <strong>Prix modifié!</strong> Le prix sera mis à jour pour cet article.
+                        </div>
+                    </form>
+                </div>
+                
+                <!-- Article non trouvé -->
+                <div id="articleNonTrouveSection" style="display: none;">
+                    <div class="alert alert-danger">
+                        <i class="fas fa-times-circle"></i> 
+                        <strong>Article non trouvé</strong>
+                        <div class="small" id="articleNonTrouveMsg">Aucun article avec ce code-barres.</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Fermer
+                </button>
+                <button type="button" class="btn btn-success" id="btnConfirmerModification" disabled>
+                    <i class="fas fa-check"></i> Confirmer
                 </button>
             </div>
         </div>
@@ -1090,6 +1272,81 @@ document.addEventListener('DOMContentLoaded', function() {
     const codeBarreFeedback = document.getElementById('codeBarreFeedback');
     const focusCodeBarreCheckbox = document.getElementById('focusCodeBarre');
     let articlesAjoutes = 0; // Compteur d'articles ajoutés
+    
+    // ===== GESTION DES VARIANTES =====
+    let compteurVariantesRapide = 0;
+    
+    window.ajouterVarianteRapide = function() {
+        compteurVariantesRapide++;
+        const container = document.getElementById('listeVariantesRapide');
+        const idx = compteurVariantesRapide;
+        
+        const ligne = document.createElement('div');
+        ligne.className = 'row g-2 mb-2 align-items-center';
+        ligne.id = `varianteRapide-${idx}`;
+        ligne.innerHTML = `
+            <div class="col-4">
+                <input type="text" class="form-control form-control-sm variante-code" 
+                       name="variante_code_${idx}" placeholder="Code-barres">
+            </div>
+            <div class="col-4">
+                <input type="text" class="form-control form-control-sm variante-nom" 
+                       name="variante_nom_${idx}" placeholder="Nom (Rouge, L...)">
+            </div>
+            <div class="col-2">
+                <input type="number" class="form-control form-control-sm" 
+                       name="variante_stock_${idx}" value="0" min="0" placeholder="Stock">
+            </div>
+            <div class="col-2">
+                <button type="button" class="btn btn-outline-danger btn-sm w-100" onclick="supprimerVarianteRapide(${idx})">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <input type="hidden" name="variante_type_${idx}" value="AUTRE">
+        `;
+        container.appendChild(ligne);
+        ligne.querySelector('input[type="text"]').focus();
+    };
+    
+    window.supprimerVarianteRapide = function(id) {
+        const ligne = document.getElementById(`varianteRapide-${id}`);
+        if (ligne) ligne.remove();
+    };
+    
+    // ===== TOGGLE MODE VARIANTES =====
+    const hasVariantesCheckbox = document.getElementById('hasVariantes');
+    const sectionVariantesRapide = document.getElementById('sectionVariantesRapide');
+    const codeBarreContainer = document.getElementById('codeBarreContainer');
+    const stockContainer = document.querySelector('input[name="quantite_stock"]').closest('.col-md-4');
+    
+    function toggleModeVariantes() {
+        const isVariantesMode = hasVariantesCheckbox.checked;
+        
+        if (isVariantesMode) {
+            // Mode variantes: masquer code-barres et stock parent, afficher section variantes
+            codeBarreContainer.style.display = 'none';
+            codeBarreInput.value = '';
+            sectionVariantesRapide.style.display = 'block';
+            // Stock géré par variantes, masquer le stock parent
+            stockContainer.style.display = 'none';
+            // Ajouter une première variante automatiquement si vide
+            if (document.getElementById('listeVariantesRapide').children.length === 0) {
+                ajouterVarianteRapide();
+            }
+        } else {
+            // Mode normal: afficher code-barres et stock, masquer section variantes
+            if (focusCodeBarreCheckbox && focusCodeBarreCheckbox.checked) {
+                codeBarreContainer.style.display = 'block';
+            }
+            sectionVariantesRapide.style.display = 'none';
+            stockContainer.style.display = 'block';
+        }
+    }
+    
+    if (hasVariantesCheckbox) {
+        hasVariantesCheckbox.addEventListener('change', toggleModeVariantes);
+    }
+    
     let codeBarreExiste = false; // Flag pour bloquer la soumission si code existe
     let articleExistant = null; // Info sur l'article existant
     
@@ -1208,6 +1465,25 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
+        // Validation des variantes si mode variantes activé
+        if (hasVariantesCheckbox && hasVariantesCheckbox.checked) {
+            const varianteCodes = document.querySelectorAll('.variante-code');
+            const varianteNoms = document.querySelectorAll('.variante-nom');
+            
+            if (varianteCodes.length === 0) {
+                alert('Veuillez ajouter au moins une variante.');
+                return;
+            }
+            
+            for (let i = 0; i < varianteCodes.length; i++) {
+                if (!varianteCodes[i].value.trim() || !varianteNoms[i].value.trim()) {
+                    alert('Veuillez remplir le code-barres et le nom pour chaque variante.');
+                    varianteCodes[i].focus();
+                    return;
+                }
+            }
+        }
+        
         // Bloquer si le code-barres existe déjà
         if (codeBarreExiste && articleExistant) {
             const confirmer = confirm(
@@ -1228,6 +1504,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Récupérer les données du formulaire
         const formData = new FormData(formAjoutRapide);
+        
+        // Debug: afficher les données envoyées
+        console.log('🔍 FormData entries:');
+        for (let [key, value] of formData.entries()) {
+            console.log(`  ${key}: ${value}`);
+        }
         
         // Envoyer en AJAX
         fetch('{% url "inventory:ajouter_article_boutique" boutique.id %}', {
@@ -1269,6 +1551,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (focusCodeBarreCheckbox) {
                     focusCodeBarreCheckbox.checked = getFocusCodeBarrePreference();
                 }
+                
+                // Réinitialiser la section variantes après succès
+                document.getElementById('listeVariantesRapide').innerHTML = '';
+                sectionVariantesRapide.style.display = 'none';
+                stockContainer.style.display = 'block';
+                if (hasVariantesCheckbox) hasVariantesCheckbox.checked = false;
+                compteurVariantesRapide = 0;
                 
                 // Réactiver le bouton
                 btnAjouterArticle.disabled = false;
@@ -1350,6 +1639,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (typeof window.updateDeviseLabels === 'function') {
             window.updateDeviseLabels();
         }
+        
+        // Réinitialiser la section variantes et le checkbox
+        document.getElementById('listeVariantesRapide').innerHTML = '';
+        sectionVariantesRapide.style.display = 'none';
+        stockContainer.style.display = 'block';
+        if (hasVariantesCheckbox) hasVariantesCheckbox.checked = false;
+        compteurVariantesRapide = 0;
         
         // Supprimer tous les messages (succès et erreur)
         const alerts = document.querySelectorAll('#ajouterArticleModal .alert');
@@ -1883,6 +2179,308 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Erreur réseau: ' + error);
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-check"></i> Enregistrer le Prix';
+        });
+    });
+    
+    // ==================== RECHERCHE ARTICLE PAR CODE-BARRES ====================
+    let articleTrouveData = null;
+    let varianteTrouveData = null;
+    let prixOriginalRecherche = 0;
+    let stockCourant = 0;
+    
+    const rechercheCodeBarreInput = document.getElementById('rechercheCodeBarre');
+    const btnRechercherArticle = document.getElementById('btnRechercherArticle');
+    const rechercheCodeBarreFeedback = document.getElementById('rechercheCodeBarreFeedback');
+    const articleTrouveSection = document.getElementById('articleTrouveSection');
+    const articleNonTrouveSection = document.getElementById('articleNonTrouveSection');
+    const btnConfirmerModification = document.getElementById('btnConfirmerModification');
+    const quantiteAjoutInput = document.getElementById('quantiteAjout');
+    const prixModifiableInput = document.getElementById('prixModifiable');
+    const varianteInfoSection = document.getElementById('varianteInfoSection');
+    const selecteurVariantesSection = document.getElementById('selecteurVariantesSection');
+    const selectVariante = document.getElementById('selectVariante');
+    
+    // Focus sur le champ code-barres quand le modal s'ouvre
+    document.getElementById('rechercheArticleModal').addEventListener('shown.bs.modal', function() {
+        rechercheCodeBarreInput.focus();
+        resetRechercheModal();
+    });
+    
+    function resetRechercheModal() {
+        articleTrouveData = null;
+        varianteTrouveData = null;
+        prixOriginalRecherche = 0;
+        stockCourant = 0;
+        rechercheCodeBarreInput.value = '';
+        rechercheCodeBarreFeedback.style.display = 'none';
+        articleTrouveSection.style.display = 'none';
+        articleNonTrouveSection.style.display = 'none';
+        varianteInfoSection.style.display = 'none';
+        selecteurVariantesSection.style.display = 'none';
+        btnConfirmerModification.disabled = true;
+        quantiteAjoutInput.value = 0;
+        prixModifiableInput.value = '';
+        document.getElementById('prixModifieAlert').style.display = 'none';
+        document.getElementById('varianteTrouveId').value = '';
+    }
+    
+    function rechercherArticle() {
+        const code = rechercheCodeBarreInput.value.trim();
+        if (!code) return;
+        
+        rechercheCodeBarreFeedback.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recherche en cours...';
+        rechercheCodeBarreFeedback.className = 'mt-2 text-muted';
+        rechercheCodeBarreFeedback.style.display = 'block';
+        articleTrouveSection.style.display = 'none';
+        articleNonTrouveSection.style.display = 'none';
+        varianteInfoSection.style.display = 'none';
+        selecteurVariantesSection.style.display = 'none';
+        
+        fetch(`{% url "inventory:verifier_code_barre" boutique.id %}?code=${encodeURIComponent(code)}`, {
+            method: 'GET',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            rechercheCodeBarreFeedback.style.display = 'none';
+            
+            if (data.existe && data.article) {
+                articleTrouveData = data.article;
+                prixOriginalRecherche = parseFloat(data.article.prix) || 0;
+                
+                // Afficher les infos de l'article parent
+                document.getElementById('articleTrouveNom').textContent = data.article.nom;
+                document.getElementById('articleTrouveCode').textContent = data.article.code || code;
+                document.getElementById('articleTrouveStock').textContent = data.article.stock + ' unités';
+                document.getElementById('articleTrouveId').value = data.article.id;
+                document.getElementById('varianteTrouveId').value = '';
+                
+                // Prix
+                const devise = data.article.devise || 'CDF';
+                const isUSD = devise === 'USD';
+                const symbole = isUSD ? '$' : 'FC';
+                document.getElementById('prixModifiableDevise').textContent = `(${symbole})`;
+                document.getElementById('prixModifiableSymbole').textContent = symbole;
+                prixModifiableInput.value = prixOriginalRecherche;
+                prixModifiableInput.step = isUSD ? '0.01' : '1';
+                document.getElementById('prixOriginal').textContent = prixOriginalRecherche.toFixed(isUSD ? 2 : 0) + ' ' + symbole;
+                
+                // === CAS 1: Code-barres d'une VARIANTE directe ===
+                if (data.type === 'variante' && data.variante) {
+                    varianteTrouveData = data.variante;
+                    stockCourant = data.variante.stock;
+                    
+                    document.getElementById('varianteNom').textContent = data.variante.nom;
+                    document.getElementById('varianteCode').textContent = data.variante.code_barre;
+                    document.getElementById('varianteStock').textContent = data.variante.stock + ' unités';
+                    document.getElementById('varianteTrouveId').value = data.variante.id;
+                    
+                    varianteInfoSection.style.display = 'block';
+                    selecteurVariantesSection.style.display = 'none';
+                }
+                // === CAS 2: Article avec variantes (proposer sélection) ===
+                else if (data.type === 'article' && data.article.a_variantes && data.article.variantes.length > 0) {
+                    varianteTrouveData = null;
+                    stockCourant = data.article.stock;
+                    
+                    // Peupler le sélecteur de variantes
+                    selectVariante.innerHTML = `<option value="">-- Stock article principal (${data.article.stock}) --</option>`;
+                    data.article.variantes.forEach(v => {
+                        const opt = document.createElement('option');
+                        opt.value = v.id;
+                        opt.textContent = `${v.nom_variante} (${v.code_barre}) - Stock: ${v.quantite_stock}`;
+                        opt.dataset.stock = v.quantite_stock;
+                        selectVariante.appendChild(opt);
+                    });
+                    
+                    varianteInfoSection.style.display = 'none';
+                    selecteurVariantesSection.style.display = 'block';
+                }
+                // === CAS 3: Article simple sans variantes ===
+                else {
+                    varianteTrouveData = null;
+                    stockCourant = data.article.stock;
+                    varianteInfoSection.style.display = 'none';
+                    selecteurVariantesSection.style.display = 'none';
+                }
+                
+                // Aperçu stock
+                document.getElementById('stockActuelApercu').textContent = stockCourant;
+                updateApercuStock();
+                
+                articleTrouveSection.style.display = 'block';
+                btnConfirmerModification.disabled = false;
+                quantiteAjoutInput.focus();
+            } else {
+                articleTrouveData = null;
+                varianteTrouveData = null;
+                document.getElementById('articleNonTrouveMsg').textContent = `Aucun article avec le code "${code}"`;
+                articleNonTrouveSection.style.display = 'block';
+                btnConfirmerModification.disabled = true;
+            }
+        })
+        .catch(error => {
+            rechercheCodeBarreFeedback.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Erreur de recherche';
+            rechercheCodeBarreFeedback.className = 'mt-2 text-danger';
+            rechercheCodeBarreFeedback.style.display = 'block';
+        });
+    }
+    
+    // Événement changement de variante sélectionnée
+    selectVariante.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        if (this.value) {
+            // Une variante est sélectionnée
+            stockCourant = parseInt(selectedOption.dataset.stock) || 0;
+            document.getElementById('varianteTrouveId').value = this.value;
+        } else {
+            // Article principal sélectionné
+            stockCourant = articleTrouveData ? articleTrouveData.stock : 0;
+            document.getElementById('varianteTrouveId').value = '';
+        }
+        document.getElementById('stockActuelApercu').textContent = stockCourant;
+        updateApercuStock();
+    });
+    
+    function updateApercuStock() {
+        const ajout = parseInt(quantiteAjoutInput.value) || 0;
+        const nouveauStock = stockCourant + ajout;
+        
+        document.getElementById('ajoutApercu').textContent = '+' + ajout;
+        document.getElementById('nouveauStockApercu').textContent = nouveauStock;
+    }
+    
+    function checkPrixModifie() {
+        if (!articleTrouveData) return;
+        const nouveauPrix = parseFloat(prixModifiableInput.value) || 0;
+        const prixModifieAlert = document.getElementById('prixModifieAlert');
+        
+        if (Math.abs(nouveauPrix - prixOriginalRecherche) > 0.01) {
+            prixModifieAlert.style.display = 'block';
+        } else {
+            prixModifieAlert.style.display = 'none';
+        }
+    }
+    
+    // Événements
+    btnRechercherArticle.addEventListener('click', rechercherArticle);
+    rechercheCodeBarreInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            rechercherArticle();
+        }
+    });
+    
+    quantiteAjoutInput.addEventListener('input', updateApercuStock);
+    prixModifiableInput.addEventListener('input', checkPrixModifie);
+    
+    // Validation par touche Entrée sur les champs quantité et prix
+    quantiteAjoutInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            btnConfirmerModification.click();
+        }
+    });
+    prixModifiableInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            btnConfirmerModification.click();
+        }
+    });
+    
+    document.getElementById('btnMoinsQte').addEventListener('click', function() {
+        const val = parseInt(quantiteAjoutInput.value) || 0;
+        if (val > 0) {
+            quantiteAjoutInput.value = val - 1;
+            updateApercuStock();
+        }
+    });
+    
+    document.getElementById('btnPlusQte').addEventListener('click', function() {
+        const val = parseInt(quantiteAjoutInput.value) || 0;
+        quantiteAjoutInput.value = val + 1;
+        updateApercuStock();
+    });
+    
+    // Soumission modification article existant (ou variante)
+    btnConfirmerModification.addEventListener('click', function() {
+        if (!articleTrouveData) return;
+        
+        const quantite = parseInt(quantiteAjoutInput.value) || 0;
+        const nouveauPrix = parseFloat(prixModifiableInput.value) || 0;
+        const varianteId = document.getElementById('varianteTrouveId').value;
+        
+        if (nouveauPrix <= 0) {
+            alert('Veuillez saisir un prix valide.');
+            return;
+        }
+        
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
+        
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+        formData.append('article_id', articleTrouveData.id);
+        formData.append('quantite', quantite);
+        formData.append('prix_vente', nouveauPrix);
+        
+        // Ajouter variante_id si une variante est sélectionnée
+        if (varianteId) {
+            formData.append('variante_id', varianteId);
+        }
+        
+        fetch(`{% url "inventory:modifier_article_existant" boutique.id %}`, {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Confirmer';
+            
+            if (data.success) {
+                // Déterminer le nom à afficher (variante ou article)
+                const nomAffiche = varianteId && varianteTrouveData ? varianteTrouveData.nom_complet : articleTrouveData.nom;
+                
+                // Afficher message de succès
+                const alertDiv = document.createElement('div');
+                alertDiv.className = 'alert alert-success alert-dismissible fade show mt-2';
+                alertDiv.innerHTML = `<i class="fas fa-check-circle"></i> <strong>${nomAffiche}</strong> modifié avec succès! <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+                articleTrouveSection.insertBefore(alertDiv, articleTrouveSection.firstChild);
+                
+                // Réinitialiser pour le prochain article (ne pas fermer le modal)
+                articleTrouveData = null;
+                varianteTrouveData = null;
+                prixOriginalRecherche = 0;
+                stockCourant = 0;
+                rechercheCodeBarreInput.value = '';
+                articleTrouveSection.style.display = 'none';
+                varianteInfoSection.style.display = 'none';
+                selecteurVariantesSection.style.display = 'none';
+                btnConfirmerModification.disabled = true;
+                quantiteAjoutInput.value = 0;
+                prixModifiableInput.value = '';
+                document.getElementById('prixModifieAlert').style.display = 'none';
+                document.getElementById('varianteTrouveId').value = '';
+                
+                // Focus sur le champ code-barres pour le prochain scan
+                rechercheCodeBarreInput.focus();
+                
+                // Masquer le message après 3 secondes
+                setTimeout(() => {
+                    alertDiv.classList.remove('show');
+                    setTimeout(() => alertDiv.remove(), 150);
+                }, 3000);
+            } else {
+                alert('Erreur: ' + (data.message || 'Une erreur est survenue'));
+            }
+        })
+        .catch(error => {
+            alert('Erreur réseau: ' + error);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-check"></i> Confirmer';
         });
     });
 });

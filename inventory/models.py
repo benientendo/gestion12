@@ -118,6 +118,7 @@ class Article(models.Model):
     categorie = models.ForeignKey(Categorie, on_delete=models.SET_NULL, null=True, related_name='articles')
     boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='articles', null=True, blank=True)
     quantite_stock = models.IntegerField(default=0)
+    date_expiration = models.DateField(null=True, blank=True, help_text="Date d'expiration du produit")
     est_actif = models.BooleanField(default=True, help_text="L'article est-il actif?")
     date_suppression = models.DateTimeField(null=True, blank=True, help_text="Date de désactivation/suppression pour sync MAUI")
     qr_code = models.ImageField(upload_to='qr_codes/', blank=True)
@@ -178,11 +179,138 @@ class Article(models.Model):
             self.qr_code.save(filename, File(buffer), save=False)
             super(Article, self).save(update_fields=['qr_code'])
     
+    @property
+    def a_variantes(self):
+        """Retourne True si l'article a des variantes"""
+        return self.variantes.exists()
+    
+    @property
+    def stock_total(self):
+        """
+        Retourne le stock total:
+        - Si variantes: somme des stocks des variantes
+        - Sinon: quantite_stock de l'article
+        """
+        if self.a_variantes:
+            return self.variantes.filter(est_actif=True).aggregate(
+                total=models.Sum('quantite_stock')
+            )['total'] or 0
+        return self.quantite_stock
+    
+    @property
+    def nb_variantes(self):
+        """Retourne le nombre de variantes actives"""
+        return self.variantes.filter(est_actif=True).count()
+    
     class Meta:
         verbose_name = "Article"
         verbose_name_plural = "Articles"
         ordering = ['nom']
         unique_together = [['code', 'boutique']]
+
+
+class VarianteArticle(models.Model):
+    """
+    Variantes d'un article avec code-barres unique.
+    Exemple: Déodorant avec variantes Rouge, Bleu, Vert - même prix, différents codes-barres.
+    """
+    
+    article_parent = models.ForeignKey(
+        Article, 
+        on_delete=models.CASCADE, 
+        related_name='variantes',
+        help_text="Article parent dont cette variante hérite le prix"
+    )
+    
+    # Code-barres unique pour cette variante
+    code_barre = models.CharField(
+        max_length=100, 
+        help_text="Code-barres unique de cette variante"
+    )
+    
+    # Nom de la variante (ex: "Rouge", "500ml", "Vanille")
+    nom_variante = models.CharField(
+        max_length=100,
+        help_text="Nom de la variante (couleur, taille, parfum, etc.)"
+    )
+    
+    # Type d'attribut pour faciliter le regroupement
+    TYPE_ATTRIBUT_CHOICES = [
+        ('COULEUR', 'Couleur'),
+        ('TAILLE', 'Taille'),
+        ('PARFUM', 'Parfum'),
+        ('POIDS', 'Poids'),
+        ('VOLUME', 'Volume'),
+        ('MODELE', 'Modèle'),
+        ('AUTRE', 'Autre'),
+    ]
+    type_attribut = models.CharField(
+        max_length=20, 
+        choices=TYPE_ATTRIBUT_CHOICES, 
+        default='AUTRE',
+        help_text="Type d'attribut de cette variante"
+    )
+    
+    # Stock spécifique à cette variante
+    quantite_stock = models.IntegerField(
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Stock disponible pour cette variante"
+    )
+    
+    # Statut
+    est_actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_mise_a_jour = models.DateTimeField(auto_now=True)
+    
+    # Image spécifique à la variante (optionnel)
+    image = models.ImageField(upload_to='variantes/', blank=True, null=True)
+    
+    @property
+    def prix_vente(self):
+        """Le prix est hérité de l'article parent."""
+        return self.article_parent.prix_vente
+    
+    @property
+    def prix_achat(self):
+        """Le prix d'achat est hérité de l'article parent."""
+        return self.article_parent.prix_achat
+    
+    @property
+    def devise(self):
+        """La devise est héritée de l'article parent."""
+        return self.article_parent.devise
+    
+    @property
+    def boutique(self):
+        """La boutique est héritée de l'article parent."""
+        return self.article_parent.boutique
+    
+    @property
+    def categorie(self):
+        """La catégorie est héritée de l'article parent."""
+        return self.article_parent.categorie
+    
+    @property
+    def nom_complet(self):
+        """Retourne le nom complet: Article - Variante"""
+        return f"{self.article_parent.nom} - {self.nom_variante}"
+    
+    def __str__(self):
+        return f"{self.article_parent.nom} - {self.nom_variante} ({self.code_barre})"
+    
+    class Meta:
+        verbose_name = "Variante d'article"
+        verbose_name_plural = "Variantes d'articles"
+        ordering = ['article_parent__nom', 'nom_variante']
+        unique_together = [['code_barre', 'article_parent']]
+        # Contrainte: code_barre unique par boutique (via article_parent)
+        constraints = [
+            models.UniqueConstraint(
+                fields=['code_barre'],
+                name='unique_code_barre_variante'
+            )
+        ]
 
 
 class Vente(models.Model):
@@ -228,6 +356,15 @@ class Vente(models.Model):
 class LigneVente(models.Model):
     vente = models.ForeignKey(Vente, related_name='lignes', on_delete=models.CASCADE)
     article = models.ForeignKey(Article, on_delete=models.CASCADE)
+    # Optionnel: variante spécifique vendue (si l'article a des variantes)
+    variante = models.ForeignKey(
+        VarianteArticle, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='lignes_vente',
+        help_text="Variante spécifique vendue (optionnel)"
+    )
     quantite = models.PositiveIntegerField()
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
     # Prix en dollars USD

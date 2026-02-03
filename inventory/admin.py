@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock
+from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock, VarianteArticle
 
 @admin.register(Categorie)
 class CategorieAdmin(admin.ModelAdmin):
@@ -11,12 +11,21 @@ class LigneVenteInline(admin.TabularInline):
     extra = 1
     readonly_fields = ('total_ligne',)
 
+class VarianteArticleInline(admin.TabularInline):
+    """Inline pour gérer les variantes directement depuis l'article."""
+    model = VarianteArticle
+    extra = 1
+    fields = ('code_barre', 'nom_variante', 'type_attribut', 'quantite_stock', 'est_actif')
+    readonly_fields = ('date_creation',)
+
+
 @admin.register(Article)
 class ArticleAdmin(admin.ModelAdmin):
-    list_display = ('code', 'nom', 'prix_vente', 'prix_achat', 'categorie', 'quantite_stock', 'date_mise_a_jour')
+    list_display = ('code', 'nom', 'prix_vente', 'prix_achat', 'categorie', 'quantite_stock', 'nb_variantes', 'date_mise_a_jour')
     list_filter = ('categorie', 'date_creation')
     search_fields = ('code', 'nom')
     readonly_fields = ('date_creation', 'date_mise_a_jour', 'qr_code')
+    inlines = [VarianteArticleInline]
     fieldsets = (
         ('Informations de base', {
             'fields': ('code', 'nom', 'description', 'categorie')
@@ -34,6 +43,45 @@ class ArticleAdmin(admin.ModelAdmin):
             'fields': ('date_creation', 'date_mise_a_jour')
         }),
     )
+    
+    def nb_variantes(self, obj):
+        return obj.variantes.filter(est_actif=True).count()
+    nb_variantes.short_description = 'Variantes'
+
+
+@admin.register(VarianteArticle)
+class VarianteArticleAdmin(admin.ModelAdmin):
+    """Admin standalone pour les variantes d'articles."""
+    list_display = ('code_barre', 'nom_variante', 'article_parent', 'type_attribut', 'quantite_stock', 'prix_vente', 'est_actif')
+    list_filter = ('type_attribut', 'est_actif', 'article_parent__categorie')
+    search_fields = ('code_barre', 'nom_variante', 'article_parent__nom', 'article_parent__code')
+    readonly_fields = ('date_creation', 'date_mise_a_jour', 'prix_vente', 'prix_achat', 'devise')
+    autocomplete_fields = ['article_parent']
+    
+    fieldsets = (
+        ('Article parent', {
+            'fields': ('article_parent',)
+        }),
+        ('Identification variante', {
+            'fields': ('code_barre', 'nom_variante', 'type_attribut')
+        }),
+        ('Prix (hérité de l\'article parent)', {
+            'fields': ('prix_vente', 'prix_achat', 'devise'),
+            'classes': ('collapse',)
+        }),
+        ('Stock', {
+            'fields': ('quantite_stock', 'est_actif')
+        }),
+        ('Image', {
+            'fields': ('image',),
+            'classes': ('collapse',)
+        }),
+        ('Dates', {
+            'fields': ('date_creation', 'date_mise_a_jour'),
+            'classes': ('collapse',)
+        }),
+    )
+
 
 @admin.register(Vente)
 class VenteAdmin(admin.ModelAdmin):

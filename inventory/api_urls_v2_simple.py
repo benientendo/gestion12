@@ -31,6 +31,9 @@ urlpatterns = [
     path('articles/terminal/<str:numero_serie>/', api_views_v2_simple.articles_by_serial_simple, name='articles_by_serial'),
     path('articles/<int:article_id>/stock/', api_views_v2_simple.update_stock_simple, name='update_stock'),
     
+    # ===== VARIANTES =====
+    path('variantes/', api_views_v2_simple.variantes_list_simple, name='variantes_list'),
+    
     # ===== CATÉGORIES =====
     path('categories/', api_views_v2_simple.categories_list_simple, name='categories_list'),
     

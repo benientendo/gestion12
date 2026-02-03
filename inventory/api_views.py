@@ -13,11 +13,13 @@ from django.db import transaction
 from django.db import models
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from .models import Article, Categorie, Vente, Client, SessionClientMaui, LigneVente, MouvementStock
+from .models import Article, Categorie, Vente, Client, SessionClientMaui, LigneVente, MouvementStock, VarianteArticle
 from .serializers import (
     ArticleSerializer, 
     CategorieSerializer,
-    VenteSerializer
+    VenteSerializer,
+    VarianteArticleSerializer,
+    ArticleAvecVariantesSerializer
 )
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
@@ -899,7 +901,180 @@ class ArticleViewSet(viewsets.ModelViewSet):
 class CategorieViewSet(viewsets.ModelViewSet):
     queryset = Categorie.objects.all()
     serializer_class = CategorieSerializer
+
+
+# ===== RECHERCHE PAR CODE-BARRES (ARTICLES + VARIANTES) =====
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def recherche_par_code_barre(request):
+    """
+    Recherche un article ou une variante par code-barres.
+    Cherche d'abord dans les variantes, puis dans les articles.
     
+    Paramètres:
+        code: Le code-barres à rechercher
+        boutique_id: (optionnel) ID de la boutique pour filtrer
+    
+    Réponse:
+    {
+        "found": true,
+        "type": "variante" | "article",
+        "data": { ... données de l'article/variante ... },
+        "article_parent": { ... si variante, données de l'article parent ... }
+    }
+    """
+    logger = logging.getLogger(__name__)
+    
+    code = request.query_params.get('code', '').strip()
+    boutique_id = request.query_params.get('boutique_id')
+    
+    if not code:
+        return Response({
+            'found': False,
+            'error': 'Paramètre code manquant'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    logger.info(f"🔍 Recherche code-barres: {code}")
+    
+    # 1. Chercher d'abord dans les variantes
+    variante_query = VarianteArticle.objects.filter(
+        code_barre__iexact=code,
+        est_actif=True
+    )
+    
+    if boutique_id:
+        variante_query = variante_query.filter(article_parent__boutique_id=boutique_id)
+    
+    variante = variante_query.select_related('article_parent', 'article_parent__categorie').first()
+    
+    if variante:
+        logger.info(f"✅ Variante trouvée: {variante.nom_complet}")
+        return Response({
+            'found': True,
+            'type': 'variante',
+            'data': VarianteArticleSerializer(variante, context={'request': request}).data,
+            'article_parent': ArticleSerializer(variante.article_parent, context={'request': request}).data
+        })
+    
+    # 2. Chercher dans les articles (code principal)
+    article_query = Article.objects.filter(
+        code__iexact=code,
+        est_actif=True
+    )
+    
+    if boutique_id:
+        article_query = article_query.filter(boutique_id=boutique_id)
+    
+    article = article_query.select_related('categorie').prefetch_related('variantes').first()
+    
+    if article:
+        logger.info(f"✅ Article trouvé: {article.nom}")
+        # Utiliser le serializer avec variantes si l'article en a
+        has_variantes = article.variantes.filter(est_actif=True).exists()
+        
+        return Response({
+            'found': True,
+            'type': 'article',
+            'has_variantes': has_variantes,
+            'data': ArticleAvecVariantesSerializer(article, context={'request': request}).data if has_variantes 
+                    else ArticleSerializer(article, context={'request': request}).data
+        })
+    
+    # 3. Rien trouvé
+    logger.warning(f"❌ Code-barres non trouvé: {code}")
+    return Response({
+        'found': False,
+        'error': f'Aucun article ou variante trouvé avec le code: {code}'
+    }, status=status.HTTP_404_NOT_FOUND)
+
+
+class VarianteArticleViewSet(viewsets.ModelViewSet):
+    """ViewSet pour gérer les variantes d'articles."""
+    
+    queryset = VarianteArticle.objects.select_related('article_parent', 'article_parent__categorie').all()
+    serializer_class = VarianteArticleSerializer
+    permission_classes = [AllowAny]  # À changer en IsAuthenticated en production
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filtrer par boutique si spécifié
+        boutique_id = self.request.query_params.get('boutique_id')
+        if boutique_id:
+            queryset = queryset.filter(article_parent__boutique_id=boutique_id)
+        
+        # Filtrer par article parent si spécifié
+        article_id = self.request.query_params.get('article_id')
+        if article_id:
+            queryset = queryset.filter(article_parent_id=article_id)
+        
+        # Filtrer par type d'attribut si spécifié
+        type_attribut = self.request.query_params.get('type_attribut')
+        if type_attribut:
+            queryset = queryset.filter(type_attribut=type_attribut)
+        
+        # Par défaut, ne montrer que les variantes actives
+        if self.request.query_params.get('include_inactive') != 'true':
+            queryset = queryset.filter(est_actif=True)
+        
+        return queryset
+    
+    @action(detail=False, methods=['get'])
+    def par_article(self, request):
+        """Liste toutes les variantes d'un article donné."""
+        article_id = request.query_params.get('article_id')
+        if not article_id:
+            return Response({
+                'error': 'Paramètre article_id requis'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        variantes = self.get_queryset().filter(article_parent_id=article_id)
+        serializer = self.get_serializer(variantes, many=True)
+        
+        return Response({
+            'count': variantes.count(),
+            'variantes': serializer.data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def ajuster_stock(self, request, pk=None):
+        """Ajuste le stock d'une variante spécifique."""
+        logger = logging.getLogger(__name__)
+        
+        try:
+            variante = self.get_object()
+            quantite = int(request.data.get('quantite', 0))
+            operation = request.data.get('operation', 'AJUSTEMENT')
+            
+            stock_avant = variante.quantite_stock
+            variante.quantite_stock += quantite
+            
+            if variante.quantite_stock < 0:
+                return Response({
+                    'error': 'Stock insuffisant',
+                    'stock_actuel': stock_avant,
+                    'quantite_demandee': abs(quantite)
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            variante.save()
+            
+            logger.info(f"📦 Stock variante {variante.code_barre}: {stock_avant} → {variante.quantite_stock}")
+            
+            return Response({
+                'success': True,
+                'variante': self.get_serializer(variante).data,
+                'stock_avant': stock_avant,
+                'stock_apres': variante.quantite_stock,
+                'operation': operation
+            })
+            
+        except Exception as e:
+            logger.error(f"Erreur ajustement stock variante: {e}")
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 # Constante pour marquer le début et la fin des blocs d'information MAUI dans le terminal
 MAUI_BLOCK_START = "\n" + "="*80 + "\n" + "DONNÉES BRUTES MAUI - DÉBUT" + "\n" + "="*80

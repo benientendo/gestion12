@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.db import transaction
 import decimal
-from .models import Article, Categorie, Vente, LigneVente, Client, SessionClientMaui, RapportCaisse, ArticleNegocie, RetourArticle, NotificationStock
+from .models import Article, Categorie, Vente, LigneVente, Client, SessionClientMaui, RapportCaisse, ArticleNegocie, RetourArticle, NotificationStock, VarianteArticle
 
 class CategorieSerializer(serializers.ModelSerializer):
     class Meta:
@@ -51,6 +51,67 @@ class ArticleSerializer(serializers.ModelSerializer):
         if obj.image and hasattr(obj.image, 'url') and request:
             return request.build_absolute_uri(obj.image.url)
         return None
+
+
+class VarianteArticleSerializer(serializers.ModelSerializer):
+    """Serializer pour les variantes d'articles avec code-barres."""
+    
+    article_parent_id = serializers.PrimaryKeyRelatedField(
+        queryset=Article.objects.all(),
+        source='article_parent',
+        write_only=True
+    )
+    article_parent_nom = serializers.CharField(source='article_parent.nom', read_only=True)
+    prix_vente = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    prix_achat = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    devise = serializers.CharField(read_only=True)
+    nom_complet = serializers.CharField(read_only=True)
+    image_url = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = VarianteArticle
+        fields = [
+            'id', 'article_parent_id', 'article_parent_nom',
+            'code_barre', 'nom_variante', 'type_attribut',
+            'quantite_stock', 'est_actif',
+            'prix_vente', 'prix_achat', 'devise', 'nom_complet',
+            'image_url', 'date_creation', 'date_mise_a_jour'
+        ]
+        read_only_fields = ['date_creation', 'date_mise_a_jour']
+    
+    def get_image_url(self, obj):
+        request = self.context.get('request')
+        if obj.image and hasattr(obj.image, 'url') and request:
+            return request.build_absolute_uri(obj.image.url)
+        # Fallback to parent article image
+        if obj.article_parent.image and hasattr(obj.article_parent.image, 'url') and request:
+            return request.build_absolute_uri(obj.article_parent.image.url)
+        return None
+
+
+class ArticleAvecVariantesSerializer(serializers.ModelSerializer):
+    """Serializer d'article incluant ses variantes."""
+    
+    variantes = VarianteArticleSerializer(many=True, read_only=True)
+    categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
+    has_variantes = serializers.SerializerMethodField()
+    stock_total_variantes = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Article
+        fields = [
+            'id', 'code', 'nom', 'description', 'devise', 
+            'prix_vente', 'prix_achat', 'categorie_nom',
+            'quantite_stock', 'est_actif', 'has_variantes',
+            'stock_total_variantes', 'variantes'
+        ]
+    
+    def get_has_variantes(self, obj):
+        return obj.variantes.filter(est_actif=True).exists()
+    
+    def get_stock_total_variantes(self, obj):
+        return sum(v.quantite_stock for v in obj.variantes.filter(est_actif=True))
+
 
 class LigneVenteSerializer(serializers.ModelSerializer):
     article = ArticleSerializer(read_only=True)

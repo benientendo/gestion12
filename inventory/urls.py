@@ -79,8 +79,15 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/client-maui/ajouter/', views_commercant.ajouter_client_maui_boutique, name='ajouter_client_maui_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/ajouter/', views_commercant.ajouter_article_boutique, name='ajouter_article_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/verifier-code/', views_commercant.verifier_code_barre, name='verifier_code_barre'),
+    path('commercant/boutiques/<int:boutique_id>/articles/modifier-existant/', views_commercant.modifier_article_existant, name='modifier_article_existant'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier/', views_commercant.modifier_article_boutique, name='modifier_article_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/supprimer/', views_commercant.supprimer_article_boutique, name='supprimer_article_boutique'),
+    
+    # Gestion des variantes d'articles
+    path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/ajouter/', views_commercant.ajouter_variante, name='ajouter_variante'),
+    path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/<int:variante_id>/modifier/', views_commercant.modifier_variante, name='modifier_variante'),
+    path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/<int:variante_id>/supprimer/', views_commercant.supprimer_variante, name='supprimer_variante'),
+    path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/<int:variante_id>/stock/', views_commercant.ajuster_stock_variante, name='ajuster_stock_variante'),
     path('commercant/boutiques/<int:boutique_id>/articles/bulk-delete/', views_commercant.bulk_delete_articles, name='bulk_delete_articles'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/ajuster-stock/', views_commercant.ajuster_stock_article, name='ajuster_stock_article'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier-prix/', views_commercant.modifier_prix_article, name='modifier_prix_article'),

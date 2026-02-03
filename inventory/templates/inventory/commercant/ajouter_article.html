@@ -144,6 +144,28 @@
                             </div>
                         </div>
 
+                        <!-- ===== SECTION VARIANTES RAPIDE ===== -->
+                        <div class="card border-info mb-3">
+                            <div class="card-header bg-info text-white py-2 d-flex justify-content-between align-items-center" 
+                                 data-bs-toggle="collapse" data-bs-target="#sectionVariantes" 
+                                 style="cursor: pointer;" role="button">
+                                <span><i class="fas fa-tags"></i> <strong>+ Ajouter des Variantes</strong> <small>(couleur, taille, parfum...)</small></span>
+                                <i class="fas fa-chevron-down" id="chevronVariantes"></i>
+                            </div>
+                            <div class="collapse" id="sectionVariantes">
+                                <div class="card-body py-2">
+                                    <small class="text-muted d-block mb-2">
+                                        Ajoutez des variantes avec codes-barres différents (couleur, taille, parfum...)
+                                    </small>
+                                    <div id="listeVariantes"></div>
+                                    <button type="button" class="btn btn-outline-info btn-sm" onclick="ajouterLigneVariante()">
+                                        <i class="fas fa-plus"></i> Ajouter une variante
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- FIN SECTION VARIANTES -->
+
                         <div class="d-grid gap-2 d-md-flex justify-content-md-end">
                             <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-secondary me-md-2">
                                 <i class="fas fa-times"></i> Annuler
@@ -271,6 +293,63 @@ document.addEventListener('DOMContentLoaded', function() {
         codeField.focus();
         console.log('✅ Autofocus activé sur le champ code-barres');
     }
+    
+    // Toggle chevron pour section variantes
+    document.getElementById('sectionVariantes').addEventListener('shown.bs.collapse', function() {
+        document.getElementById('chevronVariantes').classList.replace('fa-chevron-down', 'fa-chevron-up');
+    });
+    document.getElementById('sectionVariantes').addEventListener('hidden.bs.collapse', function() {
+        document.getElementById('chevronVariantes').classList.replace('fa-chevron-up', 'fa-chevron-down');
+    });
 });
+
+// ===== GESTION DES VARIANTES =====
+let compteurVariantes = 0;
+
+function ajouterLigneVariante() {
+    compteurVariantes++;
+    const container = document.getElementById('listeVariantes');
+    
+    const ligne = document.createElement('div');
+    ligne.className = 'row g-2 mb-2 align-items-center variante-ligne';
+    ligne.id = `variante-${compteurVariantes}`;
+    ligne.innerHTML = `
+        <div class="col-4">
+            <input type="text" class="form-control form-control-sm" 
+                   name="variante_code_${compteurVariantes}" placeholder="Code-barres">
+        </div>
+        <div class="col-3">
+            <input type="text" class="form-control form-control-sm" 
+                   name="variante_nom_${compteurVariantes}" placeholder="Nom (ex: Rouge)">
+        </div>
+        <div class="col-2">
+            <select class="form-select form-select-sm" name="variante_type_${compteurVariantes}">
+                <option value="COULEUR">Couleur</option>
+                <option value="TAILLE">Taille</option>
+                <option value="PARFUM">Parfum</option>
+                <option value="VOLUME">Volume</option>
+                <option value="AUTRE" selected>Autre</option>
+            </select>
+        </div>
+        <div class="col-2">
+            <input type="number" class="form-control form-control-sm" 
+                   name="variante_stock_${compteurVariantes}" value="0" min="0" placeholder="Stock">
+        </div>
+        <div class="col-1">
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="supprimerLigneVariante(${compteurVariantes})">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+    container.appendChild(ligne);
+    
+    // Focus sur le champ code-barres
+    ligne.querySelector('input[type="text"]').focus();
+}
+
+function supprimerLigneVariante(id) {
+    const ligne = document.getElementById(`variante-${id}`);
+    if (ligne) ligne.remove();
+}
 </script>
 {% endblock %}

@@ -159,6 +159,88 @@
                     </form>
                 </div>
             </div>
+
+            <!-- ===== SECTION VARIANTES ===== -->
+            <div class="card mt-4">
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-tags"></i> Variantes de l'Article</h5>
+                    <button type="button" class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#modalAjouterVariante">
+                        <i class="fas fa-plus"></i> Ajouter une variante
+                    </button>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">
+                        <i class="fas fa-info-circle"></i> Les variantes partagent le même prix que l'article parent mais ont chacune leur propre code-barres et stock.
+                    </p>
+                    
+                    {% if variantes %}
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm" id="tableVariantes">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Code-barres</th>
+                                    <th>Variante</th>
+                                    <th>Type</th>
+                                    <th class="text-center">Stock</th>
+                                    <th>Statut</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for variante in variantes %}
+                                <tr id="variante-row-{{ variante.id }}" class="{% if not variante.est_actif %}table-secondary{% endif %}">
+                                    <td><code>{{ variante.code_barre }}</code></td>
+                                    <td><strong>{{ variante.nom_variante }}</strong></td>
+                                    <td><span class="badge bg-secondary">{{ variante.get_type_attribut_display }}</span></td>
+                                    <td class="text-center">
+                                        <span class="badge {% if variante.quantite_stock > 0 %}bg-success{% else %}bg-danger{% endif %}">
+                                            {{ variante.quantite_stock }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if variante.est_actif %}
+                                        <span class="badge bg-success"><i class="fas fa-check"></i> Actif</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary"><i class="fas fa-times"></i> Inactif</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="btn-group btn-group-sm">
+                                            <button type="button" class="btn btn-outline-primary" 
+                                                    onclick="ouvrirModalStock({{ variante.id }}, '{{ variante.nom_variante }}', {{ variante.quantite_stock }})"
+                                                    title="Ajuster le stock">
+                                                <i class="fas fa-boxes"></i>
+                                            </button>
+                                            <button type="button" class="btn btn-outline-danger" 
+                                                    onclick="supprimerVariante({{ variante.id }}, '{{ variante.nom_variante }}')"
+                                                    title="Supprimer">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-2">
+                        <small class="text-muted">
+                            <strong>Stock total variantes:</strong> {{ stock_total_variantes }} unités
+                        </small>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4">
+                        <i class="fas fa-tags fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Aucune variante pour cet article.</p>
+                        <button type="button" class="btn btn-info" data-bs-toggle="modal" data-bs-target="#modalAjouterVariante">
+                            <i class="fas fa-plus"></i> Créer la première variante
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <!-- FIN SECTION VARIANTES -->
+
         </div>
 
         <div class="col-md-4">
@@ -294,5 +376,201 @@ function updatePrixLabels() {
 
 // Initialiser au chargement
 document.addEventListener('DOMContentLoaded', updatePrixLabels);
+
+// ===== GESTION DES VARIANTES =====
+
+function ajouterVariante() {
+    const form = document.getElementById('formAjouterVariante');
+    const formData = new FormData(form);
+    
+    fetch("{% url 'inventory:ajouter_variante' boutique.id article.id %}", {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Fermer le modal et recharger la page
+            bootstrap.Modal.getInstance(document.getElementById('modalAjouterVariante')).hide();
+            location.reload();
+        } else {
+            alert(data.message || 'Erreur lors de l\'ajout');
+        }
+    })
+    .catch(error => {
+        console.error('Erreur:', error);
+        alert('Erreur de connexion');
+    });
+}
+
+function supprimerVariante(varianteId, nomVariante) {
+    if (!confirm(`Supprimer la variante "${nomVariante}" ?`)) return;
+    
+    const formData = new FormData();
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    
+    fetch(`{% url 'inventory:supprimer_variante' boutique.id article.id 0 %}`.replace('/0/', `/${varianteId}/`), {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById(`variante-row-${varianteId}`).remove();
+        } else {
+            alert(data.message || 'Erreur lors de la suppression');
+        }
+    })
+    .catch(error => {
+        console.error('Erreur:', error);
+        alert('Erreur de connexion');
+    });
+}
+
+function ouvrirModalStock(varianteId, nomVariante, stockActuel) {
+    document.getElementById('stockVarianteId').value = varianteId;
+    document.getElementById('stockVarianteNom').textContent = nomVariante;
+    document.getElementById('stockVarianteActuel').textContent = stockActuel;
+    document.getElementById('stockQuantite').value = '';
+    new bootstrap.Modal(document.getElementById('modalAjusterStock')).show();
+}
+
+function ajusterStockVariante() {
+    const varianteId = document.getElementById('stockVarianteId').value;
+    const quantite = document.getElementById('stockQuantite').value;
+    const operation = document.getElementById('stockOperation').value;
+    
+    if (!quantite || quantite <= 0) {
+        alert('Veuillez saisir une quantité valide');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+    formData.append('quantite', quantite);
+    formData.append('operation', operation);
+    
+    fetch(`{% url 'inventory:ajuster_stock_variante' boutique.id article.id 0 %}`.replace('/0/', `/${varianteId}/`), {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('modalAjusterStock')).hide();
+            location.reload();
+        } else {
+            alert(data.message || 'Erreur lors de l\'ajustement');
+        }
+    })
+    .catch(error => {
+        console.error('Erreur:', error);
+        alert('Erreur de connexion');
+    });
+}
 </script>
+
+<!-- Modal Ajouter Variante -->
+<div class="modal fade" id="modalAjouterVariante" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-plus"></i> Ajouter une Variante</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formAjouterVariante">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fas fa-barcode"></i> Code-barres *</label>
+                        <input type="text" class="form-control" name="code_barre" required 
+                               placeholder="Scanner ou saisir le code-barres">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fas fa-tag"></i> Nom de la variante *</label>
+                        <input type="text" class="form-control" name="nom_variante" required 
+                               placeholder="Ex: Rouge, 500ml, Vanille...">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label"><i class="fas fa-list"></i> Type d'attribut</label>
+                            <select class="form-select" name="type_attribut">
+                                <option value="COULEUR">Couleur</option>
+                                <option value="TAILLE">Taille</option>
+                                <option value="PARFUM">Parfum</option>
+                                <option value="POIDS">Poids</option>
+                                <option value="VOLUME">Volume</option>
+                                <option value="MODELE">Modèle</option>
+                                <option value="AUTRE" selected>Autre</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label"><i class="fas fa-boxes"></i> Stock initial</label>
+                            <input type="number" class="form-control" name="quantite_stock" value="0" min="0">
+                        </div>
+                    </div>
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle"></i> 
+                        Prix hérité de l'article parent: 
+                        <strong>
+                            {% if article.devise == 'USD' %}$ {{ article.prix_vente|floatformat:2 }}{% else %}{{ article.prix_vente|floatformat:0 }} FC{% endif %}
+                        </strong>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-info" onclick="ajouterVariante()">
+                    <i class="fas fa-plus"></i> Ajouter
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajuster Stock Variante -->
+<div class="modal fade" id="modalAjusterStock" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-boxes"></i> Ajuster le Stock</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="stockVarianteId">
+                <p class="mb-2">
+                    Variante: <strong id="stockVarianteNom"></strong><br>
+                    Stock actuel: <span class="badge bg-info" id="stockVarianteActuel"></span>
+                </p>
+                <div class="mb-3">
+                    <label class="form-label">Opération</label>
+                    <select class="form-select" id="stockOperation">
+                        <option value="ajouter">Ajouter au stock</option>
+                        <option value="retirer">Retirer du stock</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Quantité</label>
+                    <input type="number" class="form-control" id="stockQuantite" min="1" placeholder="0">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="ajusterStockVariante()">
+                    <i class="fas fa-check"></i> Valider
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}

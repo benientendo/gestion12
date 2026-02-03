@@ -19,7 +19,7 @@ from django.conf import settings
 import json
 import logging
 
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle
 from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 
 logger = logging.getLogger(__name__)
@@ -434,6 +434,87 @@ def articles_deleted_simple(request):
         return Response({
             'error': 'Erreur interne du serveur',
             'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def variantes_list_simple(request):
+    """
+    Liste des variantes d'articles d'une boutique pour synchronisation MAUI
+    
+    Paramètres:
+    - boutique_id: ID de la boutique (requis ou via header X-Device-Serial)
+    
+    Exemple: /api/v2/simple/variantes/?boutique_id=2
+    """
+    boutique_id = request.GET.get('boutique_id')
+    
+    # Si pas de boutique_id, essayer via le numéro de série
+    if not boutique_id:
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.META.get('HTTP_X_DEVICE_SERIAL')
+        )
+        
+        if numero_serie:
+            try:
+                terminal = Client.objects.select_related('boutique').filter(
+                    numero_serie=numero_serie,
+                    est_actif=True
+                ).first()
+                
+                if terminal and terminal.boutique:
+                    boutique_id = terminal.boutique.id
+            except Exception as e:
+                logger.error(f"❌ Erreur recherche terminal: {str(e)}")
+    
+    if not boutique_id:
+        return Response({
+            'error': 'Paramètre boutique_id requis',
+            'code': 'MISSING_BOUTIQUE_ID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        
+        # Récupérer toutes les variantes actives des articles de cette boutique
+        variantes = VarianteArticle.objects.filter(
+            article_parent__boutique=boutique,
+            est_actif=True
+        ).select_related('article_parent')
+        
+        variantes_data = []
+        for variante in variantes:
+            variantes_data.append({
+                'id': variante.id,
+                'article_parent_id': variante.article_parent.id,
+                'code_barre': variante.code_barre,
+                'nom_variante': variante.nom_variante,
+                'type_attribut': variante.type_attribut,
+                'quantite_stock': variante.quantite_stock,
+                'est_actif': variante.est_actif,
+                'prix_vente': str(variante.prix_vente),
+                'devise': variante.devise,
+                'nom_complet': variante.nom_complet
+            })
+        
+        logger.info(f"🏷️ Variantes récupérées pour boutique {boutique_id}: {len(variantes_data)}")
+        
+        return Response({
+            'success': True,
+            'boutique_id': boutique.id,
+            'count': len(variantes_data),
+            'variantes': variantes_data
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur récupération variantes: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR',
+            'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

@@ -12,8 +12,8 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock
-from .forms import BoutiqueForm, ArticleForm
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle
+from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 import json
 import qrcode
 from PIL import Image
@@ -1809,8 +1809,9 @@ def exporter_ca_mensuel_pdf(request, boutique_id):
 @commercant_required
 @boutique_access_required
 def verifier_code_barre(request, boutique_id):
-    """Vérifier si un code-barres existe déjà dans la boutique"""
+    """Vérifier si un code-barres existe déjà dans la boutique (article ou variante)"""
     from django.http import JsonResponse
+    from inventory.models import VarianteArticle
     
     boutique = request.boutique
     code = request.GET.get('code', '').strip()
@@ -1818,21 +1819,201 @@ def verifier_code_barre(request, boutique_id):
     if not code:
         return JsonResponse({'existe': False})
     
+    # 1. Chercher d'abord dans les articles
     article = Article.objects.filter(code=code, boutique=boutique).first()
     
     if article:
+        # Vérifier si l'article a des variantes
+        variantes = list(article.variantes.filter(est_actif=True).values(
+            'id', 'nom_variante', 'code_barre', 'quantite_stock', 'type_attribut'
+        ))
+        
         return JsonResponse({
             'existe': True,
+            'type': 'article',
             'article': {
                 'id': article.id,
                 'nom': article.nom,
+                'code': article.code,
                 'stock': article.quantite_stock,
                 'prix': float(article.prix_vente),
-                'devise': article.devise
+                'devise': article.devise,
+                'a_variantes': len(variantes) > 0,
+                'variantes': variantes
+            }
+        })
+    
+    # 2. Sinon, chercher dans les variantes
+    variante = VarianteArticle.objects.filter(
+        code_barre=code, 
+        article_parent__boutique=boutique,
+        est_actif=True
+    ).select_related('article_parent').first()
+    
+    if variante:
+        return JsonResponse({
+            'existe': True,
+            'type': 'variante',
+            'article': {
+                'id': variante.article_parent.id,
+                'nom': variante.article_parent.nom,
+                'code': variante.article_parent.code,
+                'stock': variante.article_parent.quantite_stock,
+                'prix': float(variante.prix_vente),
+                'devise': variante.devise
+            },
+            'variante': {
+                'id': variante.id,
+                'nom': variante.nom_variante,
+                'nom_complet': variante.nom_complet,
+                'code_barre': variante.code_barre,
+                'stock': variante.quantite_stock,
+                'type_attribut': variante.type_attribut
             }
         })
     
     return JsonResponse({'existe': False})
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def modifier_article_existant(request, boutique_id):
+    """
+    Modifier un article ou une variante: ajouter du stock et/ou modifier le prix.
+    Appelé depuis le modal de recherche par code-barres.
+    """
+    from django.http import JsonResponse
+    from inventory.models import MouvementStock, VarianteArticle
+    
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Méthode non autorisée'}, status=405)
+    
+    boutique = request.boutique
+    article_id = request.POST.get('article_id')
+    variante_id = request.POST.get('variante_id')  # Nouveau paramètre
+    quantite = request.POST.get('quantite', 0)
+    prix_vente = request.POST.get('prix_vente', '')
+    
+    try:
+        quantite = int(quantite)
+    except (ValueError, TypeError):
+        quantite = 0
+    
+    try:
+        prix_vente = float(prix_vente) if prix_vente else None
+    except (ValueError, TypeError):
+        prix_vente = None
+    
+    modifications = []
+    nom_element = ""
+    
+    # === CAS 1: Modification d'une VARIANTE ===
+    if variante_id:
+        try:
+            variante = VarianteArticle.objects.select_related('article_parent').get(
+                id=variante_id, 
+                article_parent__boutique=boutique
+            )
+        except VarianteArticle.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Variante non trouvée'})
+        
+        article = variante.article_parent
+        nom_element = variante.nom_complet
+        
+        # Le prix se modifie sur l'article parent (hérité par toutes les variantes)
+        if prix_vente is not None and prix_vente > 0:
+            ancien_prix = article.prix_vente
+            if abs(float(ancien_prix) - prix_vente) > 0.01:
+                article.prix_vente = prix_vente
+                article.save()
+                modifications.append(f"Prix parent: {ancien_prix} → {prix_vente}")
+        
+        # Le stock se modifie sur la variante
+        if quantite > 0:
+            ancien_stock = variante.quantite_stock
+            variante.quantite_stock += quantite
+            variante.save()
+            modifications.append(f"Stock variante: {ancien_stock} → {variante.quantite_stock} (+{quantite})")
+            
+            # Créer un mouvement de stock (sur l'article parent pour traçabilité)
+            MouvementStock.objects.create(
+                article=article,
+                type_mouvement='ENTREE',
+                quantite=quantite,
+                stock_avant=ancien_stock,
+                stock_apres=variante.quantite_stock,
+                reference_document=f"VAR-{variante.id}-{boutique.id}",
+                commentaire=f"Ajout variante '{variante.nom_variante}' via recherche code-barres"
+            )
+        
+        if modifications:
+            return JsonResponse({
+                'success': True,
+                'message': f"Variante modifiée: {', '.join(modifications)}",
+                'variante': {
+                    'id': variante.id,
+                    'nom': variante.nom_complet,
+                    'stock': variante.quantite_stock,
+                    'prix': float(variante.prix_vente)
+                }
+            })
+        else:
+            return JsonResponse({'success': True, 'message': 'Aucune modification effectuée'})
+    
+    # === CAS 2: Modification d'un ARTICLE (sans variante) ===
+    if not article_id:
+        return JsonResponse({'success': False, 'message': 'Article non spécifié'})
+    
+    try:
+        article = Article.objects.get(id=article_id, boutique=boutique)
+    except Article.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Article non trouvé'})
+    
+    nom_element = article.nom
+    
+    # Modifier le prix si fourni et différent
+    if prix_vente is not None and prix_vente > 0:
+        ancien_prix = article.prix_vente
+        if abs(float(ancien_prix) - prix_vente) > 0.01:
+            article.prix_vente = prix_vente
+            modifications.append(f"Prix: {ancien_prix} → {prix_vente}")
+    
+    # Ajouter du stock si quantité > 0
+    if quantite > 0:
+        ancien_stock = article.quantite_stock
+        article.quantite_stock += quantite
+        modifications.append(f"Stock: {ancien_stock} → {article.quantite_stock} (+{quantite})")
+        
+        # Créer un mouvement de stock
+        MouvementStock.objects.create(
+            article=article,
+            type_mouvement='ENTREE',
+            quantite=quantite,
+            stock_avant=ancien_stock,
+            stock_apres=article.quantite_stock,
+            reference_document=f"AJOUT-{boutique.id}-{article.id}",
+            commentaire="Ajout via recherche code-barres"
+        )
+    
+    if modifications:
+        article.save()
+        return JsonResponse({
+            'success': True,
+            'message': f"Article modifié: {', '.join(modifications)}",
+            'article': {
+                'id': article.id,
+                'nom': article.nom,
+                'stock': article.quantite_stock,
+                'prix': float(article.prix_vente)
+            }
+        })
+    else:
+        return JsonResponse({
+            'success': True,
+            'message': 'Aucune modification effectuée'
+        })
+
 
 @login_required
 @commercant_required
@@ -1852,8 +2033,7 @@ def ajouter_article_boutique(request, boutique_id):
                 nom = request.POST.get('nom', '').strip()
                 prix_vente = request.POST.get('prix_vente', '')
                 prix_vente_usd = request.POST.get('prix_vente_usd', '').strip()
-                prix_achat = request.POST.get('prix_achat', '').strip()
-                prix_achat_usd = request.POST.get('prix_achat_usd', '').strip()
+                date_expiration = request.POST.get('date_expiration', '').strip()
                 quantite_stock = request.POST.get('quantite_stock', 0)
                 categorie_id = request.POST.get('categorie', '')
                 devise = request.POST.get('devise', 'CDF')
@@ -1862,10 +2042,6 @@ def ajouter_article_boutique(request, boutique_id):
                 errors = {}
                 if not nom:
                     errors['nom'] = ['Le nom est requis']
-                
-                # Au moins un prix est requis (CDF ou USD)
-                if not prix_vente and not prix_vente_usd:
-                    errors['prix_vente'] = ['Au moins un prix est requis (CDF ou USD)']
                     
                 # Si un code est fourni, vérifier s'il existe déjà
                 code = request.POST.get('code', '').strip()
@@ -1923,15 +2099,24 @@ def ajouter_article_boutique(request, boutique_id):
                 
                 # Créer l'article
                 stock_initial = int(quantite_stock) if quantite_stock else 0
+                
+                # Parser la date d'expiration si fournie
+                date_exp_parsed = None
+                if date_expiration:
+                    try:
+                        from datetime import datetime
+                        date_exp_parsed = datetime.strptime(date_expiration, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                
                 article = Article.objects.create(
                     boutique=boutique,
                     nom=nom,
                     code=code,
                     devise=devise,
-                    prix_vente=float(prix_vente) if prix_vente else 0,  # 0 si seulement USD
+                    prix_vente=float(prix_vente) if prix_vente else 0,
                     prix_vente_usd=float(prix_vente_usd) if prix_vente_usd else None,
-                    prix_achat=float(prix_achat) if prix_achat else 0,
-                    prix_achat_usd=float(prix_achat_usd) if prix_achat_usd else None,
+                    date_expiration=date_exp_parsed,
                     quantite_stock=stock_initial,
                     est_actif=True
                 )
@@ -1958,17 +2143,48 @@ def ajouter_article_boutique(request, boutique_id):
                     except Categorie.DoesNotExist:
                         pass
                 
+                # ⭐ Créer les variantes si présentes (AJAX)
+                variantes_creees = 0
+                for key in request.POST:
+                    if key.startswith('variante_code_'):
+                        idx = key.replace('variante_code_', '')
+                        code_barre_v = request.POST.get(f'variante_code_{idx}', '').strip()
+                        nom_variante = request.POST.get(f'variante_nom_{idx}', '').strip()
+                        type_attribut = request.POST.get(f'variante_type_{idx}', 'AUTRE')
+                        stock_variante = request.POST.get(f'variante_stock_{idx}', '0')
+                        
+                        if code_barre_v and nom_variante:
+                            try:
+                                stock_v = int(stock_variante) if stock_variante else 0
+                                if not VarianteArticle.objects.filter(code_barre=code_barre_v).exists():
+                                    VarianteArticle.objects.create(
+                                        article_parent=article,
+                                        code_barre=code_barre_v,
+                                        nom_variante=nom_variante,
+                                        type_attribut=type_attribut,
+                                        quantite_stock=max(0, stock_v),
+                                        est_actif=True
+                                    )
+                                    variantes_creees += 1
+                            except Exception as e:
+                                print(f"Erreur création variante: {e}")
+                
                 # Générer le code QR automatiquement
                 try:
                     generer_qr_code_article(article)
                 except Exception as e:
                     print(f"Erreur génération QR: {e}")
                 
+                msg = f'Article "{article.nom}" ajouté avec succès'
+                if variantes_creees > 0:
+                    msg += f' avec {variantes_creees} variante(s)'
+                
                 return JsonResponse({
                     'success': True, 
-                    'message': f'Article "{article.nom}" ajouté avec succès',
+                    'message': msg,
                     'article_id': article.id,
-                    'article_nom': article.nom
+                    'article_nom': article.nom,
+                    'variantes_creees': variantes_creees
                 })
                 
             except Exception as e:
@@ -2029,10 +2245,43 @@ def ajouter_article_boutique(request, boutique_id):
                     commentaire=f"Stock initial à la création de l'article"
                 )
             
+            # ⭐ Créer les variantes si présentes dans le formulaire
+            # Stock géré au niveau de chaque variante (enfant)
+            variantes_creees = 0
+            print(f"🔍 DEBUG POST keys: {list(request.POST.keys())}")
+            for key in request.POST:
+                if key.startswith('variante_code_'):
+                    idx = key.replace('variante_code_', '')
+                    code_barre = request.POST.get(f'variante_code_{idx}', '').strip()
+                    nom_variante = request.POST.get(f'variante_nom_{idx}', '').strip()
+                    type_attribut = request.POST.get(f'variante_type_{idx}', 'AUTRE')
+                    stock_variante = request.POST.get(f'variante_stock_{idx}', '0')
+                    
+                    # Valider et créer la variante avec son stock
+                    if code_barre and nom_variante:
+                        try:
+                            stock_v = int(stock_variante) if stock_variante else 0
+                            # Vérifier unicité du code-barres
+                            if not VarianteArticle.objects.filter(code_barre=code_barre).exists():
+                                VarianteArticle.objects.create(
+                                    article_parent=article,
+                                    code_barre=code_barre,
+                                    nom_variante=nom_variante,
+                                    type_attribut=type_attribut,
+                                    quantite_stock=max(0, stock_v),
+                                    est_actif=True
+                                )
+                                variantes_creees += 1
+                        except Exception as e:
+                            print(f"Erreur création variante: {e}")
+            
             # Générer le code QR automatiquement
             try:
                 generer_qr_code_article(article)
-                messages.success(request, f'Article "{article.nom}" ajouté avec succès à {boutique.nom}. Code QR généré automatiquement.')
+                msg = f'Article "{article.nom}" ajouté avec succès à {boutique.nom}.'
+                if variantes_creees > 0:
+                    msg += f' {variantes_creees} variante(s) créée(s).'
+                messages.success(request, msg)
             except Exception as e:
                 messages.warning(request, f'Article "{article.nom}" ajouté, mais erreur lors de la génération du code QR: {str(e)}')
             
@@ -2097,12 +2346,24 @@ def modifier_article_boutique(request, boutique_id, article_id):
     # Récupérer les catégories de la boutique
     categories = boutique.categories.all()
     
+    # Récupérer les variantes de cet article
+    variantes = article.variantes.all().order_by('nom_variante')
+    variante_form = VarianteArticleForm()
+    
+    # Calculer le stock total des variantes
+    stock_total_variantes = sum(v.quantite_stock for v in variantes.filter(est_actif=True))
+    
     context = {
         'form': form,
         'boutique': boutique,
         'categories': categories,
         'article': article,
-        'mode_edition': True
+        'mode_edition': True,
+        # Variantes
+        'variantes': variantes,
+        'variante_form': variante_form,
+        'stock_total_variantes': stock_total_variantes,
+        'has_variantes': variantes.exists(),
     }
     
     return render(request, 'inventory/commercant/modifier_article.html', context)
@@ -2153,6 +2414,201 @@ def bulk_delete_articles(request, boutique_id):
         return JsonResponse({'success': False, 'message': message})
     else:
         return JsonResponse({'success': True, 'message': f'{deleted_count} article(s) supprimé(s) avec succès.'})
+
+
+# ===== GESTION DES VARIANTES D'ARTICLES =====
+
+@login_required
+@commercant_required
+@boutique_access_required
+def ajouter_variante(request, boutique_id, article_id):
+    """Ajouter une variante à un article (AJAX POST)"""
+    boutique = request.boutique
+    
+    try:
+        article = Article.objects.get(id=article_id, boutique=boutique)
+    except Article.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Article introuvable.'})
+    
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Méthode non autorisée.'})
+    
+    # Récupérer les données du formulaire
+    code_barre = request.POST.get('code_barre', '').strip()
+    nom_variante = request.POST.get('nom_variante', '').strip()
+    type_attribut = request.POST.get('type_attribut', 'AUTRE')
+    quantite_stock = request.POST.get('quantite_stock', 0)
+    
+    # Validation
+    if not code_barre:
+        return JsonResponse({'success': False, 'message': 'Le code-barres est obligatoire.'})
+    if not nom_variante:
+        return JsonResponse({'success': False, 'message': 'Le nom de la variante est obligatoire.'})
+    
+    # Vérifier que le code-barres n'existe pas déjà
+    if VarianteArticle.objects.filter(code_barre=code_barre).exists():
+        return JsonResponse({'success': False, 'message': f'Le code-barres "{code_barre}" existe déjà.'})
+    
+    # Vérifier que le code-barres n'est pas utilisé par un article
+    if Article.objects.filter(code=code_barre, boutique=boutique).exists():
+        return JsonResponse({'success': False, 'message': f'Ce code-barres est déjà utilisé par un article.'})
+    
+    try:
+        quantite_stock = int(quantite_stock)
+        if quantite_stock < 0:
+            quantite_stock = 0
+    except (ValueError, TypeError):
+        quantite_stock = 0
+    
+    # Créer la variante
+    try:
+        variante = VarianteArticle.objects.create(
+            article_parent=article,
+            code_barre=code_barre,
+            nom_variante=nom_variante,
+            type_attribut=type_attribut,
+            quantite_stock=quantite_stock,
+            est_actif=True
+        )
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Variante "{nom_variante}" ajoutée avec succès.',
+            'variante': {
+                'id': variante.id,
+                'code_barre': variante.code_barre,
+                'nom_variante': variante.nom_variante,
+                'type_attribut': variante.get_type_attribut_display(),
+                'quantite_stock': variante.quantite_stock,
+                'prix_vente': float(variante.prix_vente),
+                'est_actif': variante.est_actif
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Erreur: {str(e)}'})
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def modifier_variante(request, boutique_id, article_id, variante_id):
+    """Modifier une variante d'article (AJAX POST)"""
+    boutique = request.boutique
+    
+    try:
+        article = Article.objects.get(id=article_id, boutique=boutique)
+        variante = VarianteArticle.objects.get(id=variante_id, article_parent=article)
+    except (Article.DoesNotExist, VarianteArticle.DoesNotExist):
+        return JsonResponse({'success': False, 'message': 'Variante introuvable.'})
+    
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Méthode non autorisée.'})
+    
+    # Récupérer les données
+    nom_variante = request.POST.get('nom_variante', '').strip()
+    type_attribut = request.POST.get('type_attribut', variante.type_attribut)
+    est_actif = request.POST.get('est_actif') == 'true'
+    
+    if not nom_variante:
+        return JsonResponse({'success': False, 'message': 'Le nom de la variante est obligatoire.'})
+    
+    try:
+        variante.nom_variante = nom_variante
+        variante.type_attribut = type_attribut
+        variante.est_actif = est_actif
+        variante.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Variante "{nom_variante}" modifiée avec succès.',
+            'variante': {
+                'id': variante.id,
+                'nom_variante': variante.nom_variante,
+                'type_attribut': variante.get_type_attribut_display(),
+                'est_actif': variante.est_actif
+            }
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Erreur: {str(e)}'})
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def supprimer_variante(request, boutique_id, article_id, variante_id):
+    """Supprimer une variante d'article (AJAX POST)"""
+    boutique = request.boutique
+    
+    try:
+        article = Article.objects.get(id=article_id, boutique=boutique)
+        variante = VarianteArticle.objects.get(id=variante_id, article_parent=article)
+    except (Article.DoesNotExist, VarianteArticle.DoesNotExist):
+        return JsonResponse({'success': False, 'message': 'Variante introuvable.'})
+    
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Méthode non autorisée.'})
+    
+    nom_variante = variante.nom_variante
+    try:
+        variante.delete()
+        return JsonResponse({
+            'success': True,
+            'message': f'Variante "{nom_variante}" supprimée avec succès.'
+        })
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Erreur: {str(e)}'})
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def ajuster_stock_variante(request, boutique_id, article_id, variante_id):
+    """Ajuster le stock d'une variante (AJAX POST)"""
+    boutique = request.boutique
+    
+    try:
+        article = Article.objects.get(id=article_id, boutique=boutique)
+        variante = VarianteArticle.objects.get(id=variante_id, article_parent=article)
+    except (Article.DoesNotExist, VarianteArticle.DoesNotExist):
+        return JsonResponse({'success': False, 'message': 'Variante introuvable.'})
+    
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Méthode non autorisée.'})
+    
+    try:
+        quantite = int(request.POST.get('quantite', 0))
+        operation = request.POST.get('operation', 'ajouter')  # 'ajouter' ou 'retirer'
+        
+        stock_avant = variante.quantite_stock
+        
+        if operation == 'retirer':
+            quantite = -abs(quantite)
+        else:
+            quantite = abs(quantite)
+        
+        nouveau_stock = stock_avant + quantite
+        
+        if nouveau_stock < 0:
+            return JsonResponse({
+                'success': False,
+                'message': f'Stock insuffisant. Stock actuel: {stock_avant}'
+            })
+        
+        variante.quantite_stock = nouveau_stock
+        variante.save()
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'Stock ajusté: {stock_avant} → {nouveau_stock}',
+            'stock_avant': stock_avant,
+            'stock_apres': nouveau_stock
+        })
+        
+    except (ValueError, TypeError) as e:
+        return JsonResponse({'success': False, 'message': 'Quantité invalide.'})
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Erreur: {str(e)}'})
+
 
 @login_required
 @commercant_required
