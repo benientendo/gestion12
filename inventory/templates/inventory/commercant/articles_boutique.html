@@ -1519,7 +1519,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 'X-Requested-With': 'XMLHttpRequest'
             }
         })
-        .then(response => response.json())
+        .then(response => {
+            console.log('📡 Response status:', response.status);
+            if (!response.ok) {
+                return response.text().then(text => {
+                    console.error('❌ Erreur serveur:', text);
+                    throw new Error(`Erreur serveur (${response.status}): ${text.substring(0, 200)}`);
+                });
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.success) {
                 // Supprimer les anciens messages
@@ -1604,7 +1613,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const alertDiv = document.createElement('div');
             alertDiv.className = 'alert alert-danger alert-dismissible fade show';
             alertDiv.innerHTML = `
-                <i class="fas fa-exclamation-triangle"></i> Une erreur est survenue lors de l'ajout de l'article.
+                <i class="fas fa-exclamation-triangle"></i> ${error.message || 'Une erreur est survenue lors de l\'ajout de l\'article.'}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             `;
             document.querySelector('#ajouterArticleModal .modal-body').insertBefore(
