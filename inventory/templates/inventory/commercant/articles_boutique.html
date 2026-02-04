@@ -1677,11 +1677,13 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateBulkActions() {
         const checked = document.querySelectorAll('.article-checkbox:checked');
         const count = checked.length;
-        selectedCount.textContent = count;
-        if (count > 0) {
-            bulkActions.style.display = 'block';
-        } else {
-            bulkActions.style.display = 'none';
+        if (selectedCount) selectedCount.textContent = count;
+        if (bulkActions) {
+            if (count > 0) {
+                bulkActions.style.display = 'block';
+            } else {
+                bulkActions.style.display = 'none';
+            }
         }
     }
 
@@ -1845,7 +1847,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             // Mettre à jour le compteur
-            resultCount.textContent = `${visibleCount} article(s) trouvé(s)`;
+            if (resultCount) resultCount.textContent = `${visibleCount} article(s) trouvé(s)`;
             
             // Afficher un message si aucun résultat
             const noResultRow = tableBody.querySelector('.no-result-row');
@@ -1909,15 +1911,15 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Afficher ou masquer le bouton d'ajout
         if (matches.length === 0) {
-            actionAddArticle.style.display = 'block';
-            searchTermDisplay.textContent = searchTerm;
-            quickResults.style.display = 'none';
+            if (actionAddArticle) actionAddArticle.style.display = 'block';
+            if (searchTermDisplay) searchTermDisplay.textContent = searchTerm;
+            if (quickResults) quickResults.style.display = 'none';
         } else {
-            actionAddArticle.style.display = 'none';
-            quickResults.style.display = 'block';
+            if (actionAddArticle) actionAddArticle.style.display = 'none';
+            if (quickResults) quickResults.style.display = 'block';
             
             // Construire la liste des résultats rapides
-            quickResultsList.innerHTML = matches.map((article, index) => `
+            if (quickResultsList) quickResultsList.innerHTML = matches.map((article, index) => `
                 <div class="quick-result-item">
                     <div class="result-name">${article.nom}</div>
                     <div class="result-info">
