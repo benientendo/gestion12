@@ -2236,6 +2236,17 @@ document.addEventListener('DOMContentLoaded', function() {
         prixModifiableInput.value = '';
         document.getElementById('prixModifieAlert').style.display = 'none';
         document.getElementById('varianteTrouveId').value = '';
+        
+        // Réinitialiser la visibilité du champ prix
+        const prixCol = document.getElementById('prixModifiable').closest('.col-6, .col-12');
+        if (prixCol) {
+            prixCol.style.display = 'block';
+            prixCol.className = 'col-6';
+        }
+        const qteCol = document.getElementById('quantiteAjout').closest('.col-6, .col-12');
+        if (qteCol) {
+            qteCol.className = 'col-6';
+        }
     }
     
     function rechercherArticle() {
@@ -2291,6 +2302,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     varianteInfoSection.style.display = 'block';
                     selecteurVariantesSection.style.display = 'none';
+                    
+                    // Masquer le champ prix pour les variantes (prix hérité du parent)
+                    document.getElementById('prixModifiable').closest('.col-6').style.display = 'none';
+                    document.getElementById('quantiteAjout').closest('.col-6').classList.replace('col-6', 'col-12');
                 }
                 // === CAS 2: Article avec variantes (proposer sélection) ===
                 else if (data.type === 'article' && data.article.a_variantes && data.article.variantes.length > 0) {
@@ -2316,6 +2331,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     stockCourant = data.article.stock;
                     varianteInfoSection.style.display = 'none';
                     selecteurVariantesSection.style.display = 'none';
+                    
+                    // Afficher le champ prix pour les articles simples
+                    document.getElementById('prixModifiable').closest('.col-6').style.display = 'block';
+                    document.getElementById('quantiteAjout').closest('.col-12, .col-6').classList.replace('col-12', 'col-6');
                 }
                 
                 // Aperçu stock
