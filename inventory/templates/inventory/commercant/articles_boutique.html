@@ -749,10 +749,13 @@
                 
                 <!-- Article non trouvé -->
                 <div id="articleNonTrouveSection" style="display: none;">
-                    <div class="alert alert-danger">
-                        <i class="fas fa-times-circle"></i> 
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i> 
                         <strong>Article non trouvé</strong>
                         <div class="small" id="articleNonTrouveMsg">Aucun article avec ce code-barres.</div>
+                        <button type="button" class="btn btn-success btn-sm mt-2" id="btnCreerArticleNonTrouve">
+                            <i class="fas fa-plus-circle"></i> Créer cet article
+                        </button>
                     </div>
                 </div>
             </div>
@@ -2381,6 +2384,36 @@ document.addEventListener('DOMContentLoaded', function() {
             rechercherArticle();
         }
     });
+    
+    // Bouton pour créer un article non trouvé
+    const btnCreerArticleNonTrouve = document.getElementById('btnCreerArticleNonTrouve');
+    if (btnCreerArticleNonTrouve) {
+        btnCreerArticleNonTrouve.addEventListener('click', function() {
+            const codeBarreRecherche = rechercheCodeBarreInput.value.trim();
+            
+            // Fermer le modal de recherche
+            const rechercheModal = bootstrap.Modal.getInstance(document.getElementById('rechercheArticleModal'));
+            if (rechercheModal) rechercheModal.hide();
+            
+            // Ouvrir le modal d'ajout après fermeture
+            setTimeout(() => {
+                const ajouterModal = new bootstrap.Modal(document.getElementById('ajouterArticleModal'));
+                ajouterModal.show();
+                
+                // Pré-remplir le code-barres
+                const codeBarreInput = document.getElementById('code_barre');
+                if (codeBarreInput && codeBarreRecherche) {
+                    codeBarreInput.value = codeBarreRecherche;
+                }
+                
+                // Focus sur le nom de l'article
+                setTimeout(() => {
+                    const nomInput = document.getElementById('nom');
+                    if (nomInput) nomInput.focus();
+                }, 100);
+            }, 300);
+        });
+    }
     
     quantiteAjoutInput.addEventListener('input', updateApercuStock);
     prixModifiableInput.addEventListener('input', checkPrixModifie);
