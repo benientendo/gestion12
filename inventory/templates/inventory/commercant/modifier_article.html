@@ -33,15 +33,26 @@
                             {{ form.nom }}
                         </div>
 
-                        <!-- Prix et Devise sur une ligne -->
+                        <!-- Prix et Devise -->
                         <div class="row">
-                            <div class="col-8 mb-3">
+                            <div class="col-6 mb-3">
                                 <label class="form-label small fw-bold">Prix de vente *</label>
                                 <div class="input-group">
                                     <span class="input-group-text" id="symbol_prix_vente">{% if article.devise == 'USD' %}${% else %}FC{% endif %}</span>
                                     {{ form.prix_vente }}
                                 </div>
                             </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label small fw-bold">Prix d'achat</label>
+                                <div class="input-group">
+                                    <span class="input-group-text" id="symbol_prix_achat">{% if article.devise == 'USD' %}${% else %}FC{% endif %}</span>
+                                    <input type="number" class="form-control" name="prix_achat" id="prix_achat" min="0" step="0.01" value="{{ article.prix_achat|default:'' }}">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Devise, Stock, Catégorie -->
+                        <div class="row">
                             <div class="col-4 mb-3">
                                 <label class="form-label small fw-bold">Devise</label>
                                 <select class="form-select" id="devise" name="devise" onchange="updateSymbol()">
@@ -49,15 +60,11 @@
                                     <option value="USD" {% if article.devise == 'USD' %}selected{% endif %}>USD</option>
                                 </select>
                             </div>
-                        </div>
-
-                        <!-- Stock et Catégorie -->
-                        <div class="row">
-                            <div class="col-6 mb-3">
+                            <div class="col-4 mb-3">
                                 <label class="form-label small fw-bold">Stock</label>
                                 {{ form.quantite_stock }}
                             </div>
-                            <div class="col-6 mb-3">
+                            <div class="col-4 mb-3">
                                 <label class="form-label small fw-bold">Catégorie</label>
                                 {{ form.categorie }}
                             </div>
@@ -201,8 +208,11 @@
 <script>
 function updateSymbol() {
     const devise = document.getElementById('devise').value;
-    const symbol = document.getElementById('symbol_prix_vente');
-    if (symbol) symbol.textContent = devise === 'CDF' ? 'FC' : '$';
+    const symbol = devise === 'CDF' ? 'FC' : '$';
+    const symbolVente = document.getElementById('symbol_prix_vente');
+    const symbolAchat = document.getElementById('symbol_prix_achat');
+    if (symbolVente) symbolVente.textContent = symbol;
+    if (symbolAchat) symbolAchat.textContent = symbol;
 }
 
 // ===== GESTION DES VARIANTES =====
