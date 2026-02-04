@@ -1,164 +1,91 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
 
-{% block title %}Modifier Article - {{ boutique.nom }}{% endblock %}
+{% block title %}Modifier - {{ article.nom }}{% endblock %}
 
 {% block content %}
-<div class="container-fluid">
-    <!-- En-tête -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h1><i class="fas fa-edit"></i> Modifier l'Article</h1>
-                    <p class="text-muted">Boutique : {{ boutique.nom }} - {{ boutique.ville }}</p>
-                </div>
-                <div>
-                    <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-outline-secondary me-2">
-                        <i class="fas fa-arrow-left"></i> Retour à la Liste
-                    </a>
-                </div>
-            </div>
+<div class="container py-3">
+    <!-- En-tête compact -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h5 class="mb-0"><i class="fas fa-edit text-warning"></i> {{ article.nom }}</h5>
+            <small class="text-muted">Code: {{ article.code }}</small>
         </div>
+        <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left"></i> Retour
+        </a>
     </div>
 
     <div class="row">
-        <div class="col-md-8">
-            <!-- Formulaire de modification d'article -->
+        <div class="col-lg-6">
+            <!-- Formulaire simplifié -->
             <div class="card">
-                <div class="card-header bg-warning text-white">
-                    <h5><i class="fas fa-box"></i> Informations de l'Article</h5>
+                <div class="card-header bg-warning text-white py-2">
+                    <h6 class="mb-0"><i class="fas fa-box"></i> Informations</h6>
                 </div>
                 <div class="card-body">
                     <form method="post" enctype="multipart/form-data">
                         {% csrf_token %}
                         
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label for="{{ form.nom.id_for_label }}" class="form-label">
-                                    <i class="fas fa-tag"></i> Nom de l'article *
-                                </label>
-                                {{ form.nom }}
-                            </div>
+                        <!-- Nom -->
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Nom *</label>
+                            {{ form.nom }}
                         </div>
 
-                        <!-- Sélection de la devise -->
+                        <!-- Prix et Devise sur une ligne -->
                         <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="devise" class="form-label">
-                                    <i class="fas fa-coins"></i> Devise principale *
-                                </label>
-                                <select class="form-select" id="devise" name="devise" onchange="updatePrixLabels()">
-                                    <option value="CDF" {% if article.devise == 'CDF' %}selected{% endif %}>CDF (Franc Congolais)</option>
-                                    <option value="USD" {% if article.devise == 'USD' %}selected{% endif %}>USD (Dollar US)</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.categorie.id_for_label }}" class="form-label">
-                                    <i class="fas fa-folder"></i> Catégorie
-                                </label>
-                                {{ form.categorie }}
-                            </div>
-                        </div>
-
-                        <!-- Prix de vente et d'achat -->
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.prix_vente.id_for_label }}" class="form-label" id="label_prix_vente">
-                                    <i class="fas fa-money-bill"></i> Prix de vente <span id="devise_prix_vente">({% if article.devise == 'USD' %}USD{% else %}CDF{% endif %})</span> *
-                                </label>
+                            <div class="col-8 mb-3">
+                                <label class="form-label small fw-bold">Prix de vente *</label>
                                 <div class="input-group">
                                     <span class="input-group-text" id="symbol_prix_vente">{% if article.devise == 'USD' %}${% else %}FC{% endif %}</span>
                                     {{ form.prix_vente }}
                                 </div>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="prix_achat" class="form-label" id="label_prix_achat">
-                                    <i class="fas fa-shopping-cart"></i> Prix d'achat <span id="devise_prix_achat">({% if article.devise == 'USD' %}USD{% else %}CDF{% endif %})</span>
-                                </label>
-                                <div class="input-group">
-                                    <span class="input-group-text" id="symbol_prix_achat">{% if article.devise == 'USD' %}${% else %}FC{% endif %}</span>
-                                    <input type="number" class="form-control" name="prix_achat" id="prix_achat" min="0" step="0.01" value="{{ article.prix_achat|default:'' }}">
-                                </div>
+                            <div class="col-4 mb-3">
+                                <label class="form-label small fw-bold">Devise</label>
+                                <select class="form-select" id="devise" name="devise" onchange="updateSymbol()">
+                                    <option value="CDF" {% if article.devise == 'CDF' %}selected{% endif %}>CDF</option>
+                                    <option value="USD" {% if article.devise == 'USD' %}selected{% endif %}>USD</option>
+                                </select>
                             </div>
                         </div>
 
-                        <!-- Prix dans l'autre devise (optionnel) -->
-                        <div class="row" id="prix_autre_devise_container">
-                            <div class="col-md-6 mb-3">
-                                <label for="prix_vente_autre" class="form-label text-muted" id="label_prix_vente_autre">
-                                    <i class="fas fa-exchange-alt"></i> Prix de vente <span id="devise_autre_vente">({% if article.devise == 'USD' %}CDF{% else %}USD{% endif %})</span> <small>(optionnel)</small>
-                                </label>
-                                <div class="input-group">
-                                    <span class="input-group-text" id="symbol_autre_vente">{% if article.devise == 'USD' %}FC{% else %}${% endif %}</span>
-                                    <input type="number" class="form-control" name="prix_vente_usd" id="prix_vente_autre" min="0" step="0.01" value="{{ article.prix_vente_usd|default:'' }}">
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="prix_achat_autre" class="form-label text-muted" id="label_prix_achat_autre">
-                                    <i class="fas fa-exchange-alt"></i> Prix d'achat <span id="devise_autre_achat">({% if article.devise == 'USD' %}CDF{% else %}USD{% endif %})</span> <small>(optionnel)</small>
-                                </label>
-                                <div class="input-group">
-                                    <span class="input-group-text" id="symbol_autre_achat">{% if article.devise == 'USD' %}FC{% else %}${% endif %}</span>
-                                    <input type="number" class="form-control" name="prix_achat_usd" id="prix_achat_autre" min="0" step="0.01" value="{{ article.prix_achat_usd|default:'' }}">
-                                </div>
-                            </div>
-                        </div>
-
+                        <!-- Stock et Catégorie -->
                         <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.quantite_stock.id_for_label }}" class="form-label">
-                                    <i class="fas fa-boxes"></i> Quantité en stock
-                                </label>
+                            <div class="col-6 mb-3">
+                                <label class="form-label small fw-bold">Stock</label>
                                 {{ form.quantite_stock }}
                             </div>
+                            <div class="col-6 mb-3">
+                                <label class="form-label small fw-bold">Catégorie</label>
+                                {{ form.categorie }}
+                            </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label for="{{ form.description.id_for_label }}" class="form-label">
-                                <i class="fas fa-align-left"></i> Description
+                        <!-- Actif -->
+                        <div class="form-check mb-3">
+                            {{ form.est_actif }}
+                            <label class="form-check-label small" for="{{ form.est_actif.id_for_label }}">
+                                Article actif
                             </label>
-                            {{ form.description }}
                         </div>
 
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                {% if article.image %}
-                                <label class="form-label">
-                                    <i class="fas fa-image"></i> Image actuelle
-                                </label>
-                                <div class="mt-2">
-                                    <img src="{{ article.image.url }}" alt="{{ article.nom }}" class="img-thumbnail mt-1" style="max-width: 150px;">
-                                </div>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <div class="form-check mt-4">
-                                    {{ form.est_actif }}
-                                    <label class="form-check-label" for="{{ form.est_actif.id_for_label }}">
-                                        Article actif (visible dans la boutique)
-                                    </label>
-                                </div>
-                                {% if article.qr_code %}
-                                <div class="mt-3">
-                                    <small class="text-muted">QR Code actuel:</small><br>
-                                    <img src="{{ article.qr_code.url }}" alt="QR Code" class="img-thumbnail mt-1" style="max-width: 100px;">
-                                </div>
-                                {% endif %}
-                            </div>
-                        </div>
-
-                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                            <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-secondary me-md-2">
-                                <i class="fas fa-times"></i> Annuler
+                        <!-- Boutons -->
+                        <div class="d-flex gap-2">
+                            <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-secondary">
+                                Annuler
                             </a>
-                            <button type="submit" class="btn btn-warning">
-                                <i class="fas fa-save"></i> Enregistrer les Modifications
+                            <button type="submit" class="btn btn-warning flex-grow-1">
+                                <i class="fas fa-save"></i> Enregistrer
                             </button>
                         </div>
                     </form>
                 </div>
             </div>
+        </div>
+
+        <div class="col-lg-6 mt-3 mt-lg-0">
 
             <!-- ===== SECTION VARIANTES ===== -->
             <div class="card mt-4">
@@ -242,79 +169,6 @@
             <!-- FIN SECTION VARIANTES -->
 
         </div>
-
-        <div class="col-md-4">
-            <!-- Informations article actuel -->
-            <div class="card mb-4 border-warning">
-                <div class="card-header bg-warning text-white">
-                    <h5><i class="fas fa-info-circle"></i> Article en Modification</h5>
-                </div>
-                <div class="card-body">
-                    <div class="mb-2">
-                        <strong>Nom actuel:</strong><br>
-                        <span class="text-muted">{{ article.nom }}</span>
-                    </div>
-                    <div class="mb-2">
-                        <strong>Code:</strong><br>
-                        <code>{{ article.code }}</code>
-                    </div>
-                    <div class="mb-2">
-                        <strong>Prix de vente:</strong><br>
-                        <span class="text-success">
-                            {% if article.devise == 'USD' %}
-                            $ {{ article.prix_vente|floatformat:2 }}
-                            {% else %}
-                            {{ article.prix_vente|floatformat:0 }} FC
-                            {% endif %}
-                        </span>
-                        {% if article.prix_vente_usd and article.devise == 'CDF' %}
-                        <br><small class="text-muted">≈ $ {{ article.prix_vente_usd|floatformat:2 }}</small>
-                        {% endif %}
-                    </div>
-                    <div class="mb-2">
-                        <strong>Stock actuel:</strong><br>
-                        <span class="badge bg-info">{{ article.quantite_stock }} unités</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Informations boutique -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5><i class="fas fa-store"></i> Boutique</h5>
-                </div>
-                <div class="card-body">
-                    <div class="mb-2">
-                        <strong>Nom:</strong><br>
-                        <span class="text-muted">{{ boutique.nom }}</span>
-                    </div>
-                    <div class="mb-2">
-                        <strong>Type:</strong><br>
-                        <span class="badge bg-primary">{{ boutique.get_type_commerce_display }}</span>
-                    </div>
-                    <div class="mb-2">
-                        <strong>Localisation:</strong><br>
-                        <span class="text-muted">{{ boutique.ville }}</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Catégories disponibles -->
-            <div class="card">
-                <div class="card-header">
-                    <h5><i class="fas fa-tags"></i> Catégories Disponibles</h5>
-                </div>
-                <div class="card-body">
-                    {% if categories %}
-                        {% for categorie in categories %}
-                        <span class="badge bg-info me-1 mb-1">{{ categorie.nom }}</span>
-                        {% endfor %}
-                    {% else %}
-                        <p class="text-muted mb-0">Aucune catégorie créée</p>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
     </div>
 </div>
 
@@ -345,37 +199,11 @@
 </style>
 
 <script>
-function updatePrixLabels() {
+function updateSymbol() {
     const devise = document.getElementById('devise').value;
-    const isCDF = devise === 'CDF';
-    
-    // Labels et symboles principaux
-    document.getElementById('devise_prix_vente').textContent = isCDF ? '(CDF)' : '(USD)';
-    document.getElementById('devise_prix_achat').textContent = isCDF ? '(CDF)' : '(USD)';
-    document.getElementById('symbol_prix_vente').textContent = isCDF ? 'FC' : '$';
-    document.getElementById('symbol_prix_achat').textContent = isCDF ? 'FC' : '$';
-    
-    // Labels et symboles de l'autre devise
-    document.getElementById('devise_autre_vente').textContent = isCDF ? '(USD)' : '(CDF)';
-    document.getElementById('devise_autre_achat').textContent = isCDF ? '(USD)' : '(CDF)';
-    document.getElementById('symbol_autre_vente').textContent = isCDF ? '$' : 'FC';
-    document.getElementById('symbol_autre_achat').textContent = isCDF ? '$' : 'FC';
-    
-    // Mettre à jour les noms des champs pour l'autre devise
-    const prixVenteAutre = document.getElementById('prix_vente_autre');
-    const prixAchatAutre = document.getElementById('prix_achat_autre');
-    prixVenteAutre.name = isCDF ? 'prix_vente_usd' : 'prix_vente_cdf';
-    prixAchatAutre.name = isCDF ? 'prix_achat_usd' : 'prix_achat_cdf';
-    
-    // Highlight visuel
-    const prixPrincipalContainer = document.querySelector('#label_prix_vente').closest('.col-md-6');
-    if (prixPrincipalContainer) {
-        prixPrincipalContainer.classList.add('devise-highlight');
-    }
+    const symbol = document.getElementById('symbol_prix_vente');
+    if (symbol) symbol.textContent = devise === 'CDF' ? 'FC' : '$';
 }
-
-// Initialiser au chargement
-document.addEventListener('DOMContentLoaded', updatePrixLabels);
 
 // ===== GESTION DES VARIANTES =====
 
