@@ -1843,7 +1843,7 @@ def verifier_code_barre(request, boutique_id):
             }
         })
     
-    # 2. Sinon, chercher dans les variantes
+    # 2. Sinon, chercher dans les variantes → toujours retourner le PARENT
     variante = VarianteArticle.objects.filter(
         code_barre=code, 
         article_parent__boutique=boutique,
@@ -1851,23 +1851,26 @@ def verifier_code_barre(request, boutique_id):
     ).select_related('article_parent').first()
     
     if variante:
+        parent = variante.article_parent
+        # Toujours utiliser le stock du PARENT (pas de la variante)
         return JsonResponse({
             'existe': True,
             'type': 'variante',
             'article': {
-                'id': variante.article_parent.id,
-                'nom': variante.article_parent.nom,
-                'code': variante.article_parent.code,
-                'stock': variante.article_parent.quantite_stock,
-                'prix': float(variante.prix_vente),
-                'devise': variante.devise
+                'id': parent.id,
+                'nom': parent.nom,
+                'code': parent.code,
+                'stock': parent.quantite_stock,  # Stock PARENT
+                'prix': float(parent.prix_vente or 0),
+                'devise': parent.devise,
+                'a_variantes': parent.variantes.filter(est_actif=True).exists()
             },
             'variante': {
                 'id': variante.id,
                 'nom': variante.nom_variante,
                 'nom_complet': variante.nom_complet,
                 'code_barre': variante.code_barre,
-                'stock': variante.quantite_stock,
+                'stock': parent.quantite_stock,  # Stock PARENT (pas variante)
                 'type_attribut': variante.type_attribut
             }
         })
@@ -1908,7 +1911,7 @@ def modifier_article_existant(request, boutique_id):
     modifications = []
     nom_element = ""
     
-    # === CAS 1: Modification d'une VARIANTE ===
+    # === CAS 1: Modification d'une VARIANTE → Stock toujours sur le PARENT ===
     if variante_id:
         try:
             variante = VarianteArticle.objects.select_related('article_parent').get(
@@ -1927,35 +1930,35 @@ def modifier_article_existant(request, boutique_id):
             if abs(ancien_prix - prix_vente) > Decimal('0.01'):
                 article.prix_vente = prix_vente
                 article.save()
-                modifications.append(f"Prix parent: {ancien_prix} → {prix_vente}")
+                modifications.append(f"Prix: {ancien_prix} → {prix_vente}")
         
-        # Le stock se modifie sur la variante
+        # Le stock se modifie sur le PARENT (pas la variante)
         if quantite > 0:
-            ancien_stock = variante.quantite_stock
-            variante.quantite_stock += quantite
-            variante.save()
-            modifications.append(f"Stock variante: {ancien_stock} → {variante.quantite_stock} (+{quantite})")
+            ancien_stock = article.quantite_stock
+            article.quantite_stock += quantite
+            article.save()
+            modifications.append(f"Stock: {ancien_stock} → {article.quantite_stock} (+{quantite})")
             
-            # Créer un mouvement de stock (sur l'article parent pour traçabilité)
+            # Créer un mouvement de stock sur l'article parent
             MouvementStock.objects.create(
                 article=article,
                 type_mouvement='ENTREE',
                 quantite=quantite,
                 stock_avant=ancien_stock,
-                stock_apres=variante.quantite_stock,
+                stock_apres=article.quantite_stock,
                 reference_document=f"VAR-{variante.id}-{boutique.id}",
-                commentaire=f"Ajout variante '{variante.nom_variante}' via recherche code-barres"
+                commentaire=f"Ajout via variante '{variante.nom_variante}'"
             )
         
         if modifications:
             return JsonResponse({
                 'success': True,
-                'message': f"Variante modifiée: {', '.join(modifications)}",
-                'variante': {
-                    'id': variante.id,
-                    'nom': variante.nom_complet,
-                    'stock': variante.quantite_stock,
-                    'prix': float(variante.prix_vente)
+                'message': f"Modifié ({variante.nom_variante}): {', '.join(modifications)}",
+                'article': {
+                    'id': article.id,
+                    'nom': article.nom,
+                    'stock': article.quantite_stock,
+                    'prix': float(article.prix_vente or 0)
                 }
             })
         else:

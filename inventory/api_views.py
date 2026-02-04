@@ -949,12 +949,21 @@ def recherche_par_code_barre(request):
     variante = variante_query.select_related('article_parent', 'article_parent__categorie').first()
     
     if variante:
-        logger.info(f"✅ Variante trouvée: {variante.nom_complet}")
+        parent = variante.article_parent
+        logger.info(f"✅ Variante trouvée: {variante.nom_complet} → Parent: {parent.nom}")
+        # Toujours retourner l'article parent comme référence principale
+        # Le stock est TOUJOURS celui du parent
         return Response({
             'found': True,
             'type': 'variante',
-            'data': VarianteArticleSerializer(variante, context={'request': request}).data,
-            'article_parent': ArticleSerializer(variante.article_parent, context={'request': request}).data
+            'data': ArticleSerializer(parent, context={'request': request}).data,  # Retourner le PARENT
+            'article_parent': ArticleSerializer(parent, context={'request': request}).data,
+            'variante_info': {
+                'id': variante.id,
+                'nom_variante': variante.nom_variante,
+                'code_barre': variante.code_barre,
+                'nom_complet': variante.nom_complet
+            }
         })
     
     # 2. Chercher dans les articles (code principal)
