@@ -2303,9 +2303,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     varianteInfoSection.style.display = 'block';
                     selecteurVariantesSection.style.display = 'none';
                     
-                    // Masquer le champ prix pour les variantes (prix hérité du parent)
-                    document.getElementById('prixModifiable').closest('.col-6').style.display = 'none';
-                    document.getElementById('quantiteAjout').closest('.col-6').classList.replace('col-6', 'col-12');
+                    // Masquer le champ prix pour les variantes SEULEMENT si le parent a un prix
+                    if (prixOriginalRecherche > 0) {
+                        document.getElementById('prixModifiable').closest('.col-6').style.display = 'none';
+                        document.getElementById('quantiteAjout').closest('.col-6').classList.replace('col-6', 'col-12');
+                    } else {
+                        // Afficher le champ prix si le parent n'a pas de prix
+                        document.getElementById('prixModifiable').closest('.col-6, .col-12').style.display = 'block';
+                        document.getElementById('prixModifiable').closest('.col-6, .col-12').className = 'col-6';
+                        document.getElementById('quantiteAjout').closest('.col-6, .col-12').className = 'col-6';
+                    }
                 }
                 // === CAS 2: Article avec variantes (proposer sélection) ===
                 else if (data.type === 'article' && data.article.a_variantes && data.article.variantes.length > 0) {
