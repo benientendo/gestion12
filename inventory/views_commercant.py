@@ -2711,13 +2711,13 @@ def modifier_prix_article(request, boutique_id, article_id):
         try:
             article = Article.objects.get(id=article_id, boutique=boutique)
             
-            nouveau_prix = float(request.POST.get('prix_vente', 0))
+            nouveau_prix = Decimal(str(request.POST.get('prix_vente', 0) or 0))
             commentaire = request.POST.get('commentaire', '')
             
             if nouveau_prix < 0:
                 return JsonResponse({'success': False, 'message': 'Le prix ne peut pas être négatif'})
             
-            ancien_prix = article.prix_vente
+            ancien_prix = article.prix_vente or Decimal('0')
             article.prix_vente = nouveau_prix
             article.save()
             
