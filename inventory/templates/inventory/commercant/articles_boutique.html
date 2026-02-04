@@ -458,12 +458,12 @@
                         }
                         
                         // Mise à jour des labels de devise
-                        document.getElementById('devisePrixVente').textContent = isCDF ? '(CDF)' : '(USD)';
-                        document.getElementById('devisePrixAchat').textContent = isCDF ? '(CDF)' : '(USD)';
+                        const devisePrixVente = document.getElementById('devisePrixVente');
+                        if (devisePrixVente) devisePrixVente.textContent = isCDF ? '(CDF)' : '(USD)';
                         
                         // Mise à jour des symboles
-                        document.getElementById('symbolePrixVente').textContent = isCDF ? 'FC' : '$';
-                        document.getElementById('symbolePrixAchat').textContent = isCDF ? 'FC' : '$';
+                        const symbolePrixVente = document.getElementById('symbolePrixVente');
+                        if (symbolePrixVente) symbolePrixVente.textContent = isCDF ? 'FC' : '$';
                         
                         // Highlight visuel du container
                         const prixVenteContainer = document.getElementById('prixVenteContainer');
