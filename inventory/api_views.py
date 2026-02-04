@@ -365,6 +365,7 @@ def _post_process_vente_stock_async(vente_id):
         for ligne in vente.lignes.all():
             try:
                 with transaction.atomic():
+                    # ⭐ TOUJOURS décrémenter le stock de l'article PARENT (même pour les variantes)
                     article = Article.objects.select_for_update().get(id=ligne.article_id)
                     stock_avant = int(article.quantite_stock or 0)
                     quantite = int(ligne.quantite or 0)
@@ -377,6 +378,17 @@ def _post_process_vente_stock_async(vente_id):
 
                     article.quantite_stock = stock_apres
                     article.save(update_fields=['quantite_stock'])
+                    
+                    # Info variante pour le commentaire
+                    variante_info = ""
+                    variante_id = getattr(ligne, 'variante_id', None)
+                    if variante_id:
+                        from inventory.models import VarianteArticle
+                        try:
+                            variante = VarianteArticle.objects.get(id=variante_id)
+                            variante_info = f" (variante: {variante.nom_variante})"
+                        except VarianteArticle.DoesNotExist:
+                            pass
 
                     try:
                         MouvementStock.objects.create(
@@ -387,10 +399,12 @@ def _post_process_vente_stock_async(vente_id):
                             stock_apres=stock_apres,
                             reference_document=vente.numero_facture,
                             utilisateur=utilisateur,
-                            commentaire=f"SYNC_VENTE_OFFLINE (anomalie_stock={anomalie_stock})",
+                            commentaire=f"SYNC_VENTE_OFFLINE{variante_info} (anomalie_stock={anomalie_stock})",
                         )
                     except Exception as e:
                         logger.warning(f"Impossible de créer mouvement de stock pour vente {vente.numero_facture}: {e}")
+
+                    logger.info(f"📦 Stock PARENT {article.nom}{variante_info}: {stock_avant} → {stock_apres}")
 
                     if anomalie_stock:
                         logger.warning(
@@ -478,6 +492,8 @@ def sync_ventes_batch(request):
                     article_id = (item or {}).get('article_id')
                     quantite = (item or {}).get('quantite', 1)
                     prix_unitaire_raw = (item or {}).get('prix_unitaire')
+                    # ⭐ Récupérer l'ID de la variante si présent
+                    variante_id = (item or {}).get('variante_id') or (item or {}).get('variante_id_backend')
 
                     if article_id is None or prix_unitaire_raw is None:
                         raise ValueError('ITEM_INVALID')
@@ -485,6 +501,8 @@ def sync_ventes_batch(request):
                     try:
                         article_id = int(article_id)
                         quantite = int(quantite)
+                        if variante_id:
+                            variante_id = int(variante_id)
                     except (ValueError, TypeError):
                         raise ValueError('ITEM_INVALID')
 
@@ -506,10 +524,21 @@ def sync_ventes_batch(request):
 
                     if prix_unitaire != article.prix_vente:
                         raise ValueError('PRIX_ARTICLE_MODIFIE')
+                    
+                    # ⭐ Vérifier que la variante existe et appartient à l'article
+                    variante_obj = None
+                    if variante_id:
+                        from inventory.models import VarianteArticle
+                        variante_obj = VarianteArticle.objects.filter(
+                            id=variante_id, 
+                            article_parent=article,
+                            est_actif=True
+                        ).first()
 
                     expected_total += (prix_unitaire * quantite)
                     lignes_to_create.append({
                         'article': article,
+                        'variante': variante_obj,  # ⭐ Inclure la variante
                         'quantite': quantite,
                         'prix_unitaire': prix_unitaire,
                     })
@@ -538,6 +567,7 @@ def sync_ventes_batch(request):
                     LigneVente(
                         vente=vente,
                         article=ligne['article'],
+                        variante=ligne.get('variante'),  # ⭐ Inclure la variante
                         quantite=ligne['quantite'],
                         prix_unitaire=ligne['prix_unitaire'],
                     ) for ligne in lignes_to_create
@@ -951,13 +981,23 @@ def recherche_par_code_barre(request):
     if variante:
         parent = variante.article_parent
         logger.info(f"✅ Variante trouvée: {variante.nom_complet} → Parent: {parent.nom}")
-        # Toujours retourner l'article parent comme référence principale
-        # Le stock est TOUJOURS celui du parent
+        
+        # ⭐ SOMME de toutes les quantités des variantes actives
+        from django.db.models import Sum
+        total_stock_variantes = parent.variantes.filter(est_actif=True).aggregate(
+            total=Sum('quantite_stock')
+        )['total'] or 0
+        
+        # Retourner l'article parent avec la SOMME des stocks variantes
+        parent_data = ArticleSerializer(parent, context={'request': request}).data
+        parent_data['quantite_stock'] = total_stock_variantes  # Remplacer par la somme
+        
         return Response({
             'found': True,
             'type': 'variante',
-            'data': ArticleSerializer(parent, context={'request': request}).data,  # Retourner le PARENT
-            'article_parent': ArticleSerializer(parent, context={'request': request}).data,
+            'data': parent_data,
+            'article_parent': parent_data,
+            'total_stock_variantes': total_stock_variantes,
             'variante_info': {
                 'id': variante.id,
                 'nom_variante': variante.nom_variante,

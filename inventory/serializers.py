@@ -18,6 +18,9 @@ class ArticleSerializer(serializers.ModelSerializer):
     qr_code_url = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
     full_details = serializers.SerializerMethodField()
+    # ⭐ Stock effectif: somme variantes si article a variantes, sinon stock article
+    quantite_stock = serializers.SerializerMethodField()
+    has_variantes = serializers.SerializerMethodField()
 
     class Meta:
         model = Article
@@ -25,16 +28,29 @@ class ArticleSerializer(serializers.ModelSerializer):
             'id', 'code', 'nom', 'description', 'devise', 'prix_vente', 'prix_achat',
             'prix_vente_usd', 'prix_achat_usd',
             'categorie_id', 'categorie_nom', 'quantite_stock', 'qr_code_url', 'image_url',
-            'full_details'
+            'full_details', 'has_variantes'
         ]
+    
+    def get_has_variantes(self, obj):
+        """Vérifie si l'article a des variantes actives."""
+        return obj.variantes.filter(est_actif=True).exists()
+    
+    def get_quantite_stock(self, obj):
+        """⭐ Retourne la SOMME des stocks variantes si article a variantes, sinon stock article."""
+        variantes_actives = obj.variantes.filter(est_actif=True)
+        if variantes_actives.exists():
+            return sum(v.quantite_stock for v in variantes_actives)
+        return obj.quantite_stock
     
     def get_full_details(self, obj):
         import logging
         logger = logging.getLogger(__name__)
+        # ⭐ Utiliser le stock effectif (somme variantes ou stock article)
+        stock_effectif = self.get_quantite_stock(obj)
         details = {
             'nom_complet': f"{obj.nom} ({obj.code})",
             'prix_vente_formate': f"{obj.prix_vente:.2f} €",
-            'stock_disponible': obj.quantite_stock,
+            'stock_disponible': stock_effectif,
             'categorie': obj.categorie.nom if obj.categorie else 'Non catégorisé'
         }
         logger.debug(f'Détails complets de l\'article : {details}')

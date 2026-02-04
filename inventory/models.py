@@ -181,8 +181,8 @@ class Article(models.Model):
     
     @property
     def a_variantes(self):
-        """Retourne True si l'article a des variantes"""
-        return self.variantes.exists()
+        """Retourne True si l'article a des variantes ACTIVES"""
+        return self.variantes.filter(est_actif=True).exists()
     
     @property
     def stock_total(self):
