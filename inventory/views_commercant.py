@@ -1901,8 +1901,8 @@ def modifier_article_existant(request, boutique_id):
         quantite = 0
     
     try:
-        prix_vente = float(prix_vente) if prix_vente else None
-    except (ValueError, TypeError):
+        prix_vente = Decimal(str(prix_vente)) if prix_vente else None
+    except (ValueError, TypeError, InvalidOperation):
         prix_vente = None
     
     modifications = []
@@ -1923,8 +1923,8 @@ def modifier_article_existant(request, boutique_id):
         
         # Le prix se modifie sur l'article parent (hérité par toutes les variantes)
         if prix_vente is not None and prix_vente > 0:
-            ancien_prix = article.prix_vente
-            if abs(float(ancien_prix) - prix_vente) > 0.01:
+            ancien_prix = article.prix_vente or Decimal('0')
+            if abs(ancien_prix - prix_vente) > Decimal('0.01'):
                 article.prix_vente = prix_vente
                 article.save()
                 modifications.append(f"Prix parent: {ancien_prix} → {prix_vente}")
@@ -1974,8 +1974,8 @@ def modifier_article_existant(request, boutique_id):
     
     # Modifier le prix si fourni et différent
     if prix_vente is not None and prix_vente > 0:
-        ancien_prix = article.prix_vente
-        if abs(float(ancien_prix) - prix_vente) > 0.01:
+        ancien_prix = article.prix_vente or Decimal('0')
+        if abs(ancien_prix - prix_vente) > Decimal('0.01'):
             article.prix_vente = prix_vente
             modifications.append(f"Prix: {ancien_prix} → {prix_vente}")
     
