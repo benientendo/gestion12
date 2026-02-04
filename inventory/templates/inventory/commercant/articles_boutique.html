@@ -773,52 +773,37 @@
 
 <!-- Modal Modification Prix Rapide -->
 <div class="modal fade" id="modifierPrixModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-sm">
         <div class="modal-content">
-            <div class="modal-header bg-info text-white">
-                <h5 class="modal-title"><i class="fas fa-dollar-sign me-2"></i>Modifier le Prix</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <div class="modal-header bg-info text-white py-2">
+                <h6 class="modal-title mb-0"><i class="fas fa-edit me-1"></i>Modifier Prix</h6>
+                <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <div class="alert alert-info">
-                    <strong id="prixArticleName"></strong><br>
-                    <small>Prix actuel: <span id="prixActuel" class="badge bg-primary"></span> <span id="prixDeviseActuelle">CDF</span></small>
+            <div class="modal-body p-3">
+                <div class="text-center mb-2">
+                    <strong id="prixArticleName" class="d-block"></strong>
+                    <small class="text-muted">Actuel: <span id="prixActuel" class="fw-bold text-primary"></span> <span id="prixDeviseActuelle">CDF</span></small>
                 </div>
                 
                 <form id="formModifierPrix">
                     {% csrf_token %}
                     <input type="hidden" id="prixArticleId" name="article_id">
                     <input type="hidden" id="prixArticleDevise" name="devise" value="CDF">
+                    <input type="hidden" id="commentaire_prix" name="commentaire" value="">
                     
-                    <div class="mb-3">
-                        <label for="nouveau_prix" class="form-label">
-                            <i class="fas fa-money-bill"></i> Nouveau Prix de Vente 
-                            <span id="prixDeviseLabel">(CDF)</span>
-                        </label>
-                        <div class="input-group">
-                            <span class="input-group-text" id="prixDeviseSymbole">FC</span>
-                            <input type="number" class="form-control form-control-lg text-center" id="nouveau_prix" 
-                                   name="prix_vente" required min="0" step="0.01" autofocus>
-                        </div>
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text" id="prixDeviseSymbole">FC</span>
+                        <input type="number" class="form-control text-center fw-bold" id="nouveau_prix" 
+                               name="prix_vente" required min="0" step="0.01" autofocus
+                               placeholder="Nouveau prix">
                     </div>
-                    
-                    <div class="mb-3">
-                        <label for="commentaire_prix" class="form-label"><i class="fas fa-comment"></i> Raison du changement (optionnel)</label>
-                        <textarea class="form-control" id="commentaire_prix" name="commentaire" rows="2" 
-                                  placeholder="Ex: Promotion, Hausse des coûts..."></textarea>
-                    </div>
-                    
-                    <div id="changementPrixInfo" class="alert alert-warning" style="display: none;">
-                        <strong>Changement:</strong> <span id="changementPrixText"></span>
-                    </div>
+                    <span id="prixDeviseLabel" class="d-none">(CDF)</span>
                 </form>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="fas fa-times"></i> Annuler
-                </button>
-                <button type="button" class="btn btn-info" id="btnModifierPrix">
-                    <i class="fas fa-check"></i> Enregistrer le Prix
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-info btn-sm" id="btnModifierPrix">
+                    <i class="fas fa-check"></i> OK
                 </button>
             </div>
         </div>
