@@ -1326,6 +1326,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const isVariantesMode = hasVariantesCheckbox.checked;
         
         if (isVariantesMode) {
+            // Récupérer le code-barres avant de le vider
+            const codeBarreActuel = codeBarreInput.value.trim();
+            
             // Mode variantes: masquer code-barres et stock parent, afficher section variantes
             codeBarreContainer.style.display = 'none';
             codeBarreInput.value = '';
@@ -1335,6 +1338,15 @@ document.addEventListener('DOMContentLoaded', function() {
             // Ajouter une première variante automatiquement si vide
             if (document.getElementById('listeVariantesRapide').children.length === 0) {
                 ajouterVarianteRapide();
+            }
+            
+            // Transférer le code-barres vers la première variante
+            if (codeBarreActuel) {
+                const premiereVarianteCode = document.querySelector('#listeVariantesRapide input[name^="variante_code_"]');
+                if (premiereVarianteCode) {
+                    premiereVarianteCode.value = codeBarreActuel;
+                    premiereVarianteCode.focus();
+                }
             }
         } else {
             // Mode normal: afficher code-barres et stock, masquer section variantes
