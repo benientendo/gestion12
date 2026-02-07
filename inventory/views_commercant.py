@@ -1812,15 +1812,20 @@ def verifier_code_barre(request, boutique_id):
     """Vérifier si un code-barres existe déjà dans la boutique (article ou variante)"""
     from django.http import JsonResponse
     from inventory.models import VarianteArticle
+    import logging
+    logger = logging.getLogger(__name__)
     
     boutique = request.boutique
     code = request.GET.get('code', '').strip()
+    
+    logger.info(f"🔍 verifier_code_barre: code='{code}', boutique={boutique.id} ({boutique.nom})")
     
     if not code:
         return JsonResponse({'existe': False})
     
     # 1. Chercher d'abord dans les articles
     article = Article.objects.filter(code=code, boutique=boutique).first()
+    logger.info(f"   → Article trouvé par code: {article}")
     
     if article:
         # Vérifier si l'article a des variantes
@@ -1852,11 +1857,13 @@ def verifier_code_barre(request, boutique_id):
         })
     
     # 2. Sinon, chercher dans les variantes → retourner le PARENT avec SOMME des quantités variantes
+    logger.info(f"   → Recherche dans variantes: code_barre='{code}', boutique={boutique.id}")
     variante = VarianteArticle.objects.filter(
         code_barre=code, 
         article_parent__boutique=boutique,
         est_actif=True
     ).select_related('article_parent').first()
+    logger.info(f"   → Variante trouvée: {variante}")
     
     if variante:
         parent = variante.article_parent
@@ -1888,6 +1895,7 @@ def verifier_code_barre(request, boutique_id):
             }
         })
     
+    logger.info(f"   → RIEN TROUVÉ pour code='{code}'")
     return JsonResponse({'existe': False})
 
 
@@ -2047,6 +2055,7 @@ def ajouter_article_boutique(request, boutique_id):
             try:
                 # Créer l'article avec les données minimales
                 nom = request.POST.get('nom', '').strip()
+                prix_achat = request.POST.get('prix_achat', '')
                 prix_vente = request.POST.get('prix_vente', '')
                 prix_vente_usd = request.POST.get('prix_vente_usd', '').strip()
                 date_expiration = request.POST.get('date_expiration', '').strip()
@@ -2130,6 +2139,7 @@ def ajouter_article_boutique(request, boutique_id):
                     nom=nom,
                     code=code,
                     devise=devise,
+                    prix_achat=float(prix_achat) if prix_achat else 0,
                     prix_vente=float(prix_vente) if prix_vente else 0,
                     prix_vente_usd=float(prix_vente_usd) if prix_vente_usd else None,
                     date_expiration=date_exp_parsed,

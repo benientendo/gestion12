@@ -377,14 +377,44 @@
                             <div class="p-3 border rounded-3 bg-light">
                                 <div class="fw-semibold mb-2">Prix & stock</div>
                                 <div class="row g-3">
-                                    <div class="col-md-4" id="prixVenteContainer">
-                                        <label for="prix_vente" class="form-label" id="labelPrixVente">Prix de vente <span id="devisePrixVente">(CDF)</span></label>
+                                    <!-- Prix d'achat (visible seulement si mode marge activé) -->
+                                    <div class="col-md-3" id="prixAchatContainer" style="display:none;">
+                                        <label for="prix_achat" class="form-label">Prix d'achat <span id="devisePrixAchat">(CDF)</span></label>
                                         <div class="input-group">
-                                            <span class="input-group-text" id="symbolePrixVente">FC</span>
-                                            <input type="number" class="form-control" id="prix_vente" name="prix_vente" 
-                                                   min="0" step="0.01" placeholder="Optionnel">
+                                            <span class="input-group-text" id="symbolePrixAchat">FC</span>
+                                            <input type="number" class="form-control" id="prix_achat" name="prix_achat" 
+                                                   min="0" step="0.01" placeholder="0">
                                         </div>
                                     </div>
+                                    
+                                    <!-- Mode marge + Prix de vente -->
+                                    <div class="col-md-5">
+                                        <div class="d-flex align-items-center gap-2 mb-1">
+                                            <label for="prix_vente" class="form-label mb-0">Prix vente <span id="devisePrixVente">(CDF)</span></label>
+                                            <div class="form-check form-switch m-0">
+                                                <input class="form-check-input" type="checkbox" id="useMargeBeneficiaire">
+                                                <label class="form-check-label small text-primary" for="useMargeBeneficiaire">% Marge</label>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex gap-2">
+                                            <!-- Marge (visible si checkbox cochée) -->
+                                            <div id="margeContainer" class="input-group" style="display:none; width:100px;">
+                                                <input type="number" class="form-control" id="marge_beneficiaire" 
+                                                       min="0" max="1000" step="1" value="30" placeholder="30">
+                                                <span class="input-group-text">%</span>
+                                            </div>
+                                            <!-- Prix de vente -->
+                                            <div class="input-group flex-grow-1">
+                                                <span class="input-group-text" id="symbolePrixVente">FC</span>
+                                                <input type="number" class="form-control" id="prix_vente" name="prix_vente" 
+                                                       min="0" step="0.01" placeholder="Saisir le prix">
+                                            </div>
+                                        </div>
+                                        <small class="text-success" id="beneficeInfo" style="display:none;"></small>
+                                    </div>
+                                </div>
+                                
+                                <div class="row g-3 mt-1">
                                     <div class="col-md-4">
                                         <label for="date_expiration" class="form-label">
                                             <i class="fas fa-calendar-times text-warning"></i> Date d'expiration
@@ -461,9 +491,15 @@
                         const devisePrixVente = document.getElementById('devisePrixVente');
                         if (devisePrixVente) devisePrixVente.textContent = isCDF ? '(CDF)' : '(USD)';
                         
+                        const devisePrixAchat = document.getElementById('devisePrixAchat');
+                        if (devisePrixAchat) devisePrixAchat.textContent = isCDF ? '(CDF)' : '(USD)';
+                        
                         // Mise à jour des symboles
                         const symbolePrixVente = document.getElementById('symbolePrixVente');
                         if (symbolePrixVente) symbolePrixVente.textContent = isCDF ? 'FC' : '$';
+                        
+                        const symbolePrixAchat = document.getElementById('symbolePrixAchat');
+                        if (symbolePrixAchat) symbolePrixAchat.textContent = isCDF ? 'FC' : '$';
                         
                         // Highlight visuel du container
                         const prixVenteContainer = document.getElementById('prixVenteContainer');
@@ -1260,6 +1296,83 @@ document.addEventListener('DOMContentLoaded', function() {
     const codeBarreFeedback = document.getElementById('codeBarreFeedback');
     const focusCodeBarreCheckbox = document.getElementById('focusCodeBarre');
     let articlesAjoutes = 0; // Compteur d'articles ajoutés
+    
+    // ===== GESTION PRIX ACHAT / MARGE / PRIX VENTE =====
+    const prixAchatInput = document.getElementById('prix_achat');
+    const prixAchatContainer = document.getElementById('prixAchatContainer');
+    const prixVenteInput = document.getElementById('prix_vente');
+    const margeInput = document.getElementById('marge_beneficiaire');
+    const margeContainer = document.getElementById('margeContainer');
+    const beneficeInfo = document.getElementById('beneficeInfo');
+    const useMargeCheckbox = document.getElementById('useMargeBeneficiaire');
+    
+    // Clé localStorage pour cette boutique
+    const STORAGE_KEY_MARGE = 'boutique_{{ boutique.id }}_use_marge';
+    const STORAGE_KEY_MARGE_VALUE = 'boutique_{{ boutique.id }}_marge_value';
+    
+    function calculerPrixVente() {
+        if (!useMargeCheckbox || !useMargeCheckbox.checked) return;
+        const prixAchat = parseFloat(prixAchatInput.value) || 0;
+        const marge = parseFloat(margeInput.value) || 0;
+        if (prixAchat > 0) {
+            const prixVente = prixAchat * (1 + marge / 100);
+            const benefice = prixVente - prixAchat;
+            prixVenteInput.value = prixVente.toFixed(2);
+            beneficeInfo.textContent = `Bénéfice: ${benefice.toFixed(2)} par unité`;
+            beneficeInfo.style.display = 'block';
+        } else {
+            beneficeInfo.style.display = 'none';
+        }
+    }
+    
+    function toggleModePrix() {
+        if (useMargeCheckbox && useMargeCheckbox.checked) {
+            // Mode marge activé : afficher prix achat et marge
+            if (prixAchatContainer) prixAchatContainer.style.display = 'block';
+            margeContainer.style.display = 'flex';
+            prixVenteInput.readOnly = true;
+            prixVenteInput.placeholder = 'Calculé auto';
+            calculerPrixVente();
+            localStorage.setItem(STORAGE_KEY_MARGE, 'true');
+        } else {
+            // Mode manuel : cacher prix achat et marge
+            if (prixAchatContainer) prixAchatContainer.style.display = 'none';
+            margeContainer.style.display = 'none';
+            prixVenteInput.readOnly = false;
+            prixVenteInput.placeholder = 'Saisir le prix';
+            beneficeInfo.style.display = 'none';
+            localStorage.setItem(STORAGE_KEY_MARGE, 'false');
+        }
+    }
+    
+    // Sauvegarder la valeur de marge quand elle change
+    if (margeInput) {
+        margeInput.addEventListener('input', function() {
+            localStorage.setItem(STORAGE_KEY_MARGE_VALUE, margeInput.value);
+            calculerPrixVente();
+        });
+    }
+    
+    if (prixAchatInput) {
+        prixAchatInput.addEventListener('input', calculerPrixVente);
+    }
+    if (useMargeCheckbox) {
+        useMargeCheckbox.addEventListener('change', toggleModePrix);
+    }
+    
+    // Restaurer les préférences depuis localStorage
+    const savedUseMarge = localStorage.getItem(STORAGE_KEY_MARGE);
+    const savedMargeValue = localStorage.getItem(STORAGE_KEY_MARGE_VALUE);
+    
+    if (savedMargeValue && margeInput) {
+        margeInput.value = savedMargeValue;
+    }
+    if (savedUseMarge === 'true' && useMargeCheckbox) {
+        useMargeCheckbox.checked = true;
+    }
+    
+    // Initialiser le mode
+    toggleModePrix();
     
     // ===== GESTION DES VARIANTES =====
     let compteurVariantesRapide = 0;
@@ -2258,12 +2371,14 @@ document.addEventListener('DOMContentLoaded', function() {
         varianteInfoSection.style.display = 'none';
         selecteurVariantesSection.style.display = 'none';
         
+        console.log('🔍 Recherche code:', code);
         fetch(`{% url "inventory:verifier_code_barre" boutique.id %}?code=${encodeURIComponent(code)}`, {
             method: 'GET',
             headers: { 'X-Requested-With': 'XMLHttpRequest' }
         })
         .then(response => response.json())
         .then(data => {
+            console.log('📦 Réponse:', data);
             rechercheCodeBarreFeedback.style.display = 'none';
             
             if (data.existe && data.article) {

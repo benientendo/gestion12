@@ -46,7 +46,7 @@ if DEBUG:
         "10.113.224.224",
         "13.113.224.224",
         "192.168.142.224",
-        "10.17.19.118",
+        "10.248.27.118",
         "10.137.182.118",
     
     ])
@@ -203,3 +203,4 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+0
