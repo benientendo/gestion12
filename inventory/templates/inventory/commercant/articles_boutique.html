@@ -827,11 +827,42 @@
                     <input type="hidden" id="prixArticleDevise" name="devise" value="CDF">
                     <input type="hidden" id="commentaire_prix" name="commentaire" value="">
                     
-                    <div class="input-group input-group-lg">
-                        <span class="input-group-text" id="prixDeviseSymbole">FC</span>
-                        <input type="number" class="form-control text-center fw-bold" id="nouveau_prix" 
-                               name="prix_vente" required min="0" step="0.01" autofocus
-                               placeholder="Nouveau prix">
+                    <!-- Toggle mode marge -->
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="useMargeModif">
+                        <label class="form-check-label small" for="useMargeModif">Calculer par marge bénéficiaire</label>
+                    </div>
+                    
+                    <!-- Prix d'achat (visible si marge activé) -->
+                    <div id="prixAchatModifContainer" style="display:none;" class="mb-2">
+                        <label class="form-label small mb-1">Prix d'achat</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text" id="prixAchatModifSymbole">FC</span>
+                            <input type="number" class="form-control" id="prixAchatModif" 
+                                   min="0" step="0.01" placeholder="Prix d'achat">
+                        </div>
+                    </div>
+                    
+                    <!-- Marge (visible si marge activé) -->
+                    <div id="margeModifContainer" style="display:none;" class="mb-2">
+                        <label class="form-label small mb-1">Marge bénéficiaire</label>
+                        <div class="input-group input-group-sm">
+                            <input type="number" class="form-control" id="margeModif" 
+                                   min="0" max="1000" step="1" value="30" placeholder="30">
+                            <span class="input-group-text">%</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Prix de vente -->
+                    <div>
+                        <label class="form-label small mb-1" id="labelNouveauPrix">Nouveau prix de vente</label>
+                        <div class="input-group input-group-lg">
+                            <span class="input-group-text" id="prixDeviseSymbole">FC</span>
+                            <input type="number" class="form-control text-center fw-bold" id="nouveau_prix" 
+                                   name="prix_vente" required min="0" step="0.01" autofocus
+                                   placeholder="Nouveau prix">
+                        </div>
+                        <small class="text-success" id="beneficeModifInfo" style="display:none;"></small>
                     </div>
                     <span id="prixDeviseLabel" class="d-none">(CDF)</span>
                 </form>
@@ -2224,11 +2255,86 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('prixDeviseActuelle').textContent = deviseText;
         document.getElementById('prixDeviseLabel').textContent = `(${deviseText})`;
         document.getElementById('prixDeviseSymbole').textContent = symbole;
+        document.getElementById('prixAchatModifSymbole').textContent = symbole;
         document.getElementById('nouveau_prix').value = prixActuel;
         document.getElementById('nouveau_prix').step = isUSD ? '0.01' : '1';
         document.getElementById('commentaire_prix').value = '';
         document.getElementById('changementPrixInfo').style.display = 'none';
+        
+        // Reset marge fields
+        document.getElementById('prixAchatModif').value = '';
+        document.getElementById('beneficeModifInfo').style.display = 'none';
     };
+    
+    // ===== GESTION MARGE DANS MODAL MODIFICATION PRIX =====
+    const useMargeModifCheckbox = document.getElementById('useMargeModif');
+    const prixAchatModifContainer = document.getElementById('prixAchatModifContainer');
+    const margeModifContainer = document.getElementById('margeModifContainer');
+    const prixAchatModifInput = document.getElementById('prixAchatModif');
+    const margeModifInput = document.getElementById('margeModif');
+    const nouveauPrixInput = document.getElementById('nouveau_prix');
+    const beneficeModifInfo = document.getElementById('beneficeModifInfo');
+    
+    // Clés localStorage pour marge modification
+    const STORAGE_KEY_MARGE_MODIF = 'boutique_{{ boutique.id }}_use_marge_modif';
+    const STORAGE_KEY_MARGE_MODIF_VALUE = 'boutique_{{ boutique.id }}_marge_modif_value';
+    
+    function calculerPrixVenteModif() {
+        if (!useMargeModifCheckbox || !useMargeModifCheckbox.checked) return;
+        const prixAchat = parseFloat(prixAchatModifInput.value) || 0;
+        const marge = parseFloat(margeModifInput.value) || 0;
+        if (prixAchat > 0) {
+            const prixVente = prixAchat * (1 + marge / 100);
+            const benefice = prixVente - prixAchat;
+            nouveauPrixInput.value = prixVente.toFixed(2);
+            beneficeModifInfo.textContent = `Bénéfice: ${benefice.toFixed(2)} par unité`;
+            beneficeModifInfo.style.display = 'block';
+            // Trigger input event pour afficher le changement
+            nouveauPrixInput.dispatchEvent(new Event('input'));
+        } else {
+            beneficeModifInfo.style.display = 'none';
+        }
+    }
+    
+    function toggleMargeModif() {
+        if (useMargeModifCheckbox && useMargeModifCheckbox.checked) {
+            prixAchatModifContainer.style.display = 'block';
+            margeModifContainer.style.display = 'block';
+            nouveauPrixInput.readOnly = true;
+            localStorage.setItem(STORAGE_KEY_MARGE_MODIF, 'true');
+            calculerPrixVenteModif();
+        } else {
+            prixAchatModifContainer.style.display = 'none';
+            margeModifContainer.style.display = 'none';
+            nouveauPrixInput.readOnly = false;
+            beneficeModifInfo.style.display = 'none';
+            localStorage.setItem(STORAGE_KEY_MARGE_MODIF, 'false');
+        }
+    }
+    
+    if (useMargeModifCheckbox) {
+        useMargeModifCheckbox.addEventListener('change', toggleMargeModif);
+    }
+    if (prixAchatModifInput) {
+        prixAchatModifInput.addEventListener('input', calculerPrixVenteModif);
+    }
+    if (margeModifInput) {
+        margeModifInput.addEventListener('input', function() {
+            localStorage.setItem(STORAGE_KEY_MARGE_MODIF_VALUE, margeModifInput.value);
+            calculerPrixVenteModif();
+        });
+    }
+    
+    // Restaurer préférences marge modification
+    const savedUseMargeModif = localStorage.getItem(STORAGE_KEY_MARGE_MODIF);
+    const savedMargeModifValue = localStorage.getItem(STORAGE_KEY_MARGE_MODIF_VALUE);
+    if (savedMargeModifValue && margeModifInput) {
+        margeModifInput.value = savedMargeModifValue;
+    }
+    if (savedUseMargeModif === 'true' && useMargeModifCheckbox) {
+        useMargeModifCheckbox.checked = true;
+        toggleMargeModif();
+    }
     
     // Afficher le changement de prix en temps réel
     document.getElementById('nouveau_prix').addEventListener('input', function() {
