@@ -202,4 +202,58 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
-0
+
+# ============================================
+# OPTIMISATION PERFORMANCE
+# ============================================
+
+# Configuration du cache
+if os.environ.get('REDIS_URL'):
+    # Production Scalingo: utiliser Redis
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': os.environ.get('REDIS_URL'),
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+            'KEY_PREFIX': 'gestion_magazin',
+            'TIMEOUT': 300,  # 5 minutes par défaut
+        }
+    }
+else:
+    # Développement: cache en mémoire locale
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'unique-snowflake',
+            'TIMEOUT': 300,
+        }
+    }
+
+# Optimisation des sessions (utiliser le cache)
+if os.environ.get('REDIS_URL'):
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+    SESSION_CACHE_ALIAS = 'default'
+
+# Timeout de connexion DB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10 MB
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
+
+# Logging pour identifier les requêtes lentes (en dev uniquement)
+if DEBUG:
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+            },
+        },
+        'loggers': {
+            'django.db.backends': {
+                'level': 'WARNING',  # Mettre DEBUG pour voir toutes les requêtes SQL
+                'handlers': ['console'],
+            },
+        },
+    }

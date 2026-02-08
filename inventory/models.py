@@ -351,6 +351,14 @@ class Vente(models.Model):
         verbose_name = "Vente"
         verbose_name_plural = "Ventes"
         ordering = ['-date_vente']
+        # 🚀 Index pour optimiser les requêtes fréquentes
+        indexes = [
+            models.Index(fields=['date_vente'], name='idx_vente_date'),
+            models.Index(fields=['client_maui', 'date_vente'], name='idx_vente_client_date'),
+            models.Index(fields=['paye', 'est_annulee'], name='idx_vente_statut'),
+            models.Index(fields=['boutique', 'date_vente'], name='idx_vente_boutique_date'),
+            models.Index(fields=['devise'], name='idx_vente_devise'),
+        ]
 
 
 class LigneVente(models.Model):
@@ -406,6 +414,11 @@ class LigneVente(models.Model):
     class Meta:
         verbose_name = "Ligne de vente"
         verbose_name_plural = "Lignes de vente"
+        # 🚀 Index pour optimiser les requêtes de négociation
+        indexes = [
+            models.Index(fields=['est_negocie'], name='idx_ligne_negocie'),
+            models.Index(fields=['vente', 'est_negocie'], name='idx_ligne_vente_nego'),
+        ]
 
 
 class ScanRecent(models.Model):

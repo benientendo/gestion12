@@ -142,20 +142,12 @@ def dashboard_commercant(request):
     """Tableau de bord principal du commerçant"""
     commercant = request.user.profil_commercant
     
-    # Statistiques générales - Debug
-    boutiques_toutes = commercant.boutiques.all()
-    boutiques_actives = commercant.boutiques.filter(est_active=True)
+    # Statistiques générales - Requêtes optimisées
+    boutiques_toutes = commercant.boutiques.select_related('commercant').prefetch_related('clients', 'articles')
     
-    # Séparer les dépôts des boutiques normales
-    depots = commercant.boutiques.filter(est_depot=True)
-    boutiques_normales = commercant.boutiques.filter(est_depot=False)
-    
-    print(f"DEBUG: Commerçant {commercant.nom_entreprise}")
-    print(f"DEBUG: Total boutiques: {boutiques_toutes.count()}")
-    print(f"DEBUG: Boutiques actives: {boutiques_actives.count()}")
-    
-    for b in boutiques_toutes:
-        print(f"DEBUG: Boutique '{b.nom}' - est_active: {b.est_active}")
+    # Séparer les dépôts des boutiques normales (une seule requête)
+    depots = boutiques_toutes.filter(est_depot=True)
+    boutiques_normales = boutiques_toutes.filter(est_depot=False)
     
     # Utiliser les boutiques normales (sans dépôts) pour l'affichage principal
     boutiques_list = list(boutiques_normales)
