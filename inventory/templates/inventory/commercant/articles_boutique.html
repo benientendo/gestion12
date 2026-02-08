@@ -117,6 +117,7 @@
                         <th class="col-cat">Catégorie</th>
                         <th class="col-prix">Prix</th>
                         <th class="col-stock">Stock</th>
+                        <th class="col-exp">Expiration</th>
                         <th class="col-actions">Actions</th>
                     </tr>
                 </thead>
@@ -171,6 +172,18 @@
                             {% endif %}
                             {% if article.a_variantes %}
                             <span class="badge bg-info ms-1" title="{{ article.nb_variantes }} variante(s)"><i class="fas fa-tags"></i> {{ article.nb_variantes }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="col-exp">
+                            {% if article.date_expiration %}
+                            <span class="date-expiration {% if article.est_expire %}bg-danger text-white{% elif article.expire_bientot %}bg-warning text-dark{% endif %} badge" 
+                                  title="{{ article.date_expiration|date:'d/m/Y' }}">
+                                {% if article.est_expire %}<i class="fas fa-exclamation-circle"></i> {% endif %}
+                                {% if article.expire_bientot %}<i class="fas fa-clock"></i> {% endif %}
+                                {{ article.date_expiration|date:"d/m/Y" }}
+                            </span>
+                            {% else %}
+                            <span class="text-muted">-</span>
                             {% endif %}
                         </td>
                         <td class="col-actions">

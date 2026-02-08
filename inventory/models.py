@@ -202,6 +202,22 @@ class Article(models.Model):
         """Retourne le nombre de variantes actives"""
         return self.variantes.filter(est_actif=True).count()
     
+    @property
+    def est_expire(self):
+        """Retourne True si l'article est expiré"""
+        if self.date_expiration:
+            from datetime import date
+            return self.date_expiration < date.today()
+        return False
+    
+    @property
+    def expire_bientot(self):
+        """Retourne True si l'article expire dans les 30 prochains jours"""
+        if self.date_expiration and not self.est_expire:
+            from datetime import date, timedelta
+            return self.date_expiration <= date.today() + timedelta(days=30)
+        return False
+    
     class Meta:
         verbose_name = "Article"
         verbose_name_plural = "Articles"
