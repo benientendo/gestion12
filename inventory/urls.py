@@ -57,6 +57,7 @@ urlpatterns = [
     path('superadmin/boutiques/', admin_views.gestion_boutiques_admin, name='admin_gestion_boutiques'),
     path('superadmin/boutiques/<int:boutique_id>/toggle-pos/', admin_views.toggle_boutique_pos_admin, name='admin_toggle_boutique_pos'),
     path('superadmin/diagnostic-api/', admin_views.diagnostic_api, name='admin_diagnostic_api'),
+    path('superadmin/statistiques-systeme/', admin_views.statistiques_systeme, name='admin_statistiques_systeme'),
     
     # ===== INTERFACE COMMERÇANT =====
     path('commercant/login/', views_commercant.login_commercant, name='login_commercant'),
