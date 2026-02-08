@@ -223,6 +223,12 @@ class Article(models.Model):
         verbose_name_plural = "Articles"
         ordering = ['nom']
         unique_together = [['code', 'boutique']]
+        indexes = [
+            models.Index(fields=['boutique', 'est_actif'], name='idx_article_boutique_actif'),
+            models.Index(fields=['boutique', 'est_actif', 'nom'], name='idx_article_boutique_nom'),
+            models.Index(fields=['quantite_stock'], name='idx_article_stock'),
+            models.Index(fields=['date_expiration'], name='idx_article_expiration'),
+        ]
 
 
 class VarianteArticle(models.Model):

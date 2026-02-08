@@ -249,6 +249,58 @@
                 </button>
             </div>
         </div>
+        
+        <!-- Pagination -->
+        {% if articles.has_other_pages %}
+        <nav aria-label="Pagination articles" class="mt-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="text-muted small">
+                    <strong>{{ total_articles }}</strong> article(s) trouvé(s) - Page {{ articles.number }} / {{ articles.paginator.num_pages }}
+                </div>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if articles.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
+                            <i class="fas fa-angle-double-left"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ articles.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
+                            <i class="fas fa-angle-left"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                    
+                    {% for num in articles.paginator.page_range %}
+                        {% if articles.number == num %}
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                        {% elif num > articles.number|add:'-3' and num < articles.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">{{ num }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if articles.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ articles.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
+                            <i class="fas fa-angle-right"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ articles.paginator.num_pages }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
+                            <i class="fas fa-angle-double-right"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </nav>
+        {% elif total_articles %}
+        <div class="text-muted small mt-3">
+            <strong>{{ total_articles }}</strong> article(s) trouvé(s)
+        </div>
+        {% endif %}
     </div>
 </div>
 

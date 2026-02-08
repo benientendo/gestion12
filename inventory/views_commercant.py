@@ -485,8 +485,8 @@ def articles_boutique(request, boutique_id):
     stock_filter = request.GET.get('stock', '')
     populaires_filter = request.GET.get('populaires', '')
     
-    # Appliquer les filtres
-    articles = boutique.articles.filter(est_actif=True)
+    # Requête optimisée avec select_related dès le début
+    articles = boutique.articles.filter(est_actif=True).select_related('categorie')
     
     if search:
         articles = articles.filter(
@@ -512,26 +512,43 @@ def articles_boutique(request, boutique_id):
             nb_ventes=Count('lignevente')
         ).filter(nb_ventes__gt=0).order_by('-nb_ventes')
     else:
-        articles = articles.select_related('categorie').order_by('nom')
+        articles = articles.order_by('nom')
     
-    # Catégories pour le filtre
+    # Comptage total avant pagination
+    total_articles = articles.count()
+    
+    # Pagination - 30 articles par page
+    from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
+    paginator = Paginator(articles, 30)
+    page = request.GET.get('page', 1)
+    
+    try:
+        articles_page = paginator.page(page)
+    except PageNotAnInteger:
+        articles_page = paginator.page(1)
+    except EmptyPage:
+        articles_page = paginator.page(paginator.num_pages)
+    
+    # Catégories pour le filtre (mise en cache possible)
     categories = boutique.categories.all()
     
-    # Calculer le nombre d'articles en stock bas
+    # Calculer le nombre d'articles en stock bas (optimisé avec only)
     articles_stock_bas = boutique.articles.filter(
         quantite_stock__lte=boutique.alerte_stock_bas,
         est_actif=True
-    ).count()
+    ).only('id').count()
     
     context = {
         'boutique': boutique,
-        'articles': articles,
+        'articles': articles_page,
         'categories': categories,
         'articles_stock_bas': articles_stock_bas,
         'search': search,
         'categorie_id': int(categorie_id) if categorie_id else None,
         'stock_filter': stock_filter,
-        'populaires_filter': populaires_filter
+        'populaires_filter': populaires_filter,
+        'total_articles': total_articles,
+        'paginator': paginator,
     }
     
     return render(request, 'inventory/commercant/articles_boutique.html', context)
