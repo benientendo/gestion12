@@ -268,6 +268,87 @@
                         </a>
                     </div>
                 </div>
+                
+                <!-- 💰 Négociations -->
+                {% if negociations_jour > 0 or negociations_mois > 0 %}
+                <div class="row text-center mt-3">
+                    <!-- Négociations du jour -->
+                    <div class="col-md-3">
+                        <div class="card bg-info text-white">
+                            <div class="card-body py-2">
+                                <h4 class="mb-0"><i class="fas fa-handshake me-2"></i>{{ negociations_jour }}</h4>
+                                <small>Négociations aujourd'hui</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-warning text-dark">
+                            <div class="card-body py-2">
+                                <h4 class="mb-0"><i class="fas fa-arrow-down me-2"></i><span class="sensitive-amount">-{{ montant_negocie_jour|floatformat:0 }} CDF</span></h4>
+                                <small>Réductions jour</small>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Négociations du mois -->
+                    <div class="col-md-3">
+                        <div class="card bg-secondary text-white">
+                            <div class="card-body py-2">
+                                <h4 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>{{ negociations_mois }}</h4>
+                                <small>Négociations ce mois</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-danger text-white">
+                            <div class="card-body py-2">
+                                <h4 class="mb-0"><i class="fas fa-arrow-down me-2"></i><span class="sensitive-amount">-{{ montant_negocie_mois|floatformat:0 }} CDF</span></h4>
+                                <small>Réductions mois</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 📋 Liste détaillée des articles négociés -->
+                {% if articles_negocies_recents %}
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header bg-light py-2">
+                                <h6 class="mb-0 text-dark"><i class="fas fa-list me-2"></i>Dernières négociations</h6>
+                            </div>
+                            <div class="card-body p-0">
+                                <table class="table table-sm table-striped mb-0">
+                                    <thead class="table-dark">
+                                        <tr>
+                                            <th>Article</th>
+                                            <th class="text-center">Qté</th>
+                                            <th class="text-end">Prix original</th>
+                                            <th class="text-end">Prix négocié</th>
+                                            <th class="text-end">Réduction</th>
+                                            <th class="text-center">Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for ligne in articles_negocies_recents %}
+                                        <tr>
+                                            <td><strong>{{ ligne.article.nom }}</strong></td>
+                                            <td class="text-center">{{ ligne.quantite }}</td>
+                                            <td class="text-end text-muted"><del>{{ ligne.prix_original|floatformat:0 }} CDF</del></td>
+                                            <td class="text-end text-success fw-bold">{{ ligne.prix_unitaire|floatformat:0 }} CDF</td>
+                                            <td class="text-end">
+                                                <span class="badge bg-warning text-dark">-{{ ligne.reduction_pourcentage|floatformat:0 }}%</span>
+                                            </td>
+                                            <td class="text-center"><small>{{ ligne.vente.date_vente|date:"d/m H:i" }}</small></td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
     </div>

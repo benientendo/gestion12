@@ -136,10 +136,15 @@ class LigneVenteSerializer(serializers.ModelSerializer):
         source='article',
         write_only=True
     )
+    # Champs calculés pour l'affichage
+    reduction_pourcentage = serializers.ReadOnlyField()
+    montant_reduction = serializers.ReadOnlyField()
 
     class Meta:
         model = LigneVente
-        fields = '__all__'
+        fields = ['id', 'vente', 'article', 'article_id', 'variante', 'quantite', 
+                  'prix_unitaire', 'prix_original', 'est_negocie', 'prix_unitaire_usd', 
+                  'devise', 'reduction_pourcentage', 'montant_reduction']
 
 class VenteSerializer(serializers.ModelSerializer):
     lignes = LigneVenteSerializer(many=True, read_only=True)
@@ -227,6 +232,21 @@ class VenteSerializer(serializers.ModelSerializer):
 
                 # Calculate 'montant_ligne' based on processed quantite and prix_unitaire
                 ligne_item['montant_ligne'] = ligne_item['quantite'] * ligne_item['prix_unitaire']
+                
+                # 💰 Gérer le prix original et négociation (optionnel)
+                if 'prix_original' in maui_ligne:
+                    try:
+                        prix_orig_str = str(maui_ligne['prix_original']).replace(',', '.')
+                        ligne_item['prix_original'] = decimal.Decimal(prix_orig_str)
+                    except (ValueError, TypeError, InvalidOperation):
+                        ligne_item['prix_original'] = ligne_item['prix_unitaire']
+                
+                # Détecter si prix négocié
+                if 'est_negocie' in maui_ligne:
+                    ligne_item['est_negocie'] = bool(maui_ligne['est_negocie'])
+                elif 'prix_original' in ligne_item and ligne_item['prix_original'] > 0:
+                    # Auto-détection: si prix_original != prix_unitaire, c'est négocié
+                    ligne_item['est_negocie'] = abs(ligne_item['prix_original'] - ligne_item['prix_unitaire']) > decimal.Decimal('0.01')
                 
                 processed_lignes_data.append(ligne_item)
             
@@ -386,12 +406,18 @@ class VenteSerializer(serializers.ModelSerializer):
                         except (ValueError, TypeError, InvalidOperation):
                             montant_ligne = quantite * prix_unitaire
                     
+                    # 💰 Récupérer les infos de négociation
+                    prix_original = ligne_data.get('prix_original')
+                    est_negocie = ligne_data.get('est_negocie', False)
+                    
                     # Stockage des données validées pour traitement ultérieur
                     articles_a_traiter.append({
                         'article': article,
                         'quantite': quantite,
                         'prix_unitaire': prix_unitaire,
-                        'montant_ligne': montant_ligne
+                        'montant_ligne': montant_ligne,
+                        'prix_original': prix_original,
+                        'est_negocie': est_negocie
                     })
                     
             except serializers.ValidationError as ve:
@@ -434,15 +460,23 @@ class VenteSerializer(serializers.ModelSerializer):
                     logger.error(f"Erreur de conversion de quantité '{quantite}' pour {article.nom}: {str(e)}")
                     quantite_int = 1
                 
+                # 💰 Récupérer prix_original et est_negocie si présents
+                prix_original = article_info.get('prix_original')
+                est_negocie = article_info.get('est_negocie', False)
+                
                 # Création de la ligne de vente avec la quantité validée
                 LigneVente.objects.create(
                     vente=vente,
                     article=article,
                     quantite=quantite_int,
                     prix_unitaire=prix_unitaire,
-                    montant_ligne=montant_ligne
+                    prix_original=prix_original,
+                    est_negocie=est_negocie
                 )
-                logger.info(f"Ligne de vente créée pour {article.nom}, qté: {quantite_int}")
+                
+                # Log avec info négociation si applicable
+                negocie_info = f" [NÉGOCIÉ: {prix_original} → {prix_unitaire}]" if est_negocie else ""
+                logger.info(f"Ligne de vente créée pour {article.nom}, qté: {quantite_int}{negocie_info}")
                 
                 # Utiliser la nouvelle fonction efficace de mise à jour du stock
                 from .utils import update_stock_by_article_id

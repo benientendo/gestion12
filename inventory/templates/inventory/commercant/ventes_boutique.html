@@ -191,10 +191,22 @@
                             </thead>
                             <tbody>
                                 {% for ligne in vente.lignes.all %}
-                                <tr>
-                                    <td>{{ ligne.article.nom }}</td>
+                                <tr {% if ligne.est_negocie %}class="table-warning"{% endif %}>
+                                    <td>
+                                        {{ ligne.article.nom }}
+                                        {% if ligne.est_negocie %}
+                                        <span class="badge bg-warning text-dark ms-1" title="Prix négocié: {{ ligne.prix_original|format_cdf:0 }} → {{ ligne.prix_unitaire|format_cdf:0 }}">
+                                            💰 -{{ ligne.reduction_pourcentage|floatformat:0 }}%
+                                        </span>
+                                        {% endif %}
+                                    </td>
                                     <td class="text-center">{{ ligne.quantite }}</td>
-                                    <td class="text-end">{{ ligne.prix_unitaire|format_cdf:0 }}</td>
+                                    <td class="text-end">
+                                        {{ ligne.prix_unitaire|format_cdf:0 }}
+                                        {% if ligne.est_negocie %}
+                                        <br><small class="text-muted text-decoration-line-through">{{ ligne.prix_original|format_cdf:0 }}</small>
+                                        {% endif %}
+                                    </td>
                                     <td class="text-end">{{ ligne.sous_total|format_cdf:0 }}</td>
                                 </tr>
                                 {% endfor %}

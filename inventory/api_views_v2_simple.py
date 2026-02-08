@@ -1064,6 +1064,25 @@ def statistiques_boutique_simple(request):
             quantite_stock__lte=boutique.alerte_stock_bas
         ).count()
         
+        # 💰 NÉGOCIATIONS - Statistiques des prix négociés
+        lignes_negociees_jour = LigneVente.objects.filter(
+            vente__client_maui__boutique=boutique,
+            vente__date_vente__date=aujourd_hui,
+            est_negocie=True
+        ).aggregate(
+            nombre=Count('id'),
+            total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
+        )
+        
+        lignes_negociees_mois = LigneVente.objects.filter(
+            vente__client_maui__boutique=boutique,
+            vente__date_vente__date__gte=debut_mois,
+            est_negocie=True
+        ).aggregate(
+            nombre=Count('id'),
+            total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
+        )
+        
         return Response({
             'success': True,
             'boutique': {
@@ -1087,6 +1106,14 @@ def statistiques_boutique_simple(request):
                 'ventes_mois': {
                     'nombre': ventes_mois['nombre'] or 0,
                     'chiffre_affaires': str(ventes_mois['ca'] or 0)
+                },
+                'negociations_jour': {
+                    'nombre': lignes_negociees_jour['nombre'] or 0,
+                    'montant_reduit': str(lignes_negociees_jour['total_reduction'] or 0)
+                },
+                'negociations_mois': {
+                    'nombre': lignes_negociees_mois['nombre'] or 0,
+                    'montant_reduit': str(lignes_negociees_mois['total_reduction'] or 0)
                 }
             }
         })
@@ -2274,5 +2301,133 @@ def annuler_vente_simple(request):
         return Response({
             'error': 'Erreur lors de l\'annulation',
             'code': 'CANCELLATION_ERROR',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# =============================================================================
+# 💰 RAPPORT DES NÉGOCIATIONS DE PRIX
+# =============================================================================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def rapport_negociations_simple(request):
+    """
+    💰 Rapport détaillé des négociations de prix
+    
+    Params:
+        - boutique_id: ID de la boutique
+        - date_debut: Date de début (YYYY-MM-DD)
+        - date_fin: Date de fin (YYYY-MM-DD)
+        - page: Numéro de page (défaut: 1)
+        - limit: Nombre d'éléments par page (défaut: 50)
+    
+    Retourne:
+        - Liste des lignes de vente négociées avec détails
+        - Statistiques globales de négociation
+    """
+    from datetime import datetime, timedelta
+    from django.core.paginator import Paginator
+    
+    boutique_id = request.GET.get('boutique_id')
+    date_debut = request.GET.get('date_debut')
+    date_fin = request.GET.get('date_fin')
+    page = int(request.GET.get('page', 1))
+    limit = int(request.GET.get('limit', 50))
+    
+    # Récupérer boutique via header si pas en paramètre
+    if not boutique_id:
+        numero_serie = request.headers.get('X-Device-Serial')
+        if numero_serie:
+            terminal = Client.objects.filter(numero_serie=numero_serie, est_actif=True).first()
+            if terminal and terminal.boutique:
+                boutique_id = terminal.boutique.id
+    
+    if not boutique_id:
+        return Response({
+            'error': 'Paramètre boutique_id requis',
+            'code': 'MISSING_BOUTIQUE_ID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        
+        # Filtrer les lignes négociées
+        lignes_query = LigneVente.objects.filter(
+            vente__client_maui__boutique=boutique,
+            est_negocie=True
+        ).select_related('vente', 'article').order_by('-vente__date_vente')
+        
+        # Filtrer par dates si spécifiées
+        if date_debut:
+            lignes_query = lignes_query.filter(vente__date_vente__date__gte=date_debut)
+        if date_fin:
+            lignes_query = lignes_query.filter(vente__date_vente__date__lte=date_fin)
+        
+        # Statistiques globales
+        stats = lignes_query.aggregate(
+            total_lignes=Count('id'),
+            total_reduction=Sum(F('prix_original') - F('prix_unitaire')),
+            total_quantite=Sum('quantite')
+        )
+        
+        # Pagination
+        paginator = Paginator(lignes_query, limit)
+        page_obj = paginator.get_page(page)
+        
+        # Formater les résultats
+        lignes_data = []
+        for ligne in page_obj:
+            reduction = float(ligne.prix_original - ligne.prix_unitaire) if ligne.prix_original else 0
+            reduction_pct = ligne.reduction_pourcentage
+            
+            lignes_data.append({
+                'id': ligne.id,
+                'vente': {
+                    'id': ligne.vente.id,
+                    'numero_facture': ligne.vente.numero_facture,
+                    'date': ligne.vente.date_vente.isoformat(),
+                    'nom_client': ligne.vente.nom_client or 'Client anonyme'
+                },
+                'article': {
+                    'id': ligne.article.id,
+                    'code': ligne.article.code,
+                    'nom': ligne.article.nom
+                },
+                'quantite': ligne.quantite,
+                'prix_original': str(ligne.prix_original),
+                'prix_negocie': str(ligne.prix_unitaire),
+                'reduction_unitaire': str(reduction),
+                'reduction_totale': str(reduction * ligne.quantite),
+                'reduction_pourcentage': reduction_pct,
+                'devise': ligne.devise
+            })
+        
+        return Response({
+            'success': True,
+            'boutique': {
+                'id': boutique.id,
+                'nom': boutique.nom
+            },
+            'statistiques': {
+                'total_negociations': stats['total_lignes'] or 0,
+                'total_reduction': str(stats['total_reduction'] or 0),
+                'total_articles_negocies': stats['total_quantite'] or 0
+            },
+            'pagination': {
+                'page': page,
+                'total_pages': paginator.num_pages,
+                'total_items': paginator.count,
+                'has_next': page_obj.has_next(),
+                'has_previous': page_obj.has_previous()
+            },
+            'negociations': lignes_data
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur rapport négociations: {str(e)}")
+        return Response({
+            'error': 'Erreur lors de la génération du rapport',
+            'code': 'REPORT_ERROR',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

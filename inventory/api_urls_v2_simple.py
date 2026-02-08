@@ -52,6 +52,9 @@ urlpatterns = [
     # ===== STATISTIQUES =====
     path('statistiques/', api_views_v2_simple.statistiques_boutique_simple, name='statistiques_boutique'),
     
+    # ===== 💰 NÉGOCIATIONS =====
+    path('negociations/', api_views_v2_simple.rapport_negociations_simple, name='rapport_negociations'),
+    
     path('articles-negocies', api_views_v2_simple.creer_article_negocie_simple, name='articles_negocies_create_no_slash'),
     path('articles-negocies/', api_views_v2_simple.creer_article_negocie_simple, name='articles_negocies_create'),
     path('retours-articles', api_views_v2_simple.creer_retour_article_simple, name='retours_articles_create_no_slash'),

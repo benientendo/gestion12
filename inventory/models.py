@@ -367,6 +367,11 @@ class LigneVente(models.Model):
     )
     quantite = models.PositiveIntegerField()
     prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
+    # Prix original avant négociation (pour traçabilité)
+    prix_original = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, 
+                                         help_text="Prix original avant négociation")
+    # Indique si le prix a été négocié
+    est_negocie = models.BooleanField(default=False, help_text="Prix négocié avec le client")
     # Prix en dollars USD
     prix_unitaire_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix unitaire en USD")
     devise = models.CharField(max_length=3, choices=[('CDF', 'Franc Congolais'), ('USD', 'Dollar US')], default='CDF')
@@ -380,6 +385,20 @@ class LigneVente(models.Model):
         if self.prix_unitaire_usd:
             return self.quantite * self.prix_unitaire_usd
         return None
+    
+    @property
+    def reduction_pourcentage(self):
+        """Pourcentage de réduction si prix négocié"""
+        if self.prix_original and self.prix_original > 0:
+            return round((1 - float(self.prix_unitaire) / float(self.prix_original)) * 100, 1)
+        return 0
+    
+    @property
+    def montant_reduction(self):
+        """Montant de la réduction par unité"""
+        if self.prix_original:
+            return (self.prix_original - self.prix_unitaire) * self.quantite
+        return 0
     
     def __str__(self):
         return f"{self.article.nom} x{self.quantite}"

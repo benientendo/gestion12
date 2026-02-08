@@ -288,6 +288,19 @@ def dashboard_commercant(request):
         quantite_stock__lte=5  # Seuil par défaut
     ).select_related('boutique')[:10]
     
+    # 💰 NÉGOCIATIONS - Statistiques des prix négociés ce mois
+    from .models import LigneVente
+    lignes_negociees_mois = LigneVente.objects.filter(
+        vente__client_maui__boutique__in=boutiques,
+        vente__date_vente__gte=debut_mois,
+        est_negocie=True
+    ).aggregate(
+        nombre=Count('id'),
+        total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
+    )
+    negociations_mois = lignes_negociees_mois['nombre'] or 0
+    montant_negocie_mois = lignes_negociees_mois['total_reduction'] or 0
+    
     context = {
         'commercant': commercant,
         'boutiques': boutiques,  # Ajouter la liste des boutiques
@@ -306,7 +319,10 @@ def dashboard_commercant(request):
         'boutiques_avec_clients': boutiques_toutes.filter(clients__isnull=False).distinct().count(),
         'stats_boutiques': stats_boutiques,
         'articles_stock_bas': articles_stock_bas,
-        'peut_ajouter_boutique': commercant.peut_creer_boutique()
+        'peut_ajouter_boutique': commercant.peut_creer_boutique(),
+        # 💰 Négociations
+        'negociations_mois': negociations_mois,
+        'montant_negocie_mois': montant_negocie_mois,
     }
     
     return render(request, 'inventory/commercant/dashboard.html', context)
@@ -880,6 +896,40 @@ def entrer_boutique(request, boutique_id):
     labels_jours = []
     ca_quotidien = []
     
+    # 💰 NÉGOCIATIONS - Statistiques des prix négociés pour cette boutique
+    debut_mois = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    aujourd_hui = timezone.now().date()
+    
+    # Négociations du jour
+    lignes_negociees_jour = LigneVente.objects.filter(
+        vente__client_maui__boutique=boutique,
+        vente__date_vente__date=aujourd_hui,
+        est_negocie=True
+    ).aggregate(
+        nombre=Count('id'),
+        total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
+    )
+    negociations_jour = lignes_negociees_jour['nombre'] or 0
+    montant_negocie_jour = lignes_negociees_jour['total_reduction'] or 0
+    
+    # Négociations du mois
+    lignes_negociees_mois = LigneVente.objects.filter(
+        vente__client_maui__boutique=boutique,
+        vente__date_vente__gte=debut_mois,
+        est_negocie=True
+    ).aggregate(
+        nombre=Count('id'),
+        total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
+    )
+    negociations_mois = lignes_negociees_mois['nombre'] or 0
+    montant_negocie_mois = lignes_negociees_mois['total_reduction'] or 0
+    
+    # Liste détaillée des articles négociés (10 derniers)
+    articles_negocies_recents = LigneVente.objects.filter(
+        vente__client_maui__boutique=boutique,
+        est_negocie=True
+    ).select_related('article', 'vente').order_by('-vente__date_vente')[:10]
+    
     context = {
         'boutique': boutique,
         'nb_articles': nb_articles,
@@ -904,7 +954,13 @@ def entrer_boutique(request, boutique_id):
         'ventes_recentes': ventes_recentes,
         'articles_populaires': articles_populaires,
         'labels_jours': labels_jours,
-        'ca_quotidien': ca_quotidien
+        'ca_quotidien': ca_quotidien,
+        # 💰 Négociations
+        'negociations_jour': negociations_jour,
+        'montant_negocie_jour': montant_negocie_jour,
+        'negociations_mois': negociations_mois,
+        'montant_negocie_mois': montant_negocie_mois,
+        'articles_negocies_recents': articles_negocies_recents,
     }
     
     return render(request, 'inventory/boutique/dashboard.html', context)
