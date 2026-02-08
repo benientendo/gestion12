@@ -209,14 +209,11 @@ if not DEBUG:
 
 # Configuration du cache
 if os.environ.get('REDIS_URL'):
-    # Production Scalingo: utiliser Redis
+    # Production Scalingo: utiliser Redis (Django 4.0+ natif)
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
             'LOCATION': os.environ.get('REDIS_URL'),
-            'OPTIONS': {
-                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-            },
             'KEY_PREFIX': 'gestion_magazin',
             'TIMEOUT': 300,  # 5 minutes par défaut
         }
@@ -231,10 +228,7 @@ else:
         }
     }
 
-# Optimisation des sessions (utiliser le cache)
-if os.environ.get('REDIS_URL'):
-    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
-    SESSION_CACHE_ALIAS = 'default'
+# NOTE: Sessions restent en base de données pour stabilité
 
 # Timeout de connexion DB
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10 MB
