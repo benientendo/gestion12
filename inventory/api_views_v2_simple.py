@@ -779,13 +779,28 @@ def create_vente_simple(request):
                     prix_unitaire = ligne_data.get('prix_unitaire') or article.prix_vente
                     prix_unitaire_usd = ligne_data.get('prix_unitaire_usd') or article.prix_vente_usd or 0
                 
+                # 💰 Gérer les négociations
+                prix_original = ligne_data.get('prix_original') or ligne_data.get('prixOriginal')
+                est_negocie = ligne_data.get('est_negocie') or ligne_data.get('estNegocie', False)
+                
+                # Auto-détection si prix_original fourni mais pas est_negocie
+                if prix_original and not est_negocie:
+                    try:
+                        prix_orig_decimal = float(prix_original)
+                        prix_unit_decimal = float(prix_unitaire if devise_ligne != 'USD' else prix_unitaire_usd)
+                        est_negocie = abs(prix_orig_decimal - prix_unit_decimal) > 0.01
+                    except (ValueError, TypeError):
+                        pass
+                
                 ligne_vente = LigneVente.objects.create(
                     vente=vente,
                     article=article,
                     quantite=quantite,
                     prix_unitaire=prix_unitaire,
                     prix_unitaire_usd=prix_unitaire_usd,
-                    devise=devise_ligne
+                    devise=devise_ligne,
+                    prix_original=prix_original,
+                    est_negocie=est_negocie
                 )
                 
                 # Mettre à jour le stock
@@ -1040,7 +1055,7 @@ def statistiques_boutique_simple(request):
         # Ventes du jour
         aujourd_hui = datetime.now().date()
         ventes_jour = Vente.objects.filter(
-            client_maui__boutique=boutique,
+            boutique=boutique,
             date_vente__date=aujourd_hui
         ).aggregate(
             nombre=Count('id'),
@@ -1050,7 +1065,7 @@ def statistiques_boutique_simple(request):
         # Ventes du mois
         debut_mois = aujourd_hui.replace(day=1)
         ventes_mois = Vente.objects.filter(
-            client_maui__boutique=boutique,
+            boutique=boutique,
             date_vente__date__gte=debut_mois
         ).aggregate(
             nombre=Count('id'),
@@ -1066,7 +1081,7 @@ def statistiques_boutique_simple(request):
         
         # 💰 NÉGOCIATIONS - Statistiques des prix négociés
         lignes_negociees_jour = LigneVente.objects.filter(
-            vente__client_maui__boutique=boutique,
+            vente__boutique=boutique,
             vente__date_vente__date=aujourd_hui,
             est_negocie=True
         ).aggregate(
@@ -1075,7 +1090,7 @@ def statistiques_boutique_simple(request):
         )
         
         lignes_negociees_mois = LigneVente.objects.filter(
-            vente__client_maui__boutique=boutique,
+            vente__boutique=boutique,
             vente__date_vente__date__gte=debut_mois,
             est_negocie=True
         ).aggregate(
@@ -1478,13 +1493,28 @@ def sync_ventes_simple(request):
                         prix_unitaire_usd = ligne_data.get('prix_unitaire_usd') or article.prix_vente_usd
                         devise_ligne = ligne_data.get('devise', devise_vente)
                         
+                        # 💰 Gérer les négociations
+                        prix_original = ligne_data.get('prix_original') or ligne_data.get('prixOriginal')
+                        est_negocie = ligne_data.get('est_negocie') or ligne_data.get('estNegocie', False)
+                        
+                        # Auto-détection si prix_original fourni mais pas est_negocie
+                        if prix_original and not est_negocie:
+                            try:
+                                prix_orig_decimal = float(prix_original)
+                                prix_unit_decimal = float(prix_unitaire)
+                                est_negocie = abs(prix_orig_decimal - prix_unit_decimal) > 0.01
+                            except (ValueError, TypeError):
+                                pass
+                        
                         ligne_vente = LigneVente.objects.create(
                             vente=vente,
                             article=article,
                             quantite=quantite,
                             prix_unitaire=prix_unitaire,
                             prix_unitaire_usd=prix_unitaire_usd,
-                            devise=devise_ligne
+                            devise=devise_ligne,
+                            prix_original=prix_original,
+                            est_negocie=est_negocie
                         )
                         
                         # Mettre à jour le stock
@@ -2354,7 +2384,7 @@ def rapport_negociations_simple(request):
         
         # Filtrer les lignes négociées
         lignes_query = LigneVente.objects.filter(
-            vente__client_maui__boutique=boutique,
+            vente__boutique=boutique,
             est_negocie=True
         ).select_related('vente', 'article').order_by('-vente__date_vente')
         
