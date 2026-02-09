@@ -256,8 +256,7 @@
                                 <div class="small-stat-number small-stat-number-danger sensitive-amount">{{ depenses_totales|floatformat:2|intcomma }} CDF</div>
                                 <div class="small-stat-label">Dépenses mois en cours</div>
                             </div>
-                            <!-- 💰 Négociations -->
-                            {% if negociations_mois > 0 %}
+                            <!-- 💰 Négociations (toujours visible) -->
                             <div class="w-100 mt-2"></div>
                             <div class="col-6 mt-1">
                                 <div class="small-stat-number" style="color: #ffd43b;">{{ negociations_mois }}</div>
@@ -267,7 +266,6 @@
                                 <div class="small-stat-number sensitive-amount" style="color: #ffc9c9;">-{{ montant_negocie_mois|floatformat:0|intcomma }} CDF</div>
                                 <div class="small-stat-label">Réductions accordées</div>
                             </div>
-                            {% endif %}
                         </div>
                     </div>
                 </div>
