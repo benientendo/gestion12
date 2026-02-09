@@ -78,14 +78,14 @@
                             data-bs-target="#negociationDetailModal"
                             data-id="{{ a.id }}"
                             data-date="{{ a.date_operation|date:'d/m/Y H:i' }}"
-                            data-terminal="{% if a.terminal %}{{ a.terminal.nom_terminal }}{% else %}-{% endif %}"
-                            data-article="{% if a.article %}{{ a.article.nom }}{% else %}Inconnu{% endif %}"
-                            data-code="{{ a.code_article }}"
+                            data-terminal="{% if a.terminal %}{{ a.terminal.nom_terminal|escapejs }}{% else %}-{% endif %}"
+                            data-article="{% if a.article %}{{ a.article.nom|escapejs }}{% else %}Inconnu{% endif %}"
+                            data-code="{{ a.code_article|escapejs }}"
                             data-quantite="{{ a.quantite }}"
                             data-montant="{{ a.montant_negocie }}"
                             data-devise="{{ a.devise }}"
                             data-motif="{{ a.motif|escapejs }}"
-                            data-reference="{{ a.reference_vente|default:'' }}"
+                            data-reference="{{ a.reference_vente|default:''|escapejs }}"
                             data-appliquer-url="{% url 'inventory:appliquer_article_negocie' boutique.id a.id %}">
                             <td>{{ a.date_operation|date:"d/m/Y H:i" }}</td>
                             <td>
