@@ -782,15 +782,21 @@ def create_vente_simple(request):
                 # 💰 Gérer les négociations
                 prix_original = ligne_data.get('prix_original') or ligne_data.get('prixOriginal')
                 est_negocie = ligne_data.get('est_negocie') or ligne_data.get('estNegocie', False)
+                motif_reduction = ligne_data.get('motif_reduction') or ligne_data.get('motifReduction') or ''
                 
-                # Auto-détection si prix_original fourni mais pas est_negocie
-                if prix_original and not est_negocie:
-                    try:
-                        prix_orig_decimal = float(prix_original)
-                        prix_unit_decimal = float(prix_unitaire if devise_ligne != 'USD' else prix_unitaire_usd)
-                        est_negocie = abs(prix_orig_decimal - prix_unit_decimal) > 0.01
-                    except (ValueError, TypeError):
-                        pass
+                # 🔍 Auto-détection: si prix_original non fourni, utiliser le prix de l'article
+                if not prix_original:
+                    prix_original = float(article.prix_vente if devise_ligne != 'USD' else (article.prix_vente_usd or 0))
+                
+                # Auto-détection si prix négocié (prix différent du prix original)
+                try:
+                    prix_orig_decimal = float(prix_original)
+                    prix_unit_decimal = float(prix_unitaire if devise_ligne != 'USD' else prix_unitaire_usd)
+                    if abs(prix_orig_decimal - prix_unit_decimal) > 0.01:
+                        est_negocie = True
+                        logger.info(f"💰 RÉDUCTION DÉTECTÉE: {article.nom} - Original: {prix_orig_decimal} → Vendu: {prix_unit_decimal}")
+                except (ValueError, TypeError):
+                    pass
                 
                 ligne_vente = LigneVente.objects.create(
                     vente=vente,
@@ -800,7 +806,8 @@ def create_vente_simple(request):
                     prix_unitaire_usd=prix_unitaire_usd,
                     devise=devise_ligne,
                     prix_original=prix_original,
-                    est_negocie=est_negocie
+                    est_negocie=est_negocie,
+                    motif_reduction=motif_reduction
                 )
                 
                 # Mettre à jour le stock
@@ -1496,15 +1503,21 @@ def sync_ventes_simple(request):
                         # 💰 Gérer les négociations
                         prix_original = ligne_data.get('prix_original') or ligne_data.get('prixOriginal')
                         est_negocie = ligne_data.get('est_negocie') or ligne_data.get('estNegocie', False)
+                        motif_reduction = ligne_data.get('motif_reduction') or ligne_data.get('motifReduction') or ''
                         
-                        # Auto-détection si prix_original fourni mais pas est_negocie
-                        if prix_original and not est_negocie:
-                            try:
-                                prix_orig_decimal = float(prix_original)
-                                prix_unit_decimal = float(prix_unitaire)
-                                est_negocie = abs(prix_orig_decimal - prix_unit_decimal) > 0.01
-                            except (ValueError, TypeError):
-                                pass
+                        # 🔍 Auto-détection: si prix_original non fourni, utiliser le prix de l'article
+                        if not prix_original:
+                            prix_original = float(article.prix_vente)
+                        
+                        # Auto-détection si prix négocié (prix différent du prix original)
+                        try:
+                            prix_orig_decimal = float(prix_original)
+                            prix_unit_decimal = float(prix_unitaire)
+                            if abs(prix_orig_decimal - prix_unit_decimal) > 0.01:
+                                est_negocie = True
+                                logger.info(f"💰 RÉDUCTION DÉTECTÉE: {article.nom} - Original: {prix_orig_decimal} → Vendu: {prix_unit_decimal}")
+                        except (ValueError, TypeError):
+                            pass
                         
                         ligne_vente = LigneVente.objects.create(
                             vente=vente,
@@ -1514,7 +1527,8 @@ def sync_ventes_simple(request):
                             prix_unitaire_usd=prix_unitaire_usd,
                             devise=devise_ligne,
                             prix_original=prix_original,
-                            est_negocie=est_negocie
+                            est_negocie=est_negocie,
+                            motif_reduction=motif_reduction
                         )
                         
                         # Mettre à jour le stock

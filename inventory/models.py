@@ -402,6 +402,9 @@ class LigneVente(models.Model):
                                          help_text="Prix original avant négociation")
     # Indique si le prix a été négocié
     est_negocie = models.BooleanField(default=False, help_text="Prix négocié avec le client")
+    # Motif de la réduction pour justification
+    motif_reduction = models.CharField(max_length=255, blank=True, default='', 
+                                        help_text="Motif/justification de la réduction accordée")
     # Prix en dollars USD
     prix_unitaire_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix unitaire en USD")
     devise = models.CharField(max_length=3, choices=[('CDF', 'Franc Congolais'), ('USD', 'Dollar US')], default='CDF')

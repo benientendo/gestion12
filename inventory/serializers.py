@@ -143,8 +143,8 @@ class LigneVenteSerializer(serializers.ModelSerializer):
     class Meta:
         model = LigneVente
         fields = ['id', 'vente', 'article', 'article_id', 'variante', 'quantite', 
-                  'prix_unitaire', 'prix_original', 'est_negocie', 'prix_unitaire_usd', 
-                  'devise', 'reduction_pourcentage', 'montant_reduction']
+                  'prix_unitaire', 'prix_original', 'est_negocie', 'motif_reduction',
+                  'prix_unitaire_usd', 'devise', 'reduction_pourcentage', 'montant_reduction']
 
 class VenteSerializer(serializers.ModelSerializer):
     lignes = LigneVenteSerializer(many=True, read_only=True)
