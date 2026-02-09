@@ -973,11 +973,19 @@ def entrer_boutique(request, boutique_id):
     negociations_mois = lignes_negociees_mois['nombre'] or 0
     montant_negocie_mois = lignes_negociees_mois['total_reduction'] or 0
     
-    # Liste détaillée des articles négociés (10 derniers)
-    articles_negocies_recents = LigneVente.objects.filter(
+    # Liste des articles négociés du jour (pour modal)
+    articles_negocies_jour = LigneVente.objects.filter(
         vente__boutique=boutique,
+        vente__date_vente__date=aujourd_hui,
         est_negocie=True
-    ).select_related('article', 'vente').order_by('-vente__date_vente')[:10]
+    ).select_related('article', 'vente').order_by('-vente__date_vente')
+    
+    # Liste des articles négociés du mois (pour modal)
+    articles_negocies_mois = LigneVente.objects.filter(
+        vente__boutique=boutique,
+        vente__date_vente__gte=debut_mois,
+        est_negocie=True
+    ).select_related('article', 'vente').order_by('-vente__date_vente')
     
     context = {
         'boutique': boutique,
@@ -1009,7 +1017,8 @@ def entrer_boutique(request, boutique_id):
         'montant_negocie_jour': montant_negocie_jour,
         'negociations_mois': negociations_mois,
         'montant_negocie_mois': montant_negocie_mois,
-        'articles_negocies_recents': articles_negocies_recents,
+        'articles_negocies_jour': articles_negocies_jour,
+        'articles_negocies_mois': articles_negocies_mois,
     }
     
     return render(request, 'inventory/boutique/dashboard.html', context)
