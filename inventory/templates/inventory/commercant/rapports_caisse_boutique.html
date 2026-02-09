@@ -3,6 +3,194 @@
 
 {% block title %}Rapports de caisse - {{ boutique.nom }}{% endblock %}
 
+{% block extra_css %}
+<style>
+/* ========== RESPONSIVE RAPPORTS CAISSE ========== */
+
+/* Navigation buttons responsive */
+@media (max-width: 576px) {
+    .d-flex.justify-content-between.align-items-center.mb-4 {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 10px;
+    }
+    
+    .d-flex.justify-content-between.align-items-center.mb-4 h3 {
+        font-size: 1.1rem;
+    }
+    
+    .d-flex.justify-content-between.align-items-center.mb-4 .btn {
+        width: 100%;
+        margin-top: 10px;
+    }
+    
+    /* Navigation tabs en scroll horizontal */
+    .btn-group[role="group"] {
+        display: flex;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        gap: 4px;
+        padding-bottom: 5px;
+        width: 100%;
+    }
+    
+    .btn-group[role="group"] .btn {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        font-size: 0.75rem;
+        padding: 8px 12px;
+    }
+    
+    /* Card header responsive */
+    .card-header.d-flex {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 8px;
+    }
+    
+    .card-header .text-end {
+        text-align: left !important;
+        font-size: 0.8rem;
+    }
+    
+    /* Table mobile - mode carte */
+    .table-responsive {
+        overflow-x: visible;
+    }
+    
+    .table-responsive table {
+        display: block;
+    }
+    
+    .table-responsive thead {
+        display: none;
+    }
+    
+    .table-responsive tbody {
+        display: block;
+    }
+    
+    .table-responsive tbody tr {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 12px;
+        margin-bottom: 10px;
+        border: 1px solid #e9ecef;
+        border-radius: 10px;
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        cursor: pointer;
+    }
+    
+    .table-responsive tbody td {
+        border: none;
+        padding: 4px 6px;
+    }
+    
+    /* Organisation des colonnes en mode carte */
+    .table-responsive tbody td:nth-child(1) { /* Date */
+        width: 100%;
+        font-weight: 600;
+        font-size: 0.9rem;
+        order: 1;
+        margin-bottom: 6px;
+    }
+    
+    .table-responsive tbody td:nth-child(1)::before {
+        content: "📅 ";
+    }
+    
+    .table-responsive tbody td:nth-child(2) { /* Terminal */
+        width: 50%;
+        order: 2;
+    }
+    
+    .table-responsive tbody td:nth-child(3) { /* Dépense */
+        width: 50%;
+        order: 3;
+        text-align: right;
+        font-size: 1rem;
+    }
+    
+    .table-responsive tbody td:nth-child(4) { /* Devise */
+        display: none;
+    }
+    
+    .table-responsive tbody td:nth-child(5) { /* Détail */
+        width: 100%;
+        order: 4;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid #e9ecef;
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+    
+    .table-responsive tbody td:nth-child(6) { /* Statut */
+        width: 50%;
+        order: 5;
+        margin-top: 6px;
+    }
+    
+    .table-responsive tbody td:nth-child(7) { /* Créé le */
+        display: none;
+    }
+    
+    /* Modal responsive */
+    .modal-dialog {
+        margin: 10px;
+        max-width: calc(100% - 20px);
+    }
+    
+    .modal-body dl.row dt,
+    .modal-body dl.row dd {
+        width: 100%;
+        margin-bottom: 8px;
+    }
+    
+    .modal-body dl.row dt {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+    
+    .modal-footer {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .modal-footer form,
+    .modal-footer .btn {
+        width: 100%;
+    }
+}
+
+/* Tablettes */
+@media (min-width: 577px) and (max-width: 768px) {
+    .btn-group[role="group"] {
+        flex-wrap: wrap;
+        gap: 4px;
+    }
+    
+    .btn-group[role="group"] .btn {
+        font-size: 0.8rem;
+        padding: 6px 10px;
+    }
+    
+    .table th, .table td {
+        font-size: 0.85rem;
+        padding: 8px 6px;
+    }
+    
+    /* Cacher colonnes moins importantes */
+    .table th:nth-child(7),
+    .table td:nth-child(7) {
+        display: none;
+    }
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid py-4">
     <!-- En-tête -->

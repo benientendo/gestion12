@@ -111,6 +111,271 @@
         width: 2rem;
         height: 2rem;
     }
+    
+    /* ========== RESPONSIVE RAPPORT QUOTIDIEN ========== */
+    
+    /* Très petits écrans (< 480px) */
+    @media (max-width: 480px) {
+        .rapport-header {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .rapport-header h2 {
+            font-size: 1.1rem;
+        }
+        
+        .rapport-header .row {
+            flex-direction: column;
+        }
+        
+        .rapport-header .col-md-4 {
+            margin-top: 15px;
+        }
+        
+        .rapport-header .col-md-4.text-end {
+            text-align: left !important;
+        }
+        
+        .rapport-header form {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 8px;
+        }
+        
+        .rapport-header form label {
+            margin-bottom: 4px;
+        }
+        
+        .rapport-header form input[type="date"] {
+            width: 100%;
+        }
+        
+        .rapport-header .mt-2 {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+        
+        .rapport-header .mt-2 .btn {
+            flex: 1;
+            min-width: 120px;
+        }
+        
+        /* Stats cards - 2 par ligne */
+        .row.mb-4 > [class*="col-"] {
+            flex: 0 0 50%;
+            max-width: 50%;
+            margin-bottom: 10px;
+        }
+        
+        .stat-card {
+            padding: 12px 8px;
+        }
+        
+        .stat-value {
+            font-size: 1.2rem;
+        }
+        
+        .stat-label {
+            font-size: 0.7rem;
+        }
+        
+        /* Table en mode carte */
+        .table-rapport {
+            overflow-x: visible;
+        }
+        
+        .table-rapport table {
+            display: block;
+        }
+        
+        .table-rapport thead {
+            display: none;
+        }
+        
+        .table-rapport tbody {
+            display: block;
+        }
+        
+        .table-rapport tbody tr.vente-row {
+            display: flex;
+            flex-wrap: wrap;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            background: #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+        }
+        
+        .table-rapport tbody td {
+            border: none;
+            padding: 4px 6px;
+        }
+        
+        .table-rapport tbody td:nth-child(1) { /* Heure */
+            width: 50%;
+            font-weight: 600;
+            order: 1;
+        }
+        
+        .table-rapport tbody td:nth-child(2) { /* N° Facture */
+            width: 50%;
+            text-align: right;
+            order: 2;
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+        
+        .table-rapport tbody td:nth-child(3) { /* Terminal */
+            width: 50%;
+            order: 3;
+        }
+        
+        .table-rapport tbody td:nth-child(4) { /* Mode paiement */
+            width: 50%;
+            order: 4;
+            text-align: right;
+        }
+        
+        .table-rapport tbody td:nth-child(5) { /* Devise */
+            display: none;
+        }
+        
+        .table-rapport tbody td:nth-child(6) { /* Nb articles */
+            width: 40%;
+            order: 5;
+            margin-top: 8px;
+        }
+        
+        .table-rapport tbody td:nth-child(6)::before {
+            content: "Articles: ";
+            font-size: 0.75rem;
+            color: #6c757d;
+        }
+        
+        .table-rapport tbody td:nth-child(7) { /* Montant */
+            width: 60%;
+            order: 6;
+            text-align: right;
+            margin-top: 8px;
+            font-size: 1.1rem;
+        }
+        
+        .table-rapport tfoot {
+            display: block;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 10px;
+        }
+        
+        .table-rapport tfoot tr {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+        }
+        
+        .table-rapport tfoot th:first-child {
+            width: 40%;
+        }
+        
+        .table-rapport tfoot th:nth-child(2) {
+            display: none;
+        }
+        
+        .table-rapport tfoot th:last-child {
+            width: 60%;
+            text-align: right;
+        }
+        
+        /* Alerts responsive */
+        .alert {
+            font-size: 0.85rem;
+            padding: 12px;
+        }
+        
+        .alert .d-flex {
+            flex-direction: column;
+        }
+        
+        .alert i.me-3 {
+            margin-right: 0 !important;
+            margin-bottom: 8px;
+        }
+        
+        /* Modal responsive */
+        .modal-dialog {
+            margin: 10px;
+            max-width: calc(100% - 20px);
+        }
+        
+        .modal-body table {
+            font-size: 0.85rem;
+        }
+        
+        .modal-body table th,
+        .modal-body table td {
+            padding: 6px 4px;
+        }
+    }
+    
+    /* Petits écrans (481px - 576px) */
+    @media (min-width: 481px) and (max-width: 576px) {
+        .rapport-header {
+            padding: 20px;
+        }
+        
+        .rapport-header h2 {
+            font-size: 1.2rem;
+        }
+        
+        .stat-value {
+            font-size: 1.4rem;
+        }
+        
+        .stat-label {
+            font-size: 0.75rem;
+        }
+        
+        .table-rapport th,
+        .table-rapport td {
+            font-size: 0.8rem;
+            padding: 8px 4px;
+        }
+        
+        /* Cacher colonnes moins importantes */
+        .table-rapport th:nth-child(3),
+        .table-rapport td:nth-child(3),
+        .table-rapport th:nth-child(5),
+        .table-rapport td:nth-child(5) {
+            display: none;
+        }
+    }
+    
+    /* Tablettes (577px - 768px) */
+    @media (min-width: 577px) and (max-width: 768px) {
+        .rapport-header h2 {
+            font-size: 1.3rem;
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+        }
+        
+        .table-rapport th,
+        .table-rapport td {
+            font-size: 0.85rem;
+            padding: 10px 6px;
+        }
+        
+        /* Cacher colonne Terminal */
+        .table-rapport th:nth-child(3),
+        .table-rapport td:nth-child(3) {
+            display: none;
+        }
+    }
 </style>
 {% endblock %}
 
