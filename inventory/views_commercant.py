@@ -556,6 +556,46 @@ def articles_boutique(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+def articles_search_ajax(request, boutique_id):
+    """Recherche AJAX d'articles - cherche dans TOUS les articles de la boutique"""
+    from django.http import JsonResponse
+    
+    boutique = request.boutique
+    search = request.GET.get('q', '').strip()
+    
+    if len(search) < 2:
+        return JsonResponse({'articles': [], 'count': 0})
+    
+    articles = boutique.articles.filter(
+        est_actif=True
+    ).filter(
+        Q(nom__icontains=search) |
+        Q(code__icontains=search) |
+        Q(description__icontains=search)
+    ).select_related('categorie').order_by('nom')[:50]  # Limiter à 50 résultats
+    
+    articles_data = []
+    for art in articles:
+        articles_data.append({
+            'id': art.id,
+            'nom': art.nom,
+            'code': art.code or '',
+            'categorie': art.categorie.nom if art.categorie else '',
+            'prix_vente': str(art.prix_vente),
+            'devise': art.devise,
+            'quantite_stock': art.quantite_stock,
+            'url': f'/commercant/boutiques/{boutique.id}/articles/{art.id}/'
+        })
+    
+    return JsonResponse({
+        'articles': articles_data,
+        'count': len(articles_data),
+        'search': search
+    })
+
+@login_required
+@commercant_required
+@boutique_access_required
 def categories_boutique(request, boutique_id):
     """Liste des catégories d'une boutique"""
     boutique = request.boutique

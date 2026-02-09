@@ -2296,88 +2296,110 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 200);
     });
     
-    // Fonction pour afficher le dropdown d'actions
+    // Fonction pour afficher le dropdown d'actions (recherche AJAX sur TOUS les articles)
+    let searchAjaxTimer;
     function showSearchActions(searchTerm) {
-        // Trouver les articles correspondants
-        const matches = allArticles.filter(article => {
-            return article.nom.toLowerCase().includes(searchTerm) ||
-                   article.code.toLowerCase().includes(searchTerm) ||
-                   article.categorie.toLowerCase().includes(searchTerm);
-        }).slice(0, 5); // Limiter à 5 résultats
+        clearTimeout(searchAjaxTimer);
         
-        // Afficher ou masquer le bouton d'ajout
-        if (matches.length === 0) {
-            if (actionAddArticle) actionAddArticle.style.display = 'block';
-            if (searchTermDisplay) searchTermDisplay.textContent = searchTerm;
-            if (quickResults) quickResults.style.display = 'none';
-        } else {
-            if (actionAddArticle) actionAddArticle.style.display = 'none';
-            if (quickResults) quickResults.style.display = 'block';
-            
-            // Construire la liste des résultats rapides
-            if (quickResultsList) quickResultsList.innerHTML = matches.map((article, index) => `
-                <div class="quick-result-item">
-                    <div class="result-name">${article.nom}</div>
-                    <div class="result-info">
-                        <span class="badge bg-secondary">${article.code}</span>
-                        <span class="badge bg-info">${article.categorie || 'Sans catégorie'}</span>
-                        <span class="badge bg-primary">${article.stock} en stock</span>
-                        <span class="text-success fw-bold">${article.prix}</span>
-                    </div>
-                    <div class="result-actions">
-                        <button type="button" class="btn btn-success btn-xs quick-action-btn" 
-                                data-article-id="${article.id}"
-                                data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
-                                data-article-stock="${article.stock}"
-                                data-action="stock">
-                            <i class="fas fa-boxes"></i> Stock
-                        </button>
-                        <button type="button" class="btn btn-info btn-xs quick-action-btn" 
-                                data-article-id="${article.id}"
-                                data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
-                                data-article-prix="${article.prixNumeric}"
-                                data-action="prix">
-                            <i class="fas fa-dollar-sign"></i> Prix
-                        </button>
-                        <a href="/commercant/boutiques/{{ boutique.id }}/articles/${article.id}/modifier/" 
-                           class="btn btn-warning btn-xs">
-                            <i class="fas fa-edit"></i> Modifier
-                        </a>
-                    </div>
-                </div>
-            `).join('');
-            
-            // Ajouter les event listeners pour les actions rapides
-            setTimeout(() => {
-                document.querySelectorAll('.quick-action-btn').forEach(btn => {
-                    btn.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        const action = this.getAttribute('data-action');
-                        const articleId = this.getAttribute('data-article-id');
-                        const articleNom = this.getAttribute('data-article-nom');
-                        
-                        // Fermer le dropdown
-                        searchActionsDropdown.style.display = 'none';
-                        
-                        if (action === 'stock') {
-                            const stock = parseInt(this.getAttribute('data-article-stock'));
-                            setArticleForStock(articleId, articleNom, stock);
-                            // Ouvrir le modal
-                            const modal = new bootstrap.Modal(document.getElementById('ajusterStockModal'));
-                            modal.show();
-                        } else if (action === 'prix') {
-                            const prix = parseFloat(this.getAttribute('data-article-prix'));
-                            setArticleForPrice(articleId, articleNom, prix);
-                            // Ouvrir le modal
-                            const modal = new bootstrap.Modal(document.getElementById('modifierPrixModal'));
-                            modal.show();
-                        }
-                    });
-                });
-            }, 100);
-        }
-        
+        // Afficher un indicateur de chargement
+        if (quickResultsList) quickResultsList.innerHTML = '<div class="text-center py-2"><i class="fas fa-spinner fa-spin"></i> Recherche...</div>';
         searchActionsDropdown.style.display = 'block';
+        if (quickResults) quickResults.style.display = 'block';
+        
+        searchAjaxTimer = setTimeout(() => {
+            // Recherche AJAX sur le serveur (tous les articles)
+            fetch(`{% url 'inventory:articles_search_ajax' boutique.id %}?q=${encodeURIComponent(searchTerm)}`)
+                .then(response => response.json())
+                .then(data => {
+                    const matches = data.articles || [];
+                    
+                    // Afficher ou masquer le bouton d'ajout
+                    if (matches.length === 0) {
+                        if (actionAddArticle) actionAddArticle.style.display = 'block';
+                        if (searchTermDisplay) searchTermDisplay.textContent = searchTerm;
+                        if (quickResults) quickResults.style.display = 'none';
+                    } else {
+                        if (actionAddArticle) actionAddArticle.style.display = 'none';
+                        if (quickResults) quickResults.style.display = 'block';
+                        
+                        // Construire la liste des résultats rapides
+                        if (quickResultsList) quickResultsList.innerHTML = matches.slice(0, 10).map((article) => `
+                            <div class="quick-result-item">
+                                <div class="result-name">${article.nom}</div>
+                                <div class="result-info">
+                                    <span class="badge bg-secondary">${article.code || 'N/A'}</span>
+                                    <span class="badge bg-info">${article.categorie || 'Sans catégorie'}</span>
+                                    <span class="badge bg-primary">${article.quantite_stock} en stock</span>
+                                    <span class="text-success fw-bold">${article.prix_vente} ${article.devise}</span>
+                                </div>
+                                <div class="result-actions">
+                                    <button type="button" class="btn btn-success btn-xs quick-action-btn" 
+                                            data-article-id="${article.id}"
+                                            data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
+                                            data-article-stock="${article.quantite_stock}"
+                                            data-action="stock">
+                                        <i class="fas fa-boxes"></i> Stock
+                                    </button>
+                                    <button type="button" class="btn btn-info btn-xs quick-action-btn" 
+                                            data-article-id="${article.id}"
+                                            data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
+                                            data-article-prix="${article.prix_vente}"
+                                            data-action="prix">
+                                        <i class="fas fa-dollar-sign"></i> Prix
+                                    </button>
+                                    <a href="/commercant/boutiques/{{ boutique.id }}/articles/${article.id}/modifier/" 
+                                       class="btn btn-warning btn-xs">
+                                        <i class="fas fa-edit"></i> Modifier
+                                    </a>
+                                </div>
+                            </div>
+                        `).join('');
+                        
+                        // Afficher le nombre total de résultats si > 10
+                        if (matches.length > 10) {
+                            quickResultsList.innerHTML += `<div class="text-muted text-center py-1 small">+ ${matches.length - 10} autres résultats</div>`;
+                        }
+                        
+                        // Ajouter les event listeners pour les actions rapides
+                        attachQuickActionListeners();
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur recherche:', error);
+                    if (quickResultsList) quickResultsList.innerHTML = '<div class="text-danger py-2">Erreur de recherche</div>';
+                });
+        }, 300);
+    }
+    
+    // Fonction pour attacher les event listeners aux boutons d'action rapide
+    function attachQuickActionListeners() {
+        setTimeout(() => {
+            document.querySelectorAll('.quick-action-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const action = this.getAttribute('data-action');
+                    const articleId = this.getAttribute('data-article-id');
+                    const articleNom = this.getAttribute('data-article-nom');
+                    
+                    // Fermer le dropdown
+                    searchActionsDropdown.style.display = 'none';
+                    
+                    if (action === 'stock') {
+                        const stock = parseInt(this.getAttribute('data-article-stock'));
+                        setArticleForStock(articleId, articleNom, stock);
+                        // Ouvrir le modal
+                        const modal = new bootstrap.Modal(document.getElementById('ajusterStockModal'));
+                        modal.show();
+                    } else if (action === 'prix') {
+                        const prix = parseFloat(this.getAttribute('data-article-prix'));
+                        setArticleForPrice(articleId, articleNom, prix);
+                        // Ouvrir le modal
+                        const modal = new bootstrap.Modal(document.getElementById('modifierPrixModal'));
+                        modal.show();
+                    }
+                });
+            });
+        }, 100);
     }
     
     // Pré-remplir le formulaire d'ajout avec le terme recherché
