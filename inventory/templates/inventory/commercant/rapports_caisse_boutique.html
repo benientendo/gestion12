@@ -259,6 +259,12 @@
                             <i class="fas fa-minus-circle"></i> Appliquer cette dépense à la recette du jour
                         </button>
                     </form>
+                    <form method="post" id="supprimerRapportForm" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer ce rapport de caisse ?');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-danger" id="supprimerRapportButton">
+                            <i class="fas fa-trash"></i> Supprimer
+                        </button>
+                    </form>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
                 </div>
             </div>
@@ -285,6 +291,7 @@
             var detail = trigger.getAttribute('data-detail') || '';
             var appliquee = trigger.getAttribute('data-appliquee') === '1';
             var appliquerUrl = trigger.getAttribute('data-appliquer-url') || '#';
+            var supprimerUrl = trigger.getAttribute('data-supprimer-url') || '#';
 
             var dateEl = modalElement.querySelector('#modalRapportDate');
             var terminalEl = modalElement.querySelector('#modalRapportTerminal');
@@ -293,6 +300,7 @@
             var appliqueeInfo = modalElement.querySelector('#modalRapportAppliqueeInfo');
             var appliquerBtn = modalElement.querySelector('#appliquerDepenseButton');
             var form = modalElement.querySelector('#appliquerDepenseForm');
+            var supprimerForm = modalElement.querySelector('#supprimerRapportForm');
 
             if (dateEl) {
                 dateEl.textContent = date;
@@ -309,6 +317,10 @@
 
             if (form) {
                 form.setAttribute('action', appliquerUrl);
+            }
+            
+            if (supprimerForm) {
+                supprimerForm.setAttribute('action', supprimerUrl);
             }
 
             if (appliquee) {
@@ -369,7 +381,8 @@
                             data-devise="{{ rapport.devise }}"
                             data-detail="{{ rapport.detail|escapejs }}"
                             data-appliquee="{% if rapport.depense_appliquee %}1{% else %}0{% endif %}"
-                            data-appliquer-url="{% url 'inventory:appliquer_depense_rapport_caisse' boutique.id rapport.id %}">
+                            data-appliquer-url="{% url 'inventory:appliquer_depense_rapport_caisse' boutique.id rapport.id %}"
+                            data-supprimer-url="{% url 'inventory:supprimer_rapport_caisse' boutique.id rapport.id %}">
                             <td>{{ rapport.date_rapport|date:"d/m/Y H:i" }}</td>
                             <td>
                                 {% if rapport.terminal %}

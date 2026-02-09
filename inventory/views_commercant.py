@@ -1642,6 +1642,30 @@ def appliquer_depense_rapport_caisse(request, boutique_id, rapport_id):
 @login_required
 @commercant_required
 @boutique_access_required
+def supprimer_rapport_caisse(request, boutique_id, rapport_id):
+    """Supprimer un rapport de caisse."""
+    boutique = request.boutique
+    rapport = get_object_or_404(RapportCaisse, id=rapport_id, boutique=boutique)
+
+    if request.method != 'POST':
+        return HttpResponseForbidden("Méthode non autorisée")
+
+    date_rapport = rapport.date_rapport.strftime('%d/%m/%Y %H:%i') if rapport.date_rapport else ''
+    depense = rapport.depense
+    devise = rapport.devise
+    
+    rapport.delete()
+    
+    messages.success(
+        request,
+        f"Le rapport de caisse du {date_rapport} (dépense: {depense} {devise}) a été supprimé."
+    )
+
+    return redirect('inventory:commercant_rapports_caisse_boutique', boutique_id=boutique.id)
+
+@login_required
+@commercant_required
+@boutique_access_required
 def exporter_ca_quotidien_pdf(request, boutique_id):
     """Exporter le chiffre d'affaires quotidien en PDF"""
     from django.http import HttpResponse

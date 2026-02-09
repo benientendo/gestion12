@@ -101,6 +101,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/retours-articles/', views_commercant.retours_articles_boutique, name='commercant_retours_articles_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/articles-negocies/<int:negociation_id>/appliquer/', views_commercant.appliquer_article_negocie, name='appliquer_article_negocie'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/<int:rapport_id>/appliquer-depense/', views_commercant.appliquer_depense_rapport_caisse, name='appliquer_depense_rapport_caisse'),
+    path('commercant/boutiques/<int:boutique_id>/rapports-caisse/<int:rapport_id>/supprimer/', views_commercant.supprimer_rapport_caisse, name='supprimer_rapport_caisse'),
     path('commercant/boutiques/<int:boutique_id>/qr-codes-pdf/', views_commercant.generer_pdf_qr_codes, name='generer_pdf_qr_codes'),
     path('commercant/boutiques/<int:boutique_id>/rapport-ca-quotidien/', views_commercant.rapport_ca_quotidien, name='rapport_ca_quotidien'),
     path('commercant/boutiques/<int:boutique_id>/rapport-ca-mensuel/', views_commercant.rapport_ca_mensuel, name='rapport_ca_mensuel'),
