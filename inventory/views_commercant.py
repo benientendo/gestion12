@@ -283,7 +283,7 @@ def dashboard_commercant(request):
     # 💰 NÉGOCIATIONS - Statistiques des prix négociés ce mois
     from .models import LigneVente
     lignes_negociees_mois = LigneVente.objects.filter(
-        vente__client_maui__boutique__in=boutiques,
+        vente__boutique__in=boutiques,
         vente__date_vente__gte=debut_mois,
         est_negocie=True
     ).aggregate(
@@ -911,7 +911,7 @@ def entrer_boutique(request, boutique_id):
     
     # Négociations du jour
     lignes_negociees_jour = LigneVente.objects.filter(
-        vente__client_maui__boutique=boutique,
+        vente__boutique=boutique,
         vente__date_vente__date=aujourd_hui,
         est_negocie=True
     ).aggregate(
@@ -923,7 +923,7 @@ def entrer_boutique(request, boutique_id):
     
     # Négociations du mois
     lignes_negociees_mois = LigneVente.objects.filter(
-        vente__client_maui__boutique=boutique,
+        vente__boutique=boutique,
         vente__date_vente__gte=debut_mois,
         est_negocie=True
     ).aggregate(
@@ -935,7 +935,7 @@ def entrer_boutique(request, boutique_id):
     
     # Liste détaillée des articles négociés (10 derniers)
     articles_negocies_recents = LigneVente.objects.filter(
-        vente__client_maui__boutique=boutique,
+        vente__boutique=boutique,
         est_negocie=True
     ).select_related('article', 'vente').order_by('-vente__date_vente')[:10]
     
