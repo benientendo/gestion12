@@ -1,3 +1,8 @@
+import os
+import django
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'gestion_magazin.settings')
+django.setup()
+
 from inventory.models import Article
 from django.utils import timezone
 from datetime import timedelta
