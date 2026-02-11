@@ -2282,7 +2282,9 @@ def ajouter_article_boutique(request, boutique_id):
                     prix_vente_usd=float(prix_vente_usd) if prix_vente_usd else None,
                     date_expiration=date_exp_parsed,
                     quantite_stock=stock_initial,
-                    est_actif=True
+                    est_actif=True,
+                    est_valide_client=False,  # En attente de validation client MAUI
+                    quantite_envoyee=stock_initial  # Quantité à valider
                 )
                 
                 # ⭐ Créer un mouvement de stock pour le stock initial si > 0
@@ -2394,6 +2396,8 @@ def ajouter_article_boutique(request, boutique_id):
             article = form.save(commit=False)
             article.boutique = boutique
             stock_initial = article.quantite_stock
+            article.est_valide_client = False  # En attente de validation client MAUI
+            article.quantite_envoyee = stock_initial  # Quantité à valider
             article.save()
             
             # ⭐ Créer un mouvement de stock pour le stock initial si > 0
