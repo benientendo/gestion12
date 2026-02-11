@@ -2216,6 +2216,8 @@ def ajouter_article_boutique(request, boutique_id):
                         if quantite_ajout > 0:
                             stock_avant = article_existant.quantite_stock
                             article_existant.quantite_stock += quantite_ajout
+                            article_existant.est_valide_client = False  # En attente de validation client MAUI
+                            article_existant.quantite_envoyee = quantite_ajout  # Quantité ajoutée à valider
                             article_existant.save()
                             
                             # Créer un mouvement de stock
@@ -2233,7 +2235,7 @@ def ajouter_article_boutique(request, boutique_id):
                             return JsonResponse({
                                 'success': True,
                                 'article_exists': True,
-                                'message': f'Stock ajouté à l\'article "{article_existant.nom}": +{quantite_ajout} unités',
+                                'message': f'Stock ajouté à l\'article "{article_existant.nom}": +{quantite_ajout} unités (en attente de validation)',
                                 'article_id': article_existant.id,
                                 'article_nom': article_existant.nom,
                                 'stock_avant': stock_avant,
@@ -2372,6 +2374,8 @@ def ajouter_article_boutique(request, boutique_id):
                     if quantite_ajout > 0:
                         stock_avant = article_existant.quantite_stock
                         article_existant.quantite_stock += quantite_ajout
+                        article_existant.est_valide_client = False  # En attente de validation client MAUI
+                        article_existant.quantite_envoyee = quantite_ajout  # Quantité ajoutée à valider
                         article_existant.save()
                         
                         # Créer un mouvement de stock
@@ -2386,7 +2390,7 @@ def ajouter_article_boutique(request, boutique_id):
                             commentaire=f"Ajout de stock via scan code-barres"
                         )
                         
-                        messages.success(request, f'✅ Stock ajouté à l\'article "{article_existant.nom}": +{quantite_ajout} unités (Stock: {stock_avant} → {article_existant.quantite_stock})')
+                        messages.success(request, f'✅ Stock ajouté à l\'article "{article_existant.nom}": +{quantite_ajout} unités (en attente de validation)')
                     else:
                         messages.warning(request, f'⚠️ L\'article "{article_existant.nom}" existe déjà (Stock actuel: {article_existant.quantite_stock}). Veuillez indiquer une quantité à ajouter.')
                     
