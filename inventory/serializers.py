@@ -28,7 +28,8 @@ class ArticleSerializer(serializers.ModelSerializer):
             'id', 'code', 'nom', 'description', 'devise', 'prix_vente', 'prix_achat',
             'prix_vente_usd', 'prix_achat_usd',
             'categorie_id', 'categorie_nom', 'quantite_stock', 'qr_code_url', 'image_url',
-            'full_details', 'has_variantes'
+            'full_details', 'has_variantes',
+            'est_valide_client', 'quantite_envoyee', 'date_envoi', 'date_validation'
         ]
     
     def get_has_variantes(self, obj):

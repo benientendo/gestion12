@@ -28,6 +28,8 @@ urlpatterns = [
     # ===== ARTICLES =====
     path('articles/', api_views_v2_simple.articles_list_simple, name='articles_list'),
     path('articles/deleted/', api_views_v2_simple.articles_deleted_simple, name='articles_deleted'),
+    path('articles/pending/', api_views_v2_simple.articles_pending_validation, name='articles_pending'),
+    path('articles/valider/', api_views_v2_simple.valider_article, name='valider_article'),
     path('articles/terminal/<str:numero_serie>/', api_views_v2_simple.articles_by_serial_simple, name='articles_by_serial'),
     path('articles/<int:article_id>/stock/', api_views_v2_simple.update_stock_simple, name='update_stock'),
     

@@ -315,10 +315,11 @@ def articles_list_simple(request):
         # Vérifier que la boutique existe
         boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
         
-        # Récupérer les articles de cette boutique
+        # Récupérer les articles de cette boutique (uniquement les validés par le client)
         articles = Article.objects.filter(
             boutique=boutique,
-            est_actif=True
+            est_actif=True,
+            est_valide_client=True  # Seuls les articles validés sont disponibles à la vente
         ).select_related('categorie').order_by('nom')
         
         # Sérialiser les articles
@@ -341,6 +342,182 @@ def articles_list_simple(request):
     
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des articles: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def articles_pending_validation(request):
+    """
+    Liste des articles en attente de validation par le client MAUI
+    Ces articles ont été ajoutés depuis Django et doivent être validés avant d'être vendus
+    
+    Paramètres:
+    - boutique_id: ID de la boutique (requis ou via header X-Device-Serial)
+    """
+    boutique_id = request.GET.get('boutique_id')
+    
+    # Si pas de boutique_id, essayer via le numéro de série
+    if not boutique_id:
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.META.get('HTTP_X_DEVICE_SERIAL')
+        )
+        
+        if numero_serie:
+            try:
+                terminal = Client.objects.select_related('boutique').filter(
+                    numero_serie=numero_serie,
+                    est_actif=True
+                ).first()
+                if terminal and terminal.boutique:
+                    boutique_id = terminal.boutique.id
+            except Exception as e:
+                logger.error(f"Erreur recherche terminal: {str(e)}")
+    
+    if not boutique_id:
+        return Response({
+            'error': 'Paramètre boutique_id requis ou header X-Device-Serial',
+            'code': 'MISSING_BOUTIQUE_ID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        
+        # Articles en attente de validation (est_actif=True mais est_valide_client=False)
+        articles_pending = Article.objects.filter(
+            boutique=boutique,
+            est_actif=True,
+            est_valide_client=False
+        ).select_related('categorie').order_by('-date_creation')
+        
+        articles_data = []
+        for article in articles_pending:
+            articles_data.append({
+                'id': article.id,
+                'code': article.code,
+                'nom': article.nom,
+                'description': article.description,
+                'categorie': article.categorie.nom if article.categorie else None,
+                'categorie_id': article.categorie.id if article.categorie else None,
+                'prix_vente': str(article.prix_vente),
+                'prix_achat': str(article.prix_achat),
+                'devise': article.devise,
+                'quantite_envoyee': article.quantite_envoyee,
+                'quantite_stock': article.quantite_stock,
+                'date_envoi': article.date_envoi.isoformat() if article.date_envoi else None,
+                'date_creation': article.date_creation.isoformat(),
+            })
+        
+        return Response({
+            'success': True,
+            'count': len(articles_data),
+            'boutique_id': boutique.id,
+            'boutique_nom': boutique.nom,
+            'articles_pending': articles_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Erreur récupération articles en attente: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def valider_article(request):
+    """
+    Valider un article depuis le client MAUI
+    Le client confirme la quantité reçue et l'article devient disponible à la vente
+    
+    Body JSON:
+    {
+        "article_id": 123,
+        "quantite_validee": 10,
+        "boutique_id": 2  (optionnel si header X-Device-Serial présent)
+    }
+    """
+    data = request.data
+    article_id = data.get('article_id')
+    quantite_validee = data.get('quantite_validee')
+    boutique_id = data.get('boutique_id')
+    
+    # Si pas de boutique_id, essayer via le numéro de série
+    if not boutique_id:
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or 
+            request.headers.get('Device-Serial') or
+            request.META.get('HTTP_X_DEVICE_SERIAL')
+        )
+        
+        if numero_serie:
+            try:
+                terminal = Client.objects.select_related('boutique').filter(
+                    numero_serie=numero_serie,
+                    est_actif=True
+                ).first()
+                if terminal and terminal.boutique:
+                    boutique_id = terminal.boutique.id
+            except Exception as e:
+                logger.error(f"Erreur recherche terminal: {str(e)}")
+    
+    if not article_id:
+        return Response({
+            'error': 'article_id requis',
+            'code': 'MISSING_ARTICLE_ID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if quantite_validee is None:
+        return Response({
+            'error': 'quantite_validee requise',
+            'code': 'MISSING_QUANTITE'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Récupérer l'article
+        article = Article.objects.get(id=article_id, est_actif=True)
+        
+        # Vérifier que l'article appartient à la bonne boutique si boutique_id fourni
+        if boutique_id and article.boutique_id != int(boutique_id):
+            return Response({
+                'error': 'Article non trouvé dans cette boutique',
+                'code': 'ARTICLE_NOT_IN_BOUTIQUE'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Valider l'article
+        article.est_valide_client = True
+        article.quantite_stock = int(quantite_validee)
+        article.date_validation = timezone.now()
+        article.save()
+        
+        logger.info(f"✅ Article {article.code} validé - Quantité: {quantite_validee}")
+        
+        return Response({
+            'success': True,
+            'message': f'Article "{article.nom}" validé avec succès',
+            'article': {
+                'id': article.id,
+                'code': article.code,
+                'nom': article.nom,
+                'quantite_stock': article.quantite_stock,
+                'est_valide_client': article.est_valide_client,
+                'date_validation': article.date_validation.isoformat()
+            }
+        })
+        
+    except Article.DoesNotExist:
+        return Response({
+            'error': 'Article non trouvé',
+            'code': 'ARTICLE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur validation article: {str(e)}")
         return Response({
             'error': 'Erreur interne du serveur',
             'code': 'INTERNAL_ERROR'
