@@ -491,12 +491,38 @@ def valider_article(request):
             }, status=status.HTTP_404_NOT_FOUND)
         
         # Valider l'article
+        stock_avant = article.quantite_stock
+        qte_validee = int(quantite_validee)
+        
+        # Ajuster le stock : retirer quantite_envoyee (déjà comptée) et ajouter quantite_validee
+        if article.quantite_envoyee > 0:
+            # Stock addition sur article existant : le stock avait déjà été incrémenté
+            # Ajuster si quantité reçue diffère de quantité envoyée
+            difference = qte_validee - article.quantite_envoyee
+            article.quantite_stock += difference
+        else:
+            # Nouvel article sans quantite_envoyee : juste confirmer
+            article.quantite_stock = qte_validee
+        
         article.est_valide_client = True
-        article.quantite_stock = int(quantite_validee)
+        article.quantite_envoyee = 0
         article.date_validation = timezone.now()
         article.save()
         
-        logger.info(f"✅ Article {article.code} validé - Quantité: {quantite_validee}")
+        # Créer un mouvement de stock pour traçabilité
+        if qte_validee != stock_avant:
+            MouvementStock.objects.create(
+                article=article,
+                type_mouvement='ENTREE',
+                quantite=abs(article.quantite_stock - stock_avant),
+                stock_avant=stock_avant,
+                stock_apres=article.quantite_stock,
+                reference_document=f"VALIDATION-{article.boutique.code_boutique}-{article.id}",
+                utilisateur="MAUI-Client",
+                commentaire=f"Validation client: {qte_validee} unités reçues"
+            )
+        
+        logger.info(f"✅ Article {article.code} validé - Quantité: {qte_validee}, Stock: {stock_avant} → {article.quantite_stock}")
         
         return Response({
             'success': True,
