@@ -14,5 +14,13 @@ for a in recent:
 
 pending = Article.objects.filter(est_valide_client=False)
 print(f"\nTotal articles avec est_valide_client=False: {pending.count()}")
-for a in pending[:5]:
-    print(f"  ID:{a.id} | {a.nom} | Boutique:{a.boutique.nom}")
+
+# Grouper par boutique
+from collections import defaultdict
+by_boutique = defaultdict(list)
+for a in pending:
+    by_boutique[f"{a.boutique.id}:{a.boutique.nom}"].append(a.nom)
+
+print("\nArticles en attente par boutique:")
+for boutique, articles in by_boutique.items():
+    print(f"  {boutique} -> {len(articles)} articles")
