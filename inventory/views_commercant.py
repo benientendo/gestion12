@@ -2214,32 +2214,19 @@ def ajouter_article_boutique(request, boutique_id):
                         # ⭐ Article existe déjà : proposer uniquement l'ajout de stock
                         quantite_ajout = int(quantite_stock) if quantite_stock else 0
                         if quantite_ajout > 0:
-                            stock_avant = article_existant.quantite_stock
-                            article_existant.quantite_stock += quantite_ajout
-                            article_existant.est_valide_client = False  # En attente de validation client MAUI
-                            article_existant.quantite_envoyee = quantite_ajout  # Quantité ajoutée à valider
+                            # Ne PAS ajouter le stock maintenant — sera appliqué après validation MAUI
+                            article_existant.est_valide_client = False
+                            article_existant.quantite_envoyee = quantite_ajout
                             article_existant.save()
-                            
-                            # Créer un mouvement de stock
-                            MouvementStock.objects.create(
-                                article=article_existant,
-                                type_mouvement='ENTREE',
-                                quantite=quantite_ajout,
-                                stock_avant=stock_avant,
-                                stock_apres=article_existant.quantite_stock,
-                                reference_document=f"AJOUT-{boutique.code_boutique}-{article_existant.id}",
-                                utilisateur=request.user.username,
-                                commentaire=f"Ajout de stock via scan code-barres"
-                            )
                             
                             return JsonResponse({
                                 'success': True,
                                 'article_exists': True,
-                                'message': f'Stock ajouté à l\'article "{article_existant.nom}": +{quantite_ajout} unités (en attente de validation)',
+                                'message': f'Ajout de +{quantite_ajout} unités à "{article_existant.nom}" envoyé pour validation client',
                                 'article_id': article_existant.id,
                                 'article_nom': article_existant.nom,
-                                'stock_avant': stock_avant,
-                                'stock_apres': article_existant.quantite_stock
+                                'stock_actuel': article_existant.quantite_stock,
+                                'quantite_en_attente': quantite_ajout
                             })
                         else:
                             return JsonResponse({
@@ -2369,28 +2356,14 @@ def ajouter_article_boutique(request, boutique_id):
             if code:
                 article_existant = Article.objects.filter(code=code, boutique=boutique).first()
                 if article_existant:
-                    # Article existe : ajouter uniquement le stock
+                    # Article existe : envoyer pour validation MAUI (stock pas appliqué maintenant)
                     quantite_ajout = form.cleaned_data.get('quantite_stock', 0)
                     if quantite_ajout > 0:
-                        stock_avant = article_existant.quantite_stock
-                        article_existant.quantite_stock += quantite_ajout
-                        article_existant.est_valide_client = False  # En attente de validation client MAUI
-                        article_existant.quantite_envoyee = quantite_ajout  # Quantité ajoutée à valider
+                        article_existant.est_valide_client = False
+                        article_existant.quantite_envoyee = quantite_ajout
                         article_existant.save()
                         
-                        # Créer un mouvement de stock
-                        MouvementStock.objects.create(
-                            article=article_existant,
-                            type_mouvement='ENTREE',
-                            quantite=quantite_ajout,
-                            stock_avant=stock_avant,
-                            stock_apres=article_existant.quantite_stock,
-                            reference_document=f"AJOUT-{boutique.code_boutique}-{article_existant.id}",
-                            utilisateur=request.user.username,
-                            commentaire=f"Ajout de stock via scan code-barres"
-                        )
-                        
-                        messages.success(request, f'✅ Stock ajouté à l\'article "{article_existant.nom}": +{quantite_ajout} unités (en attente de validation)')
+                        messages.success(request, f'✅ Ajout de +{quantite_ajout} unités à "{article_existant.nom}" envoyé pour validation client')
                     else:
                         messages.warning(request, f'⚠️ L\'article "{article_existant.nom}" existe déjà (Stock actuel: {article_existant.quantite_stock}). Veuillez indiquer une quantité à ajouter.')
                     
