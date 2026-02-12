@@ -21,6 +21,9 @@
                     <div class="stats-badges d-none d-lg-flex gap-2 me-2">
                         <span class="badge bg-primary"><i class="fas fa-box"></i> {{ articles.count }} Total</span>
                         <span class="badge bg-warning text-dark"><i class="fas fa-exclamation-triangle"></i> {{ articles_stock_bas|default:0 }} Stock bas</span>
+                        {% if articles_en_attente %}
+                        <span class="badge bg-warning text-dark"><i class="fas fa-clock"></i> {{ articles_en_attente }} En attente</span>
+                        {% endif %}
                     </div>
                     <!-- Bouton Recherche & Modification rapide -->
                     <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#rechercheArticleModal" title="Rechercher un article par code-barres">
@@ -143,6 +146,11 @@
                         </td>
                         <td class="col-nom">
                             <div class="article-name">{{ article.nom }}</div>
+                            {% if not article.est_valide_client %}
+                            <span class="badge bg-warning text-dark" title="En attente de validation par le client MAUI ({{ article.quantite_envoyee }} unités envoyées)">
+                                <i class="fas fa-clock"></i> En attente de validation
+                            </span>
+                            {% endif %}
                             {% if article.description %}
                             <div class="article-desc">{{ article.description|truncatechars:80 }}</div>
                             {% endif %}

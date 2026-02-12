@@ -538,11 +538,18 @@ def articles_boutique(request, boutique_id):
         est_actif=True
     ).only('id').count()
     
+    # Articles en attente de validation MAUI
+    articles_en_attente = boutique.articles.filter(
+        est_actif=True,
+        est_valide_client=False
+    ).only('id').count()
+    
     context = {
         'boutique': boutique,
         'articles': articles_page,
         'categories': categories,
         'articles_stock_bas': articles_stock_bas,
+        'articles_en_attente': articles_en_attente,
         'search': search,
         'categorie_id': int(categorie_id) if categorie_id else None,
         'stock_filter': stock_filter,
