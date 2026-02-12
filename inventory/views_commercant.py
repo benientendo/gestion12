@@ -2141,22 +2141,11 @@ def modifier_article_existant(request, boutique_id):
             article.prix_vente = prix_vente
             modifications.append(f"Prix: {ancien_prix} → {prix_vente}")
     
-    # Ajouter du stock si quantité > 0
+    # Ajouter du stock si quantité > 0 → envoyer en validation MAUI
     if quantite > 0:
-        ancien_stock = article.quantite_stock
-        article.quantite_stock += quantite
-        modifications.append(f"Stock: {ancien_stock} → {article.quantite_stock} (+{quantite})")
-        
-        # Créer un mouvement de stock
-        MouvementStock.objects.create(
-            article=article,
-            type_mouvement='ENTREE',
-            quantite=quantite,
-            stock_avant=ancien_stock,
-            stock_apres=article.quantite_stock,
-            reference_document=f"AJOUT-{boutique.id}-{article.id}",
-            commentaire="Ajout via recherche code-barres"
-        )
+        article.est_valide_client = False
+        article.quantite_envoyee = quantite
+        modifications.append(f"Stock: +{quantite} envoyé pour validation client")
     
     if modifications:
         article.save()
@@ -2775,13 +2764,21 @@ def ajuster_stock_article(request, boutique_id, article_id):
             
             # Calculer la différence et le type de mouvement
             if type_ajustement == 'ajouter':
-                article.quantite_stock += quantite
-                type_mouvement = 'ENTREE'
-                quantite_mouvement = quantite
+                # Envoyer en validation MAUI au lieu d'appliquer directement
+                article.est_valide_client = False
+                article.quantite_envoyee = quantite
+                article.save(update_fields=['est_valide_client', 'quantite_envoyee'])
+                return JsonResponse({
+                    'success': True,
+                    'message': f'+{quantite} unités envoyées pour validation client (stock actuel: {stock_avant})',
+                    'stock_avant': stock_avant,
+                    'stock_apres': stock_avant,
+                    'quantite_en_attente': quantite
+                })
             elif type_ajustement == 'retirer':
                 article.quantite_stock = max(0, article.quantite_stock - quantite)
                 type_mouvement = 'SORTIE'
-                quantite_mouvement = -(stock_avant - article.quantite_stock)  # Négatif pour sortie
+                quantite_mouvement = -(stock_avant - article.quantite_stock)
             elif type_ajustement == 'definir':
                 article.quantite_stock = quantite
                 difference = quantite - stock_avant
