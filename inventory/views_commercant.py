@@ -2270,24 +2270,11 @@ def ajouter_article_boutique(request, boutique_id):
                     prix_vente=float(prix_vente) if prix_vente else 0,
                     prix_vente_usd=float(prix_vente_usd) if prix_vente_usd else None,
                     date_expiration=date_exp_parsed,
-                    quantite_stock=stock_initial,
+                    quantite_stock=0,  # Stock à 0 — sera appliqué après validation MAUI
                     est_actif=True,
-                    est_valide_client=False,  # En attente de validation client MAUI
-                    quantite_envoyee=stock_initial  # Quantité à valider
+                    est_valide_client=False,
+                    quantite_envoyee=stock_initial
                 )
-                
-                # ⭐ Créer un mouvement de stock pour le stock initial si > 0
-                if stock_initial > 0:
-                    MouvementStock.objects.create(
-                        article=article,
-                        type_mouvement='ENTREE',
-                        quantite=stock_initial,
-                        stock_avant=0,
-                        stock_apres=stock_initial,
-                        reference_document=f"INIT-{boutique.code_boutique}-{article.id}",
-                        utilisateur=request.user.username,
-                        commentaire=f"Stock initial à la création de l'article"
-                    )
                 
                 # Ajouter la catégorie si fournie
                 if categorie_id:
@@ -2373,22 +2360,10 @@ def ajouter_article_boutique(request, boutique_id):
             article = form.save(commit=False)
             article.boutique = boutique
             stock_initial = article.quantite_stock
-            article.est_valide_client = False  # En attente de validation client MAUI
-            article.quantite_envoyee = stock_initial  # Quantité à valider
+            article.quantite_stock = 0  # Stock à 0 — sera appliqué après validation MAUI
+            article.est_valide_client = False
+            article.quantite_envoyee = stock_initial
             article.save()
-            
-            # ⭐ Créer un mouvement de stock pour le stock initial si > 0
-            if stock_initial > 0:
-                MouvementStock.objects.create(
-                    article=article,
-                    type_mouvement='ENTREE',
-                    quantite=stock_initial,
-                    stock_avant=0,
-                    stock_apres=stock_initial,
-                    reference_document=f"INIT-{boutique.code_boutique}-{article.id}",
-                    utilisateur=request.user.username,
-                    commentaire=f"Stock initial à la création de l'article"
-                )
             
             # ⭐ Créer les variantes si présentes dans le formulaire
             # Stock géré au niveau de chaque variante (enfant)
