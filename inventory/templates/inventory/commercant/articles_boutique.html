@@ -147,8 +147,8 @@
                         <td class="col-nom">
                             <div class="article-name">{{ article.nom }}</div>
                             {% if not article.est_valide_client %}
-                            <span class="badge bg-warning text-dark" title="En attente de validation par le client MAUI ({{ article.quantite_envoyee }} unités envoyées)">
-                                <i class="fas fa-clock"></i> En attente de validation
+                            <span class="badge bg-warning text-dark">
+                                <i class="fas fa-clock"></i> En attente de validation — {{ article.quantite_envoyee }} unité(s) envoyée(s)
                             </span>
                             {% endif %}
                             {% if article.description %}

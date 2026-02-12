@@ -543,6 +543,60 @@ def valider_article(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def refuser_article(request):
+    """
+    Refuse un article en attente de validation.
+    Remet est_valide_client=True et quantite_envoyee=0 sans ajouter de stock.
+    """
+    article_id = request.data.get('article_id')
+    boutique_id = request.data.get('boutique_id')
+    
+    if not article_id:
+        return Response({
+            'error': 'article_id requis',
+            'code': 'MISSING_ARTICLE_ID'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        article = Article.objects.get(id=article_id, est_actif=True)
+        
+        if boutique_id and article.boutique_id != int(boutique_id):
+            return Response({
+                'error': 'Article non trouvé dans cette boutique',
+                'code': 'ARTICLE_NOT_IN_BOUTIQUE'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        logger.info(f"❌ Refus article {article.code} - {article.quantite_envoyee} unités refusées")
+        
+        article.est_valide_client = True
+        article.quantite_envoyee = 0
+        article.save()
+        
+        return Response({
+            'success': True,
+            'message': f'Article "{article.nom}" refusé - remis dans le catalogue sans ajout de stock',
+            'article': {
+                'id': article.id,
+                'nom': article.nom,
+                'quantite_stock': article.quantite_stock,
+            }
+        })
+        
+    except Article.DoesNotExist:
+        return Response({
+            'error': 'Article non trouvé',
+            'code': 'ARTICLE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Erreur refus article: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def articles_deleted_simple(request):
