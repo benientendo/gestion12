@@ -991,6 +991,7 @@ def create_vente_simple(request):
             # Traiter chaque ligne de vente
             for ligne_data in vente_data.get('lignes', []):
                 article_id = ligne_data.get('article_id')
+                variante_id = ligne_data.get('variante_id')
                 quantite = ligne_data.get('quantite', 1)
                 
                 # Vérifier que l'article appartient à la boutique
@@ -1004,10 +1005,26 @@ def create_vente_simple(request):
                     # La transaction sera automatiquement annulée
                     raise Exception(f'Article {article_id} non trouvé dans cette boutique')
                 
-                # Vérifier le stock disponible
-                if article.quantite_stock < quantite:
-                    # La transaction sera automatiquement annulée
-                    raise Exception(f'Stock insuffisant pour {article.nom}')
+                # 🏷️ Récupérer la variante si spécifiée
+                variante = None
+                if variante_id:
+                    try:
+                        variante = VarianteArticle.objects.get(
+                            id=variante_id,
+                            article_parent=article,
+                            est_actif=True
+                        )
+                        logger.info(f"🏷️ Variante trouvée: {variante.nom_complet} (stock: {variante.quantite_stock})")
+                    except VarianteArticle.DoesNotExist:
+                        logger.warning(f"⚠️ Variante {variante_id} non trouvée pour article {article.nom}, vente sur article parent")
+                
+                # Vérifier le stock disponible (variante ou article parent)
+                if variante:
+                    if variante.quantite_stock < quantite:
+                        raise Exception(f'Stock insuffisant pour {variante.nom_complet}')
+                else:
+                    if article.quantite_stock < quantite:
+                        raise Exception(f'Stock insuffisant pour {article.nom}')
                 
                 # Créer la ligne de vente avec support USD
                 devise_ligne = ligne_data.get('devise', devise_vente)
@@ -1051,6 +1068,7 @@ def create_vente_simple(request):
                 ligne_vente = LigneVente.objects.create(
                     vente=vente,
                     article=article,
+                    variante=variante,
                     quantite=quantite,
                     prix_unitaire=prix_unitaire,
                     prix_unitaire_usd=prix_unitaire_usd,
@@ -1060,24 +1078,40 @@ def create_vente_simple(request):
                     motif_reduction=motif_reduction
                 )
                 
-                # Mettre à jour le stock
-                stock_avant = article.quantite_stock  # ⭐ Capturer AVANT la modification
-                article.quantite_stock -= quantite
-                article.save(update_fields=['quantite_stock'])
-                
-                # Créer un mouvement de stock avec traçabilité complète
+                # Mettre à jour le stock (variante ou article parent)
                 symbole_devise = '$' if devise_ligne == 'USD' else 'FC'
                 prix_affiche = prix_unitaire_usd if devise_ligne == 'USD' else prix_unitaire
-                MouvementStock.objects.create(
-                    article=article,
-                    type_mouvement='VENTE',
-                    quantite=-quantite,
-                    stock_avant=stock_avant,
-                    stock_apres=article.quantite_stock,
-                    reference_document=vente.numero_facture,
-                    utilisateur=terminal.nom_terminal,
-                    commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_affiche} {symbole_devise}"
-                )
+                if variante:
+                    stock_avant = variante.quantite_stock
+                    variante.quantite_stock -= quantite
+                    variante.save(update_fields=['quantite_stock'])
+                    logger.info(f"🏷️ Stock variante {variante.nom_complet}: {stock_avant} → {variante.quantite_stock}")
+                    
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='VENTE',
+                        quantite=-quantite,
+                        stock_avant=stock_avant,
+                        stock_apres=variante.quantite_stock,
+                        reference_document=vente.numero_facture,
+                        utilisateur=terminal.nom_terminal,
+                        commentaire=f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_affiche} {symbole_devise}"
+                    )
+                else:
+                    stock_avant = article.quantite_stock
+                    article.quantite_stock -= quantite
+                    article.save(update_fields=['quantite_stock'])
+                    
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='VENTE',
+                        quantite=-quantite,
+                        stock_avant=stock_avant,
+                        stock_apres=article.quantite_stock,
+                        reference_document=vente.numero_facture,
+                        utilisateur=terminal.nom_terminal,
+                        commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_affiche} {symbole_devise}"
+                    )
                 
                 # ⭐ Accumuler les montants selon la devise
                 if devise_ligne == 'USD':
@@ -1609,6 +1643,7 @@ def sync_ventes_simple(request):
                 for item in vente_convertie.get('lignes', []):
                     ligne_convertie = {
                         'article_id': item.get('ArticleId') or item.get('article_id'),
+                        'variante_id': item.get('VarianteId') or item.get('variante_id'),
                         'quantite': item.get('Quantite') or item.get('quantite'),
                         'prix_unitaire': item.get('PrixUnitaire') or item.get('prix_unitaire'),
                         'prix_unitaire_usd': item.get('PrixUnitaireUsd') or item.get('prix_unitaire_usd'),
@@ -1727,6 +1762,7 @@ def sync_ventes_simple(request):
                     # Traiter chaque ligne de vente
                     for ligne_data in vente_data.get('lignes', []):
                         article_id = ligne_data.get('article_id')
+                        variante_id = ligne_data.get('variante_id')
                         quantite = ligne_data.get('quantite', 1)
                         
                         # Vérifier que l'article appartient à la boutique
@@ -1740,10 +1776,26 @@ def sync_ventes_simple(request):
                             # Erreur enrichie avec détails pour traçabilité
                             raise ValueError(f'ARTICLE_NOT_FOUND|{article_id}||0|0|Article {article_id} non trouvé dans cette boutique')
                         
-                        # Vérifier le stock disponible
-                        if article.quantite_stock < quantite:
-                            # Erreur enrichie: RAISON|article_id|article_nom|stock_demande|stock_dispo|message
-                            raise ValueError(f'INSUFFICIENT_STOCK|{article.id}|{article.nom}|{quantite}|{article.quantite_stock}|Stock insuffisant pour {article.nom} (dispo: {article.quantite_stock}, demandé: {quantite})')
+                        # 🏷️ Récupérer la variante si spécifiée
+                        variante = None
+                        if variante_id:
+                            try:
+                                variante = VarianteArticle.objects.get(
+                                    id=variante_id,
+                                    article_parent=article,
+                                    est_actif=True
+                                )
+                                logger.info(f"🏷️ Variante trouvée: {variante.nom_complet} (stock: {variante.quantite_stock})")
+                            except VarianteArticle.DoesNotExist:
+                                logger.warning(f"⚠️ Variante {variante_id} non trouvée pour article {article.nom}, vente sur article parent")
+                        
+                        # Vérifier le stock disponible (variante ou article parent)
+                        if variante:
+                            if variante.quantite_stock < quantite:
+                                raise ValueError(f'INSUFFICIENT_STOCK|{article.id}|{variante.nom_complet}|{quantite}|{variante.quantite_stock}|Stock insuffisant pour {variante.nom_complet} (dispo: {variante.quantite_stock}, demandé: {quantite})')
+                        else:
+                            if article.quantite_stock < quantite:
+                                raise ValueError(f'INSUFFICIENT_STOCK|{article.id}|{article.nom}|{quantite}|{article.quantite_stock}|Stock insuffisant pour {article.nom} (dispo: {article.quantite_stock}, demandé: {quantite})')
                         
                         # Créer la ligne de vente avec support USD
                         prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
@@ -1772,6 +1824,7 @@ def sync_ventes_simple(request):
                         ligne_vente = LigneVente.objects.create(
                             vente=vente,
                             article=article,
+                            variante=variante,
                             quantite=quantite,
                             prix_unitaire=prix_unitaire,
                             prix_unitaire_usd=prix_unitaire_usd,
@@ -1781,22 +1834,38 @@ def sync_ventes_simple(request):
                             motif_reduction=motif_reduction
                         )
                         
-                        # Mettre à jour le stock
-                        stock_avant = article.quantite_stock  # ⭐ Capturer AVANT la modification
-                        article.quantite_stock -= quantite
-                        article.save(update_fields=['quantite_stock'])
-                        
-                        # Créer un mouvement de stock avec traçabilité complète
-                        MouvementStock.objects.create(
-                            article=article,
-                            type_mouvement='VENTE',
-                            quantite=-quantite,
-                            stock_avant=stock_avant,  # ⭐ NOUVEAU
-                            stock_apres=article.quantite_stock,  # ⭐ NOUVEAU
-                            reference_document=vente.numero_facture,  # ⭐ NOUVEAU
-                            utilisateur=terminal.nom_terminal,  # ⭐ NOUVEAU
-                            commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
-                        )
+                        # Mettre à jour le stock (variante ou article parent)
+                        if variante:
+                            stock_avant = variante.quantite_stock
+                            variante.quantite_stock -= quantite
+                            variante.save(update_fields=['quantite_stock'])
+                            logger.info(f"🏷️ Stock variante {variante.nom_complet}: {stock_avant} → {variante.quantite_stock}")
+                            
+                            MouvementStock.objects.create(
+                                article=article,
+                                type_mouvement='VENTE',
+                                quantite=-quantite,
+                                stock_avant=stock_avant,
+                                stock_apres=variante.quantite_stock,
+                                reference_document=vente.numero_facture,
+                                utilisateur=terminal.nom_terminal,
+                                commentaire=f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_unitaire} CDF"
+                            )
+                        else:
+                            stock_avant = article.quantite_stock
+                            article.quantite_stock -= quantite
+                            article.save(update_fields=['quantite_stock'])
+                            
+                            MouvementStock.objects.create(
+                                article=article,
+                                type_mouvement='VENTE',
+                                quantite=-quantite,
+                                stock_avant=stock_avant,
+                                stock_apres=article.quantite_stock,
+                                reference_document=vente.numero_facture,
+                                utilisateur=terminal.nom_terminal,
+                                commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
+                            )
                         
                         montant_total += prix_unitaire * quantite
                         montant_total_usd = (montant_total_usd or 0) + (prix_unitaire_usd * quantite if prix_unitaire_usd else 0)
