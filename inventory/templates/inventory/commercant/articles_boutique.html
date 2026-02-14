@@ -2196,9 +2196,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (article.quantite_stock <= 0) stockBadgeClass = 'bg-danger';
         else if (article.quantite_stock <= seuilStockBas) stockBadgeClass = 'bg-warning text-dark';
         
-        // Badge variantes
+        // Badge variantes avec nombre
         const variantesBadge = article.a_variantes ? 
-            `<span class="badge bg-info ms-1" title="Variantes"><i class="fas fa-tags"></i></span>` : '';
+            `<span class="badge bg-info ms-1" title="${article.nb_variantes || ''} variante(s)"><i class="fas fa-tags"></i> ${article.nb_variantes || ''}</span>` : '';
         
         return `
             <tr data-article-id="${article.id}" 
