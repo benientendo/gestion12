@@ -592,6 +592,8 @@ def articles_search_ajax(request, boutique_id):
             'devise': art.devise,
             'quantite_stock': art.quantite_stock,
             'a_variantes': art.a_variantes,
+            'image_url': art.image.url if art.image else None,
+            'description': art.description[:100] if art.description else '',
             'url': f'/commercant/boutiques/{boutique.id}/articles/{art.id}/'
         })
     

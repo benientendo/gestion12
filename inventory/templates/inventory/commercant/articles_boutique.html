@@ -2177,108 +2177,239 @@ document.addEventListener('DOMContentLoaded', function() {
     const quickResultsList = document.getElementById('quickResultsList');
     const quickResults = document.getElementById('quickResults');
     
+    // Stocker le HTML original du tableau pour pouvoir le restaurer
+    const originalTableHTML = tableBody.innerHTML;
+    let isShowingSearchResults = false;
+    
     // Stocker toutes les lignes du tableau avec leurs données
     let allRows = Array.from(tableBody.querySelectorAll('tr'));
-    let allArticles = [];
     
-    // Extraire les données des articles depuis les attributs data-*
-    allRows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length > 0 && row.dataset.articleId) {
-            allArticles.push({
-                row: row,
-                id: row.dataset.articleId,
-                nom: row.dataset.articleNom || cells[1]?.textContent.trim() || '',
-                code: cells[2]?.textContent.trim() || '',
-                categorie: cells[3]?.textContent.trim() || '',
-                prix: cells[4]?.textContent.trim() || '',
-                stock: parseInt(row.dataset.articleStock) || 0,
-                prixNumeric: parseFloat(row.dataset.articlePrix) || 0
+    // Fonction pour générer une ligne de tableau pour un article AJAX
+    function generateArticleRow(article) {
+        const hasVariantes = article.a_variantes ? 'true' : 'false';
+        const isUSD = article.devise === 'USD';
+        const prixFormatted = isUSD ? `$ ${parseFloat(article.prix_vente).toFixed(2)}` : `${parseInt(article.prix_vente)} <small>FC</small>`;
+        const prixClass = isUSD ? 'text-success' : '';
+        
+        // Badge stock selon niveau
+        let stockBadgeClass = 'bg-success';
+        if (article.quantite_stock <= 0) stockBadgeClass = 'bg-danger';
+        else if (article.quantite_stock <= seuilStockBas) stockBadgeClass = 'bg-warning text-dark';
+        
+        // Badge variantes
+        const variantesBadge = article.a_variantes ? 
+            `<span class="badge bg-info ms-1" title="Variantes"><i class="fas fa-tags"></i></span>` : '';
+        
+        return `
+            <tr data-article-id="${article.id}" 
+                data-article-nom="${article.nom.replace(/"/g, '&quot;')}" 
+                data-article-stock="${article.quantite_stock}" 
+                data-article-prix="${article.prix_vente}"
+                data-has-variantes="${hasVariantes}"
+                class="search-result-row">
+                <td class="col-checkbox">
+                    <input type="checkbox" class="form-check-input article-checkbox" value="${article.id}">
+                </td>
+                <td class="col-img">
+                    ${article.image_url ? 
+                        `<img src="${article.image_url}" alt="${article.nom}" class="article-img">` : 
+                        `<div class="article-img-placeholder"><i class="fas fa-image"></i></div>`}
+                </td>
+                <td class="col-nom">
+                    <div class="article-name">${article.nom}</div>
+                    ${article.description ? `<div class="article-desc">${article.description.substring(0, 80)}...</div>` : ''}
+                </td>
+                <td class="col-code"><code class="article-code">${article.code || '-'}</code></td>
+                <td class="col-cat">
+                    ${article.categorie ? `<span class="badge bg-secondary">${article.categorie}</span>` : `<span class="text-muted">-</span>`}
+                </td>
+                <td class="col-prix">
+                    <span class="${prixClass}">${prixFormatted}</span>
+                </td>
+                <td class="col-stock">
+                    <span class="badge ${stockBadgeClass}">${article.quantite_stock}</span>
+                    ${variantesBadge}
+                </td>
+                <td class="col-exp">
+                    <span class="text-muted">-</span>
+                </td>
+                <td class="col-actions">
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-success btn-sm btn-stock-ajax" 
+                                data-bs-toggle="modal" data-bs-target="#ajusterStockModal"
+                                data-article-id="${article.id}"
+                                data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
+                                data-article-stock="${article.quantite_stock}"
+                                data-has-variantes="${hasVariantes}"
+                                title="Stock">
+                            <i class="fas fa-boxes"></i>
+                        </button>
+                        <button type="button" class="btn btn-outline-info btn-sm btn-prix-ajax" 
+                                data-bs-toggle="modal" data-bs-target="#modifierPrixModal"
+                                data-article-id="${article.id}"
+                                data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
+                                data-article-prix="${article.prix_vente}"
+                                data-article-devise="${article.devise || 'CDF'}"
+                                title="Prix">
+                            <i class="fas fa-tag"></i>
+                        </button>
+                        <a href="/commercant/boutiques/{{ boutique.id }}/articles/${article.id}/modifier/" 
+                           class="btn btn-outline-warning btn-sm" title="Modifier">
+                            <i class="fas fa-edit"></i>
+                        </a>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+    
+    // Attacher les événements aux boutons des lignes AJAX
+    function attachAjaxRowEvents() {
+        document.querySelectorAll('.btn-stock-ajax').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const articleId = parseInt(this.dataset.articleId);
+                const articleNom = this.dataset.articleNom;
+                const stock = parseInt(this.dataset.articleStock);
+                const hasVariantes = this.dataset.hasVariantes === 'true';
+                setArticleForStock(articleId, articleNom, stock, hasVariantes);
             });
-        }
-    });
+        });
+        
+        document.querySelectorAll('.btn-prix-ajax').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const articleId = parseInt(this.dataset.articleId);
+                const articleNom = this.dataset.articleNom;
+                const prix = parseFloat(this.dataset.articlePrix);
+                const devise = this.dataset.articleDevise || 'CDF';
+                setArticleForPrice(articleId, articleNom, prix, devise);
+            });
+        });
+    }
     
-    // Fonction de filtrage avec debounce pour optimiser les performances
+    // Fonction de filtrage avec debounce - recherche AJAX sur TOUS les articles
     let debounceTimer;
+    let searchAjaxController = null;
+    
     function filterArticles() {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
-            const searchTerm = searchInput.value.toLowerCase().trim();
+            const searchTerm = searchInput.value.trim();
             const categorieFilter = filterCategorie.value.toLowerCase();
             const stockFilter = filterStock.value;
             
-            // Gérer l'affichage du dropdown d'actions
-            if (searchTerm.length >= 2) {
-                showSearchActions(searchTerm);
-            } else {
-                searchActionsDropdown.style.display = 'none';
+            // Masquer le dropdown (on utilise le tableau principal maintenant)
+            searchActionsDropdown.style.display = 'none';
+            
+            // Si recherche vide, restaurer le tableau original
+            if (searchTerm.length < 2) {
+                if (isShowingSearchResults) {
+                    tableBody.innerHTML = originalTableHTML;
+                    allRows = Array.from(tableBody.querySelectorAll('tr'));
+                    isShowingSearchResults = false;
+                }
+                // Filtrer localement les lignes originales
+                filterLocalRows(categorieFilter, stockFilter);
+                return;
             }
             
-            let visibleCount = 0;
-            let matchedArticles = [];
+            // Annuler la requête précédente si elle existe
+            if (searchAjaxController) {
+                searchAjaxController.abort();
+            }
+            searchAjaxController = new AbortController();
             
-            allRows.forEach(row => {
-                // Récupérer les données de la ligne
-                const cells = row.querySelectorAll('td');
-                if (cells.length === 0) return;
-                
-                const nom = cells[0]?.textContent.toLowerCase() || '';
-                const code = cells[1]?.textContent.toLowerCase() || '';
-                const categorie = cells[2]?.textContent.toLowerCase() || '';
-                const stock = parseInt(cells[4]?.textContent.trim()) || 0;
-                const prix = cells[3]?.textContent.toLowerCase() || '';
-                
-                // Appliquer le filtre de recherche textuelle
-                const matchSearch = !searchTerm || 
-                    nom.includes(searchTerm) || 
-                    code.includes(searchTerm) || 
-                    categorie.includes(searchTerm) ||
-                    prix.includes(searchTerm);
-                
-                // Appliquer le filtre de catégorie
-                const matchCategorie = !categorieFilter || categorie.includes(categorieFilter);
-                
-                // Appliquer le filtre de stock
-                let matchStock = true;
-                if (stockFilter === 'bas') {
-                    matchStock = stock > 0 && stock < seuilStockBas;
-                } else if (stockFilter === 'zero') {
-                    matchStock = stock === 0;
-                } else if (stockFilter === 'normal') {
-                    matchStock = stock >= seuilStockBas;
-                }
-                
-                // Afficher ou masquer la ligne
-                if (matchSearch && matchCategorie && matchStock) {
-                    row.style.display = '';
-                    visibleCount++;
-                } else {
-                    row.style.display = 'none';
-                }
-            });
+            // Afficher un indicateur de chargement
+            tableBody.innerHTML = `
+                <tr class="loading-row">
+                    <td colspan="9" class="text-center py-5">
+                        <i class="fas fa-spinner fa-spin fa-2x text-primary mb-3"></i>
+                        <div class="text-muted">Recherche en cours...</div>
+                    </td>
+                </tr>
+            `;
             
-            // Mettre à jour le compteur
-            if (resultCount) resultCount.textContent = `${visibleCount} article(s) trouvé(s)`;
-            
-            // Afficher un message si aucun résultat
-            const noResultRow = tableBody.querySelector('.no-result-row');
-            if (visibleCount === 0) {
-                if (!noResultRow) {
-                    const tr = document.createElement('tr');
-                    tr.className = 'no-result-row';
-                    tr.innerHTML = `
-                        <td colspan="7" class="text-center py-5">
-                            <i class="fas fa-search fa-3x text-muted mb-3"></i>
-                            <h5>Aucun article trouvé</h5>
-                            <p class="text-muted">Essayez de modifier vos critères de recherche</p>
-                        </td>
+            // Recherche AJAX sur le serveur (tous les articles)
+            fetch(`{% url 'inventory:articles_search_ajax' boutique.id %}?q=${encodeURIComponent(searchTerm)}`, {
+                signal: searchAjaxController.signal
+            })
+            .then(response => response.json())
+            .then(data => {
+                const matches = data.articles || [];
+                isShowingSearchResults = true;
+                
+                if (matches.length === 0) {
+                    // Aucun résultat
+                    tableBody.innerHTML = `
+                        <tr class="no-result-row">
+                            <td colspan="9" class="text-center py-5">
+                                <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                                <h5>Aucun article trouvé pour "${searchTerm}"</h5>
+                                <p class="text-muted">Essayez un autre terme de recherche</p>
+                                <button type="button" class="btn btn-success btn-sm mt-2" 
+                                        data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
+                                    <i class="fas fa-plus"></i> Ajouter "${searchTerm}"
+                                </button>
+                            </td>
+                        </tr>
                     `;
-                    tableBody.appendChild(tr);
+                    if (resultCount) resultCount.textContent = '0 article(s) trouvé(s)';
+                } else {
+                    // Afficher les résultats dans le tableau
+                    tableBody.innerHTML = matches.map(article => generateArticleRow(article)).join('');
+                    attachAjaxRowEvents();
+                    if (resultCount) resultCount.textContent = `${matches.length} article(s) trouvé(s)`;
                 }
-            } else if (noResultRow) {
-                noResultRow.remove();
+            })
+            .catch(error => {
+                if (error.name === 'AbortError') return; // Requête annulée, ignorer
+                console.error('Erreur recherche:', error);
+                tableBody.innerHTML = `
+                    <tr class="error-row">
+                        <td colspan="9" class="text-center py-5 text-danger">
+                            <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
+                            <div>Erreur lors de la recherche</div>
+                        </td>
+                    </tr>
+                `;
+            });
+        }, 300);
+    }
+    
+    // Filtrer les lignes locales (quand pas de recherche AJAX)
+    function filterLocalRows(categorieFilter, stockFilter) {
+        let visibleCount = 0;
+        
+        allRows.forEach(row => {
+            if (row.classList.contains('no-result-row') || row.classList.contains('loading-row')) return;
+            
+            const cells = row.querySelectorAll('td');
+            if (cells.length === 0) return;
+            
+            const categorie = cells[4]?.textContent.toLowerCase() || '';
+            const stock = parseInt(row.dataset.articleStock) || 0;
+            
+            // Appliquer le filtre de catégorie
+            const matchCategorie = !categorieFilter || categorie.includes(categorieFilter);
+            
+            // Appliquer le filtre de stock
+            let matchStock = true;
+            if (stockFilter === 'bas') {
+                matchStock = stock > 0 && stock < seuilStockBas;
+            } else if (stockFilter === 'zero') {
+                matchStock = stock === 0;
+            } else if (stockFilter === 'normal') {
+                matchStock = stock >= seuilStockBas;
             }
-        }, 300); // Délai de 300ms après la dernière frappe
+            
+            if (matchCategorie && matchStock) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+        
+        if (resultCount) resultCount.textContent = `${visibleCount} article(s)`;
     }
     
     // Événements pour la recherche en temps réel
