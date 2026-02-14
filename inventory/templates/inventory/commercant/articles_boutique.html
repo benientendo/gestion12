@@ -678,6 +678,13 @@
                     <small>Stock actuel: <span id="stockActuel" class="badge bg-primary"></span> unités</small>
                 </div>
                 
+                <!-- Avertissement pour articles avec variantes -->
+                <div class="alert alert-warning" id="variantesStockWarning" style="display: none;">
+                    <i class="fas fa-exclamation-triangle"></i> <strong>Attention:</strong> Cet article possède des variantes. 
+                    L'ajustement sera appliqué au stock global de l'article parent. 
+                    Pour ajuster le stock d'une variante spécifique, utilisez le bouton "Recherche" avec le code-barres de la variante.
+                </div>
+                
                 <form id="formAjusterStock">
                     {% csrf_token %}
                     <input type="hidden" id="stockArticleId" name="article_id">
@@ -2339,12 +2346,14 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <span class="badge bg-info">${article.categorie || 'Sans catégorie'}</span>
                                     <span class="badge bg-primary">${article.quantite_stock} en stock</span>
                                     <span class="text-success fw-bold">${article.prix_vente} ${article.devise}</span>
+                                    ${article.a_variantes ? '<span class="badge bg-warning text-dark"><i class="fas fa-tags"></i> Variantes</span>' : ''}
                                 </div>
                                 <div class="result-actions">
                                     <button type="button" class="btn btn-success btn-xs quick-action-btn" 
                                             data-article-id="${article.id}"
                                             data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
                                             data-article-stock="${article.quantite_stock}"
+                                            data-has-variantes="${article.a_variantes ? 'true' : 'false'}"
                                             data-action="stock">
                                         <i class="fas fa-boxes"></i> Stock
                                     </button>
@@ -2352,6 +2361,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                             data-article-id="${article.id}"
                                             data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
                                             data-article-prix="${article.prix_vente}"
+                                            data-article-devise="${article.devise || 'CDF'}"
                                             data-action="prix">
                                         <i class="fas fa-dollar-sign"></i> Prix
                                     </button>
@@ -2394,13 +2404,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     if (action === 'stock') {
                         const stock = parseInt(this.getAttribute('data-article-stock'));
-                        setArticleForStock(articleId, articleNom, stock);
+                        const hasVariantes = this.getAttribute('data-has-variantes') === 'true';
+                        setArticleForStock(articleId, articleNom, stock, hasVariantes);
                         // Ouvrir le modal
                         const modal = new bootstrap.Modal(document.getElementById('ajusterStockModal'));
                         modal.show();
                     } else if (action === 'prix') {
                         const prix = parseFloat(this.getAttribute('data-article-prix'));
-                        setArticleForPrice(articleId, articleNom, prix);
+                        const devise = this.getAttribute('data-article-devise') || 'CDF';
+                        setArticleForPrice(articleId, articleNom, prix, devise);
                         // Ouvrir le modal
                         const modal = new bootstrap.Modal(document.getElementById('modifierPrixModal'));
                         modal.show();
@@ -2428,7 +2440,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentStockArticleId = null;
     let currentStockActuel = 0;
     
-    window.setArticleForStock = function(articleId, articleNom, stockActuel) {
+    window.setArticleForStock = function(articleId, articleNom, stockActuel, hasVariantes = false) {
         currentStockArticleId = articleId;
         currentStockActuel = stockActuel;
         
@@ -2438,6 +2450,12 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('quantite_ajustement').value = 1;
         document.getElementById('commentaire_stock').value = '';
         document.getElementById('ajouterStock').checked = true;
+        
+        // Afficher un avertissement si l'article a des variantes
+        const variantesWarning = document.getElementById('variantesStockWarning');
+        if (variantesWarning) {
+            variantesWarning.style.display = hasVariantes ? 'block' : 'none';
+        }
         
         updateStockPreview();
     };

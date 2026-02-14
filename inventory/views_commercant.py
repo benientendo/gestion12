@@ -591,6 +591,7 @@ def articles_search_ajax(request, boutique_id):
             'prix_vente': str(art.prix_vente),
             'devise': art.devise,
             'quantite_stock': art.quantite_stock,
+            'a_variantes': art.a_variantes,
             'url': f'/commercant/boutiques/{boutique.id}/articles/{art.id}/'
         })
     
