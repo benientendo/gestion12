@@ -11,28 +11,17 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         boutique_id = options['boutique']
         
-        # Articles a verifier (ceux qui ont ete restaures)
-        articles_a_verifier = [
-            'CANETTE  ENERGY OKAY 250MIL',
-            'BEER SAVANNA BTL 5.5% 250MIL', 
-            'CANETTE  FANTA 330MIL',
-            'VIN CASTILLO LAGOMAN 11% 75CL',
-            'CHOCO EGG'
-        ]
+        self.stdout.write("=== VERIFICATION DES ARTICLES RESTAURES ===\n")
         
-        self.stdout.write("=== VERIFICATION DES ARTICLES ===\n")
+        # Trouver les articles qui ont un mouvement RESTORE
+        articles_restaures = MouvementStock.objects.filter(
+            article__boutique_id=boutique_id,
+            reference_document__startswith="RESTORE-"
+        ).select_related('article').order_by('-quantite')[:5]
         
-        for nom_article in articles_a_verifier:
+        for mv_restore in articles_restaures:
+            article = mv_restore.article
             try:
-                article = Article.objects.filter(
-                    boutique_id=boutique_id,
-                    nom__icontains=nom_article.split()[0]  # Recherche partielle
-                ).first()
-                
-                if not article:
-                    self.stdout.write(f"Article non trouve: {nom_article}")
-                    continue
-                
                 self.stdout.write(f"\n{'='*60}")
                 self.stdout.write(f"ARTICLE: {article.nom}")
                 self.stdout.write(f"Code: {article.code}")
@@ -73,7 +62,7 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.ERROR(f"ECART de {diff} unites!"))
                     
             except Exception as e:
-                self.stdout.write(self.style.ERROR(f"Erreur pour {nom_article}: {e}"))
+                self.stdout.write(self.style.ERROR(f"Erreur pour {article.nom}: {e}"))
         
         self.stdout.write(f"\n{'='*60}")
         self.stdout.write("Verification terminee")
