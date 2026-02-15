@@ -490,6 +490,23 @@ def valider_article(request):
                 'code': 'ARTICLE_NOT_IN_BOUTIQUE'
             }, status=status.HTTP_404_NOT_FOUND)
         
+        # ⚠️ PROTECTION CONTRE VALIDATION MULTIPLE
+        # Si l'article est déjà validé ET pas de quantité en attente, ignorer silencieusement
+        if article.est_valide_client and article.quantite_envoyee == 0:
+            logger.warning(f"⚠️ Tentative de re-validation ignorée pour article {article.code} (déjà validé)")
+            return Response({
+                'success': True,
+                'message': f'Article "{article.nom}" déjà validé',
+                'already_validated': True,
+                'article': {
+                    'id': article.id,
+                    'code': article.code,
+                    'nom': article.nom,
+                    'quantite_stock': article.quantite_stock,
+                    'est_valide_client': article.est_valide_client
+                }
+            })
+        
         # Valider l'article
         stock_avant = article.quantite_stock
         qte_validee = int(quantite_validee)
