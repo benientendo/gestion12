@@ -69,3 +69,43 @@ class Command(BaseCommand):
         
         if cas_problematiques and not do_restore:
             self.stdout.write(self.style.WARNING("\nPour restaurer le stock des cas problematiques, executez avec --restore"))
+        
+        if do_restore and cas_problematiques:
+            from django.db import transaction
+            from django.utils import timezone
+            
+            self.stdout.write(self.style.SUCCESS("\n=== RESTAURATION DU STOCK ===\n"))
+            
+            total_restaure = 0
+            articles_restaures = 0
+            
+            for cas in cas_problematiques:
+                art = cas['article']
+                qte_a_restaurer = cas['qte_retiree']
+                correction_mv = cas['correction']
+                
+                with transaction.atomic():
+                    # Restaurer le stock
+                    art.quantite_stock += qte_a_restaurer
+                    art.save(update_fields=['quantite_stock'])
+                    
+                    # Creer un mouvement de restauration
+                    MouvementStock.objects.create(
+                        article=art,
+                        type_mouvement='CORRECTION',
+                        quantite=qte_a_restaurer,
+                        reference_document=f'RESTORE-{timezone.now().strftime("%Y%m%d")}',
+                        commentaire=f'Restauration: correction excessive annulee ({cas["ratio"]*100:.0f}% retire)'
+                    )
+                    
+                    # Supprimer l'ancien mouvement de correction
+                    correction_mv.delete()
+                    
+                    total_restaure += qte_a_restaurer
+                    articles_restaures += 1
+                    
+                    self.stdout.write(f"  {art.nom[:35]} | +{qte_a_restaurer} restaure | nouveau stock: {art.quantite_stock}")
+            
+            self.stdout.write(self.style.SUCCESS(f"\n=== TERMINE ==="))
+            self.stdout.write(self.style.SUCCESS(f"Articles restaures: {articles_restaures}"))
+            self.stdout.write(self.style.SUCCESS(f"Stock total restaure: {total_restaure} unites"))
