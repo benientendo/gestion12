@@ -1,0 +1,152 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Facture {{ facture.numero_facture }} - {{ depot.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .facture-info {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 12px;
+        margin-bottom: 25px;
+    }
+    .info-item {
+        margin-bottom: 10px;
+    }
+    .info-label {
+        font-size: 0.85rem;
+        opacity: 0.8;
+    }
+    .info-value {
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+    .ligne-carton {
+        background: #fff3cd;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <a href="{% url 'inventory:liste_factures_depot' depot.id %}" class="btn btn-outline-secondary btn-sm mb-3">
+                <i class="fas fa-arrow-left"></i> Retour aux factures
+            </a>
+            <h2><i class="fas fa-file-invoice me-2"></i>Facture {{ facture.numero_facture }}</h2>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-outline-primary" onclick="window.print()">
+                <i class="fas fa-print"></i> Imprimer
+            </button>
+        </div>
+    </div>
+
+    <!-- Informations de la facture -->
+    <div class="facture-info">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="info-item">
+                    <div class="info-label">N° Facture</div>
+                    <div class="info-value">{{ facture.numero_facture }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-item">
+                    <div class="info-label">Date</div>
+                    <div class="info-value">{{ facture.date_facture|date:"d/m/Y" }}</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-item">
+                    <div class="info-label">Fournisseur</div>
+                    <div class="info-value">
+                        {% if facture.fournisseur %}
+                            {{ facture.fournisseur.nom }}
+                        {% else %}
+                            {{ facture.fournisseur_nom|default:"Non spécifié" }}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="info-item">
+                    <div class="info-label">Montant Total</div>
+                    <div class="info-value">{{ facture.montant_total|floatformat:0 }} {{ facture.devise }}</div>
+                </div>
+            </div>
+        </div>
+        {% if facture.notes %}
+        <div class="mt-3">
+            <div class="info-label">Notes</div>
+            <div>{{ facture.notes }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Liste des articles -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0"><i class="fas fa-boxes me-2"></i>Articles ({{ lignes.count }})</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Article</th>
+                            <th>Catégorie</th>
+                            <th class="text-center">Type</th>
+                            <th class="text-center">Cartons</th>
+                            <th class="text-center">Pcs/Carton</th>
+                            <th class="text-center">Total Unités</th>
+                            <th class="text-end">Prix Achat/U</th>
+                            <th class="text-end">Prix Vente/U</th>
+                            <th class="text-end">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ligne in lignes %}
+                        <tr class="{% if ligne.type_quantite == 'CARTON' %}ligne-carton{% endif %}">
+                            <td>
+                                <strong>{{ ligne.article.nom }}</strong>
+                                <br><small class="text-muted">{{ ligne.article.code }}</small>
+                            </td>
+                            <td>{{ ligne.categorie.nom|default:"-" }}</td>
+                            <td class="text-center">
+                                {% if ligne.type_quantite == 'CARTON' %}
+                                    <span class="badge bg-warning text-dark"><i class="fas fa-box"></i> Carton</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Unité</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">{{ ligne.nombre_cartons|default:"-" }}</td>
+                            <td class="text-center">{{ ligne.pieces_par_carton|default:"-" }}</td>
+                            <td class="text-center"><strong>{{ ligne.quantite_unites }}</strong></td>
+                            <td class="text-end">{{ ligne.prix_achat_unitaire|floatformat:2 }}</td>
+                            <td class="text-end">{{ ligne.prix_vente_unitaire|floatformat:2 }}</td>
+                            <td class="text-end"><strong>{{ ligne.prix_achat_total|floatformat:0 }} {{ facture.devise }}</strong></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-primary">
+                            <td colspan="5"><strong>TOTAL</strong></td>
+                            <td class="text-center"><strong>{{ lignes|length }} articles</strong></td>
+                            <td colspan="2"></td>
+                            <td class="text-end"><strong>{{ facture.montant_total|floatformat:0 }} {{ facture.devise }}</strong></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-muted mt-3">
+        <small>Enregistré le {{ facture.date_creation|date:"d/m/Y à H:i" }} par {{ facture.created_by|default:"Système" }}</small>
+    </div>
+</div>
+{% endblock %}

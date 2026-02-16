@@ -648,6 +648,8 @@ class Boutique(models.Model):
     # Paramètres de fonctionnement
     devise = models.CharField(max_length=10, default='CDF')
     alerte_stock_bas = models.IntegerField(default=5, help_text="Seuil d'alerte pour stock bas")
+    taux_dollar = models.DecimalField(max_digits=10, decimal_places=2, default=2800, 
+                                      help_text="Taux de change USD vers CDF pour conversion des factures")
     derniere_lecture_rapports_caisse = models.DateTimeField(null=True, blank=True)
     derniere_lecture_articles_negocies = models.DateTimeField(null=True, blank=True)
     derniere_lecture_retours_articles = models.DateTimeField(null=True, blank=True)
@@ -1076,4 +1078,210 @@ class NotificationStock(models.Model):
             models.Index(fields=['boutique', '-date_creation'], name='notif_boutique_date_idx'),
             models.Index(fields=['lue', '-date_creation'], name='notif_lue_date_idx'),
         ]
+
+
+class Fournisseur(models.Model):
+    """Fournisseurs pour les approvisionnements."""
+    
+    nom = models.CharField(max_length=200, help_text="Nom du fournisseur")
+    contact = models.CharField(max_length=100, blank=True, help_text="Téléphone ou email")
+    adresse = models.TextField(blank=True, help_text="Adresse du fournisseur")
+    commercant = models.ForeignKey('Commercant', on_delete=models.CASCADE, related_name='fournisseurs')
+    est_actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return self.nom
+    
+    class Meta:
+        verbose_name = "Fournisseur"
+        verbose_name_plural = "Fournisseurs"
+        ordering = ['nom']
+        unique_together = ['nom', 'commercant']
+
+
+class FactureApprovisionnement(models.Model):
+    """Facture d'approvisionnement regroupant plusieurs articles."""
+    
+    numero_facture = models.CharField(max_length=100, help_text="Numéro de facture fournisseur")
+    fournisseur = models.ForeignKey(Fournisseur, on_delete=models.SET_NULL, null=True, blank=True, related_name='factures')
+    fournisseur_nom = models.CharField(max_length=200, blank=True, help_text="Nom du fournisseur (si pas dans la liste)")
+    depot = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='factures_approvisionnement')
+    date_facture = models.DateField(help_text="Date de la facture")
+    montant_total = models.DecimalField(max_digits=15, decimal_places=2, default=0, help_text="Montant total de la facture")
+    devise = models.CharField(max_length=3, choices=[('CDF', 'Franc Congolais'), ('USD', 'Dollar US')], default='CDF')
+    notes = models.TextField(blank=True, help_text="Notes ou commentaires")
+    created_by = models.CharField(max_length=150, blank=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        fournisseur_display = self.fournisseur.nom if self.fournisseur else self.fournisseur_nom
+        return f"Facture {self.numero_facture} - {fournisseur_display}"
+    
+    def calculer_montant_total(self):
+        """Recalcule le montant total à partir des lignes."""
+        total = self.lignes.aggregate(
+            total=models.Sum(models.F('prix_achat_total'))
+        )['total'] or 0
+        self.montant_total = total
+        self.save(update_fields=['montant_total'])
+        return total
+    
+    class Meta:
+        verbose_name = "Facture d'approvisionnement"
+        verbose_name_plural = "Factures d'approvisionnement"
+        ordering = ['-date_facture', '-date_creation']
+        indexes = [
+            models.Index(fields=['depot', '-date_facture'], name='facture_depot_date_idx'),
+            models.Index(fields=['numero_facture'], name='facture_numero_idx'),
+        ]
+
+
+class LigneApprovisionnement(models.Model):
+    """Ligne d'une facture d'approvisionnement (un article)."""
+    
+    TYPE_QUANTITE_CHOICES = [
+        ('UNITE', 'Unités'),
+        ('CARTON', 'Cartons'),
+    ]
+    
+    facture = models.ForeignKey(FactureApprovisionnement, on_delete=models.CASCADE, related_name='lignes')
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='lignes_approvisionnement')
+    categorie = models.ForeignKey(Categorie, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    # Type de quantité (unité ou carton)
+    type_quantite = models.CharField(max_length=10, choices=TYPE_QUANTITE_CHOICES, default='UNITE')
+    
+    # Pour les cartons
+    nombre_cartons = models.IntegerField(default=0, help_text="Nombre de cartons")
+    pieces_par_carton = models.IntegerField(default=1, help_text="Nombre de pièces par carton")
+    
+    # Quantité finale en unités
+    quantite_unites = models.IntegerField(help_text="Quantité totale en unités")
+    
+    # Prix
+    prix_achat_carton = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Prix d'achat par carton")
+    prix_achat_unitaire = models.DecimalField(max_digits=12, decimal_places=2, help_text="Prix d'achat unitaire calculé")
+    prix_achat_total = models.DecimalField(max_digits=15, decimal_places=2, help_text="Prix total de la ligne")
+    
+    # Prix de vente suggéré
+    prix_vente_unitaire = models.DecimalField(max_digits=12, decimal_places=2, default=0, help_text="Prix de vente unitaire")
+    
+    date_creation = models.DateTimeField(auto_now_add=True)
+    
+    def save(self, *args, **kwargs):
+        # Calcul automatique des quantités et prix
+        if self.type_quantite == 'CARTON' and self.nombre_cartons > 0 and self.pieces_par_carton > 0:
+            self.quantite_unites = self.nombre_cartons * self.pieces_par_carton
+            if self.prix_achat_carton > 0:
+                self.prix_achat_unitaire = self.prix_achat_carton / self.pieces_par_carton
+        
+        # Calcul du prix total
+        self.prix_achat_total = self.quantite_unites * self.prix_achat_unitaire
+        
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.article.nom} x {self.quantite_unites} ({self.facture.numero_facture})"
+    
+    class Meta:
+        verbose_name = "Ligne d'approvisionnement"
+        verbose_name_plural = "Lignes d'approvisionnement"
+        ordering = ['date_creation']
+
+
+class Inventaire(models.Model):
+    """Modèle représentant un inventaire physique du stock."""
+    
+    STATUT_CHOICES = [
+        ('EN_COURS', 'En cours'),
+        ('TERMINE', 'Terminé'),
+        ('REGULARISE', 'Régularisé'),
+        ('ANNULE', 'Annulé'),
+    ]
+    
+    boutique = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name='inventaires')
+    reference = models.CharField(max_length=50, unique=True, help_text="Référence unique de l'inventaire")
+    date_inventaire = models.DateField(help_text="Date de l'inventaire")
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_COURS')
+    
+    # Statistiques
+    nb_articles = models.IntegerField(default=0)
+    nb_ecarts = models.IntegerField(default=0)
+    valeur_ecart_positif = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    valeur_ecart_negatif = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    
+    notes = models.TextField(blank=True)
+    cree_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='inventaires_crees')
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_cloture = models.DateTimeField(null=True, blank=True)
+    date_regularisation = models.DateTimeField(null=True, blank=True)
+    
+    def generer_reference(self):
+        """Génère une référence unique pour l'inventaire."""
+        date_str = timezone.now().strftime('%Y%m%d')
+        count = Inventaire.objects.filter(reference__startswith=f'INV-{date_str}').count() + 1
+        return f'INV-{date_str}-{count:03d}'
+    
+    def save(self, *args, **kwargs):
+        if not self.reference:
+            self.reference = self.generer_reference()
+        super().save(*args, **kwargs)
+    
+    def calculer_statistiques(self):
+        """Calcule les statistiques de l'inventaire."""
+        lignes = self.lignes.all()
+        self.nb_articles = lignes.count()
+        self.nb_ecarts = lignes.exclude(ecart=0).count()
+        self.valeur_ecart_positif = sum(l.valeur_ecart for l in lignes if l.ecart > 0)
+        self.valeur_ecart_negatif = abs(sum(l.valeur_ecart for l in lignes if l.ecart < 0))
+        self.save()
+    
+    def __str__(self):
+        return f"{self.reference} - {self.boutique.nom} ({self.get_statut_display()})"
+    
+    class Meta:
+        verbose_name = "Inventaire"
+        verbose_name_plural = "Inventaires"
+        ordering = ['-date_creation']
+
+
+class LigneInventaire(models.Model):
+    """Ligne d'inventaire pour un article."""
+    
+    inventaire = models.ForeignKey(Inventaire, on_delete=models.CASCADE, related_name='lignes')
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='lignes_inventaire')
+    
+    # Quantités
+    stock_theorique = models.IntegerField(help_text="Stock système au moment de l'inventaire")
+    stock_physique = models.IntegerField(null=True, blank=True, help_text="Stock compté physiquement")
+    ecart = models.IntegerField(default=0, help_text="Écart (physique - théorique)")
+    
+    # Valeurs
+    prix_unitaire = models.DecimalField(max_digits=12, decimal_places=2, help_text="Prix d'achat unitaire")
+    valeur_ecart = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    
+    # Régularisation
+    est_regularise = models.BooleanField(default=False)
+    commentaire = models.TextField(blank=True, help_text="Commentaire ou justification de l'écart")
+    
+    date_saisie = models.DateTimeField(null=True, blank=True)
+    
+    def save(self, *args, **kwargs):
+        # Calculer l'écart si stock physique renseigné
+        if self.stock_physique is not None:
+            self.ecart = self.stock_physique - self.stock_theorique
+            self.valeur_ecart = self.ecart * self.prix_unitaire
+            if not self.date_saisie:
+                self.date_saisie = timezone.now()
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.article.nom} - Écart: {self.ecart}"
+    
+    class Meta:
+        verbose_name = "Ligne d'inventaire"
+        verbose_name_plural = "Lignes d'inventaire"
+        unique_together = ['inventaire', 'article']
+        ordering = ['article__nom']
 

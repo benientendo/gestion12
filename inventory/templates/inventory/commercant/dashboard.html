@@ -379,6 +379,10 @@
                            class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation();">
                             <i class="fas fa-boxes"></i> Gérer le stock
                         </a>
+                        <a href="{% url 'inventory:liste_inventaires' depot.id %}" 
+                           class="btn btn-warning btn-sm" onclick="event.stopPropagation();">
+                            <i class="fas fa-clipboard-list"></i> Inventaire
+                        </a>
                         <a href="{% url 'inventory:historique_transferts' depot.id %}" 
                            class="btn btn-outline-secondary btn-sm" onclick="event.stopPropagation();">
                             <i class="fas fa-history"></i> Historique transferts
@@ -477,6 +481,10 @@
                         <a href="{% url 'inventory:entrer_boutique' boutique.id %}" 
                            class="btn btn-primary btn-sm" onclick="event.stopPropagation();">
                             <i class="fas fa-sign-in-alt"></i> Entrer dans le point de vente
+                        </a>
+                        <a href="{% url 'inventory:liste_inventaires_boutique' boutique.id %}" 
+                           class="btn btn-warning btn-sm" onclick="event.stopPropagation();">
+                            <i class="fas fa-clipboard-list"></i> Inventaire
                         </a>
                         <a href="{% url 'inventory:commercant_ventes_refusees_boutique' boutique.id %}" 
                            class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation();">

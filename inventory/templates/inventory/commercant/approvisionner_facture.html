@@ -1,0 +1,664 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Approvisionnement par Facture - {{ depot.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .facture-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 12px;
+        margin-bottom: 25px;
+    }
+    .card-section {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        margin-bottom: 20px;
+    }
+    .card-section-header {
+        background: #f8f9fa;
+        padding: 15px 20px;
+        border-bottom: 1px solid #e9ecef;
+        font-weight: 600;
+    }
+    .card-section-body {
+        padding: 20px;
+    }
+    .article-ligne {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 15px;
+        position: relative;
+    }
+    .article-ligne:hover {
+        border-color: #667eea;
+    }
+    .btn-supprimer-ligne {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+    }
+    .carton-fields {
+        background: #fff3cd;
+        border-radius: 8px;
+        padding: 15px;
+        margin-top: 10px;
+    }
+    .prix-calcule {
+        background: #d4edda;
+        padding: 10px 15px;
+        border-radius: 6px;
+        font-weight: bold;
+        color: #155724;
+    }
+    .total-facture {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        text-align: right;
+    }
+    .total-facture h3 {
+        margin: 0;
+        font-size: 1.8rem;
+    }
+    #listeArticles:empty::before {
+        content: "Aucun article ajouté. Cliquez sur 'Ajouter un article' pour commencer.";
+        display: block;
+        text-align: center;
+        padding: 40px;
+        color: #6c757d;
+        font-style: italic;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="facture-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h2><i class="fas fa-file-invoice me-2"></i>Approvisionnement par Facture</h2>
+                <p class="mb-0 opacity-75">{{ depot.nom }} - {{ depot.commercant.nom_entreprise }}</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light">
+                    <i class="fas fa-arrow-left"></i> Retour au dépôt
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" id="factureForm" onsubmit="return validerFormulaire()">
+        {% csrf_token %}
+        <input type="hidden" name="articles_json" id="articles_json" value="[]">
+        
+        <div class="row">
+            <div class="col-lg-8">
+                <!-- Informations de la facture -->
+                <div class="card-section">
+                    <div class="card-section-header">
+                        <i class="fas fa-info-circle me-2"></i>Informations de la facture
+                    </div>
+                    <div class="card-section-body">
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Numéro de facture *</label>
+                                <input type="text" class="form-control" name="numero_facture" id="numero_facture" required placeholder="Ex: FACT-2024-001">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Date de facture *</label>
+                                <input type="date" class="form-control" name="date_facture" id="date_facture" value="{{ today }}" required>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Devise de la facture</label>
+                                <select class="form-select" name="devise" id="devise">
+                                    <option value="CDF">CDF - Franc Congolais</option>
+                                    <option value="USD">USD - Dollar US</option>
+                                </select>
+                                <input type="hidden" id="taux_dollar" value="{{ depot.taux_dollar }}">
+                                <small class="text-info" id="info_conversion" style="display: none;">
+                                    <i class="fas fa-info-circle"></i> Les prix seront convertis en CDF (Taux: 1$ = <span id="taux_affiche">{{ depot.taux_dollar|floatformat:0 }}</span> FC)
+                                </small>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Fournisseur</label>
+                                <select class="form-select" name="fournisseur_id" id="fournisseur_id">
+                                    <option value="">-- Sélectionner ou saisir ci-dessous --</option>
+                                    {% for f in fournisseurs %}
+                                    <option value="{{ f.id }}">{{ f.nom }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Ou nouveau fournisseur</label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" name="fournisseur_nom" id="fournisseur_nom" placeholder="Nom du nouveau fournisseur">
+                                    <button type="button" class="btn btn-outline-primary" onclick="enregistrerFournisseur()">
+                                        <i class="fas fa-save"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Notes (optionnel)</label>
+                            <textarea class="form-control" name="notes" rows="2" placeholder="Notes ou commentaires sur cette facture..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Liste des articles -->
+                <div class="card-section">
+                    <div class="card-section-header d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-boxes me-2"></i>Articles</span>
+                        <button type="button" class="btn btn-success btn-sm" onclick="ajouterLigneArticle()">
+                            <i class="fas fa-plus"></i> Ajouter un article
+                        </button>
+                    </div>
+                    <div class="card-section-body">
+                        <div id="listeArticles">
+                            <!-- Les lignes d'articles seront ajoutées ici dynamiquement -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-4">
+                <!-- Résumé et total -->
+                <div class="card-section" style="position: sticky; top: 20px;">
+                    <div class="card-section-header">
+                        <i class="fas fa-calculator me-2"></i>Résumé
+                    </div>
+                    <div class="card-section-body">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Nombre d'articles:</span>
+                            <strong id="nbArticles">0</strong>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Total unités:</span>
+                            <strong id="totalUnites">0</strong>
+                        </div>
+                        <hr>
+                        <div class="total-facture">
+                            <small>Montant total</small>
+                            <h3 id="montantTotal">0 <span id="deviseTotal">CDF</span></h3>
+                        </div>
+                        <div class="d-grid gap-2 mt-4">
+                            <button type="submit" class="btn btn-primary btn-lg" id="btnEnregistrer">
+                                <i class="fas fa-save me-2"></i>Enregistrer la facture
+                            </button>
+                            <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-outline-secondary">
+                                Annuler
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Template pour une ligne d'article -->
+<template id="templateLigneArticle">
+    <div class="article-ligne" data-index="INDEX">
+        <button type="button" class="btn btn-danger btn-sm btn-supprimer-ligne" onclick="supprimerLigne(INDEX)">
+            <i class="fas fa-times"></i>
+        </button>
+        
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Article</label>
+                <select class="form-select article-select" onchange="onArticleChange(INDEX)">
+                    <option value="">-- Nouvel article --</option>
+                    {% for art in articles_existants %}
+                    <option value="{{ art.id }}" data-nom="{{ art.nom }}" data-code="{{ art.code }}" data-prix="{{ art.prix_vente }}" data-categorie="{{ art.categorie_id|default:'' }}">
+                        {{ art.nom }} ({{ art.code }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 mb-3 nouvel-article-field">
+                <label class="form-label">Code</label>
+                <input type="text" class="form-control article-code" placeholder="Auto si vide">
+            </div>
+            <div class="col-md-3 mb-3 nouvel-article-field">
+                <label class="form-label">Nom *</label>
+                <input type="text" class="form-control article-nom" placeholder="Nom de l'article">
+            </div>
+        </div>
+
+        <div class="row nouvel-article-field">
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Catégorie</label>
+                <select class="form-select article-categorie">
+                    <option value="">-- Sans catégorie --</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.id }}">{{ cat.nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label">Description</label>
+                <input type="text" class="form-control article-description" placeholder="Description (optionnel)">
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Type de quantité</label>
+                <select class="form-select type-quantite" onchange="onTypeQuantiteChange(INDEX)">
+                    <option value="UNITE">Unités</option>
+                    <option value="CARTON">Cartons</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Champs pour UNITÉS -->
+        <div class="row champs-unite">
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Quantité (unités) *</label>
+                <input type="number" class="form-control quantite-unites" min="1" value="1" onchange="calculerLigne(INDEX)">
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Prix d'achat unitaire *</label>
+                <input type="number" class="form-control prix-achat-unitaire" min="0" step="0.01" value="0" onchange="calculerLigne(INDEX)" oninput="afficherConversionPrix(INDEX)">
+                <small class="text-success conversion-prix" style="display: none;">
+                    <i class="fas fa-exchange-alt"></i> <span class="prix-converti">0</span> FC
+                </small>
+            </div>
+            <div class="col-md-4 mb-3">
+                <label class="form-label">Prix de vente unitaire</label>
+                <input type="number" class="form-control prix-vente" min="0" step="0.01" value="0">
+            </div>
+        </div>
+
+        <!-- Champs pour CARTONS -->
+        <div class="carton-fields champs-carton" style="display: none;">
+            <div class="row">
+                <div class="col-6 col-md-2 mb-3">
+                    <label class="form-label">Cartons *</label>
+                    <input type="number" class="form-control nombre-cartons" min="0" value="1" onchange="calculerLigneCarton(INDEX)">
+                </div>
+                <div class="col-6 col-md-2 mb-3">
+                    <label class="form-label">Pièces/carton *</label>
+                    <input type="number" class="form-control pieces-par-carton" min="1" value="1" onchange="calculerLigneCarton(INDEX)">
+                </div>
+                <div class="col-6 col-md-2 mb-3">
+                    <label class="form-label">+ Pièces en plus</label>
+                    <input type="number" class="form-control pieces-supplementaires" min="0" value="0" onchange="calculerLigneCarton(INDEX)" placeholder="Ex: 5">
+                </div>
+                <div class="col-6 col-md-2 mb-3">
+                    <label class="form-label">Prix/carton *</label>
+                    <input type="number" class="form-control prix-achat-carton" min="0" step="0.01" value="0" onchange="calculerLigneCarton(INDEX)">
+                </div>
+                <div class="col-6 col-md-2 mb-3">
+                    <label class="form-label">Prix/pièce sup.</label>
+                    <input type="number" class="form-control prix-piece-sup" min="0" step="0.01" value="0" onchange="calculerLigneCarton(INDEX)" placeholder="Auto">
+                </div>
+                <div class="col-6 col-md-2 mb-3">
+                    <label class="form-label">Prix vente unit.</label>
+                    <input type="number" class="form-control prix-vente-carton" min="0" step="0.01" value="0">
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="prix-calcule">
+                        <i class="fas fa-calculator me-2"></i>
+                        <span class="calcul-total-unites">0</span> unités | 
+                        Prix unitaire: <span class="calcul-prix-unitaire">0</span>
+                        <span class="conversion-prix-carton text-success" style="display: none;">
+                            (<span class="prix-unitaire-carton-converti">0</span> FC)
+                        </span>
+                    </div>
+                </div>
+                <div class="col-md-6 text-end">
+                    <div class="prix-calcule" style="background: #cce5ff; color: #004085;">
+                        Total ligne: <span class="calcul-total-ligne">0</span>
+                        <span class="conversion-total-carton text-success" style="display: none;">
+                            (<span class="total-carton-converti">0</span> FC)
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Total pour unités -->
+        <div class="row champs-unite mt-2">
+            <div class="col-12 text-end">
+                <div class="prix-calcule d-inline-block" style="background: #cce5ff; color: #004085;">
+                    Total ligne: <span class="calcul-total-ligne-unite">0</span>
+                    <span class="conversion-total-ligne-unite text-success" style="display: none;">
+                        (<span class="total-ligne-converti">0</span> FC)
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script>
+let ligneIndex = 0;
+let articlesData = [];
+
+function ajouterLigneArticle() {
+    const template = document.getElementById('templateLigneArticle');
+    let html = template.innerHTML.replace(/INDEX/g, ligneIndex);
+    
+    const container = document.getElementById('listeArticles');
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    container.appendChild(div.firstElementChild);
+    
+    ligneIndex++;
+    mettreAJourResume();
+}
+
+function supprimerLigne(index) {
+    const ligne = document.querySelector(`.article-ligne[data-index="${index}"]`);
+    if (ligne) {
+        ligne.remove();
+        mettreAJourResume();
+    }
+}
+
+function onArticleChange(index) {
+    const ligne = document.querySelector(`.article-ligne[data-index="${index}"]`);
+    const select = ligne.querySelector('.article-select');
+    const champsNouvel = ligne.querySelectorAll('.nouvel-article-field');
+    
+    if (select.value) {
+        // Article existant
+        champsNouvel.forEach(el => el.style.display = 'none');
+    } else {
+        // Nouvel article
+        champsNouvel.forEach(el => el.style.display = 'block');
+    }
+}
+
+function onTypeQuantiteChange(index) {
+    const ligne = document.querySelector(`.article-ligne[data-index="${index}"]`);
+    const type = ligne.querySelector('.type-quantite').value;
+    const champsUnite = ligne.querySelectorAll('.champs-unite');
+    const champsCarton = ligne.querySelectorAll('.champs-carton');
+    
+    if (type === 'CARTON') {
+        champsUnite.forEach(el => el.style.display = 'none');
+        champsCarton.forEach(el => el.style.display = 'block');
+    } else {
+        champsUnite.forEach(el => el.style.display = 'flex');
+        champsCarton.forEach(el => el.style.display = 'none');
+    }
+    mettreAJourResume();
+}
+
+function getTauxDollar() {
+    return parseFloat(document.getElementById('taux_dollar').value) || 2800;
+}
+
+function afficherConversionPrix(index) {
+    const ligne = document.querySelector(`.article-ligne[data-index="${index}"]`);
+    const prixUnit = parseFloat(ligne.querySelector('.prix-achat-unitaire').value) || 0;
+    const conversionEl = ligne.querySelector('.conversion-prix');
+    const prixConvertiEl = ligne.querySelector('.prix-converti');
+    const devise = document.getElementById('devise').value;
+    
+    if (devise === 'USD' && prixUnit > 0) {
+        const prixConverti = prixUnit * getTauxDollar();
+        prixConvertiEl.textContent = '$' + formatNumber(prixUnit) + ' = ' + formatNumber(prixConverti);
+        conversionEl.style.display = 'block';
+    } else {
+        conversionEl.style.display = 'none';
+    }
+}
+
+function mettreAJourToutesConversions() {
+    const lignes = document.querySelectorAll('.article-ligne');
+    lignes.forEach(ligne => {
+        const index = ligne.dataset.index;
+        const type = ligne.querySelector('.type-quantite').value;
+        if (type === 'CARTON') {
+            calculerLigneCarton(index);
+        } else {
+            calculerLigne(index);
+        }
+    });
+}
+
+function calculerLigne(index) {
+    const ligne = document.querySelector(`.article-ligne[data-index="${index}"]`);
+    const qte = parseFloat(ligne.querySelector('.quantite-unites').value) || 0;
+    const prixUnit = parseFloat(ligne.querySelector('.prix-achat-unitaire').value) || 0;
+    const total = qte * prixUnit;
+    const devise = document.getElementById('devise').value;
+    
+    ligne.querySelector('.calcul-total-ligne-unite').textContent = formatNumber(total);
+    
+    // Afficher conversion du total ligne en FC si devise USD
+    const conversionTotalEl = ligne.querySelector('.conversion-total-ligne-unite');
+    const totalConvertiEl = ligne.querySelector('.total-ligne-converti');
+    if (devise === 'USD' && total > 0) {
+        const totalConverti = total * getTauxDollar();
+        totalConvertiEl.textContent = '$' + formatNumber(total) + ' = ' + formatNumber(totalConverti);
+        conversionTotalEl.style.display = 'inline';
+    } else {
+        conversionTotalEl.style.display = 'none';
+    }
+    
+    afficherConversionPrix(index);
+    mettreAJourResume();
+}
+
+function calculerLigneCarton(index) {
+    const ligne = document.querySelector(`.article-ligne[data-index="${index}"]`);
+    const nbCartons = parseFloat(ligne.querySelector('.nombre-cartons').value) || 0;
+    const piecesParCarton = parseFloat(ligne.querySelector('.pieces-par-carton').value) || 1;
+    const piecesSup = parseFloat(ligne.querySelector('.pieces-supplementaires').value) || 0;
+    const prixCarton = parseFloat(ligne.querySelector('.prix-achat-carton').value) || 0;
+    let prixPieceSup = parseFloat(ligne.querySelector('.prix-piece-sup').value) || 0;
+    const devise = document.getElementById('devise').value;
+    
+    // Calculer prix unitaire depuis le carton
+    const prixUnitaire = piecesParCarton > 0 ? prixCarton / piecesParCarton : 0;
+    
+    // Si prix pièce sup non renseigné, utiliser le prix unitaire calculé
+    if (prixPieceSup === 0 && piecesSup > 0) {
+        prixPieceSup = prixUnitaire;
+    }
+    
+    // Total unités = (cartons × pièces/carton) + pièces supplémentaires
+    const totalUnites = (nbCartons * piecesParCarton) + piecesSup;
+    
+    // Total ligne = (cartons × prix/carton) + (pièces sup × prix/pièce)
+    const totalLigne = (nbCartons * prixCarton) + (piecesSup * prixPieceSup);
+    
+    ligne.querySelector('.calcul-total-unites').textContent = totalUnites;
+    ligne.querySelector('.calcul-prix-unitaire').textContent = formatNumber(prixUnitaire);
+    ligne.querySelector('.calcul-total-ligne').textContent = formatNumber(totalLigne);
+    
+    // Afficher conversions FC si devise USD
+    const conversionPrixEl = ligne.querySelector('.conversion-prix-carton');
+    const prixConvertiEl = ligne.querySelector('.prix-unitaire-carton-converti');
+    const conversionTotalEl = ligne.querySelector('.conversion-total-carton');
+    const totalConvertiEl = ligne.querySelector('.total-carton-converti');
+    
+    if (devise === 'USD' && prixUnitaire > 0) {
+        const taux = getTauxDollar();
+        prixConvertiEl.textContent = '$' + formatNumber(prixUnitaire) + ' = ' + formatNumber(prixUnitaire * taux);
+        totalConvertiEl.textContent = '$' + formatNumber(totalLigne) + ' = ' + formatNumber(totalLigne * taux);
+        conversionPrixEl.style.display = 'inline';
+        conversionTotalEl.style.display = 'inline';
+    } else {
+        conversionPrixEl.style.display = 'none';
+        conversionTotalEl.style.display = 'none';
+    }
+    
+    mettreAJourResume();
+}
+
+function mettreAJourResume() {
+    const lignes = document.querySelectorAll('.article-ligne');
+    let nbArticles = lignes.length;
+    let totalUnites = 0;
+    let montantTotal = 0;
+    
+    lignes.forEach(ligne => {
+        const type = ligne.querySelector('.type-quantite').value;
+        
+        if (type === 'CARTON') {
+            const nbCartons = parseFloat(ligne.querySelector('.nombre-cartons').value) || 0;
+            const piecesParCarton = parseFloat(ligne.querySelector('.pieces-par-carton').value) || 1;
+            const piecesSup = parseFloat(ligne.querySelector('.pieces-supplementaires').value) || 0;
+            const prixCarton = parseFloat(ligne.querySelector('.prix-achat-carton').value) || 0;
+            let prixPieceSup = parseFloat(ligne.querySelector('.prix-piece-sup').value) || 0;
+            const prixUnitaire = piecesParCarton > 0 ? prixCarton / piecesParCarton : 0;
+            if (prixPieceSup === 0) prixPieceSup = prixUnitaire;
+            
+            totalUnites += (nbCartons * piecesParCarton) + piecesSup;
+            montantTotal += (nbCartons * prixCarton) + (piecesSup * prixPieceSup);
+        } else {
+            const qte = parseFloat(ligne.querySelector('.quantite-unites').value) || 0;
+            const prixUnit = parseFloat(ligne.querySelector('.prix-achat-unitaire').value) || 0;
+            
+            totalUnites += qte;
+            montantTotal += qte * prixUnit;
+        }
+    });
+    
+    document.getElementById('nbArticles').textContent = nbArticles;
+    document.getElementById('totalUnites').textContent = totalUnites;
+    document.getElementById('montantTotal').textContent = formatNumber(montantTotal);
+    document.getElementById('deviseTotal').textContent = document.getElementById('devise').value;
+    
+    // Activer/désactiver le bouton
+    document.getElementById('btnEnregistrer').disabled = nbArticles === 0;
+    
+    // Préparer les données JSON
+    preparerDonneesJSON();
+}
+
+function preparerDonneesJSON() {
+    const lignes = document.querySelectorAll('.article-ligne');
+    const articles = [];
+    
+    lignes.forEach(ligne => {
+        const select = ligne.querySelector('.article-select');
+        const type = ligne.querySelector('.type-quantite').value;
+        
+        const data = {
+            article_id: select.value || null,
+            code: ligne.querySelector('.article-code')?.value || '',
+            nom: ligne.querySelector('.article-nom')?.value || '',
+            description: ligne.querySelector('.article-description')?.value || '',
+            categorie_id: ligne.querySelector('.article-categorie')?.value || null,
+            type_quantite: type
+        };
+        
+        if (type === 'CARTON') {
+            data.nombre_cartons = parseInt(ligne.querySelector('.nombre-cartons').value) || 0;
+            data.pieces_par_carton = parseInt(ligne.querySelector('.pieces-par-carton').value) || 1;
+            data.pieces_supplementaires = parseInt(ligne.querySelector('.pieces-supplementaires').value) || 0;
+            data.prix_achat_carton = parseFloat(ligne.querySelector('.prix-achat-carton').value) || 0;
+            data.prix_piece_sup = parseFloat(ligne.querySelector('.prix-piece-sup').value) || 0;
+            data.prix_vente = parseFloat(ligne.querySelector('.prix-vente-carton').value) || 0;
+            data.prix_achat_unitaire = data.pieces_par_carton > 0 ? data.prix_achat_carton / data.pieces_par_carton : 0;
+            // Si prix pièce sup non renseigné, utiliser prix unitaire
+            if (data.prix_piece_sup === 0 && data.pieces_supplementaires > 0) {
+                data.prix_piece_sup = data.prix_achat_unitaire;
+            }
+            data.quantite_unites = (data.nombre_cartons * data.pieces_par_carton) + data.pieces_supplementaires;
+        } else {
+            data.quantite_unites = parseInt(ligne.querySelector('.quantite-unites').value) || 0;
+            data.prix_achat_unitaire = parseFloat(ligne.querySelector('.prix-achat-unitaire').value) || 0;
+            data.prix_vente = parseFloat(ligne.querySelector('.prix-vente').value) || 0;
+            data.nombre_cartons = 0;
+            data.pieces_par_carton = 1;
+            data.prix_achat_carton = 0;
+        }
+        
+        articles.push(data);
+    });
+    
+    document.getElementById('articles_json').value = JSON.stringify(articles);
+}
+
+function formatNumber(num) {
+    return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(num);
+}
+
+function enregistrerFournisseur() {
+    const nom = document.getElementById('fournisseur_nom').value.trim();
+    if (!nom) {
+        alert('Veuillez saisir un nom de fournisseur');
+        return;
+    }
+    
+    fetch('{% url "inventory:creer_fournisseur" depot.id %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: `nom=${encodeURIComponent(nom)}`
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            const select = document.getElementById('fournisseur_id');
+            const option = new Option(data.fournisseur.nom, data.fournisseur.id);
+            select.add(option);
+            select.value = data.fournisseur.id;
+            document.getElementById('fournisseur_nom').value = '';
+            alert('Fournisseur enregistré!');
+        } else {
+            alert(data.error);
+        }
+    });
+}
+
+// Validation avant soumission
+function validerFormulaire() {
+    const lignes = document.querySelectorAll('.article-ligne');
+    if (lignes.length === 0) {
+        alert('Veuillez ajouter au moins un article');
+        return false;
+    }
+    
+    const numeroFacture = document.getElementById('numero_facture').value.trim();
+    if (!numeroFacture) {
+        alert('Le numéro de facture est obligatoire');
+        return false;
+    }
+    
+    // Préparer les données JSON avant soumission
+    preparerDonneesJSON();
+    
+    // Afficher un indicateur de chargement
+    document.getElementById('btnEnregistrer').disabled = true;
+    document.getElementById('btnEnregistrer').innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Enregistrement...';
+    
+    return true;
+}
+
+// Événements
+document.getElementById('devise').addEventListener('change', function() {
+    mettreAJourResume();
+    // Afficher/cacher l'info de conversion
+    var infoConversion = document.getElementById('info_conversion');
+    if (this.value === 'USD') {
+        infoConversion.style.display = 'block';
+    } else {
+        infoConversion.style.display = 'none';
+    }
+    // Mettre à jour toutes les conversions de prix
+    mettreAJourToutesConversions();
+});
+</script>
+{% endblock %}

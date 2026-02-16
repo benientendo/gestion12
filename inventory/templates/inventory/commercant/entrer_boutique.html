@@ -51,6 +51,9 @@
                     </p>
                 </div>
                 <div>
+                    <a href="{% url 'inventory:liste_inventaires_boutique' boutique.id %}" class="btn btn-warning me-2">
+                        <i class="fas fa-clipboard-list"></i> Inventaire
+                    </a>
                     <a href="{% url 'inventory:commercant_dashboard' %}" class="btn btn-outline-secondary me-2">
                         <i class="fas fa-arrow-left"></i> Retour au tableau de bord
                     </a>
@@ -247,6 +250,28 @@
                             </div>
                         </div>
                     </div>
+                    
+                    <div class="quick-action" onclick="window.location.href='{% url 'inventory:liste_inventaires_boutique' boutique.id %}'">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-clipboard-list text-secondary me-3"></i>
+                            <div>
+                                <strong>Inventaire</strong><br>
+                                <small class="text-muted">Vérifier le stock physique</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {% if depot %}
+                    <div class="quick-action" onclick="window.location.href='{% url 'inventory:detail_depot' depot.id %}'">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-warehouse text-warning me-3"></i>
+                            <div>
+                                <strong>Accéder au Dépôt</strong><br>
+                                <small class="text-muted">{{ depot.nom }}</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 

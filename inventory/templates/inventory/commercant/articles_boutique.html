@@ -2257,6 +2257,12 @@ document.addEventListener('DOMContentLoaded', function() {
                            class="btn btn-outline-warning btn-sm" title="Modifier">
                             <i class="fas fa-edit"></i>
                         </a>
+                        <button type="button" class="btn btn-outline-danger btn-sm btn-delete-ajax" 
+                                data-article-id="${article.id}"
+                                data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
+                                title="Supprimer">
+                            <i class="fas fa-trash"></i>
+                        </button>
                     </div>
                 </td>
             </tr>
@@ -2282,6 +2288,35 @@ document.addEventListener('DOMContentLoaded', function() {
                 const prix = parseFloat(this.dataset.articlePrix);
                 const devise = this.dataset.articleDevise || 'CDF';
                 setArticleForPrice(articleId, articleNom, prix, devise);
+            });
+        });
+        
+        document.querySelectorAll('.btn-delete-ajax').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const articleId = this.dataset.articleId;
+                const articleNom = this.dataset.articleNom;
+                if (confirm(`Êtes-vous sûr de vouloir supprimer l'article "${articleNom}" ?`)) {
+                    fetch(`/commercant/boutiques/{{ boutique.id }}/articles/${articleId}/supprimer/`, {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+                        }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            window.location.reload();
+                        } else {
+                            alert('Erreur: ' + (data.message || 'Impossible de supprimer'));
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erreur:', error);
+                        alert('Une erreur est survenue');
+                    });
+                }
             });
         });
     }

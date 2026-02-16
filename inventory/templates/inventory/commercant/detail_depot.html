@@ -292,8 +292,17 @@
                 <a href="{% url 'inventory:importer_excel_depot' depot.id %}" class="btn btn-success btn-sm me-2" title="Importer des articles depuis un fichier Excel">
                     <i class="fas fa-file-excel"></i> Import Excel
                 </a>
-                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#approvisionnementModal" title="Approvisionner le dépôt">
-                    <i class="fas fa-plus-circle"></i> Approvisionner
+                <a href="{% url 'inventory:approvisionner_facture' depot.id %}" class="btn btn-primary btn-sm me-2" title="Approvisionnement par facture fournisseur">
+                    <i class="fas fa-file-invoice"></i> Facture Fournisseur
+                </a>
+                <a href="{% url 'inventory:liste_factures_depot' depot.id %}" class="btn btn-outline-primary btn-sm me-2" title="Voir les factures">
+                    <i class="fas fa-list"></i> Factures
+                </a>
+                <a href="{% url 'inventory:liste_inventaires' depot.id %}" class="btn btn-outline-secondary btn-sm me-2" title="Gérer les inventaires">
+                    <i class="fas fa-clipboard-list"></i> Inventaires
+                </a>
+                <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#approvisionnementModal" title="Approvisionner le dépôt (rapide)">
+                    <i class="fas fa-plus-circle"></i> Appro. Rapide
                 </button>
             </div>
         </div>
@@ -301,22 +310,29 @@
 
     <!-- Statistiques -->
     <div class="row mb-4">
-        <div class="col-6 col-md-4">
+        <div class="col-6 col-md-3">
             <div class="stat-card">
                 <div class="stat-value">{{ total_articles }}</div>
                 <div class="stat-label">ARTICLES EN STOCK</div>
             </div>
         </div>
-        <div class="col-6 col-md-4">
+        <div class="col-6 col-md-3">
             <div class="stat-card">
                 <div class="stat-value">{{ valeur_stock|floatformat:0 }} CDF</div>
                 <div class="stat-label">VALEUR DU STOCK</div>
             </div>
         </div>
-        <div class="col-6 col-md-4">
+        <div class="col-6 col-md-3">
             <div class="stat-card">
                 <div class="stat-value">{{ articles_stock_bas }}</div>
                 <div class="stat-label">ARTICLES EN STOCK BAS</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#tauxDollarModal">
+                <div class="stat-value">{{ depot.taux_dollar|floatformat:0 }} FC</div>
+                <div class="stat-label"><i class="fas fa-dollar-sign"></i> TAUX DOLLAR</div>
+                <small class="text-muted">Cliquer pour modifier</small>
             </div>
         </div>
     </div>
@@ -694,4 +710,38 @@ document.querySelectorAll('#approTab button').forEach(function(tab) {
     });
 });
 </script>
+
+<!-- Modal Taux Dollar -->
+<div class="modal fade" id="tauxDollarModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <form method="post" action="{% url 'inventory:modifier_taux_dollar' depot.id %}">
+                {% csrf_token %}
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="fas fa-dollar-sign"></i> Taux de Change</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Ce taux sera utilisé pour convertir automatiquement les prix USD en CDF lors de l'enregistrement des factures.</p>
+                    <div class="mb-3">
+                        <label for="taux_dollar" class="form-label">1 USD = ? CDF</label>
+                        <div class="input-group">
+                            <input type="number" class="form-control form-control-lg text-center" 
+                                   name="taux_dollar" id="taux_dollar" 
+                                   value="{{ depot.taux_dollar|floatformat:0 }}" 
+                                   min="1" step="1" required>
+                            <span class="input-group-text">FC</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-save"></i> Enregistrer
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}

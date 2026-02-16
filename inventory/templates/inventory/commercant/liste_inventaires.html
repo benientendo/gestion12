@@ -1,0 +1,101 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Inventaires - {{ depot.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-clipboard-list text-primary"></i> Inventaires</h2>
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-0">
+                    <li class="breadcrumb-item"><a href="{% url 'inventory:commercant_liste_depots' %}">Dépôts</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'inventory:detail_depot' depot.id %}">{{ depot.nom }}</a></li>
+                    <li class="breadcrumb-item active">Inventaires</li>
+                </ol>
+            </nav>
+        </div>
+        <a href="{% url 'inventory:nouvel_inventaire' depot.id %}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Nouvel inventaire
+        </a>
+    </div>
+
+    {% if inventaires %}
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Référence</th>
+                            <th>Date</th>
+                            <th>Statut</th>
+                            <th class="text-center">Articles</th>
+                            <th class="text-center">Écarts</th>
+                            <th class="text-end">Écart +</th>
+                            <th class="text-end">Écart -</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for inv in inventaires %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'inventory:detail_inventaire' depot.id inv.id %}" class="fw-bold text-decoration-none">
+                                    {{ inv.reference }}
+                                </a>
+                            </td>
+                            <td>{{ inv.date_inventaire|date:"d/m/Y" }}</td>
+                            <td>
+                                {% if inv.statut == 'EN_COURS' %}
+                                <span class="badge bg-warning text-dark"><i class="fas fa-clock"></i> En cours</span>
+                                {% elif inv.statut == 'TERMINE' %}
+                                <span class="badge bg-info"><i class="fas fa-check"></i> Terminé</span>
+                                {% elif inv.statut == 'REGULARISE' %}
+                                <span class="badge bg-success"><i class="fas fa-check-double"></i> Régularisé</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ inv.get_statut_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">{{ inv.nb_articles }}</td>
+                            <td class="text-center">
+                                {% if inv.nb_ecarts > 0 %}
+                                <span class="badge bg-danger">{{ inv.nb_ecarts }}</span>
+                                {% else %}
+                                <span class="text-muted">0</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-success">
+                                {% if inv.valeur_ecart_positif > 0 %}+{{ inv.valeur_ecart_positif|floatformat:0 }} FC{% endif %}
+                            </td>
+                            <td class="text-end text-danger">
+                                {% if inv.valeur_ecart_negatif > 0 %}-{{ inv.valeur_ecart_negatif|floatformat:0 }} FC{% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a href="{% url 'inventory:detail_inventaire' depot.id inv.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <i class="fas fa-clipboard-list fa-4x text-muted mb-3"></i>
+            <h5>Aucun inventaire</h5>
+            <p class="text-muted">Commencez par créer votre premier inventaire pour vérifier votre stock.</p>
+            <a href="{% url 'inventory:nouvel_inventaire' depot.id %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Créer un inventaire
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

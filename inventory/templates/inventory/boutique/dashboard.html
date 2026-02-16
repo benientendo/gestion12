@@ -423,6 +423,11 @@
                         <a href="{% url 'inventory:historique_mouvements_stock' boutique.id %}" class="btn btn-outline-info">
                             <i class="fas fa-history"></i> Historique Stocks
                         </a>
+                        {% if depot %}
+                        <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-warning">
+                            <i class="fas fa-warehouse"></i> Accéder au Dépôt
+                        </a>
+                        {% endif %}
                     </div>
                 </div>
             </div>

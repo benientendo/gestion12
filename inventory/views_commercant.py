@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 import json
 import qrcode
@@ -1030,6 +1030,8 @@ def entrer_boutique(request, boutique_id):
         'montant_negocie_mois': montant_negocie_mois,
         'articles_negocies_jour': articles_negocies_jour,
         'articles_negocies_mois': articles_negocies_mois,
+        # 📦 Dépôt du commerçant (pour lien rapide)
+        'depot': Boutique.objects.filter(commercant=request.user.profil_commercant, est_depot=True).first(),
     }
     
     return render(request, 'inventory/boutique/dashboard.html', context)
@@ -4331,3 +4333,793 @@ def historique_mouvements_stock(request, boutique_id):
     }
     
     return render(request, 'inventory/commercant/historique_mouvements_stock.html', context)
+
+
+# ===== APPROVISIONNEMENT PAR FACTURE =====
+
+@login_required
+@commercant_required
+def approvisionner_facture(request, depot_id):
+    """Créer une facture d'approvisionnement avec plusieurs articles."""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    # Récupérer les fournisseurs et catégories
+    fournisseurs = Fournisseur.objects.filter(commercant=commercant, est_actif=True)
+    categories = Categorie.objects.filter(boutique=depot)
+    articles_existants = Article.objects.filter(boutique=depot, est_actif=True).order_by('nom')
+    
+    if request.method == 'POST':
+        try:
+            with transaction.atomic():
+                # Données de la facture
+                numero_facture = request.POST.get('numero_facture', '').strip()
+                fournisseur_id = request.POST.get('fournisseur_id', '').strip()
+                fournisseur_nom = request.POST.get('fournisseur_nom', '').strip()
+                date_facture_str = request.POST.get('date_facture', '')
+                devise = request.POST.get('devise', 'CDF')
+                notes = request.POST.get('notes', '')
+                
+                if not numero_facture:
+                    messages.error(request, "Le numéro de facture est obligatoire")
+                    return redirect('inventory:approvisionner_facture', depot_id=depot.id)
+                
+                # Gérer le fournisseur
+                fournisseur = None
+                if fournisseur_id:
+                    fournisseur = Fournisseur.objects.filter(id=fournisseur_id, commercant=commercant).first()
+                elif fournisseur_nom:
+                    # Créer un nouveau fournisseur
+                    fournisseur, created = Fournisseur.objects.get_or_create(
+                        nom=fournisseur_nom,
+                        commercant=commercant,
+                        defaults={'est_actif': True}
+                    )
+                
+                # Date de facture
+                try:
+                    date_facture = datetime.strptime(date_facture_str, '%Y-%m-%d').date() if date_facture_str else timezone.now().date()
+                except ValueError:
+                    date_facture = timezone.now().date()
+                
+                # Créer la facture
+                facture = FactureApprovisionnement.objects.create(
+                    numero_facture=numero_facture,
+                    fournisseur=fournisseur,
+                    fournisseur_nom=fournisseur_nom if not fournisseur else '',
+                    depot=depot,
+                    date_facture=date_facture,
+                    devise=devise,
+                    notes=notes,
+                    created_by=request.user.username
+                )
+                
+                # Traiter les lignes d'articles
+                articles_json_str = request.POST.get('articles_json', '[]')
+                articles_data = json.loads(articles_json_str) if articles_json_str else []
+                
+                if not articles_data:
+                    messages.error(request, "Veuillez ajouter au moins un article à la facture")
+                    return redirect('inventory:approvisionner_facture', depot_id=depot.id)
+                
+                for art_data in articles_data:
+                    # Récupérer ou créer l'article
+                    article_id = art_data.get('article_id')
+                    if article_id:
+                        article = Article.objects.get(id=article_id, boutique=depot)
+                    else:
+                        # Créer un nouvel article
+                        code = art_data.get('code', '').strip()
+                        if not code:
+                            code = f"ART-{uuid.uuid4().hex[:8].upper()}"
+                        
+                        categorie_id = art_data.get('categorie_id')
+                        categorie = Categorie.objects.filter(id=categorie_id).first() if categorie_id else None
+                        
+                        # Si facture en USD, l'article sera stocké en CDF (après conversion)
+                        devise_article = 'CDF' if devise == 'USD' else devise
+                        
+                        article = Article.objects.create(
+                            code=code,
+                            nom=art_data.get('nom', 'Article sans nom'),
+                            description=art_data.get('description', ''),
+                            devise=devise_article,
+                            prix_achat=Decimal(str(art_data.get('prix_achat_unitaire', 0))),
+                            prix_vente=Decimal(str(art_data.get('prix_vente', 0))),
+                            quantite_stock=0,
+                            boutique=depot,
+                            categorie=categorie,
+                            est_actif=True
+                        )
+                    
+                    # Données de la ligne
+                    type_quantite = art_data.get('type_quantite', 'UNITE')
+                    nombre_cartons = int(art_data.get('nombre_cartons', 0))
+                    pieces_par_carton = int(art_data.get('pieces_par_carton', 1))
+                    pieces_supplementaires = int(art_data.get('pieces_supplementaires', 0))
+                    quantite_unites = int(art_data.get('quantite_unites', 0))
+                    prix_achat_carton = Decimal(str(art_data.get('prix_achat_carton', 0)))
+                    prix_achat_unitaire = Decimal(str(art_data.get('prix_achat_unitaire', 0)))
+                    prix_piece_sup = Decimal(str(art_data.get('prix_piece_sup', 0)))
+                    prix_vente = Decimal(str(art_data.get('prix_vente', 0)))
+                    
+                    # Calculs pour cartons (avec pièces supplémentaires)
+                    if type_quantite == 'CARTON':
+                        if prix_achat_carton > 0 and pieces_par_carton > 0:
+                            prix_achat_unitaire = prix_achat_carton / pieces_par_carton
+                        # Si prix pièce sup non renseigné, utiliser le prix unitaire
+                        if prix_piece_sup == 0 and pieces_supplementaires > 0:
+                            prix_piece_sup = prix_achat_unitaire
+                        # Total unités = (cartons × pièces/carton) + pièces supplémentaires
+                        quantite_unites = (nombre_cartons * pieces_par_carton) + pieces_supplementaires
+                    
+                    # Conversion USD vers CDF si la facture est en dollars
+                    if devise == 'USD' and depot.taux_dollar > 0:
+                        prix_achat_unitaire = prix_achat_unitaire * depot.taux_dollar
+                        prix_achat_carton = prix_achat_carton * depot.taux_dollar
+                        prix_piece_sup = prix_piece_sup * depot.taux_dollar
+                        prix_vente = prix_vente * depot.taux_dollar
+                    
+                    # Calcul du prix total (cartons + pièces supplémentaires)
+                    if type_quantite == 'CARTON':
+                        prix_achat_total = (nombre_cartons * prix_achat_carton) + (pieces_supplementaires * prix_piece_sup)
+                    else:
+                        prix_achat_total = quantite_unites * prix_achat_unitaire
+                    
+                    # Créer la ligne d'approvisionnement
+                    LigneApprovisionnement.objects.create(
+                        facture=facture,
+                        article=article,
+                        categorie=article.categorie,
+                        type_quantite=type_quantite,
+                        nombre_cartons=nombre_cartons,
+                        pieces_par_carton=pieces_par_carton,
+                        quantite_unites=quantite_unites,
+                        prix_achat_carton=prix_achat_carton,
+                        prix_achat_unitaire=prix_achat_unitaire,
+                        prix_achat_total=prix_achat_total,
+                        prix_vente_unitaire=prix_vente
+                    )
+                    
+                    # Mettre à jour le stock de l'article
+                    stock_avant = article.quantite_stock
+                    article.quantite_stock += quantite_unites
+                    article.prix_achat = prix_achat_unitaire
+                    if prix_vente > 0:
+                        article.prix_vente = prix_vente
+                    article.save()
+                    
+                    # Enregistrer le mouvement de stock
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='ENTREE',
+                        quantite=quantite_unites,
+                        stock_avant=stock_avant,
+                        stock_apres=article.quantite_stock,
+                        commentaire=f"Facture {numero_facture} - {fournisseur.nom if fournisseur else fournisseur_nom}",
+                        reference_document=f"FACT-{facture.id}",
+                        utilisateur=request.user.username
+                    )
+                
+                # Recalculer le montant total
+                facture.calculer_montant_total()
+                
+                messages.success(request, f"Facture {numero_facture} enregistrée avec {len(articles_data)} article(s)")
+                return redirect('inventory:detail_depot', depot_id=depot.id)
+                
+        except Exception as e:
+            messages.error(request, f"Erreur: {str(e)}")
+    
+    context = {
+        'depot': depot,
+        'fournisseurs': fournisseurs,
+        'categories': categories,
+        'articles_existants': articles_existants,
+        'today': timezone.now().date().isoformat(),
+    }
+    
+    return render(request, 'inventory/commercant/approvisionner_facture.html', context)
+
+
+@login_required
+@commercant_required
+def liste_factures_depot(request, depot_id):
+    """Liste des factures d'approvisionnement d'un dépôt."""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    factures = FactureApprovisionnement.objects.filter(depot=depot).select_related('fournisseur')
+    
+    context = {
+        'depot': depot,
+        'factures': factures,
+    }
+    
+    return render(request, 'inventory/commercant/liste_factures_depot.html', context)
+
+
+@login_required
+@commercant_required
+def detail_facture_depot(request, depot_id, facture_id):
+    """Détail d'une facture d'approvisionnement."""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    facture = get_object_or_404(FactureApprovisionnement, id=facture_id, depot=depot)
+    
+    lignes = facture.lignes.select_related('article', 'categorie')
+    
+    context = {
+        'depot': depot,
+        'facture': facture,
+        'lignes': lignes,
+    }
+    
+    return render(request, 'inventory/commercant/detail_facture_depot.html', context)
+
+
+@login_required
+@commercant_required  
+def api_fournisseurs(request, depot_id):
+    """API pour récupérer les fournisseurs."""
+    commercant = request.user.profil_commercant
+    fournisseurs = Fournisseur.objects.filter(commercant=commercant, est_actif=True).values('id', 'nom', 'contact')
+    return JsonResponse({'fournisseurs': list(fournisseurs)})
+
+
+@login_required
+@commercant_required
+def creer_fournisseur(request, depot_id):
+    """Créer un nouveau fournisseur."""
+    if request.method == 'POST':
+        commercant = request.user.profil_commercant
+        nom = request.POST.get('nom', '').strip()
+        contact = request.POST.get('contact', '').strip()
+        adresse = request.POST.get('adresse', '').strip()
+        
+        if not nom:
+            return JsonResponse({'success': False, 'error': 'Le nom est obligatoire'})
+        
+        fournisseur, created = Fournisseur.objects.get_or_create(
+            nom=nom,
+            commercant=commercant,
+            defaults={'contact': contact, 'adresse': adresse}
+        )
+        
+        if not created:
+            return JsonResponse({'success': False, 'error': 'Ce fournisseur existe déjà'})
+        
+        return JsonResponse({
+            'success': True,
+            'fournisseur': {'id': fournisseur.id, 'nom': fournisseur.nom}
+        })
+    
+    return JsonResponse({'success': False, 'error': 'Méthode non autorisée'})
+
+
+@login_required
+@commercant_required
+def modifier_taux_dollar(request, depot_id):
+    """Modifier le taux de change USD vers CDF pour le dépôt."""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    if request.method == 'POST':
+        try:
+            taux = request.POST.get('taux_dollar', '').strip()
+            if not taux:
+                messages.error(request, "Le taux est obligatoire")
+                return redirect('inventory:detail_depot', depot_id=depot.id)
+            
+            depot.taux_dollar = Decimal(taux)
+            depot.save()
+            messages.success(request, f"Taux de change mis à jour: 1 USD = {depot.taux_dollar:,.0f} CDF")
+        except (ValueError, InvalidOperation):
+            messages.error(request, "Taux invalide")
+    
+    return redirect('inventory:detail_depot', depot_id=depot.id)
+
+
+# ========== INVENTAIRE ==========
+
+@login_required
+@commercant_required
+def liste_inventaires(request, depot_id):
+    """Liste des inventaires d'un dépôt."""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    inventaires = Inventaire.objects.filter(boutique=depot).order_by('-date_creation')
+    
+    context = {
+        'depot': depot,
+        'inventaires': inventaires,
+    }
+    return render(request, 'inventory/commercant/liste_inventaires.html', context)
+
+
+@login_required
+@commercant_required
+def nouvel_inventaire(request, depot_id):
+    """Créer un nouvel inventaire."""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    # Vérifier s'il n'y a pas déjà un inventaire en cours
+    inventaire_en_cours = Inventaire.objects.filter(boutique=depot, statut='EN_COURS').first()
+    if inventaire_en_cours:
+        messages.warning(request, f"Un inventaire est déjà en cours ({inventaire_en_cours.reference})")
+        return redirect('inventory:detail_inventaire', depot_id=depot.id, inventaire_id=inventaire_en_cours.id)
+    
+    if request.method == 'POST':
+        date_inventaire = request.POST.get('date_inventaire', timezone.now().date())
+        notes = request.POST.get('notes', '')
+        
+        # Créer l'inventaire
+        inventaire = Inventaire.objects.create(
+            boutique=depot,
+            date_inventaire=date_inventaire,
+            notes=notes,
+            cree_par=request.user,
+            statut='EN_COURS'
+        )
+        
+        # Créer les lignes pour tous les articles du dépôt
+        articles = Article.objects.filter(boutique=depot, est_actif=True)
+        lignes_creees = 0
+        for article in articles:
+            LigneInventaire.objects.create(
+                inventaire=inventaire,
+                article=article,
+                stock_theorique=article.quantite_stock,
+                prix_unitaire=article.prix_achat or 0
+            )
+            lignes_creees += 1
+        
+        inventaire.nb_articles = lignes_creees
+        inventaire.save()
+        
+        messages.success(request, f"Inventaire {inventaire.reference} créé avec {lignes_creees} articles")
+        return redirect('inventory:saisir_inventaire', depot_id=depot.id, inventaire_id=inventaire.id)
+    
+    context = {
+        'depot': depot,
+        'nb_articles': Article.objects.filter(boutique=depot, est_actif=True).count(),
+        'today': timezone.now().date(),
+    }
+    return render(request, 'inventory/commercant/nouvel_inventaire.html', context)
+
+
+@login_required
+@commercant_required
+def detail_inventaire(request, depot_id, inventaire_id):
+    """Détail d'un inventaire."""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=depot)
+    
+    lignes = inventaire.lignes.select_related('article', 'article__categorie').all()
+    
+    # Statistiques
+    lignes_saisies = lignes.filter(stock_physique__isnull=False).count()
+    lignes_avec_ecart = lignes.filter(stock_physique__isnull=False).exclude(ecart=0).count()
+    ecarts_positifs = lignes.filter(ecart__gt=0)
+    ecarts_negatifs = lignes.filter(ecart__lt=0)
+    
+    context = {
+        'depot': depot,
+        'inventaire': inventaire,
+        'lignes': lignes,
+        'lignes_saisies': lignes_saisies,
+        'lignes_avec_ecart': lignes_avec_ecart,
+        'ecarts_positifs': ecarts_positifs,
+        'ecarts_negatifs': ecarts_negatifs,
+        'total_ecart_positif': sum(l.valeur_ecart for l in ecarts_positifs),
+        'total_ecart_negatif': abs(sum(l.valeur_ecart for l in ecarts_negatifs)),
+    }
+    return render(request, 'inventory/commercant/detail_inventaire.html', context)
+
+
+@login_required
+@commercant_required
+def saisir_inventaire(request, depot_id, inventaire_id):
+    """Saisir les quantités physiques de l'inventaire."""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=depot, statut='EN_COURS')
+    
+    if request.method == 'POST':
+        lignes_mises_a_jour = 0
+        for key, value in request.POST.items():
+            if key.startswith('stock_physique_'):
+                ligne_id = key.replace('stock_physique_', '')
+                try:
+                    ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
+                    if value.strip():
+                        ligne.stock_physique = int(value)
+                        commentaire_key = f'commentaire_{ligne_id}'
+                        if commentaire_key in request.POST:
+                            ligne.commentaire = request.POST[commentaire_key]
+                        ligne.save()
+                        lignes_mises_a_jour += 1
+                except (LigneInventaire.DoesNotExist, ValueError):
+                    pass
+        
+        messages.success(request, f"{lignes_mises_a_jour} lignes mises à jour")
+        
+        # Recalculer les statistiques
+        inventaire.calculer_statistiques()
+        
+        if 'continuer' in request.POST:
+            return redirect('inventory:saisir_inventaire', depot_id=depot.id, inventaire_id=inventaire.id)
+        return redirect('inventory:detail_inventaire', depot_id=depot.id, inventaire_id=inventaire.id)
+    
+    # Filtres
+    filtre = request.GET.get('filtre', 'non_saisis')
+    categorie_id = request.GET.get('categorie')
+    recherche = request.GET.get('q', '')
+    
+    lignes = inventaire.lignes.select_related('article', 'article__categorie')
+    
+    if filtre == 'non_saisis':
+        lignes = lignes.filter(stock_physique__isnull=True)
+    elif filtre == 'saisis':
+        lignes = lignes.filter(stock_physique__isnull=False)
+    elif filtre == 'ecarts':
+        lignes = lignes.filter(stock_physique__isnull=False).exclude(ecart=0)
+    
+    if categorie_id:
+        lignes = lignes.filter(article__categorie_id=categorie_id)
+    
+    if recherche:
+        lignes = lignes.filter(
+            models.Q(article__nom__icontains=recherche) |
+            models.Q(article__code__icontains=recherche)
+        )
+    
+    categories = Categorie.objects.filter(boutique=depot)
+    
+    context = {
+        'depot': depot,
+        'inventaire': inventaire,
+        'lignes': lignes[:50],
+        'total_lignes': lignes.count(),
+        'categories': categories,
+        'filtre': filtre,
+        'categorie_id': categorie_id,
+        'recherche': recherche,
+        'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
+        'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
+    }
+    return render(request, 'inventory/commercant/saisir_inventaire.html', context)
+
+
+@login_required
+@commercant_required
+def terminer_inventaire(request, depot_id, inventaire_id):
+    """Terminer un inventaire (clôturer la saisie)."""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=depot, statut='EN_COURS')
+    
+    if request.method == 'POST':
+        nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
+        if nb_saisis == 0:
+            messages.error(request, "Vous devez saisir au moins un article avant de terminer")
+            return redirect('inventory:saisir_inventaire', depot_id=depot.id, inventaire_id=inventaire.id)
+        
+        inventaire.statut = 'TERMINE'
+        inventaire.date_cloture = timezone.now()
+        inventaire.calculer_statistiques()
+        inventaire.save()
+        
+        messages.success(request, f"Inventaire {inventaire.reference} terminé")
+        return redirect('inventory:detail_inventaire', depot_id=depot.id, inventaire_id=inventaire.id)
+    
+    return redirect('inventory:detail_inventaire', depot_id=depot.id, inventaire_id=inventaire.id)
+
+
+@login_required
+@commercant_required
+def regulariser_inventaire(request, depot_id, inventaire_id):
+    """Régulariser le stock selon l'inventaire."""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=depot, statut='TERMINE')
+    
+    if request.method == 'POST':
+        with transaction.atomic():
+            lignes_regularisees = 0
+            
+            for ligne in inventaire.lignes.filter(stock_physique__isnull=False, est_regularise=False):
+                if ligne.ecart != 0:
+                    article = ligne.article
+                    stock_avant = article.quantite_stock
+                    
+                    article.quantite_stock = ligne.stock_physique
+                    article.save()
+                    
+                    type_mvt = 'ENTREE' if ligne.ecart > 0 else 'SORTIE'
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement=type_mvt,
+                        quantite=abs(ligne.ecart),
+                        stock_avant=stock_avant,
+                        stock_apres=article.quantite_stock,
+                        commentaire=f"Régularisation inventaire {inventaire.reference}",
+                        reference_document=f"INV-{inventaire.id}"
+                    )
+                    
+                    ligne.est_regularise = True
+                    ligne.save()
+                    lignes_regularisees += 1
+            
+            inventaire.statut = 'REGULARISE'
+            inventaire.date_regularisation = timezone.now()
+            inventaire.save()
+            
+            messages.success(request, f"Inventaire régularisé: {lignes_regularisees} articles ajustés")
+        
+        return redirect('inventory:detail_inventaire', depot_id=depot.id, inventaire_id=inventaire.id)
+    
+    lignes_ecarts = inventaire.lignes.filter(
+        stock_physique__isnull=False,
+        est_regularise=False
+    ).exclude(ecart=0).select_related('article')
+    
+    context = {
+        'depot': depot,
+        'inventaire': inventaire,
+        'lignes_ecarts': lignes_ecarts,
+        'nb_ecarts': lignes_ecarts.count(),
+        'total_positif': sum(l.valeur_ecart for l in lignes_ecarts if l.ecart > 0),
+        'total_negatif': abs(sum(l.valeur_ecart for l in lignes_ecarts if l.ecart < 0)),
+    }
+    return render(request, 'inventory/commercant/regulariser_inventaire.html', context)
+
+
+# ========== INVENTAIRE BOUTIQUES ==========
+
+@login_required
+@commercant_required
+@boutique_access_required
+def liste_inventaires_boutique(request, boutique_id):
+    """Liste des inventaires d'une boutique."""
+    boutique = request.boutique
+    inventaires = Inventaire.objects.filter(boutique=boutique).order_by('-date_creation')
+    
+    context = {
+        'boutique': boutique,
+        'inventaires': inventaires,
+    }
+    return render(request, 'inventory/commercant/liste_inventaires_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def nouvel_inventaire_boutique(request, boutique_id):
+    """Créer un nouvel inventaire pour une boutique."""
+    boutique = request.boutique
+    
+    inventaire_en_cours = Inventaire.objects.filter(boutique=boutique, statut='EN_COURS').first()
+    if inventaire_en_cours:
+        messages.warning(request, f"Un inventaire est déjà en cours ({inventaire_en_cours.reference})")
+        return redirect('inventory:detail_inventaire_boutique', boutique_id=boutique.id, inventaire_id=inventaire_en_cours.id)
+    
+    if request.method == 'POST':
+        date_inventaire = request.POST.get('date_inventaire', timezone.now().date())
+        notes = request.POST.get('notes', '')
+        
+        inventaire = Inventaire.objects.create(
+            boutique=boutique,
+            date_inventaire=date_inventaire,
+            notes=notes,
+            cree_par=request.user,
+            statut='EN_COURS'
+        )
+        
+        articles = Article.objects.filter(boutique=boutique, est_actif=True)
+        lignes_creees = 0
+        for article in articles:
+            LigneInventaire.objects.create(
+                inventaire=inventaire,
+                article=article,
+                stock_theorique=article.quantite_stock,
+                prix_unitaire=article.prix_achat or 0
+            )
+            lignes_creees += 1
+        
+        inventaire.nb_articles = lignes_creees
+        inventaire.save()
+        
+        messages.success(request, f"Inventaire {inventaire.reference} créé avec {lignes_creees} articles")
+        return redirect('inventory:saisir_inventaire_boutique', boutique_id=boutique.id, inventaire_id=inventaire.id)
+    
+    context = {
+        'boutique': boutique,
+        'nb_articles': Article.objects.filter(boutique=boutique, est_actif=True).count(),
+        'today': timezone.now().date(),
+    }
+    return render(request, 'inventory/commercant/nouvel_inventaire_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def detail_inventaire_boutique(request, boutique_id, inventaire_id):
+    """Détail d'un inventaire de boutique."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+    
+    lignes = inventaire.lignes.select_related('article', 'article__categorie').all()
+    lignes_saisies = lignes.filter(stock_physique__isnull=False).count()
+    lignes_avec_ecart = lignes.filter(stock_physique__isnull=False).exclude(ecart=0).count()
+    ecarts_positifs = lignes.filter(ecart__gt=0)
+    ecarts_negatifs = lignes.filter(ecart__lt=0)
+    
+    context = {
+        'boutique': boutique,
+        'inventaire': inventaire,
+        'lignes': lignes,
+        'lignes_saisies': lignes_saisies,
+        'lignes_avec_ecart': lignes_avec_ecart,
+        'ecarts_positifs': ecarts_positifs,
+        'ecarts_negatifs': ecarts_negatifs,
+        'total_ecart_positif': sum(l.valeur_ecart for l in ecarts_positifs),
+        'total_ecart_negatif': abs(sum(l.valeur_ecart for l in ecarts_negatifs)),
+    }
+    return render(request, 'inventory/commercant/detail_inventaire_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
+    """Saisir les quantités physiques de l'inventaire d'une boutique."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique, statut='EN_COURS')
+    
+    if request.method == 'POST':
+        lignes_mises_a_jour = 0
+        for key, value in request.POST.items():
+            if key.startswith('stock_physique_'):
+                ligne_id = key.replace('stock_physique_', '')
+                try:
+                    ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
+                    if value.strip():
+                        ligne.stock_physique = int(value)
+                        commentaire_key = f'commentaire_{ligne_id}'
+                        if commentaire_key in request.POST:
+                            ligne.commentaire = request.POST[commentaire_key]
+                        ligne.save()
+                        lignes_mises_a_jour += 1
+                except (LigneInventaire.DoesNotExist, ValueError):
+                    pass
+        
+        messages.success(request, f"{lignes_mises_a_jour} lignes mises à jour")
+        inventaire.calculer_statistiques()
+        
+        if 'continuer' in request.POST:
+            return redirect('inventory:saisir_inventaire_boutique', boutique_id=boutique.id, inventaire_id=inventaire.id)
+        return redirect('inventory:detail_inventaire_boutique', boutique_id=boutique.id, inventaire_id=inventaire.id)
+    
+    filtre = request.GET.get('filtre', 'non_saisis')
+    categorie_id = request.GET.get('categorie')
+    recherche = request.GET.get('q', '')
+    
+    lignes = inventaire.lignes.select_related('article', 'article__categorie')
+    
+    if filtre == 'non_saisis':
+        lignes = lignes.filter(stock_physique__isnull=True)
+    elif filtre == 'saisis':
+        lignes = lignes.filter(stock_physique__isnull=False)
+    elif filtre == 'ecarts':
+        lignes = lignes.filter(stock_physique__isnull=False).exclude(ecart=0)
+    
+    if categorie_id:
+        lignes = lignes.filter(article__categorie_id=categorie_id)
+    
+    if recherche:
+        lignes = lignes.filter(
+            models.Q(article__nom__icontains=recherche) |
+            models.Q(article__code__icontains=recherche)
+        )
+    
+    categories = Categorie.objects.filter(boutique=boutique)
+    
+    context = {
+        'boutique': boutique,
+        'inventaire': inventaire,
+        'lignes': lignes[:50],
+        'total_lignes': lignes.count(),
+        'categories': categories,
+        'filtre': filtre,
+        'categorie_id': categorie_id,
+        'recherche': recherche,
+        'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
+        'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
+    }
+    return render(request, 'inventory/commercant/saisir_inventaire_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def terminer_inventaire_boutique(request, boutique_id, inventaire_id):
+    """Terminer un inventaire de boutique."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique, statut='EN_COURS')
+    
+    if request.method == 'POST':
+        nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
+        if nb_saisis == 0:
+            messages.error(request, "Vous devez saisir au moins un article avant de terminer")
+            return redirect('inventory:saisir_inventaire_boutique', boutique_id=boutique.id, inventaire_id=inventaire.id)
+        
+        inventaire.statut = 'TERMINE'
+        inventaire.date_cloture = timezone.now()
+        inventaire.calculer_statistiques()
+        inventaire.save()
+        
+        messages.success(request, f"Inventaire {inventaire.reference} terminé")
+    
+    return redirect('inventory:detail_inventaire_boutique', boutique_id=boutique.id, inventaire_id=inventaire.id)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def regulariser_inventaire_boutique(request, boutique_id, inventaire_id):
+    """Régulariser le stock d'une boutique selon l'inventaire."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique, statut='TERMINE')
+    
+    if request.method == 'POST':
+        with transaction.atomic():
+            lignes_regularisees = 0
+            
+            for ligne in inventaire.lignes.filter(stock_physique__isnull=False, est_regularise=False):
+                if ligne.ecart != 0:
+                    article = ligne.article
+                    stock_avant = article.quantite_stock
+                    
+                    article.quantite_stock = ligne.stock_physique
+                    article.save()
+                    
+                    type_mvt = 'ENTREE' if ligne.ecart > 0 else 'SORTIE'
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement=type_mvt,
+                        quantite=abs(ligne.ecart),
+                        stock_avant=stock_avant,
+                        stock_apres=article.quantite_stock,
+                        commentaire=f"Régularisation inventaire {inventaire.reference}",
+                        reference_document=f"INV-{inventaire.id}"
+                    )
+                    
+                    ligne.est_regularise = True
+                    ligne.save()
+                    lignes_regularisees += 1
+            
+            inventaire.statut = 'REGULARISE'
+            inventaire.date_regularisation = timezone.now()
+            inventaire.save()
+            
+            messages.success(request, f"Inventaire régularisé: {lignes_regularisees} articles ajustés")
+        
+        return redirect('inventory:detail_inventaire_boutique', boutique_id=boutique.id, inventaire_id=inventaire.id)
+    
+    lignes_ecarts = inventaire.lignes.filter(
+        stock_physique__isnull=False,
+        est_regularise=False
+    ).exclude(ecart=0).select_related('article')
+    
+    context = {
+        'boutique': boutique,
+        'inventaire': inventaire,
+        'lignes_ecarts': lignes_ecarts,
+        'nb_ecarts': lignes_ecarts.count(),
+        'total_positif': sum(l.valeur_ecart for l in lignes_ecarts if l.ecart > 0),
+        'total_negatif': abs(sum(l.valeur_ecart for l in lignes_ecarts if l.ecart < 0)),
+    }
+    return render(request, 'inventory/commercant/regulariser_inventaire_boutique.html', context)

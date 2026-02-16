@@ -1,0 +1,140 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Régulariser - {{ inventaire.reference }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-sync text-success"></i> Régularisation du stock</h2>
+            <p class="mb-0 text-muted">{{ inventaire.reference }} - {{ depot.nom }}</p>
+        </div>
+        <a href="{% url 'inventory:detail_inventaire' depot.id inventaire.id %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Retour
+        </a>
+    </div>
+
+    {% if nb_ecarts > 0 %}
+    <!-- Résumé -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <h3 class="text-warning mb-0">{{ nb_ecarts }}</h3>
+                    <small class="text-muted">Articles avec écart</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h4 class="text-success mb-0">+{{ total_positif|floatformat:0 }} FC</h4>
+                    <small class="text-muted">Surplus (entrées)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-danger">
+                <div class="card-body text-center">
+                    <h4 class="text-danger mb-0">-{{ total_negatif|floatformat:0 }} FC</h4>
+                    <small class="text-muted">Manques (sorties)</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Liste des écarts -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="fas fa-list"></i> Écarts à régulariser</h6>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Article</th>
+                            <th class="text-center">Stock système</th>
+                            <th class="text-center">Stock physique</th>
+                            <th class="text-center">Écart</th>
+                            <th class="text-center">Action</th>
+                            <th class="text-end">Valeur</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ligne in lignes_ecarts %}
+                        <tr class="{% if ligne.ecart > 0 %}table-success{% else %}table-danger{% endif %}">
+                            <td>
+                                <strong>{{ ligne.article.nom }}</strong>
+                                <br><small class="text-muted">{{ ligne.article.code }}</small>
+                            </td>
+                            <td class="text-center">{{ ligne.stock_theorique }}</td>
+                            <td class="text-center"><strong>{{ ligne.stock_physique }}</strong></td>
+                            <td class="text-center">
+                                {% if ligne.ecart > 0 %}
+                                <span class="badge bg-success fs-6">+{{ ligne.ecart }}</span>
+                                {% else %}
+                                <span class="badge bg-danger fs-6">{{ ligne.ecart }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if ligne.ecart > 0 %}
+                                <span class="text-success"><i class="fas fa-arrow-up"></i> Entrée stock</span>
+                                {% else %}
+                                <span class="text-danger"><i class="fas fa-arrow-down"></i> Sortie stock</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if ligne.valeur_ecart > 0 %}
+                                <span class="text-success">+{{ ligne.valeur_ecart|floatformat:0 }} FC</span>
+                                {% else %}
+                                <span class="text-danger">{{ ligne.valeur_ecart|floatformat:0 }} FC</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation -->
+    <div class="card border-warning">
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h5 class="text-warning"><i class="fas fa-exclamation-triangle"></i> Attention</h5>
+                    <p class="mb-0">
+                        La régularisation va <strong>modifier définitivement</strong> le stock des articles ci-dessus 
+                        pour correspondre aux quantités physiques comptées. Cette action est irréversible.
+                    </p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <form method="post">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success btn-lg" 
+                                onclick="return confirm('Confirmer la régularisation de {{ nb_ecarts }} article(s) ?')">
+                            <i class="fas fa-check"></i> Régulariser le stock
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-body text-center py-5">
+            <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
+            <h5>Aucun écart à régulariser</h5>
+            <p class="text-muted">Tous les articles ont un stock conforme.</p>
+            <a href="{% url 'inventory:detail_inventaire' depot.id inventaire.id %}" class="btn btn-primary">
+                <i class="fas fa-arrow-left"></i> Retour au détail
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

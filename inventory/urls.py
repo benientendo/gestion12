@@ -97,6 +97,14 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/ventes/', views_commercant.ventes_boutique, name='commercant_ventes_boutique'),
     path('commercant/boutiques/<int:boutique_id>/mouvements-stock/', views_commercant.historique_mouvements_stock, name='historique_mouvements_stock'),
     path('commercant/boutiques/<int:boutique_id>/ventes-refusees/', views_commercant.ventes_refusees_boutique, name='commercant_ventes_refusees_boutique'),
+    
+    # Inventaire boutiques
+    path('commercant/boutiques/<int:boutique_id>/inventaires/', views_commercant.liste_inventaires_boutique, name='liste_inventaires_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/nouveau/', views_commercant.nouvel_inventaire_boutique, name='nouvel_inventaire_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/', views_commercant.detail_inventaire_boutique, name='detail_inventaire_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/saisir/', views_commercant.saisir_inventaire_boutique, name='saisir_inventaire_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/terminer/', views_commercant.terminer_inventaire_boutique, name='terminer_inventaire_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/regulariser/', views_commercant.regulariser_inventaire_boutique, name='regulariser_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/', views_commercant.rapports_caisse_boutique, name='commercant_rapports_caisse_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/articles-negocies/', views_commercant.articles_negocies_boutique, name='commercant_articles_negocies_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/retours-articles/', views_commercant.retours_articles_boutique, name='commercant_retours_articles_boutique'),
@@ -124,6 +132,23 @@ urlpatterns = [
     path('commercant/depots/<int:depot_id>/transferts/historique/', views_commercant.historique_transferts, name='historique_transferts'),
     path('commercant/depots/<int:depot_id>/transfert-multiple/', views_commercant.transfert_multiple, name='transfert_multiple'),
     path('commercant/depots/<int:depot_id>/valider-transferts-multiples/', views_commercant.valider_transferts_multiples, name='valider_transferts_multiples'),
+    
+    # Approvisionnement par facture
+    path('commercant/depots/<int:depot_id>/approvisionner-facture/', views_commercant.approvisionner_facture, name='approvisionner_facture'),
+    path('commercant/depots/<int:depot_id>/factures/', views_commercant.liste_factures_depot, name='liste_factures_depot'),
+    path('commercant/depots/<int:depot_id>/factures/<int:facture_id>/', views_commercant.detail_facture_depot, name='detail_facture_depot'),
+    path('commercant/depots/<int:depot_id>/api/fournisseurs/', views_commercant.api_fournisseurs, name='api_fournisseurs'),
+    path('commercant/depots/<int:depot_id>/fournisseurs/creer/', views_commercant.creer_fournisseur, name='creer_fournisseur'),
+    path('commercant/depots/<int:depot_id>/modifier-taux-dollar/', views_commercant.modifier_taux_dollar, name='modifier_taux_dollar'),
+    
+    # Inventaire
+    path('commercant/depots/<int:depot_id>/inventaires/', views_commercant.liste_inventaires, name='liste_inventaires'),
+    path('commercant/depots/<int:depot_id>/inventaires/nouveau/', views_commercant.nouvel_inventaire, name='nouvel_inventaire'),
+    path('commercant/depots/<int:depot_id>/inventaires/<int:inventaire_id>/', views_commercant.detail_inventaire, name='detail_inventaire'),
+    path('commercant/depots/<int:depot_id>/inventaires/<int:inventaire_id>/saisir/', views_commercant.saisir_inventaire, name='saisir_inventaire'),
+    path('commercant/depots/<int:depot_id>/inventaires/<int:inventaire_id>/terminer/', views_commercant.terminer_inventaire, name='terminer_inventaire'),
+    path('commercant/depots/<int:depot_id>/inventaires/<int:inventaire_id>/regulariser/', views_commercant.regulariser_inventaire, name='regulariser_inventaire'),
+    
     path('commercant/transferts/<int:transfert_id>/', views_commercant.detail_transfert, name='detail_transfert'),
     path('commercant/transferts/<int:transfert_id>/valider/', views_commercant.valider_transfert, name='valider_transfert'),
     path('commercant/transferts/<int:transfert_id>/annuler/', views_commercant.annuler_transfert, name='annuler_transfert'),

@@ -1,0 +1,179 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Saisie inventaire - {{ inventaire.reference }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-edit text-primary"></i> Saisie inventaire</h2>
+            <p class="mb-0 text-muted">{{ inventaire.reference }} - {{ depot.nom }}</p>
+        </div>
+        <div>
+            <span class="badge bg-success me-2">{{ nb_saisis }} saisis</span>
+            <span class="badge bg-warning text-dark">{{ nb_non_saisis }} restants</span>
+        </div>
+    </div>
+
+    <!-- Filtres -->
+    <div class="card mb-4">
+        <div class="card-body py-2">
+            <form method="get" class="row g-2 align-items-center">
+                <div class="col-auto">
+                    <div class="btn-group" role="group">
+                        <a href="?filtre=non_saisis" class="btn btn-sm {% if filtre == 'non_saisis' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                            Non saisis ({{ nb_non_saisis }})
+                        </a>
+                        <a href="?filtre=saisis" class="btn btn-sm {% if filtre == 'saisis' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                            Saisis ({{ nb_saisis }})
+                        </a>
+                        <a href="?filtre=ecarts" class="btn btn-sm {% if filtre == 'ecarts' %}btn-danger{% else %}btn-outline-danger{% endif %}">
+                            Écarts
+                        </a>
+                        <a href="?filtre=tous" class="btn btn-sm {% if filtre == 'tous' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+                            Tous
+                        </a>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <select name="categorie" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Toutes catégories</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}" {% if categorie_id == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.nom }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-auto">
+                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Rechercher..." value="{{ recherche }}">
+                </div>
+                <div class="col-auto">
+                    <button type="submit" class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Formulaire de saisie -->
+    <form method="post">
+        {% csrf_token %}
+        <div class="card shadow-sm">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width: 30%">Article</th>
+                                <th class="text-center" style="width: 15%">Stock système</th>
+                                <th class="text-center" style="width: 20%">Stock physique</th>
+                                <th class="text-center" style="width: 10%">Écart</th>
+                                <th style="width: 25%">Commentaire</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ligne in lignes %}
+                            <tr class="{% if ligne.ecart > 0 %}table-success{% elif ligne.ecart < 0 %}table-danger{% endif %}">
+                                <td>
+                                    <strong>{{ ligne.article.nom }}</strong>
+                                    <br><small class="text-muted">{{ ligne.article.code }}</small>
+                                </td>
+                                <td class="text-center align-middle">
+                                    <span class="badge bg-secondary fs-6">{{ ligne.stock_theorique }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <input type="number" name="stock_physique_{{ ligne.id }}" 
+                                           class="form-control form-control-lg text-center stock-input"
+                                           value="{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% endif %}"
+                                           min="0" placeholder="?" data-theorique="{{ ligne.stock_theorique }}"
+                                           data-ligne-id="{{ ligne.id }}">
+                                </td>
+                                <td class="text-center align-middle">
+                                    <span class="ecart-display" id="ecart_{{ ligne.id }}">
+                                        {% if ligne.ecart > 0 %}
+                                        <span class="badge bg-success">+{{ ligne.ecart }}</span>
+                                        {% elif ligne.ecart < 0 %}
+                                        <span class="badge bg-danger">{{ ligne.ecart }}</span>
+                                        {% elif ligne.stock_physique is not None %}
+                                        <span class="badge bg-secondary">0</span>
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td>
+                                    <input type="text" name="commentaire_{{ ligne.id }}" 
+                                           class="form-control form-control-sm"
+                                           value="{{ ligne.commentaire }}" placeholder="Justification...">
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">
+                                    {% if filtre == 'non_saisis' %}
+                                    Tous les articles ont été saisis !
+                                    {% else %}
+                                    Aucun article trouvé
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% if lignes %}
+            <div class="card-footer">
+                <div class="d-flex justify-content-between">
+                    <a href="{% url 'inventory:detail_inventaire' depot.id inventaire.id %}" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour
+                    </a>
+                    <div>
+                        <button type="submit" name="continuer" class="btn btn-outline-primary me-2">
+                            <i class="fas fa-save"></i> Enregistrer et continuer
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-check"></i> Enregistrer
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </form>
+
+    {% if total_lignes > 50 %}
+    <div class="alert alert-info mt-3">
+        <i class="fas fa-info-circle"></i> Affichage limité à 50 articles. Utilisez les filtres pour affiner.
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.querySelectorAll('.stock-input').forEach(input => {
+    input.addEventListener('input', function() {
+        const theorique = parseInt(this.dataset.theorique) || 0;
+        const physique = parseInt(this.value);
+        const ligneId = this.dataset.ligneId;
+        const ecartEl = document.getElementById('ecart_' + ligneId);
+        
+        if (!isNaN(physique)) {
+            const ecart = physique - theorique;
+            if (ecart > 0) {
+                ecartEl.innerHTML = '<span class="badge bg-success">+' + ecart + '</span>';
+                this.closest('tr').className = 'table-success';
+            } else if (ecart < 0) {
+                ecartEl.innerHTML = '<span class="badge bg-danger">' + ecart + '</span>';
+                this.closest('tr').className = 'table-danger';
+            } else {
+                ecartEl.innerHTML = '<span class="badge bg-secondary">0</span>';
+                this.closest('tr').className = '';
+            }
+        } else {
+            ecartEl.innerHTML = '';
+            this.closest('tr').className = '';
+        }
+    });
+});
+</script>
+{% endblock %}
