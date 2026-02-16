@@ -300,14 +300,32 @@
         </div>
     </div>
 
-    <!-- Message d'information -->
+    <!-- Taux de Dollar -->
     <div class="row mb-4">
-        <div class="col-12">
-            <div class="alert alert-info">
-                <i class="fas fa-info-circle"></i>
-                <strong>Comment ça marche :</strong> 
-                Cliquez sur un point de vente pour accéder à ses articles, ventes et statistiques. 
-                Chaque point de vente peut avoir son propre terminal MAUI pour les ventes.
+        <div class="col-md-4">
+            <div class="card border-success h-100" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#tauxDollarModal">
+                <div class="card-body d-flex align-items-center">
+                    <div class="me-3">
+                        <div class="rounded-circle bg-success bg-opacity-10 p-3">
+                            <i class="fas fa-dollar-sign fa-2x text-success"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <h6 class="text-muted mb-1">Taux de Change</h6>
+                        <h3 class="mb-0 text-success">1$ = {{ commercant.taux_dollar|floatformat:0 }} FC</h3>
+                        <small class="text-muted"><i class="fas fa-edit"></i> Cliquez pour modifier</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <div class="alert alert-info mb-0 h-100 d-flex align-items-center">
+                <div>
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>Comment ça marche :</strong> 
+                    Cliquez sur un point de vente pour accéder à ses articles, ventes et statistiques. 
+                    Chaque point de vente peut avoir son propre terminal MAUI pour les ventes.
+                </div>
             </div>
         </div>
     </div>

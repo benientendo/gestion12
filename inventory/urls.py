@@ -139,7 +139,7 @@ urlpatterns = [
     path('commercant/depots/<int:depot_id>/factures/<int:facture_id>/', views_commercant.detail_facture_depot, name='detail_facture_depot'),
     path('commercant/depots/<int:depot_id>/api/fournisseurs/', views_commercant.api_fournisseurs, name='api_fournisseurs'),
     path('commercant/depots/<int:depot_id>/fournisseurs/creer/', views_commercant.creer_fournisseur, name='creer_fournisseur'),
-    path('commercant/depots/<int:depot_id>/modifier-taux-dollar/', views_commercant.modifier_taux_dollar, name='modifier_taux_dollar'),
+    path('commercant/depots/<int:depot_id>/modifier-taux-dollar/', views_commercant.modifier_taux_dollar_depot, name='modifier_taux_dollar_depot'),
     
     # Inventaire
     path('commercant/depots/<int:depot_id>/inventaires/', views_commercant.liste_inventaires, name='liste_inventaires'),

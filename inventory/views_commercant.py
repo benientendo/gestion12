@@ -4598,7 +4598,7 @@ def creer_fournisseur(request, depot_id):
 
 @login_required
 @commercant_required
-def modifier_taux_dollar(request, depot_id):
+def modifier_taux_dollar_depot(request, depot_id):
     """Modifier le taux de change USD vers CDF pour le dépôt."""
     commercant = request.user.profil_commercant
     depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)

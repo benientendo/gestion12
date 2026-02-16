@@ -120,10 +120,16 @@ def authentifier_client_maui_multi_boutiques(request):
         
         logger.info(f"Client MAUI authentifié: {client.nom_terminal} pour boutique {client.boutique.nom}")
         
+        # Récupérer le taux de dollar du commerçant
+        taux_dollar = 1.0
+        if client.boutique.commercant and client.boutique.commercant.taux_dollar:
+            taux_dollar = float(client.boutique.commercant.taux_dollar)
+        
         return Response({
             'success': True,
             'token_session': token_session,
             'client_id': client.id,
+            'taux_dollar': taux_dollar,
             'boutique': {
                 'id': client.boutique.id,
                 'nom': client.boutique.nom,
@@ -131,7 +137,8 @@ def authentifier_client_maui_multi_boutiques(request):
                 'type_commerce': client.boutique.type_commerce,
                 'ville': client.boutique.ville,
                 'devise': client.boutique.devise,
-                'alerte_stock_bas': client.boutique.alerte_stock_bas
+                'alerte_stock_bas': client.boutique.alerte_stock_bas,
+                'taux_dollar': taux_dollar
             },
             'terminal': {
                 'nom_terminal': client.nom_terminal,
@@ -393,9 +400,11 @@ def get_boutique_info(request, boutique_id):
             'ville': boutique.ville,
             'devise': boutique.devise,
             'alerte_stock_bas': boutique.alerte_stock_bas,
+            'taux_dollar': float(boutique.commercant.taux_dollar) if boutique.commercant.taux_dollar else 1.0,
             'commercant': {
                 'nom_entreprise': boutique.commercant.nom_entreprise,
-                'nom_responsable': boutique.commercant.nom_responsable
+                'nom_responsable': boutique.commercant.nom_responsable,
+                'taux_dollar': float(boutique.commercant.taux_dollar) if boutique.commercant.taux_dollar else 1.0
             },
             'stats': {
                 'total_articles': boutique.articles.filter(est_actif=True).count(),
