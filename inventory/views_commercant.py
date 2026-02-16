@@ -4772,8 +4772,8 @@ def saisir_inventaire(request, depot_id, inventaire_id):
     
     if recherche:
         lignes = lignes.filter(
-            models.Q(article__nom__icontains=recherche) |
-            models.Q(article__code__icontains=recherche)
+            Q(article__nom__icontains=recherche) |
+            Q(article__code__icontains=recherche)
         )
     
     categories = Categorie.objects.filter(boutique=depot)
@@ -5021,8 +5021,8 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     
     if recherche:
         lignes = lignes.filter(
-            models.Q(article__nom__icontains=recherche) |
-            models.Q(article__code__icontains=recherche)
+            Q(article__nom__icontains=recherche) |
+            Q(article__code__icontains=recherche)
         )
     
     categories = Categorie.objects.filter(boutique=boutique)
