@@ -594,6 +594,15 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="alert alert-warning mb-3">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        <strong>Attention !</strong> La modification du taux de change affectera :
+                        <ul class="mb-0 mt-2">
+                            <li>Tous vos points de vente</li>
+                            <li>Les conversions de prix en cours</li>
+                            <li>Les terminaux de vente MAUI connectés</li>
+                        </ul>
+                    </div>
                     <p class="text-muted">Ce taux sera appliqué à <strong>tous vos points de vente</strong> pour les conversions entre Dollar US et Franc Congolais.</p>
                     <div class="mb-3">
                         <label for="taux_dollar" class="form-label">Taux de change</label>
@@ -604,6 +613,12 @@
                             <span class="input-group-text">FC</span>
                         </div>
                         <div class="form-text">Exemple: si 1$ = 2800 FC, entrez 2800</div>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="confirmTauxChange" required>
+                        <label class="form-check-label text-danger" for="confirmTauxChange">
+                            <strong>Je confirme vouloir modifier le taux de change</strong>
+                        </label>
                     </div>
                 </div>
                 <div class="modal-footer">
