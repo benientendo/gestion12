@@ -25,6 +25,13 @@ from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer
 logger = logging.getLogger(__name__)
 
 
+def to_local_iso(dt):
+    """Convertit un datetime en heure locale et retourne le format ISO."""
+    if dt is None:
+        return None
+    return timezone.localtime(dt).isoformat()
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def api_status_v2_simple(request):
@@ -170,7 +177,7 @@ def terminal_info_simple(request, numero_serie):
                 'nom_terminal': terminal.nom_terminal,
                 'est_actif': terminal.est_actif,
                 'version_app_maui': terminal.version_app_maui,
-                'derniere_activite': terminal.derniere_activite.isoformat() if terminal.derniere_activite else None
+                'derniere_activite': to_local_iso(terminal.derniere_activite)
             },
             'boutique': {
                 'id': terminal.boutique.id,
@@ -386,7 +393,14 @@ def articles_pending_validation(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
+        boutique = Boutique.objects.filter(id=boutique_id, est_active=True).first()
+        if not boutique:
+            return Response({
+                'error': f'Boutique {boutique_id} non trouvée ou inactive',
+                'code': 'BOUTIQUE_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        logger.info(f"📋 Articles pending pour boutique {boutique.id} ({boutique.nom})")
         
         # Articles en attente de validation (est_actif=True mais est_valide_client=False)
         articles_pending = Article.objects.filter(
@@ -397,21 +411,24 @@ def articles_pending_validation(request):
         
         articles_data = []
         for article in articles_pending:
-            articles_data.append({
-                'id': article.id,
-                'code': article.code,
-                'nom': article.nom,
-                'description': article.description,
-                'categorie': article.categorie.nom if article.categorie else None,
-                'categorie_id': article.categorie.id if article.categorie else None,
-                'prix_vente': str(article.prix_vente),
-                'prix_achat': str(article.prix_achat),
-                'devise': article.devise,
-                'quantite_envoyee': article.quantite_envoyee,
-                'quantite_stock': article.quantite_stock,
-                'date_envoi': article.date_envoi.isoformat() if article.date_envoi else None,
-                'date_creation': article.date_creation.isoformat(),
-            })
+            try:
+                articles_data.append({
+                    'id': article.id,
+                    'code': article.code,
+                    'nom': article.nom,
+                    'description': article.description or '',
+                    'categorie': article.categorie.nom if article.categorie else None,
+                    'categorie_id': article.categorie.id if article.categorie else None,
+                    'prix_vente': str(article.prix_vente),
+                    'prix_achat': str(article.prix_achat),
+                    'devise': article.devise,
+                    'quantite_envoyee': article.quantite_envoyee,
+                    'quantite_stock': article.quantite_stock,
+                    'date_envoi': to_local_iso(article.date_envoi),
+                    'date_creation': to_local_iso(article.date_creation),
+                })
+            except Exception as art_err:
+                logger.error(f"Erreur sérialisation article {article.id}: {str(art_err)}")
         
         return Response({
             'success': True,
@@ -422,9 +439,9 @@ def articles_pending_validation(request):
         })
         
     except Exception as e:
-        logger.error(f"Erreur récupération articles en attente: {str(e)}")
+        logger.error(f"Erreur récupération articles en attente: {str(e)}", exc_info=True)
         return Response({
-            'error': 'Erreur interne du serveur',
+            'error': f'Erreur interne du serveur: {str(e)}',
             'code': 'INTERNAL_ERROR'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -444,12 +461,25 @@ def valider_article(request):
     }
     """
     data = request.data
-    article_id = data.get('article_id')
-    quantite_validee = data.get('quantite_validee')
-    boutique_id = data.get('boutique_id')
+    logger.info(f"📋 Validation article - raw data: {dict(data) if hasattr(data, 'items') else data}, content_type={request.content_type}")
     
-    # Si pas de boutique_id, essayer via le numéro de série
-    if not boutique_id:
+    # Accepter snake_case ET camelCase
+    article_id = data.get('article_id') or data.get('articleId')
+    quantite_validee = data.get('quantite_validee') or data.get('quantiteValidee')
+    raw_boutique_id = data.get('boutique_id') or data.get('boutiqueId')
+    
+    # Normaliser boutique_id
+    boutique_id = None
+    if raw_boutique_id is not None:
+        try:
+            bid = int(raw_boutique_id)
+            if bid > 0:
+                boutique_id = bid
+        except (ValueError, TypeError):
+            pass
+    
+    # Si boutique_id absent de la requête, essayer via le numéro de série
+    if 'boutique_id' not in data and 'boutiqueId' not in data:
         numero_serie = (
             request.headers.get('X-Device-Serial') or 
             request.headers.get('Device-Serial') or
@@ -467,6 +497,8 @@ def valider_article(request):
             except Exception as e:
                 logger.error(f"Erreur recherche terminal: {str(e)}")
     
+    logger.info(f"📋 Validation article: article_id={article_id}, quantite={quantite_validee}, boutique_id={boutique_id} (raw={raw_boutique_id})")
+    
     if not article_id:
         return Response({
             'error': 'article_id requis',
@@ -481,14 +513,10 @@ def valider_article(request):
     
     try:
         # Récupérer l'article
-        article = Article.objects.get(id=article_id, est_actif=True)
-        
-        # Vérifier que l'article appartient à la bonne boutique si boutique_id fourni
-        if boutique_id and article.boutique_id != int(boutique_id):
-            return Response({
-                'error': 'Article non trouvé dans cette boutique',
-                'code': 'ARTICLE_NOT_IN_BOUTIQUE'
-            }, status=status.HTTP_404_NOT_FOUND)
+        if boutique_id:
+            article = Article.objects.get(id=article_id, boutique_id=boutique_id, est_actif=True)
+        else:
+            article = Article.objects.get(id=article_id, est_actif=True)
         
         # ⚠️ PROTECTION CONTRE VALIDATION MULTIPLE
         # Si l'article est déjà validé ET pas de quantité en attente, ignorer silencieusement
@@ -543,7 +571,7 @@ def valider_article(request):
                 'nom': article.nom,
                 'quantite_stock': article.quantite_stock,
                 'est_valide_client': article.est_valide_client,
-                'date_validation': article.date_validation.isoformat()
+                'date_validation': to_local_iso(article.date_validation)
             }
         })
         
@@ -567,8 +595,22 @@ def refuser_article(request):
     Refuse un article en attente de validation.
     Remet est_valide_client=True et quantite_envoyee=0 sans ajouter de stock.
     """
-    article_id = request.data.get('article_id')
-    boutique_id = request.data.get('boutique_id')
+    data = request.data
+    logger.info(f"❌ Refus article - raw data: {dict(data) if hasattr(data, 'items') else data}")
+    
+    # Accepter snake_case ET camelCase
+    article_id = data.get('article_id') or data.get('articleId')
+    raw_boutique_id = data.get('boutique_id') or data.get('boutiqueId')
+    
+    # Normaliser boutique_id
+    boutique_id = None
+    if raw_boutique_id is not None:
+        try:
+            bid = int(raw_boutique_id)
+            if bid > 0:
+                boutique_id = bid
+        except (ValueError, TypeError):
+            pass
     
     if not article_id:
         return Response({
@@ -577,13 +619,10 @@ def refuser_article(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        article = Article.objects.get(id=article_id, est_actif=True)
-        
-        if boutique_id and article.boutique_id != int(boutique_id):
-            return Response({
-                'error': 'Article non trouvé dans cette boutique',
-                'code': 'ARTICLE_NOT_IN_BOUTIQUE'
-            }, status=status.HTTP_404_NOT_FOUND)
+        if boutique_id:
+            article = Article.objects.get(id=article_id, boutique_id=boutique_id, est_actif=True)
+        else:
+            article = Article.objects.get(id=article_id, est_actif=True)
         
         logger.info(f"❌ Refus article {article.code} - {article.quantite_envoyee} unités refusées")
         
@@ -683,7 +722,7 @@ def articles_deleted_simple(request):
                 'id': article['id'],
                 'code': article['code'],
                 'nom': article['nom'],
-                'date_suppression': article['date_suppression'].isoformat() if article['date_suppression'] else None
+                'date_suppression': to_local_iso(article['date_suppression'])
             })
         
         logger.info(f"📍 Articles supprimés récupérés pour boutique {boutique_id}: {len(deleted_data)}")
@@ -1182,7 +1221,7 @@ def create_vente_simple(request):
                 'montant_total': str(montant_total),
                 'montant_total_usd': str(montant_total_usd) if montant_total_usd > 0 else None,
                 'mode_paiement': vente.mode_paiement,
-                'date_vente': vente.date_vente.isoformat(),
+                'date_vente': to_local_iso(vente.date_vente),
                 'lignes': lignes_creees
             },
             'boutique_id': boutique.id,
@@ -1289,7 +1328,7 @@ def historique_ventes_simple(request):
             ventes_data.append({
                 'id': vente.id,
                 'numero_facture': vente.numero_facture,
-                'date_vente': vente.date_vente.isoformat(),
+                'date_vente': to_local_iso(vente.date_vente),
                 'montant_total': str(vente.montant_total),
                 'mode_paiement': vente.mode_paiement,
                 'paye': vente.paye,
@@ -2475,7 +2514,7 @@ def reconcilier_ventes(request):
             {
                 'reference': v['numero_facture'],
                 'montant': float(v['montant_total']),
-                'date': v['date_vente'].isoformat() if v['date_vente'] else None
+                'date': to_local_iso(v['date_vente'])
             }
             for v in ventes_django if v['numero_facture'] in dans_django_pas_maui
         ]
@@ -2594,7 +2633,7 @@ def annuler_vente_simple(request):
             return Response({
                 'error': 'Cette vente a déjà été annulée',
                 'code': 'ALREADY_CANCELLED',
-                'date_annulation': vente.date_annulation.isoformat() if vente.date_annulation else None
+                'date_annulation': to_local_iso(vente.date_annulation)
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # ⭐ VÉRIFIER LE DÉLAI D'ANNULATION (1 HEURE)
@@ -2606,7 +2645,7 @@ def annuler_vente_simple(request):
             return Response({
                 'error': 'Le délai d\'annulation (1 heure) est dépassé',
                 'code': 'CANCELLATION_TIMEOUT',
-                'date_vente': vente.date_vente.isoformat(),
+                'date_vente': to_local_iso(vente.date_vente),
                 'temps_ecoule_minutes': int(temps_ecoule.total_seconds() / 60),
                 'delai_max_minutes': 60
             }, status=status.HTTP_400_BAD_REQUEST)
@@ -2663,8 +2702,8 @@ def annuler_vente_simple(request):
             'vente': {
                 'numero_facture': vente.numero_facture,
                 'montant_total': str(vente.montant_total),
-                'date_vente': vente.date_vente.isoformat(),
-                'date_annulation': vente.date_annulation.isoformat(),
+                'date_vente': to_local_iso(vente.date_vente),
+                'date_annulation': to_local_iso(vente.date_annulation),
                 'motif': motif
             },
             'stock_restaure': stock_restaure,
@@ -2766,7 +2805,7 @@ def rapport_negociations_simple(request):
                 'vente': {
                     'id': ligne.vente.id,
                     'numero_facture': ligne.vente.numero_facture,
-                    'date': ligne.vente.date_vente.isoformat(),
+                    'date': to_local_iso(ligne.vente.date_vente),
                     'nom_client': ligne.vente.nom_client or 'Client anonyme'
                 },
                 'article': {

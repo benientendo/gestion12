@@ -132,6 +132,7 @@ urlpatterns = [
     path('commercant/depots/<int:depot_id>/transferts/historique/', views_commercant.historique_transferts, name='historique_transferts'),
     path('commercant/depots/<int:depot_id>/transfert-multiple/', views_commercant.transfert_multiple, name='transfert_multiple'),
     path('commercant/depots/<int:depot_id>/valider-transferts-multiples/', views_commercant.valider_transferts_multiples, name='valider_transferts_multiples'),
+    path('commercant/depots/<int:depot_id>/bon-transfert/<str:reference_lot>/', views_commercant.bon_transfert, name='bon_transfert'),
     
     # Approvisionnement par facture
     path('commercant/depots/<int:depot_id>/approvisionner-facture/', views_commercant.approvisionner_facture, name='approvisionner_facture'),

@@ -1,299 +1,111 @@
-{% extends 'inventory/base.html' %}
-{% load static l10n %}
 
-{% block title %}Facture Fournisseur - {{ depot.nom }}{% endblock %}
-
-{% block extra_css %}
-<style>
-    /* === PAGE FIXE === */
-    .page-facture { height: calc(100vh - 56px); display: flex; flex-direction: column; overflow: hidden; padding: 6px 16px; }
-    .facture-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; padding: 6px 16px; border-radius: 8px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between; }
-    .facture-header h5 { margin: 0; font-size: 1.1rem; }
-    .facture-header .btn { padding: 5px 14px; font-size: .88rem; }
-    .facture-body { flex: 1; display: flex; gap: 12px; min-height: 0; overflow: hidden; }
-    .facture-left { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-    .facture-right { width: 250px; flex-shrink: 0; display: flex; flex-direction: column; }
-
-    /* === SECTIONS === */
-    .sec { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.07); margin-bottom: 5px; }
-    .sec-h { background: #f8f9fa; padding: 4px 14px; border-bottom: 1px solid #e9ecef; font-weight: 600; font-size: .9rem; display: flex; align-items: center; justify-content: space-between; }
-    .sec-b { padding: 6px 14px; }
-
-    /* === FORMULAIRE === */
-    .form-label { font-size: .85rem; margin-bottom: 3px; font-weight: 600; color: #444; }
-    .form-control-sm, .form-select-sm { font-size: .9rem; padding: 5px 10px; height: 36px; }
-    .mb-1x { margin-bottom: 4px !important; }
-    .row.gx-2 { --bs-gutter-x: 8px; }
-
-    /* === ZONE SAISIE ARTICLE (fixe) === */
-    .saisie-article { background: #eef2ff; border: 2px solid #667eea; border-radius: 8px; padding: 6px 12px; }
-    .saisie-article .form-label { color: #333; }
-    .carton-fields { background: #fff8e1; border-radius: 6px; padding: 5px 10px; margin-top: 3px; }
-    .saisie-apercu { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-    .saisie-apercu .badge-total { background: #d4edda; color: #155724; padding: 5px 14px; border-radius: 5px; font-weight: 600; font-size: .88rem; }
-    .saisie-apercu .badge-total-blue { background: #cce5ff; color: #004085; }
-    .btn-ajouter-article { padding: 7px 20px; font-size: .9rem; font-weight: 600; }
-    .input-matched { background: #e8f5e9 !important; border-color: #4caf50 !important; }
-
-    /* === TABLEAU ARTICLES AJOUTÉS === */
-    .table-articles-zone { flex: 1; overflow-y: auto; min-height: 0; }
-    .table-articles { width: 100%; font-size: .88rem; border-collapse: collapse; }
-    .table-articles thead th { background: #f8f9fa; padding: 7px 10px; border-bottom: 2px solid #dee2e6; font-weight: 600; color: #555; position: sticky; top: 0; font-size: .82rem; }
-    .table-articles tbody td { padding: 6px 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
-    .table-articles tbody tr:hover { background: #f0f2ff; }
-    .table-articles .text-end { text-align: right; }
-    .table-articles .btn-sm { padding: 3px 8px; font-size: .78rem; }
-    .table-articles-zone:empty::before { content: "Aucun article ajouté. Saisissez un article ci-dessus puis cliquez Ajouter ou appuyez sur Entrée."; display: block; text-align: center; padding: 24px; color: #999; font-style: italic; font-size: .88rem; }
-
-    /* === RÉSUMÉ === */
-    .resume-row { display: flex; justify-content: space-between; font-size: .9rem; padding: 4px 0; }
-    .total-box { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: #fff; padding: 12px 14px; border-radius: 8px; text-align: right; }
-    .total-box h4 { margin: 0; font-size: 1.4rem; }
-    .total-box small { font-size: .78rem; }
-    .btn-save { font-size: .95rem; padding: 8px 14px; }
-
-    /* === FOCUS === */
-    .form-control-sm:focus, .form-select-sm:focus { box-shadow: 0 0 0 2px rgba(102,126,234,.35); border-color: #667eea; }
-
-    /* === CONVERSION === */
-    .conv-info { font-size: .78rem; color: #17a2b8; }
-
-    /* === HINTS ANCIEN PRIX === */
-    .hint-prev { display: none; font-size: .74rem; color: #6c757d; margin-top: 2px; line-height: 1.2; cursor: pointer; }
-    .hint-prev .hint-val { background: #e3f2fd; color: #1565c0; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
-    .hint-prev:hover .hint-val { background: #bbdefb; }
-    .hint-prev.visible { display: block; }
-</style>
-{% endblock %}
-
-{% block content %}
-<div class="page-facture">
-    <div class="facture-header">
-        <h5><i class="fas fa-file-invoice me-1"></i>Facture Fournisseur &mdash; {{ depot.nom }}</h5>
-        <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left"></i> Retour</a>
-    </div>
-
-    <form method="post" id="factureForm" onsubmit="return validerFormulaire()" class="facture-body">
-        {% csrf_token %}
-        <input type="hidden" name="articles_json" id="articles_json" value="[]">
-
-        <div class="facture-left">
-            <!-- Infos facture -->
-            <div class="sec">
-                <div class="sec-h"><span><i class="fas fa-info-circle me-1"></i>Informations de la facture</span></div>
-                <div class="sec-b">
-                    <div class="row gx-2 align-items-end">
-                        <div class="col-4 mb-1x">
-                            <label class="form-label">Fournisseur <small class="text-muted fw-normal">(tapez pour rechercher ou créer)</small></label>
-                            <input type="text" class="form-control form-control-sm nav-field" id="fournisseur_input" list="datalistFournisseurs" placeholder="Nom du fournisseur" autocomplete="off" oninput="onFournisseurInput()" autofocus>
-                            <input type="hidden" name="fournisseur_id" id="fournisseur_id" value="">
-                            <input type="hidden" name="fournisseur_nom" id="fournisseur_nom" value="">
-                        </div>
-                        <div class="col-3 mb-1x">
-                            <label class="form-label">Numéro de facture *</label>
-                            <input type="text" class="form-control form-control-sm nav-field" name="numero_facture" id="numero_facture" required placeholder="Ex: FACT-001">
-                        </div>
-                        <div class="col-2 mb-1x">
-                            <label class="form-label">Date facture *</label>
-                            <input type="date" class="form-control form-control-sm nav-field" name="date_facture" id="date_facture" value="{{ today }}" required>
-                        </div>
-                        <div class="col-3 mb-1x">
-                            <label class="form-label">Devise</label>
-                            <div class="d-flex gap-3 mt-1">
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="devise" id="devise_cdf" value="CDF" checked onchange="onDeviseChange()">
-                                    <label class="form-check-label fw-semibold" for="devise_cdf" style="font-size:.85rem;">FC <small class="text-muted">Franc</small></label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="devise" id="devise_usd" value="USD" onchange="onDeviseChange()">
-                                    <label class="form-check-label fw-semibold" for="devise_usd" style="font-size:.85rem;">$ <small class="text-muted">Dollar</small></label>
-                                </div>
-                            </div>
-                            <input type="hidden" id="taux_dollar" value="{{ depot.taux_dollar }}">
-                        </div>
-                    </div>
-                    <div class="row gx-2 align-items-end">
-                        <div class="col mb-1x">
-                            <input type="text" class="form-control form-control-sm nav-field" name="notes" placeholder="Notes (optionnel)" style="height:36px;">
-                        </div>
-                        <div class="col-auto mb-1x" id="info_conversion" style="display:none;">
-                            <span class="conv-info"><i class="fas fa-exchange-alt"></i> 1$ = <span id="taux_affiche">{{ depot.taux_dollar|floatformat:0 }}</span> FC</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Zone saisie article (FIXE) -->
-            <div class="sec">
-                <div class="sec-h">
-                    <span><i class="fas fa-edit me-1"></i>Saisir un article</span>
-                    <span class="text-muted" style="font-weight:normal;font-size:.68rem;">Remplissez puis Enter ou cliquez Ajouter</span>
-                </div>
-                <div class="sec-b saisie-article">
-                    <div class="row gx-2 align-items-end">
-                        <div class="col-3 mb-1x">
-                            <label class="form-label">Nom de l'article *</label>
-                            <input type="text" class="form-control form-control-sm art-field" id="art_nom" list="datalistArticles" placeholder="Tapez pour chercher ou créer" autocomplete="off" oninput="onSaisieArticleInput()">
-                            <input type="hidden" id="art_id" value="">
-                            <input type="hidden" id="art_code" value="">
-                        </div>
-                        <div class="col-2 mb-1x">
-                            <label class="form-label">Catégorie</label>
-                            <input type="text" class="form-control form-control-sm art-field" id="art_categorie" list="datalistCategories" placeholder="Tapez ou créez" autocomplete="off" oninput="onSaisieCategorieInput()">
-                            <input type="hidden" id="art_categorie_id" value="">
-                            <input type="hidden" id="art_categorie_nom" value="">
-                        </div>
-                        <div class="col-2 mb-1x">
-                            <label class="form-label">Type de quantité</label>
-                            <select class="form-select form-select-sm art-field" id="art_type" onchange="onSaisieTypeChange()">
-                                <option value="UNITE">Unités</option>
-                                <option value="CARTON" selected>Cartons</option>
-                            </select>
-                        </div>
-                        <!-- Champs UNITÉS -->
-                        <div class="col-1 mb-1x champs-saisie-unite">
-                            <label class="form-label">Quantité *</label>
-                            <input type="number" class="form-control form-control-sm art-field" id="art_qte" min="1" value="1" oninput="calculerSaisie()">
-                            <div class="hint-prev" id="hint_qte" onclick="applyHint('art_qte',this)">stock: <span class="hint-val"></span></div>
-                        </div>
-                        <div class="col-2 mb-1x champs-saisie-unite">
-                            <label class="form-label">Prix de vente</label>
-                            <input type="number" class="form-control form-control-sm art-field" id="art_prix_vente" min="0" step="0.01" value="0">
-                            <div class="hint-prev" id="hint_prix_vente" onclick="applyHint('art_prix_vente',this)">avant: <span class="hint-val"></span></div>
-                        </div>
-                    </div>
-                    <!-- Champs CARTONS (cachés par défaut) -->
-                    <div class="carton-fields" id="cartonFields" style="display:none;">
-                        <div class="row gx-2 align-items-end">
-                            <div class="col mb-1x"><label class="form-label">Nb. cartons</label><input type="number" class="form-control form-control-sm art-field" id="art_nb_cartons" min="0" value="1" oninput="calculerSaisie()"><div class="hint-prev" id="hint_nb_cartons" onclick="applyHint('art_nb_cartons',this)">avant: <span class="hint-val"></span></div></div>
-                            <div class="col mb-1x"><label class="form-label">Pièces/carton</label><input type="number" class="form-control form-control-sm art-field" id="art_pcs_carton" min="1" value="1" oninput="calculerSaisie()"><div class="hint-prev" id="hint_pcs_carton" onclick="applyHint('art_pcs_carton',this)">avant: <span class="hint-val"></span></div></div>
-                            <div class="col mb-1x"><label class="form-label">Pièces en +</label><input type="number" class="form-control form-control-sm art-field" id="art_pcs_sup" min="0" value="0" oninput="calculerSaisie()"></div>
-                            <div class="col mb-1x"><label class="form-label">Prix/carton</label><input type="number" class="form-control form-control-sm art-field" id="art_prix_carton" min="0" step="0.01" value="0" oninput="calculerSaisie()"><div class="hint-prev" id="hint_prix_carton" onclick="applyHint('art_prix_carton',this)">avant: <span class="hint-val"></span></div></div>
-                            <div class="col mb-1x"><label class="form-label">Prix/pièce sup.</label><input type="number" class="form-control form-control-sm art-field" id="art_prix_pcs_sup" min="0" step="0.01" value="0" oninput="calculerSaisie()"></div>
-                            <div class="col mb-1x"><label class="form-label">Prix de vente</label><input type="number" class="form-control form-control-sm art-field" id="art_prix_vente_carton" min="0" step="0.01" value="0"><div class="hint-prev" id="hint_prix_vente_carton" onclick="applyHint('art_prix_vente_carton',this)">avant: <span class="hint-val"></span></div></div>
-                        </div>
-                    </div>
-                    <!-- Prix d'achat toujours visible -->
-                    <div class="row gx-2 align-items-end">
-                        <div class="col-3 mb-1x">
-                            <label class="form-label">Prix d'achat unitaire *</label>
-                            <input type="number" class="form-control form-control-sm art-field" id="art_prix_achat" min="0" step="0.01" value="0" oninput="calculerSaisie()">
-                            <div class="hint-prev" id="hint_prix_achat" onclick="applyHint('art_prix_achat',this)">avant: <span class="hint-val"></span></div>
-                        </div>
-                    </div>
-                    <!-- Aperçu + bouton ajouter -->
-                    <div class="saisie-apercu">
-                        <div>
-                            <span class="badge-total badge-total-blue" id="saisieTotal">Sous-total: 0</span>
-                            <span class="conv-info" id="saisieConversion" style="display:none;margin-left:6px;">(<span id="saisieTotalConv">0</span> FC)</span>
-                        </div>
-                        <button type="button" class="btn btn-success btn-ajouter-article" onclick="ajouterArticle()" title="Ajouter cet article à la facture">
-                            <i class="fas fa-plus me-1"></i>Ajouter
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Tableau articles ajoutés -->
-            <div class="sec" style="flex:1;display:flex;flex-direction:column;min-height:0;">
-                <div class="sec-h">
-                    <span><i class="fas fa-list me-1"></i>Articles ajoutés (<span id="nbArticlesHeader">0</span>)</span>
-                    <span id="saveIndicator" style="font-size:.7rem;color:#198754;display:none;"><i class="fas fa-check-circle me-1"></i>Brouillon sauvegardé</span>
-                </div>
-                <div class="table-articles-zone" id="tableArticlesZone">
-                </div>
-            </div>
-        </div>
-
-        <!-- Résumé à droite -->
-        <div class="facture-right">
-            <div class="sec" style="flex:1;display:flex;flex-direction:column;">
-                <div class="sec-h"><i class="fas fa-calculator me-1"></i>Résumé</div>
-                <div class="sec-b" style="flex:1;display:flex;flex-direction:column;justify-content:space-between;">
-                    <div>
-                        <div class="resume-row"><span>Nombre d'articles:</span><strong id="nbArticles">0</strong></div>
-                        <div class="resume-row"><span>Total unités:</span><strong id="totalUnites">0</strong></div>
-                        <hr style="margin:5px 0;">
-                        <div class="total-box">
-                            <small>Montant total</small>
-                            <h4 id="montantTotal">0 <span id="deviseTotal" style="font-size:.75rem;">CDF</span></h4>
-                        </div>
-                    </div>
-                    <div class="d-grid gap-1 mt-2">
-                        <button type="submit" class="btn btn-primary btn-save" id="btnEnregistrer" disabled>
-                            <i class="fas fa-save me-1"></i>Enregistrer (Ctrl+S)
-                        </button>
-                        <a href="{% url 'inventory:liste_factures_depot' depot.id %}" class="btn btn-outline-info btn-sm" style="font-size:.72rem;"><i class="fas fa-file-invoice me-1"></i>Mes factures</a>
-                        <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-outline-secondary btn-sm" style="font-size:.72rem;">Annuler</a>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </form>
-</div>
-
-<!-- Datalists -->
-<datalist id="datalistFournisseurs">
-    {% for f in fournisseurs %}
-    <option value="{{ f.nom }}" data-id="{{ f.id }}"></option>
-    {% endfor %}
-</datalist>
-<datalist id="datalistArticles">
-    {% for art in articles_existants %}
-    <option value="{{ art.nom }}"></option>
-    {% endfor %}
-</datalist>
-<datalist id="datalistCategories">
-    {% for cat in categories %}
-    <option value="{{ cat.nom }}"></option>
-    {% endfor %}
-</datalist>
-{% endblock %}
-
-{% block extra_js %}
-<script>
 // === DONNÉES DJANGO ===
-{% localize off %}
+
 var FACT_FOURNISSEURS = [
-    {% for f in fournisseurs %}
-    { id: {{ f.id }}, nom: "{{ f.nom|escapejs }}" },
-    {% endfor %}
+    
+    { id: 3, nom: "MARSARCO" },
+    
+    { id: 2, nom: "chinoi" },
+    
+    { id: 1, nom: "congo future" },
+    
+    { id: 4, nom: "kiyambu" },
+    
 ];
 var FACT_CATEGORIES = [
-    {% for cat in categories %}
-    { id: {{ cat.id }}, nom: "{{ cat.nom|escapejs }}" },
-    {% endfor %}
+    
 ];
 var FACT_ARTICLES = [
-    {% for art in articles_existants %}
-    { id: {{ art.id }}, nom: "{{ art.nom|escapejs }}", code: "{{ art.code|escapejs }}", prix_vente: {{ art.prix_vente|default:"0" }}, prix_achat: {{ art.prix_achat|default:"0" }}, devise: "{{ art.devise|default:'CDF' }}", stock: {{ art.quantite_stock|default:"0" }}, categorie_id: "{{ art.categorie_id|default:'' }}" },
-    {% endfor %}
+    
+    { id: 123, nom: "", code: "ART\u002DA82E4432", prix_vente: 3500.00, prix_achat: 2500.00, devise: "CDF", stock: 45, categorie_id: "" },
+    
+    { id: 126, nom: "", code: "ART\u002D31B667DB", prix_vente: 0, prix_achat: 0, devise: "CDF", stock: 1, categorie_id: "" },
+    
+    { id: 127, nom: "", code: "ART\u002D4FB1E71B", prix_vente: 0, prix_achat: 0, devise: "CDF", stock: 1, categorie_id: "" },
+    
+    { id: 128, nom: "", code: "ART\u002D766102E3", prix_vente: 0, prix_achat: 0, devise: "CDF", stock: 1, categorie_id: "" },
+    
+    { id: 129, nom: "", code: "ART\u002DA463A8EC", prix_vente: 0, prix_achat: 0, devise: "CDF", stock: 1, categorie_id: "" },
+    
+    { id: 119, nom: "SARDINNE", code: "ART\u002DFC7CF1F4", prix_vente: 3000.00, prix_achat: 2000.00, devise: "CDF", stock: 250, categorie_id: "" },
+    
+    { id: 120, nom: "TOMATE", code: "ART\u002D1E0F9183", prix_vente: 700.00, prix_achat: 600.00, devise: "CDF", stock: 90, categorie_id: "" },
+    
+    { id: 37, nom: "allumette", code: "1\u002D003", prix_vente: 20000.00, prix_achat: 10000.00, devise: "CDF", stock: 220, categorie_id: "" },
+    
+    { id: 84, nom: "bleuband", code: "9873", prix_vente: 0, prix_achat: 766.67, devise: "CDF", stock: 620, categorie_id: "" },
+    
+    { id: 85, nom: "chaise", code: "12\u002D9FBAD4C3", prix_vente: 100.00, prix_achat: 80.00, devise: "USD", stock: 0, categorie_id: "" },
+    
+    { id: 51, nom: "chargeur oremo", code: "2223333", prix_vente: 50000.00, prix_achat: 70000.00, devise: "CDF", stock: 25, categorie_id: "" },
+    
+    { id: 47, nom: "chemise", code: "ART\u002D7AF27CAA", prix_vente: 10.00, prix_achat: 15.00, devise: "CDF", stock: 100, categorie_id: "" },
+    
+    { id: 125, nom: "dddff", code: "jhhhh", prix_vente: 11500000.00, prix_achat: 7666.67, devise: "CDF", stock: 65, categorie_id: "" },
+    
+    { id: 76, nom: "fufu", code: "8562", prix_vente: 450.00, prix_achat: 0, devise: "CDF", stock: 60, categorie_id: "" },
+    
+    { id: 52, nom: "huawei", code: "12\u002DD8DAFA75", prix_vente: 40000.00, prix_achat: 0, devise: "CDF", stock: 5, categorie_id: "" },
+    
+    { id: 81, nom: "huile", code: "2543", prix_vente: 75600.00, prix_achat: 50000.00, devise: "CDF", stock: 30, categorie_id: "" },
+    
+    { id: 124, nom: "huile vegetal", code: "ART\u002DB501E0CD", prix_vente: 46000000.00, prix_achat: 17250.00, devise: "CDF", stock: 23, categorie_id: "" },
+    
+    { id: 53, nom: "iphone12pro", code: "004545", prix_vente: 45.00, prix_achat: 31.50, devise: "CDF", stock: 15, categorie_id: "" },
+    
+    { id: 48, nom: "iphone_12pro", code: "ART\u002D36F5C1B5", prix_vente: 15.00, prix_achat: 10.00, devise: "USD", stock: 0, categorie_id: "" },
+    
+    { id: 54, nom: "ivory", code: "005", prix_vente: 12000.00, prix_achat: 10000.00, devise: "CDF", stock: 0, categorie_id: "14" },
+    
+    { id: 78, nom: "jus", code: "3698", prix_vente: 9000.00, prix_achat: 7500.00, devise: "CDF", stock: 258, categorie_id: "" },
+    
+    { id: 74, nom: "loso", code: "4589", prix_vente: 48000.00, prix_achat: 35000.00, devise: "CDF", stock: 892, categorie_id: "" },
+    
+    { id: 73, nom: "madesu", code: "4568", prix_vente: 9850.00, prix_achat: 8000.00, devise: "CDF", stock: 0, categorie_id: "" },
+    
+    { id: 75, nom: "makayabu", code: "78562", prix_vente: 123500.00, prix_achat: 90000.00, devise: "CDF", stock: 460, categorie_id: "" },
+    
+    { id: 122, nom: "mayo", code: "ART\u002D5B9D1701", prix_vente: 0, prix_achat: 4600.00, devise: "CDF", stock: 35, categorie_id: "" },
+    
+    { id: 43, nom: "orange", code: "ART\u002D4C9D71E8", prix_vente: 9.00, prix_achat: 5.00, devise: "USD", stock: 0, categorie_id: "" },
+    
+    { id: 55, nom: "papier thermique", code: "12\u002D7F4C4276", prix_vente: 7000.00, prix_achat: 5000.00, devise: "CDF", stock: 0, categorie_id: "" },
+    
+    { id: 56, nom: "redmi4", code: "12\u002D6D507BB2", prix_vente: 50000.00, prix_achat: 0, devise: "CDF", stock: 0, categorie_id: "" },
+    
+    { id: 45, nom: "sac fille", code: "ART\u002D102D7537", prix_vente: 80.00, prix_achat: 60.00, devise: "USD", stock: 10, categorie_id: "" },
+    
+    { id: 72, nom: "safuti", code: "1256", prix_vente: 7500.00, prix_achat: 6000.00, devise: "CDF", stock: 120, categorie_id: "" },
+    
+    { id: 83, nom: "sardine", code: "6984", prix_vente: 86500.00, prix_achat: 75000.00, devise: "CDF", stock: 52, categorie_id: "" },
+    
+    { id: 57, nom: "savon noir", code: "0030", prix_vente: 5000.00, prix_achat: 3500.00, devise: "CDF", stock: 0, categorie_id: "13" },
+    
+    { id: 71, nom: "savon rouge", code: "1234", prix_vente: 15600.00, prix_achat: 8000.00, devise: "CDF", stock: 80, categorie_id: "" },
+    
+    { id: 79, nom: "soso", code: "6595", prix_vente: 120000.00, prix_achat: 60000.00, devise: "CDF", stock: 26, categorie_id: "" },
+    
+    { id: 82, nom: "spaguetti", code: "2698", prix_vente: 1200.00, prix_achat: 600.00, devise: "CDF", stock: 56, categorie_id: "" },
+    
+    { id: 41, nom: "tomate", code: "ART\u002D97F804DD", prix_vente: 10000.00, prix_achat: 5000.00, devise: "CDF", stock: 100, categorie_id: "" },
+    
+    { id: 86, nom: "velo", code: "12\u002D171F0977", prix_vente: 50.00, prix_achat: 40.00, devise: "CDF", stock: 0, categorie_id: "" },
+    
+    { id: 80, nom: "viande", code: "6963", prix_vente: 135000.00, prix_achat: 120000.00, devise: "CDF", stock: 0, categorie_id: "" },
+    
+    { id: 77, nom: "vinaigne", code: "89652", prix_vente: 6000.00, prix_achat: 3500.00, devise: "CDF", stock: 25, categorie_id: "" },
+    
+    { id: 58, nom: "yyyy", code: "12\u002D6B3A5877", prix_vente: 50.00, prix_achat: 0, devise: "CDF", stock: 0, categorie_id: "" },
+    
 ];
-{% endlocalize %}
+
 
 // Dernières données d'approvisionnement par article (carton, prix, etc.)
-var FACT_DERNIERS_APPROS = {{ derniers_appros_json|safe }};
-
-// === HELPERS DEVISE (radio buttons) ===
-function getDevise() {
-    var r = document.querySelector('input[name="devise"]:checked');
-    return r ? r.value : 'CDF';
-}
-function setDevise(val) {
-    var el = document.getElementById('devise_' + val.toLowerCase());
-    if (el) el.checked = true;
-}
-function onDeviseChange() {
-    getEl('info_conversion').style.display = getDevise() === 'USD' ? 'block' : 'none';
-    calculerSaisie();
-    factRafraichirTableau();
-    factMajResume();
-    factSaveState();
-}
+var FACT_DERNIERS_APPROS = {"76": {"type_quantite": "CARTON", "nombre_cartons": 0, "pieces_par_carton": 1, "prix_achat_carton": 0.0, "prix_achat_unitaire": 0.0}, "84": {"type_quantite": "CARTON", "nombre_cartons": 2, "pieces_par_carton": 300, "prix_achat_carton": 230000.0, "prix_achat_unitaire": 766.67}, "119": {"type_quantite": "CARTON", "nombre_cartons": 3, "pieces_par_carton": 50, "prix_achat_carton": 100000.0, "prix_achat_unitaire": 2000.0}, "120": {"type_quantite": "CARTON", "nombre_cartons": 2, "pieces_par_carton": 50, "prix_achat_carton": 30000.0, "prix_achat_unitaire": 600.0}, "122": {"type_quantite": "CARTON", "nombre_cartons": 1, "pieces_par_carton": 30, "prix_achat_carton": 138000.0, "prix_achat_unitaire": 4600.0}, "123": {"type_quantite": "CARTON", "nombre_cartons": 2, "pieces_par_carton": 20, "prix_achat_carton": 50000.0, "prix_achat_unitaire": 2500.0}, "124": {"type_quantite": "CARTON", "nombre_cartons": 1, "pieces_par_carton": 20, "prix_achat_carton": 345000.0, "prix_achat_unitaire": 17250.0}, "125": {"type_quantite": "CARTON", "nombre_cartons": 2, "pieces_par_carton": 30, "prix_achat_carton": 230000.0, "prix_achat_unitaire": 7666.67}, "126": {"type_quantite": "UNITE", "nombre_cartons": 0, "pieces_par_carton": 1, "prix_achat_carton": 0.0, "prix_achat_unitaire": 0.0}, "127": {"type_quantite": "UNITE", "nombre_cartons": 0, "pieces_par_carton": 1, "prix_achat_carton": 0.0, "prix_achat_unitaire": 0.0}, "128": {"type_quantite": "UNITE", "nombre_cartons": 0, "pieces_par_carton": 1, "prix_achat_carton": 0.0, "prix_achat_unitaire": 0.0}, "129": {"type_quantite": "UNITE", "nombre_cartons": 0, "pieces_par_carton": 1, "prix_achat_carton": 0.0, "prix_achat_unitaire": 0.0}};
 
 // === ÉTAT ===
 var factArticlesAjoutes = [];
-var FACT_STORAGE_KEY = 'facture_brouillon_{{ depot.id }}';
+var FACT_STORAGE_KEY = 'facture_brouillon_13';
 
 // === PERSISTANCE localStorage ===
 function factSaveState() {
@@ -303,7 +115,7 @@ function factSaveState() {
             header: {
                 numero_facture: getEl('numero_facture').value,
                 date_facture: getEl('date_facture').value,
-                devise: getDevise(),
+                devise: getEl('devise').value,
                 fournisseur_input: getEl('fournisseur_input').value,
                 fournisseur_id: getEl('fournisseur_id').value,
                 fournisseur_nom: getEl('fournisseur_nom').value,
@@ -340,7 +152,7 @@ function factLoadState() {
                 var h = state.header;
                 if (h.numero_facture) getEl('numero_facture').value = h.numero_facture;
                 if (h.date_facture) getEl('date_facture').value = h.date_facture;
-                if (h.devise) setDevise(h.devise);
+                if (h.devise) getEl('devise').value = h.devise;
                 if (h.fournisseur_input) {
                     getEl('fournisseur_input').value = h.fournisseur_input;
                     if (h.fournisseur_id) {
@@ -361,7 +173,7 @@ function factLoadState() {
             if (h.numero_facture) getEl('numero_facture').value = h.numero_facture;
             if (h.date_facture) getEl('date_facture').value = h.date_facture;
             if (h.devise) {
-                setDevise(h.devise);
+                getEl('devise').value = h.devise;
                 getEl('info_conversion').style.display = h.devise === 'USD' ? 'block' : 'none';
             }
             if (h.fournisseur_input) {
@@ -451,7 +263,7 @@ document.addEventListener('keydown', function(e) {
     try {
         if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
             e.preventDefault();
-            soumettreFactureAjax();
+            getEl('factureForm').requestSubmit();
             return;
         }
         if (e.key !== 'Enter') return;
@@ -610,7 +422,7 @@ function onSaisieTypeChange(skipFocus) {
 function calculerSaisie() {
     try {
         var type = getEl('art_type').value;
-        var devise = getDevise();
+        var devise = getEl('devise').value;
         var total = 0, qteUnites = 0;
         if (type === 'CARTON') {
             var nc = parseFloat(getEl('art_nb_cartons').value) || 0;
@@ -700,7 +512,7 @@ function factViderChamps() {
     getEl('art_categorie').classList.remove('input-matched');
     getEl('art_categorie_id').value = '';
     getEl('art_categorie_nom').value = '';
-    getEl('art_type').value = 'CARTON';
+    getEl('art_type').value = 'UNITE';
     getEl('art_qte').value = '1';
     getEl('art_prix_achat').value = '0';
     getEl('art_prix_vente').value = '0';
@@ -750,15 +562,10 @@ function factRafraichirTableau() {
 }
 
 function supprimerArticle(index) {
-    try {
-        if (index < 0 || index >= factArticlesAjoutes.length) { console.warn('Index invalide:', index); return; }
-        var nom = factArticlesAjoutes[index].nom || 'Article';
-        if (!confirm('Supprimer "' + nom + '" de la liste ?')) return;
-        factArticlesAjoutes.splice(index, 1);
-        factRafraichirTableau();
-        factMajResume();
-        factSaveState();
-    } catch(err) { console.error('Supprimer article error:', err); alert('Erreur suppression: ' + err.message); }
+    factArticlesAjoutes.splice(index, 1);
+    factRafraichirTableau();
+    factMajResume();
+    factSaveState();
 }
 
 // =============================================
@@ -779,7 +586,7 @@ function factMajResume() {
     getEl('nbArticlesHeader').textContent = factArticlesAjoutes.length;
     getEl('totalUnites').textContent = totalU;
     getEl('montantTotal').textContent = factFormatNumber(montant);
-    getEl('deviseTotal').textContent = getDevise();
+    getEl('deviseTotal').textContent = getEl('devise').value;
     getEl('btnEnregistrer').disabled = (factArticlesAjoutes.length === 0);
     getEl('articles_json').value = JSON.stringify(factArticlesAjoutes);
 }
@@ -811,59 +618,14 @@ function onFournisseurInput() {
 // VALIDATION FORMULAIRE
 // =============================================
 function validerFormulaire() {
-    // Intercepter le submit normal et utiliser AJAX
-    soumettreFactureAjax();
-    return false;
-}
-
-function soumettreFactureAjax() {
-    if (factArticlesAjoutes.length === 0) { alert('Veuillez ajouter au moins un article'); return; }
-    if (!getEl('numero_facture').value.trim()) { alert('Le num\u00e9ro de facture est obligatoire'); getEl('numero_facture').focus(); return; }
-
+    if (factArticlesAjoutes.length === 0) { alert('Veuillez ajouter au moins un article'); return false; }
+    if (!getEl('numero_facture').value.trim()) { alert('Le numéro de facture est obligatoire'); return false; }
     getEl('articles_json').value = JSON.stringify(factArticlesAjoutes);
+    factClearState();
     var btn = getEl('btnEnregistrer');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Enregistrement en cours...';
-
-    var form = getEl('factureForm');
-    var formData = new FormData(form);
-
-    fetch(form.action || window.location.href, {
-        method: 'POST',
-        body: formData,
-        headers: { 'X-Requested-With': 'XMLHttpRequest' }
-    })
-    .then(function(resp) { return resp.json().then(function(data) { return {ok: resp.ok, data: data}; }); })
-    .then(function(result) {
-        if (result.ok && result.data.success) {
-            // Succès: vider les articles, garder l'en-tête
-            factArticlesAjoutes = [];
-            factRafraichirTableau();
-            factMajResume();
-            factClearState();
-            // Message succès
-            var ind = getEl('saveIndicator');
-            if (ind) {
-                ind.style.display = 'inline';
-                ind.style.color = '#198754';
-                ind.textContent = '\u2705 ' + result.data.message;
-                clearTimeout(window._saveTimer);
-                window._saveTimer = setTimeout(function() { ind.style.display = 'none'; }, 6000);
-            }
-            // Vider le numéro de facture pour la prochaine
-            getEl('numero_facture').value = '';
-            getEl('fournisseur_input').focus();
-        } else {
-            alert('Erreur: ' + (result.data.message || 'Erreur inconnue'));
-        }
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save me-1"></i>Enregistrer (Ctrl+S)';
-    })
-    .catch(function(err) {
-        alert('Erreur r\u00e9seau: ' + err.message);
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-save me-1"></i>Enregistrer (Ctrl+S)';
-    });
+    return true;
 }
 
 // =============================================
@@ -871,7 +633,14 @@ function soumettreFactureAjax() {
 // =============================================
 document.addEventListener('DOMContentLoaded', function() {
     try {
-        // Devise change est géré par onDeviseChange() via onchange sur les radio buttons
+        // Devise change
+        getEl('devise').addEventListener('change', function() {
+            getEl('info_conversion').style.display = this.value === 'USD' ? 'block' : 'none';
+            calculerSaisie();
+            factRafraichirTableau();
+            factMajResume();
+            factSaveState();
+        });
 
         // Auto-save en-tête quand les champs changent
         var headerFields = ['numero_facture', 'date_facture', 'fournisseur_input'];
@@ -882,17 +651,12 @@ document.addEventListener('DOMContentLoaded', function() {
         var notesEl = document.querySelector('input[name="notes"]');
         if (notesEl) notesEl.addEventListener('change', factSaveState);
 
-        // Afficher les champs carton par défaut
-        onSaisieTypeChange(true);
-
         // Restaurer le brouillon
         var restored = factLoadState();
-        getEl('fournisseur_input').focus();
+        getEl('art_nom').focus();
 
         console.log('✅ Facture JS OK - Articles:', FACT_ARTICLES.length, '- Catégories:', FACT_CATEGORIES.length, '- Fournisseurs:', FACT_FOURNISSEURS.length);
     } catch(err) {
         console.error('❌ Facture JS init error:', err);
     }
 });
-</script>
-{% endblock %}

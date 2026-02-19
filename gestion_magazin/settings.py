@@ -48,8 +48,16 @@ if DEBUG:
         "13.113.224.224",
         "192.168.142.224",
         "10.248.27.118",
-        "10.44.255.118",
+        "10.105.97.235",
     ])
+    # En dev, accepter toutes les origines localhost (proxy Cascade, etc.)
+    CSRF_TRUSTED_ORIGINS = [
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://127.0.0.1:50193",
+    ]
+    # Désactiver la vérification d'origine CSRF en mode dev
+    CSRF_COOKIE_DOMAIN = None
     
 
 

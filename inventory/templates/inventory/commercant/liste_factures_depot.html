@@ -3,66 +3,208 @@
 
 {% block title %}Factures d'approvisionnement - {{ depot.nom }}{% endblock %}
 
+{% block extra_css %}
+<style>
+.factures-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:18px; }
+.factures-header h2 { margin:0; font-size:1.35rem; }
+.factures-header .sub { color:#6c757d; font-size:.82rem; }
+.stats-bar { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.stat-card { background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:10px 16px; min-width:140px; flex:1; }
+.stat-card .stat-label { font-size:.7rem; color:#6c757d; text-transform:uppercase; letter-spacing:.5px; }
+.stat-card .stat-value { font-size:1.25rem; font-weight:700; color:#212529; }
+.stat-card .stat-value small { font-size:.7rem; font-weight:400; color:#6c757d; }
+.search-bar { background:#fff; border:1px solid #e9ecef; border-radius:10px; padding:14px 18px; margin-bottom:16px; }
+.search-bar .search-row { display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
+.search-bar .search-main { flex:2; min-width:200px; }
+.search-bar .search-filter { flex:1; min-width:120px; }
+.search-bar label { font-size:.7rem; color:#6c757d; text-transform:uppercase; letter-spacing:.5px; margin-bottom:2px; display:block; }
+.search-bar input, .search-bar select { font-size:.85rem; }
+.search-bar .btn-search { height:38px; }
+.results-info { font-size:.78rem; color:#6c757d; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+.results-info strong { color:#212529; }
+.table-factures { width:100%; border-collapse:separate; border-spacing:0; }
+.table-factures thead th { background:#f8f9fa; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6c757d; padding:8px 12px; border-bottom:2px solid #dee2e6; position:sticky; top:0; white-space:nowrap; }
+.table-factures thead th a { color:#6c757d; text-decoration:none; }
+.table-factures thead th a:hover { color:#0d6efd; }
+.table-factures thead th .sort-icon { font-size:.6rem; margin-left:3px; }
+.table-factures tbody tr { transition: background .15s; cursor:pointer; }
+.table-factures tbody tr:hover { background:#f0f4ff; }
+.table-factures tbody td { padding:10px 12px; border-bottom:1px solid #f0f0f0; font-size:.85rem; vertical-align:middle; }
+.table-factures .num-facture { font-weight:600; color:#0d6efd; }
+.table-factures .fournisseur { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.table-factures .montant { font-weight:600; white-space:nowrap; }
+.table-factures .montant.cdf { color:#198754; }
+.table-factures .montant.usd { color:#0d6efd; }
+.badge-articles { background:#e8f0fe; color:#1a73e8; font-weight:600; padding:3px 8px; border-radius:12px; font-size:.75rem; }
+.articles-list { font-size:.7rem; color:#6c757d; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.btn-voir { font-size:.75rem; padding:3px 10px; }
+.pagination-bar { display:flex; align-items:center; justify-content:space-between; margin-top:12px; font-size:.8rem; }
+.pagination-bar .page-info { color:#6c757d; }
+.pagination-bar .pagination { margin:0; }
+.pagination-bar .page-link { font-size:.8rem; padding:4px 10px; }
+.empty-state { text-align:center; padding:50px 20px; color:#adb5bd; }
+.empty-state i { font-size:3rem; margin-bottom:12px; }
+.highlight { background:#fff3cd; padding:1px 2px; border-radius:2px; }
+@media(max-width:768px) {
+    .search-bar .search-row { flex-direction:column; }
+    .stats-bar { flex-direction:column; }
+}
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container-fluid py-4">
-    <div class="row mb-4">
-        <div class="col-md-8">
+<div class="container-fluid py-3">
+    <!-- Header -->
+    <div class="factures-header">
+        <div>
             <h2><i class="fas fa-file-invoice me-2"></i>Factures d'approvisionnement</h2>
-            <p class="text-muted">{{ depot.nom }}</p>
+            <span class="sub">{{ depot.nom }} &mdash; {{ total_count }} facture{{ total_count|pluralize }}</span>
         </div>
-        <div class="col-md-4 text-end">
-            <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-outline-secondary me-2">
-                <i class="fas fa-arrow-left"></i> Retour
+        <div style="display:flex;gap:8px;">
+            <a href="{% url 'inventory:approvisionner_facture' depot.id %}" class="btn btn-primary btn-sm">
+                <i class="fas fa-plus me-1"></i>Nouvelle facture
             </a>
-            <a href="{% url 'inventory:approvisionner_facture' depot.id %}" class="btn btn-primary">
-                <i class="fas fa-plus"></i> Nouvelle facture
+            <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left me-1"></i>Retour
             </a>
         </div>
     </div>
 
+    <!-- Stats -->
+    <div class="stats-bar">
+        <div class="stat-card">
+            <div class="stat-label">Total factures</div>
+            <div class="stat-value">{{ stats.nb_factures|default:0 }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Montant CDF</div>
+            <div class="stat-value" style="color:#198754;">{{ stats.total_montant_cdf|floatformat:0|default:"0" }} <small>FC</small></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Montant USD</div>
+            <div class="stat-value" style="color:#0d6efd;">{{ stats.total_montant_usd|floatformat:0|default:"0" }} <small>$</small></div>
+        </div>
+    </div>
+
+    <!-- Barre de recherche -->
+    <div class="search-bar">
+        <form method="get" id="searchForm">
+            <div class="search-row">
+                <div class="search-main">
+                    <label for="q"><i class="fas fa-search me-1"></i>Recherche</label>
+                    <input type="text" class="form-control form-control-sm" id="q" name="q" value="{{ q }}"
+                           placeholder="N° facture, fournisseur, article, notes..."
+                           oninput="clearTimeout(window._st); window._st=setTimeout(function(){document.getElementById('searchForm').submit()},600);">
+                </div>
+                <div class="search-filter">
+                    <label for="devise">Devise</label>
+                    <select class="form-select form-select-sm" id="devise" name="devise" onchange="this.form.submit()">
+                        <option value="">Toutes</option>
+                        <option value="CDF" {% if devise_filter == 'CDF' %}selected{% endif %}>CDF</option>
+                        <option value="USD" {% if devise_filter == 'USD' %}selected{% endif %}>USD</option>
+                    </select>
+                </div>
+                <div class="search-filter">
+                    <label for="date_debut">Du</label>
+                    <input type="date" class="form-control form-control-sm" id="date_debut" name="date_debut" value="{{ date_debut }}" onchange="this.form.submit()">
+                </div>
+                <div class="search-filter">
+                    <label for="date_fin">Au</label>
+                    <input type="date" class="form-control form-control-sm" id="date_fin" name="date_fin" value="{{ date_fin }}" onchange="this.form.submit()">
+                </div>
+                <div>
+                    <label>&nbsp;</label>
+                    {% if q or devise_filter or date_debut or date_fin %}
+                    <a href="{% url 'inventory:liste_factures_depot' depot.id %}" class="btn btn-outline-secondary btn-sm btn-search" title="Effacer filtres">
+                        <i class="fas fa-times"></i>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            <input type="hidden" name="tri" value="{{ tri }}">
+        </form>
+    </div>
+
+    <!-- Info résultats -->
+    {% if q or devise_filter or date_debut or date_fin %}
+    <div class="results-info">
+        <i class="fas fa-filter"></i>
+        <strong>{{ filtered_count }}</strong> résultat{{ filtered_count|pluralize }} sur {{ total_count }}
+        {% if q %}&mdash; recherche: <em>"{{ q }}"</em>{% endif %}
+        {% if devise_filter %}&mdash; devise: <strong>{{ devise_filter }}</strong>{% endif %}
+        {% if date_debut %}&mdash; du <strong>{{ date_debut }}</strong>{% endif %}
+        {% if date_fin %}&mdash; au <strong>{{ date_fin }}</strong>{% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Tableau -->
     <div class="card shadow-sm">
-        <div class="card-body">
+        <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover">
+                <table class="table-factures">
                     <thead>
                         <tr>
-                            <th>N° Facture</th>
-                            <th>Date</th>
+                            <th>
+                                <a href="?q={{ q }}&devise={{ devise_filter }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&tri={% if tri == 'numero_facture' %}-numero_facture{% else %}numero_facture{% endif %}">
+                                    N° Facture {% if tri == 'numero_facture' %}<i class="fas fa-sort-up sort-icon"></i>{% elif tri == '-numero_facture' %}<i class="fas fa-sort-down sort-icon"></i>{% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a href="?q={{ q }}&devise={{ devise_filter }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&tri={% if tri == '-date_facture' %}date_facture{% else %}-date_facture{% endif %}">
+                                    Date {% if tri == '-date_facture' %}<i class="fas fa-sort-down sort-icon"></i>{% elif tri == 'date_facture' %}<i class="fas fa-sort-up sort-icon"></i>{% endif %}
+                                </a>
+                            </th>
                             <th>Fournisseur</th>
-                            <th class="text-center">Articles</th>
-                            <th class="text-end">Montant Total</th>
-                            <th class="text-center">Actions</th>
+                            <th>Articles</th>
+                            <th class="text-end">
+                                <a href="?q={{ q }}&devise={{ devise_filter }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&tri={% if tri == '-montant_total' %}montant_total{% else %}-montant_total{% endif %}">
+                                    Montant {% if tri == '-montant_total' %}<i class="fas fa-sort-down sort-icon"></i>{% elif tri == 'montant_total' %}<i class="fas fa-sort-up sort-icon"></i>{% endif %}
+                                </a>
+                            </th>
+                            <th class="text-center" style="width:80px;">Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for facture in factures %}
-                        <tr>
-                            <td><strong>{{ facture.numero_facture }}</strong></td>
+                        <tr onclick="window.location='{% url 'inventory:detail_facture_depot' depot.id facture.id %}'" style="cursor:pointer;">
+                            <td class="num-facture">{{ facture.numero_facture }}</td>
                             <td>{{ facture.date_facture|date:"d/m/Y" }}</td>
-                            <td>
+                            <td class="fournisseur">
                                 {% if facture.fournisseur %}
                                     {{ facture.fournisseur.nom }}
                                 {% else %}
                                     {{ facture.fournisseur_nom|default:"-" }}
                                 {% endif %}
                             </td>
-                            <td class="text-center">
-                                <span class="badge bg-primary">{{ facture.lignes.count }}</span>
+                            <td>
+                                <span class="badge-articles">{{ facture.lignes.all|length }}</span>
+                                <span class="articles-list">
+                                    {% for ligne in facture.lignes.all %}{% if forloop.counter <= 3 %}{% if not forloop.first %}, {% endif %}{{ ligne.article.nom }}{% endif %}{% endfor %}{% if facture.lignes.all|length > 3 %} +{{ facture.lignes.all|length|add:"-3" }}{% endif %}
+                                </span>
                             </td>
-                            <td class="text-end">
-                                <strong>{{ facture.montant_total|floatformat:0 }} {{ facture.devise }}</strong>
+                            <td class="text-end montant {% if facture.devise == 'CDF' %}cdf{% else %}usd{% endif %}">
+                                {{ facture.montant_total|floatformat:0 }} {{ facture.devise }}
                             </td>
-                            <td class="text-center">
-                                <a href="{% url 'inventory:detail_facture_depot' depot.id facture.id %}" class="btn btn-sm btn-outline-primary">
-                                    <i class="fas fa-eye"></i> Voir
+                            <td class="text-center" onclick="event.stopPropagation();">
+                                <a href="{% url 'inventory:detail_facture_depot' depot.id facture.id %}" class="btn btn-sm btn-outline-primary btn-voir">
+                                    <i class="fas fa-eye"></i>
                                 </a>
                             </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="6" class="text-center py-4 text-muted">
-                                <i class="fas fa-inbox fa-2x mb-3 d-block"></i>
-                                Aucune facture enregistrée
+                            <td colspan="6">
+                                <div class="empty-state">
+                                    {% if q or devise_filter or date_debut or date_fin %}
+                                        <i class="fas fa-search d-block"></i>
+                                        <p>Aucune facture ne correspond à votre recherche</p>
+                                        <a href="{% url 'inventory:liste_factures_depot' depot.id %}" class="btn btn-outline-primary btn-sm">Effacer les filtres</a>
+                                    {% else %}
+                                        <i class="fas fa-inbox d-block"></i>
+                                        <p>Aucune facture enregistrée</p>
+                                        <a href="{% url 'inventory:approvisionner_facture' depot.id %}" class="btn btn-primary btn-sm">Créer une facture</a>
+                                    {% endif %}
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -71,5 +213,72 @@
             </div>
         </div>
     </div>
+
+    <!-- Pagination -->
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="pagination-bar">
+        <span class="page-info">
+            Page {{ page_obj.number }} sur {{ page_obj.paginator.num_pages }}
+            ({{ filtered_count }} facture{{ filtered_count|pluralize }})
+        </span>
+        <nav>
+            <ul class="pagination pagination-sm">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?q={{ q }}&devise={{ devise_filter }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&tri={{ tri }}&page={{ page_obj.previous_page_number }}">
+                        <i class="fas fa-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+                {% for num in page_obj.paginator.page_range %}
+                    {% if num == page_obj.number %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                    {% elif num == 1 or num == page_obj.paginator.num_pages or num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}
+                    <li class="page-item">
+                        <a class="page-link" href="?q={{ q }}&devise={{ devise_filter }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&tri={{ tri }}&page={{ num }}">{{ num }}</a>
+                    </li>
+                    {% elif num == 2 or num == page_obj.paginator.num_pages|add:"-1" %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                    {% endif %}
+                {% endfor %}
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?q={{ q }}&devise={{ devise_filter }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&tri={{ tri }}&page={{ page_obj.next_page_number }}">
+                        <i class="fas fa-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
 </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var qInput = document.getElementById('q');
+    if (qInput) {
+        // Focus + curseur à la FIN du texte
+        qInput.focus();
+        var len = qInput.value.length;
+        qInput.setSelectionRange(len, len);
+    }
+    // Raccourci clavier: / pour focus recherche
+    document.addEventListener('keydown', function(e) {
+        if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+            e.preventDefault();
+            qInput.focus();
+            qInput.select();
+        }
+        // Escape pour effacer la recherche
+        if (e.key === 'Escape' && document.activeElement.id === 'q') {
+            qInput.value = '';
+            document.getElementById('searchForm').submit();
+        }
+    });
+});
+</script>
 {% endblock %}

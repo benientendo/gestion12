@@ -19,6 +19,14 @@ body {
     background: linear-gradient(135deg, #f5f5f7, #e6e7eb);
     color: #5a5c69;
     line-height: 1.6;
+    overflow-x: hidden;
+}
+
+img,
+svg,
+video {
+    max-width: 100%;
+    height: auto;
 }
 
 /* Navbar et Sidebar */
@@ -908,6 +916,19 @@ body {
     -webkit-overflow-scrolling: touch;
 }
 
+.table-responsive .btn-group {
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.table-responsive .btn-group .btn {
+    min-width: 2.1rem;
+}
+
+.topbar .dropdown-menu {
+    max-width: min(95vw, 340px);
+}
+
 /* Scrollbar personnalisée pour les tableaux sur desktop */
 @media (min-width: 992px) {
     .table-responsive::-webkit-scrollbar {
@@ -968,6 +989,21 @@ a:focus, button:focus, input:focus, select:focus, textarea:focus {
     h4 { font-size: 1rem; }
     h5 { font-size: 0.9rem; }
     h6 { font-size: 0.85rem; }
+
+    .topbar .dropdown-menu {
+        width: min(95vw, 320px) !important;
+        max-height: 70vh !important;
+        overflow-y: auto;
+    }
+
+    .topbar .dropdown-menu-end {
+        right: 0.5rem !important;
+        left: auto !important;
+    }
+
+    .table-responsive table {
+        min-width: 640px;
+    }
 }
 
 /* Classes utilitaires personnalisées */

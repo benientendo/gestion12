@@ -871,6 +871,7 @@ class TransfertStock(models.Model):
     valide_par = models.CharField(max_length=100, blank=True, help_text="Utilisateur ayant validé le transfert")
     
     statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_ATTENTE')
+    reference_lot = models.CharField(max_length=50, blank=True, db_index=True, help_text="Référence de lot pour regrouper les transferts multiples")
     commentaire = models.TextField(blank=True)
     
     stock_depot_avant = models.IntegerField(null=True, blank=True, help_text="Stock du dépôt avant transfert")
@@ -1131,6 +1132,7 @@ class FactureApprovisionnement(models.Model):
         verbose_name = "Facture d'approvisionnement"
         verbose_name_plural = "Factures d'approvisionnement"
         ordering = ['-date_facture', '-date_creation']
+        unique_together = [['numero_facture', 'depot']]
         indexes = [
             models.Index(fields=['depot', '-date_facture'], name='facture_depot_date_idx'),
             models.Index(fields=['numero_facture'], name='facture_numero_idx'),

@@ -1,0 +1,223 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Bon de Transfert - {{ reference_lot }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* === IMPRESSION === */
+    @media print {
+        body { margin: 0; padding: 0; font-size: 11pt; }
+        .no-print { display: none !important; }
+        .bon-page { box-shadow: none !important; border: none !important; padding: 20px !important; }
+        .navbar, .sidebar, footer { display: none !important; }
+        @page { margin: 10mm 15mm; size: A4; }
+    }
+
+    /* === ÉCRAN === */
+    .bon-wrapper { max-width: 900px; margin: 20px auto; padding: 0 15px; }
+    .bon-page {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.08);
+        padding: 35px 40px;
+    }
+
+    /* En-tête */
+    .bon-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 3px solid #333; }
+    .bon-header-left h2 { margin: 0; font-size: 1.5rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+    .bon-header-left p { margin: 2px 0; font-size: .85rem; color: #555; }
+    .bon-header-right { text-align: right; }
+    .bon-header-right .ref { font-size: 1rem; font-weight: 700; color: #333; background: #f0f0f0; padding: 4px 12px; border-radius: 4px; display: inline-block; margin-bottom: 5px; }
+    .bon-header-right .date { font-size: .85rem; color: #666; }
+
+    /* Info blocs */
+    .bon-info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+    .bon-info-bloc { background: #f8f9fa; border-radius: 6px; padding: 14px 18px; border-left: 4px solid #667eea; }
+    .bon-info-bloc h6 { margin: 0 0 8px; font-size: .78rem; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; }
+    .bon-info-bloc .val { font-size: .95rem; font-weight: 600; color: #222; }
+    .bon-info-bloc .val small { font-weight: 400; color: #666; }
+
+    /* Tableau */
+    .bon-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    .bon-table thead th { background: #333; color: #fff; padding: 10px 12px; font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+    .bon-table thead th:first-child { border-radius: 4px 0 0 0; }
+    .bon-table thead th:last-child { border-radius: 0 4px 0 0; }
+    .bon-table tbody td { padding: 9px 12px; border-bottom: 1px solid #e9ecef; font-size: .88rem; }
+    .bon-table tbody tr:nth-child(even) { background: #fafbfc; }
+    .bon-table tbody tr:hover { background: #f0f2ff; }
+    .bon-table .text-end { text-align: right; }
+    .bon-table .text-center { text-align: center; }
+    .bon-table tfoot td { padding: 10px 12px; font-weight: 700; font-size: .92rem; border-top: 2px solid #333; }
+
+    /* Totaux */
+    .bon-totaux { display: flex; justify-content: flex-end; margin-bottom: 30px; }
+    .bon-totaux-card { background: #f8f9fa; border: 2px solid #333; border-radius: 6px; padding: 15px 25px; min-width: 300px; }
+    .bon-totaux-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: .9rem; }
+    .bon-totaux-row.total { font-size: 1.1rem; font-weight: 800; border-top: 2px solid #333; margin-top: 8px; padding-top: 8px; }
+
+    /* Engagement */
+    .bon-engagement { background: #fffde7; border: 1px solid #f9e68c; border-radius: 6px; padding: 18px 22px; margin-bottom: 25px; }
+    .bon-engagement h6 { margin: 0 0 8px; font-weight: 700; font-size: .9rem; }
+    .bon-engagement p { margin: 0; font-size: .85rem; color: #333; line-height: 1.6; }
+
+    /* Signatures */
+    .bon-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 30px; page-break-inside: avoid; }
+    .bon-sig-bloc { text-align: center; }
+    .bon-sig-bloc .sig-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; color: #555; margin-bottom: 5px; letter-spacing: .5px; }
+    .bon-sig-bloc .sig-name { font-size: .92rem; font-weight: 600; margin-bottom: 40px; }
+    .bon-sig-bloc .sig-line { border-top: 1px solid #333; padding-top: 8px; font-size: .78rem; color: #888; }
+
+    /* Footer */
+    .bon-footer { margin-top: 25px; padding-top: 12px; border-top: 1px solid #ccc; text-align: center; font-size: .72rem; color: #999; }
+
+    /* Boutons d'action */
+    .bon-actions { margin-bottom: 20px; display: flex; gap: 10px; justify-content: center; }
+    .bon-actions .btn { padding: 8px 20px; font-size: .9rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bon-wrapper">
+    <!-- Boutons d'action (non imprimés) -->
+    <div class="bon-actions no-print">
+        <button onclick="window.print()" class="btn btn-primary">
+            <i class="fas fa-print me-1"></i>Imprimer
+        </button>
+        <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Retour au dépôt
+        </a>
+        <a href="{% url 'inventory:transfert_multiple' depot.id %}" class="btn btn-outline-info">
+            <i class="fas fa-exchange-alt me-1"></i>Nouveau transfert
+        </a>
+    </div>
+
+    <div class="bon-page">
+        <!-- EN-TÊTE -->
+        <div class="bon-header">
+            <div class="bon-header-left">
+                <h2><i class="fas fa-truck me-2"></i>Bon de Transfert</h2>
+                <p><strong>{{ commercant.nom_entreprise|default:commercant.user.get_full_name }}</strong></p>
+                <p>Document officiel de transfert de marchandises</p>
+            </div>
+            <div class="bon-header-right">
+                <div class="ref">{{ reference_lot }}</div>
+                <div class="date"><i class="fas fa-calendar me-1"></i>{{ date_transfert|date:"d/m/Y à H:i" }}</div>
+            </div>
+        </div>
+
+        <!-- INFORMATIONS TRANSFERT -->
+        <div class="bon-info-grid">
+            <div class="bon-info-bloc">
+                <h6><i class="fas fa-warehouse me-1"></i>Origine (Dépôt)</h6>
+                <div class="val">{{ depot.nom }}</div>
+                <div class="val"><small>{{ depot.adresse|default:"" }}{% if depot.ville %} — {{ depot.ville }}{% endif %}</small></div>
+            </div>
+            <div class="bon-info-bloc" style="border-left-color: #28a745;">
+                <h6><i class="fas fa-store me-1"></i>Destination (Point de vente)</h6>
+                <div class="val">{{ boutique_destination.nom }}</div>
+                <div class="val"><small>{{ boutique_destination.adresse|default:"" }}{% if boutique_destination.ville %} — {{ boutique_destination.ville }}{% endif %}</small></div>
+            </div>
+            <div class="bon-info-bloc" style="border-left-color: #ffc107;">
+                <h6><i class="fas fa-user me-1"></i>Effectué par</h6>
+                <div class="val">{{ effectue_par }}</div>
+            </div>
+            <div class="bon-info-bloc" style="border-left-color: #17a2b8;">
+                <h6><i class="fas fa-check-circle me-1"></i>Validé par</h6>
+                <div class="val">{{ valide_par|default:"—" }}</div>
+            </div>
+        </div>
+
+        <!-- TABLEAU DES ARTICLES -->
+        <table class="bon-table">
+            <thead>
+                <tr>
+                    <th style="width:5%;">N°</th>
+                    <th style="width:30%;">Article</th>
+                    <th style="width:12%;">Code</th>
+                    <th style="width:12%;" class="text-center">Catégorie</th>
+                    <th style="width:10%;" class="text-center">Quantité</th>
+                    <th style="width:15%;" class="text-end">P.U. Vente</th>
+                    <th style="width:16%;" class="text-end">Total Vente</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in transferts %}
+                <tr>
+                    <td>{{ forloop.counter }}</td>
+                    <td><strong>{{ t.article.nom }}</strong></td>
+                    <td><code>{{ t.article.code }}</code></td>
+                    <td class="text-center">{{ t.article.categorie.nom|default:"—" }}</td>
+                    <td class="text-center"><strong>{{ t.quantite }}</strong></td>
+                    <td class="text-end">{{ t.article.prix_vente|floatformat:2|default:"0.00" }}</td>
+                    <td class="text-end"><strong>{{ t.cout_vente_ligne|floatformat:2 }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="4" class="text-end">TOTAUX</td>
+                    <td class="text-center"><strong>{{ total_quantite }}</strong></td>
+                    <td></td>
+                    <td class="text-end"><strong>{{ total_cout_vente|floatformat:2 }} FC</strong></td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <!-- RÉCAPITULATIF -->
+        <div class="bon-totaux">
+            <div class="bon-totaux-card">
+                <div class="bon-totaux-row">
+                    <span>Nombre d'articles :</span>
+                    <span><strong>{{ total_articles }}</strong></span>
+                </div>
+                <div class="bon-totaux-row">
+                    <span>Quantité totale :</span>
+                    <span><strong>{{ total_quantite }} unités</strong></span>
+                </div>
+                <div class="bon-totaux-row total">
+                    <span>Valeur totale :</span>
+                    <span>{{ total_cout_vente|floatformat:2 }} FC</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- CLAUSE D'ENGAGEMENT -->
+        <div class="bon-engagement">
+            <h6><i class="fas fa-shield-alt me-1"></i>Clause de reconnaissance et d'engagement</h6>
+            <p>
+                Je soussigné(e), responsable du point de vente <strong>« {{ boutique_destination.nom }} »</strong>,
+                reconnais avoir reçu en bon état l'ensemble des <strong>{{ total_articles }} article(s)</strong>
+                listés ci-dessus, pour une quantité totale de <strong>{{ total_quantite }} unité(s)</strong>,
+                représentant une valeur totale de <strong>{{ total_cout_vente|floatformat:2 }} FC</strong>.
+            </p>
+            <p style="margin-top:8px;">
+                Je m'engage à assurer la bonne conservation, la mise en vente aux prix indiqués,
+                et à rendre compte de tout écart, perte ou détérioration constaté(e) sur les marchandises
+                ci-dessus reçues. Toute anomalie doit être signalée dans les 24 heures suivant la réception.
+            </p>
+        </div>
+
+        <!-- SIGNATURES -->
+        <div class="bon-signatures">
+            <div class="bon-sig-bloc">
+                <div class="sig-title"><i class="fas fa-warehouse me-1"></i>Le Responsable du Dépôt</div>
+                <div class="sig-name">{{ effectue_par }}</div>
+                <div class="sig-line">Signature et cachet</div>
+            </div>
+            <div class="bon-sig-bloc">
+                <div class="sig-title"><i class="fas fa-store me-1"></i>Le Réceptionnaire (Vendeur)</div>
+                <div class="sig-name">______________________________</div>
+                <div class="sig-line">Nom, signature et date de réception</div>
+            </div>
+        </div>
+
+        <!-- PIED DE PAGE -->
+        <div class="bon-footer">
+            <p>Document généré automatiquement le {{ date_transfert|date:"d/m/Y à H:i" }} — Réf. : {{ reference_lot }}</p>
+            <p>Ce document fait foi de livraison et engage la responsabilité du réceptionnaire.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
