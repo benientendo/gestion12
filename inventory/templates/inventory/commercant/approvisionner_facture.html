@@ -747,13 +747,19 @@ function factRafraichirTableau() {
     var zone = getEl('tableArticlesZone');
     if (factArticlesAjoutes.length === 0) { zone.innerHTML = ''; return; }
     var html = '<table class="table-articles"><thead><tr>';
-    html += '<th>#</th><th>Article</th><th>Type</th><th class="text-end">Qté</th><th class="text-end">P. Achat Unit.</th><th class="text-end">P. Vente Unit.</th><th class="text-end">Total</th><th></th>';
+    html += '<th>#</th><th>Article</th><th>Type</th><th class="text-end">Qté</th>';
+    html += '<th class="text-end" style="color:#0d6efd;">P.A. Unit.</th>';
+    html += '<th class="text-end" style="color:#0d6efd;">Total Achat</th>';
+    html += '<th class="text-end" style="color:#198754;">P.V. Unit.</th>';
+    html += '<th class="text-end" style="color:#198754;">Total Vente</th>';
+    html += '<th></th>';
     html += '</tr></thead><tbody>';
     for (var i = 0; i < factArticlesAjoutes.length; i++) {
         var a = factArticlesAjoutes[i];
-        var total = a.type_quantite === 'CARTON'
+        var totalAchat = a.type_quantite === 'CARTON'
             ? (a.nombre_cartons * a.prix_achat_carton) + (a.pieces_supplementaires * (a.prix_piece_sup || a.prix_achat_unitaire))
             : a.quantite_unites * a.prix_achat_unitaire;
+        var totalVente = a.quantite_unites * a.prix_vente;
         var typeLabel = a.type_quantite === 'CARTON' ? a.nombre_cartons + ' crt (' + a.quantite_unites + ' pcs)' : 'Unité';
         var prixAchat = a.prix_achat_unitaire;
         html += '<tr>';
@@ -761,9 +767,10 @@ function factRafraichirTableau() {
         html += '<td><strong>' + factEscapeHtml(a.nom) + '</strong>' + (a.article_id ? ' <span class="badge bg-success" style="font-size:.55rem;">existant</span>' : ' <span class="badge bg-warning text-dark" style="font-size:.55rem;">nouveau</span>') + '</td>';
         html += '<td>' + typeLabel + '</td>';
         html += '<td class="text-end">' + a.quantite_unites + '</td>';
-        html += '<td class="text-end">' + factFormatNumber(prixAchat) + '</td>';
-        html += '<td class="text-end">' + factFormatNumber(a.prix_vente) + '</td>';
-        html += '<td class="text-end"><strong>' + factFormatNumber(total) + '</strong></td>';
+        html += '<td class="text-end" style="color:#0d6efd;">' + factFormatNumber(prixAchat) + '</td>';
+        html += '<td class="text-end" style="color:#0d6efd;"><strong>' + factFormatNumber(totalAchat) + '</strong></td>';
+        html += '<td class="text-end" style="color:#198754;">' + factFormatNumber(a.prix_vente) + '</td>';
+        html += '<td class="text-end" style="color:#198754;"><strong>' + factFormatNumber(totalVente) + '</strong></td>';
         html += '<td><button type="button" class="btn btn-outline-danger btn-sm" onclick="supprimerArticle(' + i + ')" tabindex="-1"><i class="fas fa-trash"></i></button></td>';
         html += '</tr>';
     }
