@@ -139,7 +139,7 @@
                         </div>
                         <div class="col-2 mb-1x">
                             <label class="form-label">Catégorie</label>
-                            <input type="text" class="form-control form-control-sm art-field" id="art_categorie" list="datalistCategories" placeholder="Tapez ou créez" autocomplete="off" oninput="onSaisieCategorieInput()">
+                            <input type="text" class="form-control form-control-sm art-field" id="art_categorie" list="datalistCategories" placeholder="Tapez pour rechercher ou créer" autocomplete="off" oninput="onSaisieCategorieInput()">
                             <input type="hidden" id="art_categorie_id" value="">
                             <input type="hidden" id="art_categorie_nom" value="">
                         </div>
@@ -179,6 +179,10 @@
                             <label class="form-label">Prix d'achat unitaire *</label>
                             <input type="number" class="form-control form-control-sm art-field" id="art_prix_achat" min="0" step="0.01" value="0" oninput="calculerSaisie()">
                             <div class="hint-prev" id="hint_prix_achat" onclick="applyHint('art_prix_achat',this)">avant: <span class="hint-val"></span></div>
+                        </div>
+                        <div class="col-auto mb-1x" id="prixAchatFC" style="display:none;">
+                            <label class="form-label" style="color:#e65100;font-weight:700;">Équiv. FC</label>
+                            <div style="background:#fff3e0;border:2px solid #ff9800;border-radius:6px;padding:5px 14px;font-size:1.1rem;font-weight:800;color:#e65100;min-width:120px;text-align:center;" id="prixAchatFCVal">0 FC</div>
                         </div>
                     </div>
                     <!-- Aperçu + bouton ajouter -->
@@ -630,6 +634,15 @@ function calculerSaisie() {
             total = qteUnites * pa;
         }
         getEl('saisieTotal').textContent = 'Sous-total: ' + factFormatNumber(total) + (type === 'CARTON' ? ' (' + qteUnites + ' unités)' : '');
+        // Afficher l'équivalent FC du prix d'achat unitaire
+        var pa_unit = parseFloat(getEl('art_prix_achat').value) || 0;
+        if (devise === 'USD' && pa_unit > 0) {
+            var paFC = pa_unit * factGetTaux();
+            getEl('prixAchatFCVal').textContent = factFormatNumber(paFC) + ' FC';
+            getEl('prixAchatFC').style.display = '';
+        } else {
+            getEl('prixAchatFC').style.display = 'none';
+        }
         if (devise === 'USD' && total > 0) {
             getEl('saisieTotalConv').textContent = factFormatNumber(total * factGetTaux());
             getEl('saisieConversion').style.display = 'inline';
@@ -653,7 +666,7 @@ function ajouterArticle() {
             code: getEl('art_code').value || '',
             nom: nom,
             description: '',
-            categorie_id: getEl('art_categorie_id').value || null,
+            categorie_id: getEl('art_categorie_id').value || (factSelectedArticle ? factSelectedArticle.categorie_id : null) || null,
             categorie_nom: getEl('art_categorie_nom').value || '',
             type_quantite: type
         };
@@ -679,7 +692,16 @@ function ajouterArticle() {
 
         if (art.quantite_unites <= 0) { alert('La quantité doit être supérieure à 0'); return; }
 
-        factArticlesAjoutes.push(art);
+        // Conversion USD → FC si devise Dollar
+        if (getDevise() === 'USD') {
+            var taux = factGetTaux();
+            art.prix_achat_unitaire = Math.round(art.prix_achat_unitaire * taux * 100) / 100;
+            art.prix_achat_carton = Math.round(art.prix_achat_carton * taux * 100) / 100;
+            if (art.prix_piece_sup) art.prix_piece_sup = Math.round(art.prix_piece_sup * taux * 100) / 100;
+            art.prix_vente = Math.round(art.prix_vente * taux * 100) / 100;
+        }
+
+        factArticlesAjoutes.unshift(art);
         factViderChamps();
         factRafraichirTableau();
         factMajResume();
@@ -711,8 +733,8 @@ function factViderChamps() {
     getEl('art_prix_pcs_sup').value = '0';
     getEl('art_prix_vente_carton').value = '0';
     var uf = document.querySelectorAll('.champs-saisie-unite');
-    for (var i = 0; i < uf.length; i++) uf[i].style.display = '';
-    getEl('cartonFields').style.display = 'none';
+    for (var i = 0; i < uf.length; i++) uf[i].style.display = 'none';
+    getEl('cartonFields').style.display = 'block';
     getEl('saisieTotal').textContent = 'Sous-total: 0';
     getEl('saisieConversion').style.display = 'none';
     hideAllHints();
@@ -725,7 +747,7 @@ function factRafraichirTableau() {
     var zone = getEl('tableArticlesZone');
     if (factArticlesAjoutes.length === 0) { zone.innerHTML = ''; return; }
     var html = '<table class="table-articles"><thead><tr>';
-    html += '<th>#</th><th>Article</th><th>Type</th><th class="text-end">Qté</th><th class="text-end">P. Achat</th><th class="text-end">P. Vente</th><th class="text-end">Total</th><th></th>';
+    html += '<th>#</th><th>Article</th><th>Type</th><th class="text-end">Qté</th><th class="text-end">P. Achat Unit.</th><th class="text-end">P. Vente Unit.</th><th class="text-end">Total</th><th></th>';
     html += '</tr></thead><tbody>';
     for (var i = 0; i < factArticlesAjoutes.length; i++) {
         var a = factArticlesAjoutes[i];
@@ -733,7 +755,7 @@ function factRafraichirTableau() {
             ? (a.nombre_cartons * a.prix_achat_carton) + (a.pieces_supplementaires * (a.prix_piece_sup || a.prix_achat_unitaire))
             : a.quantite_unites * a.prix_achat_unitaire;
         var typeLabel = a.type_quantite === 'CARTON' ? a.nombre_cartons + ' crt (' + a.quantite_unites + ' pcs)' : 'Unité';
-        var prixAchat = a.type_quantite === 'CARTON' ? a.prix_achat_carton : a.prix_achat_unitaire;
+        var prixAchat = a.prix_achat_unitaire;
         html += '<tr>';
         html += '<td>' + (i + 1) + '</td>';
         html += '<td><strong>' + factEscapeHtml(a.nom) + '</strong>' + (a.article_id ? ' <span class="badge bg-success" style="font-size:.55rem;">existant</span>' : ' <span class="badge bg-warning text-dark" style="font-size:.55rem;">nouveau</span>') + '</td>';
@@ -779,7 +801,7 @@ function factMajResume() {
     getEl('nbArticlesHeader').textContent = factArticlesAjoutes.length;
     getEl('totalUnites').textContent = totalU;
     getEl('montantTotal').textContent = factFormatNumber(montant);
-    getEl('deviseTotal').textContent = getDevise();
+    getEl('deviseTotal').textContent = 'FC';
     getEl('btnEnregistrer').disabled = (factArticlesAjoutes.length === 0);
     getEl('articles_json').value = JSON.stringify(factArticlesAjoutes);
 }
@@ -850,8 +872,13 @@ function soumettreFactureAjax() {
                 clearTimeout(window._saveTimer);
                 window._saveTimer = setTimeout(function() { ind.style.display = 'none'; }, 6000);
             }
-            // Vider le numéro de facture pour la prochaine
+            // Vider fournisseur, numéro facture et section saisie article
             getEl('numero_facture').value = '';
+            getEl('fournisseur_input').value = '';
+            getEl('fournisseur_input').classList.remove('input-matched');
+            getEl('fournisseur_id').value = '';
+            getEl('fournisseur_nom').value = '';
+            factViderChamps();
             getEl('fournisseur_input').focus();
         } else {
             alert('Erreur: ' + (result.data.message || 'Erreur inconnue'));

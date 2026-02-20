@@ -23,7 +23,7 @@
 .results-info { font-size:.78rem; color:#6c757d; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
 .results-info strong { color:#212529; }
 .table-factures { width:100%; border-collapse:separate; border-spacing:0; }
-.table-factures thead th { background:#f8f9fa; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6c757d; padding:8px 12px; border-bottom:2px solid #dee2e6; position:sticky; top:0; white-space:nowrap; }
+.table-factures thead th { background:#f8f9fa; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6c757d; padding:8px 12px; border-bottom:2px solid #dee2e6; position:sticky; top:0; white-space:nowrap; z-index:2; }
 .table-factures thead th a { color:#6c757d; text-decoration:none; }
 .table-factures thead th a:hover { color:#0d6efd; }
 .table-factures thead th .sort-icon { font-size:.6rem; margin-left:3px; }
@@ -140,7 +140,7 @@
     <!-- Tableau -->
     <div class="card shadow-sm">
         <div class="card-body p-0">
-            <div class="table-responsive">
+            <div class="table-responsive" style="max-height:calc(100vh - 340px);overflow-y:auto;">
                 <table class="table-factures">
                     <thead>
                         <tr>

@@ -595,6 +595,8 @@ def articles_search_ajax(request, boutique_id):
             'nb_variantes': art.nb_variantes if art.a_variantes else 0,
             'image_url': art.image.url if art.image else None,
             'description': art.description[:100] if art.description else '',
+            'est_valide_client': art.est_valide_client,
+            'quantite_envoyee': art.quantite_envoyee,
             'url': f'/commercant/boutiques/{boutique.id}/articles/{art.id}/'
         })
     
@@ -2538,6 +2540,129 @@ def bulk_delete_articles(request, boutique_id):
         return JsonResponse({'success': True, 'message': f'{deleted_count} article(s) supprimé(s) avec succès.'})
 
 
+# ===== IMPORT ARTICLES ENTRE BOUTIQUES =====
+
+@login_required
+@commercant_required
+@boutique_access_required
+def importer_articles_entre_boutiques(request, boutique_id):
+    """Importer des articles depuis un autre point de vente (même commerçant), sans quantité ni prix"""
+    commercant = request.user.profil_commercant
+    boutique = request.boutique
+    
+    # Autres boutiques du même commerçant (exclure la boutique actuelle)
+    autres_boutiques = commercant.boutiques.filter(
+        est_active=True
+    ).exclude(id=boutique.id).order_by('nom')
+    
+    # Boutique source sélectionnée
+    source_id = request.GET.get('source', '')
+    boutique_source = None
+    articles_source = []
+    
+    if source_id:
+        boutique_source = autres_boutiques.filter(id=source_id).first()
+        if boutique_source:
+            # Codes déjà présents dans la boutique destination
+            codes_existants = set(Article.objects.filter(
+                boutique=boutique, est_actif=True
+            ).values_list('code', flat=True))
+            
+            articles_source = Article.objects.filter(
+                boutique=boutique_source, est_actif=True
+            ).select_related('categorie').order_by('nom')
+            
+            # Marquer ceux déjà présents
+            for art in articles_source:
+                art.deja_present = art.code in codes_existants
+    
+    if request.method == 'POST':
+        source_post_id = request.POST.get('boutique_source')
+        if not source_post_id:
+            messages.error(request, "Veuillez sélectionner un point de vente source")
+            return redirect('inventory:importer_articles_entre_boutiques', boutique_id=boutique.id)
+        
+        boutique_src = autres_boutiques.filter(id=source_post_id).first()
+        if not boutique_src:
+            messages.error(request, "Point de vente source introuvable")
+            return redirect('inventory:importer_articles_entre_boutiques', boutique_id=boutique.id)
+        
+        articles_selectionnes = request.POST.getlist('articles_selectionnes')
+        if not articles_selectionnes:
+            messages.error(request, "Veuillez sélectionner au moins un article à importer")
+            return redirect(f"{request.path}?source={source_post_id}")
+        
+        codes_existants = set(Article.objects.filter(
+            boutique=boutique, est_actif=True
+        ).values_list('code', flat=True))
+        
+        importes = 0
+        erreurs = []
+        
+        try:
+            with transaction.atomic():
+                for article_id in articles_selectionnes:
+                    try:
+                        art_src = Article.objects.get(id=article_id, boutique=boutique_src)
+                        
+                        if art_src.code in codes_existants:
+                            erreurs.append(f"{art_src.nom} (code: {art_src.code}): existe déjà")
+                            continue
+                        
+                        # Copier ou récupérer la catégorie dans la boutique destination
+                        categorie_dest = None
+                        if art_src.categorie:
+                            categorie_dest, _ = Categorie.objects.get_or_create(
+                                nom__iexact=art_src.categorie.nom,
+                                boutique=boutique,
+                                defaults={'nom': art_src.categorie.nom}
+                            )
+                        
+                        Article.objects.create(
+                            code=art_src.code,
+                            nom=art_src.nom,
+                            description=art_src.description,
+                            devise=art_src.devise,
+                            prix_achat=0,
+                            prix_vente=0,
+                            categorie=categorie_dest,
+                            boutique=boutique,
+                            quantite_stock=0,
+                            est_actif=True
+                        )
+                        codes_existants.add(art_src.code)
+                        importes += 1
+                        
+                    except Article.DoesNotExist:
+                        erreurs.append(f"Article ID {article_id} introuvable")
+                    except Exception as e:
+                        erreurs.append(f"Erreur: {str(e)}")
+                
+                if importes == 0 and erreurs:
+                    raise Exception("Aucun article importé")
+        
+        except Exception:
+            for err in erreurs:
+                messages.error(request, err)
+            return redirect(f"{request.path}?source={source_post_id}")
+        
+        if importes > 0:
+            messages.success(request, f"{importes} article(s) importé(s) avec succès (sans quantité ni prix)")
+        for err in erreurs:
+            messages.warning(request, err)
+        
+        return redirect('inventory:commercant_articles_boutique', boutique_id=boutique.id)
+    
+    context = {
+        'boutique': boutique,
+        'autres_boutiques': autres_boutiques,
+        'boutique_source': boutique_source,
+        'articles_source': articles_source,
+        'commercant': commercant,
+    }
+    return render(request, 'inventory/commercant/importer_articles_boutique.html', context)
+
+
 # ===== GESTION DES VARIANTES D'ARTICLES =====
 
 @login_required
@@ -4248,18 +4373,21 @@ def bon_transfert(request, depot_id, reference_lot):
         messages.error(request, "Bon de transfert introuvable.")
         return redirect('inventory:detail_depot', depot_id=depot.id)
     
-    # Calculs récapitulatifs
+    # Calculs récapitulatifs — toujours en Francs Congolais (FC)
+    taux = depot.taux_dollar or Decimal('1')
     transferts_list = list(transferts)
     premier = transferts_list[0] if transferts_list else None
     total_articles = len(transferts_list)
     total_quantite = 0
-    total_cout_achat = Decimal('0')
     total_cout_vente = Decimal('0')
     for t in transferts_list:
-        t.cout_achat_ligne = t.quantite * (t.article.prix_achat or 0)
-        t.cout_vente_ligne = t.quantite * (t.article.prix_vente or 0)
+        pv = t.article.prix_vente or Decimal('0')
+        # Si l'article est en USD, convertir en FC
+        if getattr(t.article, 'devise', 'CDF') == 'USD':
+            pv = pv * taux
+        t.prix_vente_fc = pv
+        t.cout_vente_ligne = t.quantite * pv
         total_quantite += t.quantite
-        total_cout_achat += t.cout_achat_ligne
         total_cout_vente += t.cout_vente_ligne
     
     context = {
@@ -4272,7 +4400,6 @@ def bon_transfert(request, depot_id, reference_lot):
         'valide_par': premier.valide_par,
         'total_articles': total_articles,
         'total_quantite': total_quantite,
-        'total_cout_achat': total_cout_achat,
         'total_cout_vente': total_cout_vente,
         'commercant': commercant,
     }
@@ -4541,12 +4668,8 @@ def approvisionner_facture(request, depot_id):
                         # Total unités = (cartons × pièces/carton) + pièces supplémentaires
                         quantite_unites = (nombre_cartons * pieces_par_carton) + pieces_supplementaires
                     
-                    # Conversion USD vers CDF si la facture est en dollars
-                    if devise == 'USD' and depot.taux_dollar > 0:
-                        prix_achat_unitaire = prix_achat_unitaire * depot.taux_dollar
-                        prix_achat_carton = prix_achat_carton * depot.taux_dollar
-                        prix_piece_sup = prix_piece_sup * depot.taux_dollar
-                        prix_vente = prix_vente * depot.taux_dollar
+                    # NB: La conversion USD→CDF est déjà effectuée côté JavaScript (ajouterArticle)
+                    # Les prix reçus ici sont toujours en Francs Congolais
                     
                     # Calcul du prix total (cartons + pièces supplémentaires)
                     if type_quantite == 'CARTON':

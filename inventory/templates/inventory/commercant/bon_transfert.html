@@ -150,7 +150,7 @@
                     <td><code>{{ t.article.code }}</code></td>
                     <td class="text-center">{{ t.article.categorie.nom|default:"—" }}</td>
                     <td class="text-center"><strong>{{ t.quantite }}</strong></td>
-                    <td class="text-end">{{ t.article.prix_vente|floatformat:2|default:"0.00" }}</td>
+                    <td class="text-end">{{ t.prix_vente_fc|floatformat:2 }}</td>
                     <td class="text-end"><strong>{{ t.cout_vente_ligne|floatformat:2 }}</strong></td>
                 </tr>
                 {% endfor %}

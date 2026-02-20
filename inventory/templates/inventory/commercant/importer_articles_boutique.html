@@ -1,0 +1,239 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Importer des articles - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.import-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:18px; }
+.import-header h2 { margin:0; font-size:1.35rem; }
+.import-header .sub { color:#6c757d; font-size:.82rem; }
+.source-select { background:#fff; border:1px solid #e9ecef; border-radius:10px; padding:16px 20px; margin-bottom:16px; }
+.source-select label { font-weight:600; font-size:.85rem; margin-bottom:6px; display:block; }
+.source-select .row { align-items:end; }
+.info-box { background:#e8f4fd; border:1px solid #bee5eb; border-radius:8px; padding:12px 16px; font-size:.85rem; color:#0c5460; margin-bottom:16px; }
+.info-box i { margin-right:6px; }
+.table-import { width:100%; border-collapse:separate; border-spacing:0; }
+.table-import thead th { background:#f8f9fa; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6c757d; padding:8px 12px; border-bottom:2px solid #dee2e6; position:sticky; top:0; z-index:2; white-space:nowrap; }
+.table-import tbody tr { transition:background .15s; }
+.table-import tbody tr:hover { background:#f0f4ff; }
+.table-import tbody td { padding:8px 12px; border-bottom:1px solid #f0f0f0; font-size:.85rem; vertical-align:middle; }
+.table-import .deja-present { opacity:.5; }
+.table-import .deja-present td { color:#adb5bd; text-decoration:line-through; }
+.badge-source { font-size:.7rem; padding:2px 8px; border-radius:10px; }
+.badge-depot { background:#fff3cd; color:#856404; }
+.badge-boutique { background:#d4edda; color:#155724; }
+.compteur-selection { background:#fff; border:1px solid #e9ecef; border-radius:10px; padding:12px 20px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; }
+.compteur-selection .count { font-size:1.1rem; font-weight:700; color:#0d6efd; }
+.search-articles { margin-bottom:12px; }
+.search-articles input { font-size:.85rem; }
+.empty-state { text-align:center; padding:40px 20px; color:#adb5bd; }
+.empty-state i { font-size:2.5rem; margin-bottom:10px; display:block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <!-- Header -->
+    <div class="import-header">
+        <div>
+            <h2><i class="fas fa-file-import me-2"></i>Importer des articles</h2>
+            <span class="sub">Vers <strong>{{ boutique.nom }}</strong> &mdash; depuis un autre point de vente</span>
+        </div>
+        <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i>Retour aux articles
+        </a>
+    </div>
+
+    <!-- Info -->
+    <div class="info-box">
+        <i class="fas fa-info-circle"></i>
+        Les articles importés seront créés dans <strong>{{ boutique.nom }}</strong> avec <strong>quantité = 0</strong> et <strong>prix = 0</strong>.
+        Vous pourrez ensuite ajuster les prix et le stock manuellement.
+    </div>
+
+    {% if messages %}
+    <div class="mb-3">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show py-2" style="font-size:.85rem;">
+            {{ message }}
+            <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Sélection source -->
+    <div class="source-select">
+        <div class="row gx-3">
+            <div class="col-auto">
+                <label for="sourceSelect"><i class="fas fa-store me-1"></i>Point de vente source</label>
+                <select class="form-select form-select-sm" id="sourceSelect" onchange="if(this.value) window.location='?source='+this.value; else window.location='?';" style="min-width:280px;">
+                    <option value="">-- Sélectionner un point de vente --</option>
+                    {% for b in autres_boutiques %}
+                    <option value="{{ b.id }}" {% if boutique_source and boutique_source.id == b.id %}selected{% endif %}>
+                        {{ b.nom }} {% if b.est_depot %}(Dépôt){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if boutique_source %}
+            <div class="col-auto d-flex align-items-end">
+                <span style="font-size:.82rem;color:#6c757d;">
+                    <i class="fas fa-box me-1"></i>{{ articles_source|length }} article{{ articles_source|length|pluralize }} disponible{{ articles_source|length|pluralize }}
+                </span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if boutique_source %}
+    <!-- Recherche -->
+    <div class="search-articles">
+        <input type="text" class="form-control form-control-sm" id="searchInput" placeholder="Rechercher un article par nom, code ou catégorie..." oninput="filtrerArticles()">
+    </div>
+
+    <!-- Compteur sélection -->
+    <div class="compteur-selection">
+        <div>
+            <input type="checkbox" id="selectAll" onchange="toggleAll(this.checked)" style="margin-right:8px;">
+            <label for="selectAll" style="cursor:pointer;font-size:.85rem;margin:0;">Tout sélectionner</label>
+        </div>
+        <div>
+            <span class="count" id="countSelected">0</span> article(s) sélectionné(s)
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" id="btnImporter" onclick="submitImport()" disabled>
+            <i class="fas fa-file-import me-1"></i>Importer la sélection
+        </button>
+    </div>
+
+    <!-- Formulaire caché -->
+    <form id="importForm" method="post" style="display:none;">
+        {% csrf_token %}
+        <input type="hidden" name="boutique_source" value="{{ boutique_source.id }}">
+        <div id="hiddenInputs"></div>
+    </form>
+
+    <!-- Tableau -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height:calc(100vh - 420px);overflow-y:auto;">
+                <table class="table-import">
+                    <thead>
+                        <tr>
+                            <th style="width:40px;"></th>
+                            <th>Article</th>
+                            <th>Code</th>
+                            <th>Catégorie</th>
+                            <th>Devise</th>
+                            <th class="text-center">Statut</th>
+                        </tr>
+                    </thead>
+                    <tbody id="articlesBody">
+                        {% for art in articles_source %}
+                        <tr class="art-row {% if art.deja_present %}deja-present{% endif %}" data-search="{{ art.nom|lower }} {{ art.code|lower }} {% if art.categorie %}{{ art.categorie.nom|lower }}{% endif %}">
+                            <td>
+                                {% if art.deja_present %}
+                                <input type="checkbox" disabled title="Déjà présent dans {{ boutique.nom }}">
+                                {% else %}
+                                <input type="checkbox" class="art-check" value="{{ art.id }}" onchange="updateCount()">
+                                {% endif %}
+                            </td>
+                            <td><strong>{{ art.nom }}</strong>{% if art.description %}<br><small class="text-muted">{{ art.description|truncatewords:8 }}</small>{% endif %}</td>
+                            <td><code>{{ art.code }}</code></td>
+                            <td>{% if art.categorie %}{{ art.categorie.nom }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
+                            <td>{{ art.devise }}</td>
+                            <td class="text-center">
+                                {% if art.deja_present %}
+                                <span class="badge bg-secondary" style="font-size:.7rem;">Déjà présent</span>
+                                {% else %}
+                                <span class="badge bg-success" style="font-size:.7rem;">Disponible</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6">
+                                <div class="empty-state">
+                                    <i class="fas fa-inbox"></i>
+                                    <p>Aucun article dans ce point de vente</p>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {% elif autres_boutiques %}
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <div class="empty-state">
+                <i class="fas fa-hand-pointer"></i>
+                <p>Sélectionnez un point de vente source pour voir les articles disponibles</p>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <div class="empty-state">
+                <i class="fas fa-store-slash"></i>
+                <p>Aucun autre point de vente disponible pour l'import</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filtrerArticles() {
+    var q = document.getElementById('searchInput').value.toLowerCase().trim();
+    var rows = document.querySelectorAll('.art-row');
+    for (var i = 0; i < rows.length; i++) {
+        var data = rows[i].getAttribute('data-search') || '';
+        rows[i].style.display = (!q || data.indexOf(q) >= 0) ? '' : 'none';
+    }
+}
+
+function updateCount() {
+    var checks = document.querySelectorAll('.art-check:checked');
+    var count = checks.length;
+    document.getElementById('countSelected').textContent = count;
+    document.getElementById('btnImporter').disabled = (count === 0);
+    // Update selectAll state
+    var allChecks = document.querySelectorAll('.art-check');
+    document.getElementById('selectAll').checked = (allChecks.length > 0 && checks.length === allChecks.length);
+}
+
+function toggleAll(checked) {
+    var rows = document.querySelectorAll('.art-row');
+    for (var i = 0; i < rows.length; i++) {
+        if (rows[i].style.display === 'none') continue;
+        var cb = rows[i].querySelector('.art-check');
+        if (cb) cb.checked = checked;
+    }
+    updateCount();
+}
+
+function submitImport() {
+    var checks = document.querySelectorAll('.art-check:checked');
+    if (checks.length === 0) { alert('Sélectionnez au moins un article'); return; }
+    if (!confirm('Importer ' + checks.length + ' article(s) vers {{ boutique.nom }} ?\n\nLes articles seront créés avec quantité = 0 et prix = 0.')) return;
+    var container = document.getElementById('hiddenInputs');
+    container.innerHTML = '';
+    for (var i = 0; i < checks.length; i++) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'articles_selectionnes';
+        inp.value = checks[i].value;
+        container.appendChild(inp);
+    }
+    document.getElementById('importForm').submit();
+}
+</script>
+{% endblock %}

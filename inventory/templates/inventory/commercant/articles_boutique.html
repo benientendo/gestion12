@@ -29,6 +29,10 @@
                     <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#rechercheArticleModal" title="Rechercher un article par code-barres">
                         <i class="fas fa-search"></i> <span class="d-none d-sm-inline">Recherche</span>
                     </button>
+                    <!-- Bouton Importer depuis un autre point de vente -->
+                    <a href="{% url 'inventory:importer_articles_entre_boutiques' boutique.id %}" class="btn btn-outline-success btn-sm" title="Importer des articles depuis un autre point de vente">
+                        <i class="fas fa-file-import"></i> <span class="d-none d-sm-inline">Importer</span>
+                    </a>
                     <!-- Bouton Ajouter en premier sur mobile -->
                     <button type="button" class="btn btn-success btn-sm order-first order-md-last" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
                         <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Ajouter</span>
@@ -2217,6 +2221,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </td>
                 <td class="col-nom">
                     <div class="article-name">${article.nom}</div>
+                    ${!article.est_valide_client ? `<span class="badge bg-warning text-dark"><i class="fas fa-clock"></i> En attente de validation — ${article.quantite_envoyee} unité(s) envoyée(s)</span>` : ''}
                     ${article.description ? `<div class="article-desc">${article.description.substring(0, 80)}...</div>` : ''}
                 </td>
                 <td class="col-code"><code class="article-code">${article.code || '-'}</code></td>
