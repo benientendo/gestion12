@@ -158,8 +158,12 @@
                         </div>
                         <div class="col-2 mb-1x champs-saisie-unite">
                             <label class="form-label">Prix de vente</label>
-                            <input type="number" class="form-control form-control-sm art-field" id="art_prix_vente" min="0" step="0.01" value="0">
+                            <input type="number" class="form-control form-control-sm art-field" id="art_prix_vente" min="0" step="0.01" value="0" oninput="calculerSaisie()">
                             <div class="hint-prev" id="hint_prix_vente" onclick="applyHint('art_prix_vente',this)">avant: <span class="hint-val"></span></div>
+                        </div>
+                        <div class="col-auto mb-1x champs-saisie-unite" id="prixVenteFC" style="display:none;">
+                            <label class="form-label" style="color:#198754;font-weight:700;">P.V. en FC</label>
+                            <div style="background:#e8f5e9;border:2px solid #4caf50;border-radius:6px;padding:5px 14px;font-size:1.1rem;font-weight:800;color:#198754;min-width:120px;text-align:center;" id="prixVenteFCVal">0 FC</div>
                         </div>
                     </div>
                     <!-- Champs CARTONS (cachés par défaut) -->
@@ -170,7 +174,8 @@
                             <div class="col mb-1x"><label class="form-label">Pièces en +</label><input type="number" class="form-control form-control-sm art-field" id="art_pcs_sup" min="0" value="0" oninput="calculerSaisie()"></div>
                             <div class="col mb-1x"><label class="form-label">Prix/carton</label><input type="number" class="form-control form-control-sm art-field" id="art_prix_carton" min="0" step="0.01" value="0" oninput="calculerSaisie()"><div class="hint-prev" id="hint_prix_carton" onclick="applyHint('art_prix_carton',this)">avant: <span class="hint-val"></span></div></div>
                             <div class="col mb-1x"><label class="form-label">Prix/pièce sup.</label><input type="number" class="form-control form-control-sm art-field" id="art_prix_pcs_sup" min="0" step="0.01" value="0" oninput="calculerSaisie()"></div>
-                            <div class="col mb-1x"><label class="form-label">Prix de vente</label><input type="number" class="form-control form-control-sm art-field" id="art_prix_vente_carton" min="0" step="0.01" value="0"><div class="hint-prev" id="hint_prix_vente_carton" onclick="applyHint('art_prix_vente_carton',this)">avant: <span class="hint-val"></span></div></div>
+                            <div class="col mb-1x"><label class="form-label">Prix de vente</label><input type="number" class="form-control form-control-sm art-field" id="art_prix_vente_carton" min="0" step="0.01" value="0" oninput="calculerSaisie()"><div class="hint-prev" id="hint_prix_vente_carton" onclick="applyHint('art_prix_vente_carton',this)">avant: <span class="hint-val"></span></div></div>
+                            <div class="col-auto mb-1x" id="prixVenteCartonFC" style="display:none;"><label class="form-label" style="color:#198754;font-weight:700;">P.V. en FC</label><div style="background:#e8f5e9;border:2px solid #4caf50;border-radius:6px;padding:5px 10px;font-size:1rem;font-weight:800;color:#198754;min-width:100px;text-align:center;" id="prixVenteCartonFCVal">0 FC</div></div>
                         </div>
                     </div>
                     <!-- Prix d'achat toujours visible -->
@@ -635,13 +640,39 @@ function calculerSaisie() {
         }
         getEl('saisieTotal').textContent = 'Sous-total: ' + factFormatNumber(total) + (type === 'CARTON' ? ' (' + qteUnites + ' unités)' : '');
         // Afficher l'équivalent FC du prix d'achat unitaire
+        var taux = factGetTaux();
         var pa_unit = parseFloat(getEl('art_prix_achat').value) || 0;
         if (devise === 'USD' && pa_unit > 0) {
-            var paFC = pa_unit * factGetTaux();
+            var paFC = pa_unit * taux;
             getEl('prixAchatFCVal').textContent = factFormatNumber(paFC) + ' FC';
             getEl('prixAchatFC').style.display = '';
         } else {
             getEl('prixAchatFC').style.display = 'none';
+        }
+        // Afficher l'équivalent FC du prix de vente
+        if (devise === 'USD') {
+            if (type === 'CARTON') {
+                var pvCarton = parseFloat(getEl('art_prix_vente_carton').value) || 0;
+                if (pvCarton > 0) {
+                    getEl('prixVenteCartonFCVal').textContent = factFormatNumber(pvCarton * taux) + ' FC';
+                    getEl('prixVenteCartonFC').style.display = '';
+                } else {
+                    getEl('prixVenteCartonFC').style.display = 'none';
+                }
+                getEl('prixVenteFC').style.display = 'none';
+            } else {
+                var pvUnit = parseFloat(getEl('art_prix_vente').value) || 0;
+                if (pvUnit > 0) {
+                    getEl('prixVenteFCVal').textContent = factFormatNumber(pvUnit * taux) + ' FC';
+                    getEl('prixVenteFC').style.display = '';
+                } else {
+                    getEl('prixVenteFC').style.display = 'none';
+                }
+                getEl('prixVenteCartonFC').style.display = 'none';
+            }
+        } else {
+            getEl('prixVenteFC').style.display = 'none';
+            getEl('prixVenteCartonFC').style.display = 'none';
         }
         if (devise === 'USD' && total > 0) {
             getEl('saisieTotalConv').textContent = factFormatNumber(total * factGetTaux());
