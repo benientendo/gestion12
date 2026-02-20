@@ -737,7 +737,7 @@ function ajouterArticle() {
         factRafraichirTableau();
         factMajResume();
         factSaveState();
-        getEl('art_nom').focus();
+        setTimeout(function() { getEl('art_nom').focus(); }, 50);
     } catch(err) { console.error('Ajouter article error:', err); alert('Erreur: ' + err.message); }
 }
 
@@ -917,7 +917,7 @@ function soumettreFactureAjax() {
             getEl('fournisseur_id').value = '';
             getEl('fournisseur_nom').value = '';
             factViderChamps();
-            getEl('fournisseur_input').focus();
+            setTimeout(function() { getEl('fournisseur_input').focus(); }, 50);
         } else {
             alert('Erreur: ' + (result.data.message || 'Erreur inconnue'));
         }
