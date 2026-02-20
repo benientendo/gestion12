@@ -49,6 +49,7 @@
     <div class="info-box">
         <i class="fas fa-info-circle"></i>
         Les articles importés seront créés dans <strong>{{ boutique.nom }}</strong> avec <strong>quantité = 0</strong> et <strong>prix = 0</strong>.
+        Les <strong>variantes</strong> de chaque article seront également copiées (avec stock = 0).
         Vous pourrez ensuite ajuster les prix et le stock manuellement.
     </div>
 
@@ -102,16 +103,27 @@
         <div>
             <span class="count" id="countSelected">0</span> article(s) sélectionné(s)
         </div>
-        <button type="button" class="btn btn-primary btn-sm" id="btnImporter" onclick="submitImport()" disabled>
-            <i class="fas fa-file-import me-1"></i>Importer la sélection
-        </button>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-primary btn-sm" id="btnImporter" onclick="submitImport()" disabled>
+                <i class="fas fa-file-import me-1"></i>Importer la sélection
+            </button>
+            <button type="button" class="btn btn-outline-info btn-sm" onclick="submitSyncVariantes()" title="Copier les variantes manquantes pour les articles déjà importés">
+                <i class="fas fa-sync me-1"></i>Sync variantes
+            </button>
+        </div>
     </div>
 
-    <!-- Formulaire caché -->
+    <!-- Formulaire caché import -->
     <form id="importForm" method="post" style="display:none;">
         {% csrf_token %}
         <input type="hidden" name="boutique_source" value="{{ boutique_source.id }}">
         <div id="hiddenInputs"></div>
+    </form>
+
+    <!-- Formulaire caché sync variantes -->
+    <form id="syncVariantesForm" method="post" action="{% url 'inventory:sync_variantes_entre_boutiques' boutique.id %}" style="display:none;">
+        {% csrf_token %}
+        <input type="hidden" name="boutique_source" value="{{ boutique_source.id }}">
     </form>
 
     <!-- Tableau -->
@@ -126,6 +138,7 @@
                             <th>Code</th>
                             <th>Catégorie</th>
                             <th>Devise</th>
+                            <th class="text-center">Variantes</th>
                             <th class="text-center">Statut</th>
                         </tr>
                     </thead>
@@ -144,6 +157,13 @@
                             <td>{% if art.categorie %}{{ art.categorie.nom }}{% else %}<span class="text-muted">-</span>{% endif %}</td>
                             <td>{{ art.devise }}</td>
                             <td class="text-center">
+                                {% if art.nb_variantes %}
+                                <span class="badge bg-info" style="font-size:.7rem;"><i class="fas fa-tags"></i> {{ art.nb_variantes }}</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
                                 {% if art.deja_present %}
                                 <span class="badge bg-secondary" style="font-size:.7rem;">Déjà présent</span>
                                 {% else %}
@@ -153,7 +173,7 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="6">
+                            <td colspan="7">
                                 <div class="empty-state">
                                     <i class="fas fa-inbox"></i>
                                     <p>Aucun article dans ce point de vente</p>
@@ -234,6 +254,11 @@ function submitImport() {
         container.appendChild(inp);
     }
     document.getElementById('importForm').submit();
+}
+
+function submitSyncVariantes() {
+    if (!confirm('Synchroniser les variantes manquantes depuis {{ boutique_source.nom }} vers {{ boutique.nom }} ?\n\nLes variantes seront copiées avec stock = 0 pour tous les articles déjà présents.')) return;
+    document.getElementById('syncVariantesForm').submit();
 }
 </script>
 {% endblock %}

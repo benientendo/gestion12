@@ -92,6 +92,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/<int:variante_id>/stock/', views_commercant.ajuster_stock_variante, name='ajuster_stock_variante'),
     path('commercant/boutiques/<int:boutique_id>/articles/bulk-delete/', views_commercant.bulk_delete_articles, name='bulk_delete_articles'),
     path('commercant/boutiques/<int:boutique_id>/articles/importer/', views_commercant.importer_articles_entre_boutiques, name='importer_articles_entre_boutiques'),
+    path('commercant/boutiques/<int:boutique_id>/articles/sync-variantes/', views_commercant.sync_variantes_entre_boutiques, name='sync_variantes_entre_boutiques'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/ajuster-stock/', views_commercant.ajuster_stock_article, name='ajuster_stock_article'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier-prix/', views_commercant.modifier_prix_article, name='modifier_prix_article'),
     path('commercant/boutiques/<int:boutique_id>/categories/', views_commercant.categories_boutique, name='commercant_categories_boutique'),

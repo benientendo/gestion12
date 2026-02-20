@@ -2618,7 +2618,7 @@ def importer_articles_entre_boutiques(request, boutique_id):
                                 defaults={'nom': art_src.categorie.nom}
                             )
                         
-                        Article.objects.create(
+                        nouvel_article = Article.objects.create(
                             code=art_src.code,
                             nom=art_src.nom,
                             description=art_src.description,
@@ -2630,6 +2630,21 @@ def importer_articles_entre_boutiques(request, boutique_id):
                             quantite_stock=0,
                             est_actif=True
                         )
+                        
+                        # Copier les variantes actives (sans stock)
+                        variantes_src = art_src.variantes.filter(est_actif=True)
+                        for var_src in variantes_src:
+                            # Vérifier que le code-barres n'existe pas déjà
+                            if not VarianteArticle.objects.filter(code_barre=var_src.code_barre).exists():
+                                VarianteArticle.objects.create(
+                                    article_parent=nouvel_article,
+                                    code_barre=var_src.code_barre,
+                                    nom_variante=var_src.nom_variante,
+                                    type_attribut=var_src.type_attribut,
+                                    quantite_stock=0,
+                                    est_actif=True
+                                )
+                        
                         codes_existants.add(art_src.code)
                         importes += 1
                         
@@ -2661,6 +2676,76 @@ def importer_articles_entre_boutiques(request, boutique_id):
         'commercant': commercant,
     }
     return render(request, 'inventory/commercant/importer_articles_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def sync_variantes_entre_boutiques(request, boutique_id):
+    """Synchroniser les variantes manquantes depuis un autre point de vente"""
+    commercant = request.user.profil_commercant
+    boutique = request.boutique
+    
+    if request.method != 'POST':
+        return redirect('inventory:importer_articles_entre_boutiques', boutique_id=boutique.id)
+    
+    source_id = request.POST.get('boutique_source')
+    if not source_id:
+        messages.error(request, "Veuillez sélectionner un point de vente source")
+        return redirect('inventory:importer_articles_entre_boutiques', boutique_id=boutique.id)
+    
+    boutique_src = get_object_or_404(Boutique, id=source_id, commercant=commercant)
+    
+    # Trouver les articles communs (même code) entre source et destination
+    articles_dest = Article.objects.filter(boutique=boutique, est_actif=True)
+    codes_dest = {a.code: a for a in articles_dest}
+    
+    articles_src = Article.objects.filter(
+        boutique=boutique_src, est_actif=True
+    ).prefetch_related('variantes')
+    
+    variantes_ajoutees = 0
+    erreurs = []
+    
+    try:
+        with transaction.atomic():
+            for art_src in articles_src:
+                art_dest = codes_dest.get(art_src.code)
+                if not art_dest:
+                    continue  # Article pas présent dans la destination
+                
+                # Codes-barres déjà existants dans la destination (et globalement)
+                for var_src in art_src.variantes.filter(est_actif=True):
+                    if VarianteArticle.objects.filter(code_barre=var_src.code_barre).exists():
+                        continue  # Variante déjà existante
+                    
+                    try:
+                        VarianteArticle.objects.create(
+                            article_parent=art_dest,
+                            code_barre=var_src.code_barre,
+                            nom_variante=var_src.nom_variante,
+                            type_attribut=var_src.type_attribut,
+                            quantite_stock=0,
+                            est_actif=True
+                        )
+                        variantes_ajoutees += 1
+                    except Exception as e:
+                        erreurs.append(f"Variante {var_src.nom_variante} ({var_src.code_barre}): {str(e)}")
+    
+    except Exception:
+        for err in erreurs:
+            messages.error(request, err)
+        return redirect(f"/commercant/boutiques/{boutique.id}/articles/importer/?source={source_id}")
+    
+    if variantes_ajoutees > 0:
+        messages.success(request, f"{variantes_ajoutees} variante(s) synchronisée(s) avec succès (stock = 0)")
+    else:
+        messages.info(request, "Aucune nouvelle variante à synchroniser — tout est déjà à jour")
+    
+    for err in erreurs:
+        messages.warning(request, err)
+    
+    return redirect(f"/commercant/boutiques/{boutique.id}/articles/importer/?source={source_id}")
 
 
 # ===== GESTION DES VARIANTES D'ARTICLES =====
