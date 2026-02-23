@@ -537,10 +537,18 @@ def valider_article(request):
         
         # Valider l'article
         stock_avant = article.quantite_stock
-        qte_validee = int(quantite_validee)
         
-        # Ajouter la quantité validée au stock (le stock n'est pas modifié avant validation)
-        article.quantite_stock += qte_validee
+        # ⭐ CORRECTION: Utiliser quantite_envoyee du serveur (source de vérité)
+        # au lieu de la valeur envoyée par MAUI pour éviter les doublons
+        qte_a_ajouter = article.quantite_envoyee
+        
+        # Si MAUI a envoyé une quantité différente, logger pour debug mais utiliser la valeur serveur
+        qte_maui = int(quantite_validee) if quantite_validee else 0
+        if qte_maui != qte_a_ajouter and qte_a_ajouter > 0:
+            logger.warning(f"⚠️ Différence quantité: MAUI={qte_maui}, Serveur={qte_a_ajouter} - Utilisation valeur serveur")
+        
+        # Ajouter la quantité en attente au stock (pas la valeur MAUI)
+        article.quantite_stock += qte_a_ajouter
         
         article.est_valide_client = True
         article.quantite_envoyee = 0
@@ -548,19 +556,19 @@ def valider_article(request):
         article.save()
         
         # Créer un mouvement de stock pour traçabilité
-        if qte_validee > 0:
+        if qte_a_ajouter > 0:
             MouvementStock.objects.create(
                 article=article,
                 type_mouvement='ENTREE',
-                quantite=qte_validee,
+                quantite=qte_a_ajouter,
                 stock_avant=stock_avant,
                 stock_apres=article.quantite_stock,
                 reference_document=f"VALIDATION-{article.boutique.code_boutique}-{article.id}",
                 utilisateur="MAUI-Client",
-                commentaire=f"Validation client: {qte_validee} unités reçues"
+                commentaire=f"Validation client: {qte_a_ajouter} unités reçues"
             )
         
-        logger.info(f"✅ Article {article.code} validé - Quantité: {qte_validee}, Stock: {stock_avant} → {article.quantite_stock}")
+        logger.info(f"✅ Article {article.code} validé - Quantité ajoutée: {qte_a_ajouter}, Stock: {stock_avant} → {article.quantite_stock}")
         
         return Response({
             'success': True,
