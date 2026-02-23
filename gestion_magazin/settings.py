@@ -58,8 +58,11 @@ if DEBUG:
     ]
     # Désactiver la vérification d'origine CSRF en mode dev
     CSRF_COOKIE_DOMAIN = None
-    
 
+# DeepSeek API Configuration
+DEEPSEEK_API_KEY = 'sk-94b7b101d7334473a9d46062212d6b7a'
+DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions'
+DEEPSEEK_MODEL = 'deepseek-chat'
 
 # Application definition
 

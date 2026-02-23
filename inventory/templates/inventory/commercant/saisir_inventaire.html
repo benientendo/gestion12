@@ -46,12 +46,15 @@
                     </select>
                 </div>
                 <div class="col-auto">
-                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Rechercher..." value="{{ recherche }}">
+                    <input type="text" name="q" id="searchInventaire" class="form-control form-control-sm" placeholder="Rechercher un article..." value="{{ recherche }}" autocomplete="off">
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-sm btn-outline-primary">
                         <i class="fas fa-search"></i>
                     </button>
+                </div>
+                <div class="col-auto" id="searchCount" style="display:none;">
+                    <span class="badge bg-info" id="searchCountBadge">0 trouvé(s)</span>
                 </div>
             </form>
         </div>
@@ -75,7 +78,7 @@
                         </thead>
                         <tbody>
                             {% for ligne in lignes %}
-                            <tr class="{% if ligne.ecart > 0 %}table-success{% elif ligne.ecart < 0 %}table-danger{% endif %}">
+                            <tr class="{% if ligne.ecart > 0 %}table-success{% elif ligne.ecart < 0 %}table-danger{% endif %}" data-search="{{ ligne.article.nom|lower }} {{ ligne.article.code|lower }}">
                                 <td>
                                     <strong>{{ ligne.article.nom }}</strong>
                                     <br><small class="text-muted">{{ ligne.article.code }}</small>
@@ -150,6 +153,7 @@
 </div>
 
 <script>
+// Calcul écart en temps réel
 document.querySelectorAll('.stock-input').forEach(input => {
     input.addEventListener('input', function() {
         const theorique = parseInt(this.dataset.theorique) || 0;
@@ -175,5 +179,41 @@ document.querySelectorAll('.stock-input').forEach(input => {
         }
     });
 });
+
+// Recherche instantanée côté client
+(function() {
+    var searchInput = document.getElementById('searchInventaire');
+    if (!searchInput) return;
+    var rows = document.querySelectorAll('tbody tr[data-search]');
+    var countEl = document.getElementById('searchCount');
+    var countBadge = document.getElementById('searchCountBadge');
+    var debounce = null;
+
+    searchInput.addEventListener('input', function() {
+        clearTimeout(debounce);
+        debounce = setTimeout(function() {
+            var q = searchInput.value.trim().toLowerCase();
+            var visible = 0;
+            for (var i = 0; i < rows.length; i++) {
+                var data = rows[i].getAttribute('data-search') || '';
+                if (!q || data.indexOf(q) >= 0) {
+                    rows[i].style.display = '';
+                    visible++;
+                } else {
+                    rows[i].style.display = 'none';
+                }
+            }
+            if (q) {
+                countBadge.textContent = visible + ' trouvé(s)';
+                countEl.style.display = '';
+            } else {
+                countEl.style.display = 'none';
+            }
+        }, 150);
+    });
+
+    // Focus auto sur le champ recherche
+    searchInput.focus();
+})();
 </script>
 {% endblock %}

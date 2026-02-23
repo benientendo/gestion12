@@ -1287,3 +1287,62 @@ class LigneInventaire(models.Model):
         unique_together = ['inventaire', 'article']
         ordering = ['article__nom']
 
+
+class ErreurTransaction(models.Model):
+    """Capture et suivi des erreurs de transaction pour le débogage."""
+    
+    TYPE_ERREUR_CHOICES = [
+        ('VENTE', 'Erreur de vente'),
+        ('PAIEMENT', 'Erreur de paiement'),
+        ('STOCK', 'Erreur de stock'),
+        ('SYNC', 'Erreur de synchronisation'),
+        ('API', 'Erreur API'),
+        ('AUTRE', 'Autre erreur'),
+    ]
+    
+    GRAVITE_CHOICES = [
+        ('INFO', 'Information'),
+        ('WARNING', 'Avertissement'),
+        ('ERROR', 'Erreur'),
+        ('CRITICAL', 'Critique'),
+    ]
+    
+    # Informations de contexte
+    boutique = models.ForeignKey('Boutique', on_delete=models.SET_NULL, null=True, blank=True, related_name='erreurs_transactions')
+    commercant = models.ForeignKey('Commercant', on_delete=models.SET_NULL, null=True, blank=True, related_name='erreurs_transactions')
+    utilisateur = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='erreurs_transactions')
+    client_maui = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True, related_name='erreurs_transactions')
+    
+    # Type et gravité
+    type_erreur = models.CharField(max_length=20, choices=TYPE_ERREUR_CHOICES, default='VENTE')
+    gravite = models.CharField(max_length=20, choices=GRAVITE_CHOICES, default='ERROR')
+    
+    # Détails de l'erreur
+    message = models.TextField(help_text="Message d'erreur principal")
+    details = models.TextField(blank=True, help_text="Détails techniques (traceback, etc.)")
+    donnees_contexte = models.JSONField(default=dict, blank=True, help_text="Données de contexte JSON (panier, articles, etc.)")
+    
+    # Informations de requête
+    url_requete = models.CharField(max_length=500, blank=True)
+    methode_requete = models.CharField(max_length=10, blank=True)
+    adresse_ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=500, blank=True)
+    
+    # Suivi
+    est_resolu = models.BooleanField(default=False)
+    note_resolution = models.TextField(blank=True, help_text="Notes de résolution")
+    resolu_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='erreurs_resolues')
+    date_resolution = models.DateTimeField(null=True, blank=True)
+    
+    # Métadonnées
+    date_creation = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        boutique_nom = self.boutique.nom if self.boutique else 'N/A'
+        return f"[{self.gravite}] {self.type_erreur} - {boutique_nom} - {self.date_creation.strftime('%d/%m/%Y %H:%M')}"
+    
+    class Meta:
+        verbose_name = "Erreur de transaction"
+        verbose_name_plural = "Erreurs de transactions"
+        ordering = ['-date_creation']
+

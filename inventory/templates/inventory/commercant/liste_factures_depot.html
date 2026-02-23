@@ -45,6 +45,20 @@
 .empty-state { text-align:center; padding:50px 20px; color:#adb5bd; }
 .empty-state i { font-size:3rem; margin-bottom:12px; }
 .highlight { background:#fff3cd; padding:1px 2px; border-radius:2px; }
+/* === RECHERCHE IA === */
+.ia-search-box { position:relative; }
+.btn-ia { background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); color:#fff; border:none; font-size:.75rem; padding:4px 10px; border-radius:6px; cursor:pointer; transition:all .2s; }
+.btn-ia:hover { transform:scale(1.05); box-shadow:0 2px 8px rgba(102,126,234,.4); }
+.btn-ia i { margin-right:4px; }
+.ia-suggestions { position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid #e0e0e0; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,.15); z-index:100; margin-top:4px; display:none; }
+.ia-suggestions.visible { display:block; }
+.ia-suggestions .ia-header { padding:8px 12px; background:#f8f9fa; border-bottom:1px solid #eee; font-size:.7rem; color:#6c757d; }
+.ia-suggestion { padding:10px 14px; cursor:pointer; border-bottom:1px solid #f0f0f0; transition:background .15s; }
+.ia-suggestion:hover { background:#f0f4ff; }
+.ia-suggestion:last-child { border-bottom:none; }
+.ia-suggestion .ia-icon { color:#667eea; margin-right:8px; }
+.ia-suggestion .ia-text { font-size:.85rem; }
+.ia-suggestion .ia-desc { font-size:.7rem; color:#6c757d; margin-top:2px; }
 @media(max-width:768px) {
     .search-bar .search-row { flex-direction:column; }
     .stats-bar { flex-direction:column; }
@@ -90,11 +104,45 @@
     <div class="search-bar">
         <form method="get" id="searchForm">
             <div class="search-row">
-                <div class="search-main">
+                <div class="search-main ia-search-box">
                     <label for="q"><i class="fas fa-search me-1"></i>Recherche</label>
-                    <input type="text" class="form-control form-control-sm" id="q" name="q" value="{{ q }}"
-                           placeholder="N° facture, fournisseur, article, notes..."
-                           oninput="clearTimeout(window._st); window._st=setTimeout(function(){document.getElementById('searchForm').submit()},600);">
+                    <div style="display:flex;gap:6px;">
+                        <input type="text" class="form-control form-control-sm" id="q" name="q" value="{{ q }}"
+                               placeholder="N° facture, fournisseur, article... ou question IA"
+                               oninput="clearTimeout(window._st); window._st=setTimeout(function(){document.getElementById('searchForm').submit()},600);"
+                               onfocus="showIaSuggestions()" onblur="setTimeout(hideIaSuggestions,200)">
+                        <button type="button" class="btn-ia" onclick="toggleIaSuggestions()" title="Recherche intelligente">
+                            <i class="fas fa-magic"></i>IA
+                        </button>
+                    </div>
+                    <div class="ia-suggestions" id="iaSuggestions">
+                        <div class="ia-header"><i class="fas fa-lightbulb me-1"></i>Suggestions de recherche intelligente</div>
+                        <div class="ia-suggestion" onclick="applyIaSearch('ce mois')">
+                            <span class="ia-icon"><i class="fas fa-calendar-alt"></i></span>
+                            <span class="ia-text">Factures de ce mois</span>
+                            <div class="ia-desc">Afficher toutes les factures du mois en cours</div>
+                        </div>
+                        <div class="ia-suggestion" onclick="applyIaSearch('mois dernier')">
+                            <span class="ia-icon"><i class="fas fa-history"></i></span>
+                            <span class="ia-text">Factures du mois dernier</span>
+                            <div class="ia-desc">Afficher les factures du mois précédent</div>
+                        </div>
+                        <div class="ia-suggestion" onclick="applyIaSearch('cette semaine')">
+                            <span class="ia-icon"><i class="fas fa-calendar-week"></i></span>
+                            <span class="ia-text">Factures de cette semaine</span>
+                            <div class="ia-desc">Afficher les factures des 7 derniers jours</div>
+                        </div>
+                        <div class="ia-suggestion" onclick="applyIaSearch('gros montant')">
+                            <span class="ia-icon"><i class="fas fa-dollar-sign"></i></span>
+                            <span class="ia-text">Factures à gros montant</span>
+                            <div class="ia-desc">Trier par montant décroissant</div>
+                        </div>
+                        <div class="ia-suggestion" onclick="applyIaSearch('recentes')">
+                            <span class="ia-icon"><i class="fas fa-clock"></i></span>
+                            <span class="ia-text">Factures les plus récentes</span>
+                            <div class="ia-desc">Trier par date décroissante</div>
+                        </div>
+                    </div>
                 </div>
                 <div class="search-filter">
                     <label for="devise">Devise</label>
@@ -258,6 +306,69 @@
 
 {% block extra_js %}
 <script>
+// =============================================
+// RECHERCHE IA - FONCTIONS
+// =============================================
+function showIaSuggestions() {
+    // Ne pas afficher si déjà visible ou si texte dans le champ
+    var q = document.getElementById('q').value.trim();
+    if (q.length === 0) {
+        document.getElementById('iaSuggestions').classList.add('visible');
+    }
+}
+
+function hideIaSuggestions() {
+    document.getElementById('iaSuggestions').classList.remove('visible');
+}
+
+function toggleIaSuggestions() {
+    var el = document.getElementById('iaSuggestions');
+    el.classList.toggle('visible');
+}
+
+function applyIaSearch(type) {
+    var today = new Date();
+    var dateDebut = document.getElementById('date_debut');
+    var dateFin = document.getElementById('date_fin');
+    var triInput = document.querySelector('input[name="tri"]');
+    var deviseSelect = document.getElementById('devise');
+    
+    // Reset
+    dateDebut.value = '';
+    dateFin.value = '';
+    document.getElementById('q').value = '';
+    
+    function formatDate(d) {
+        return d.toISOString().split('T')[0];
+    }
+    
+    if (type === 'ce mois') {
+        var firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+        var lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        dateDebut.value = formatDate(firstDay);
+        dateFin.value = formatDate(lastDay);
+    } else if (type === 'mois dernier') {
+        var firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        var lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
+        dateDebut.value = formatDate(firstDay);
+        dateFin.value = formatDate(lastDay);
+    } else if (type === 'cette semaine') {
+        var day = today.getDay();
+        var diff = today.getDate() - day + (day === 0 ? -6 : 1);
+        var monday = new Date(today.setDate(diff));
+        today = new Date(); // Reset today
+        dateDebut.value = formatDate(monday);
+        dateFin.value = formatDate(today);
+    } else if (type === 'gros montant') {
+        triInput.value = '-montant_total';
+    } else if (type === 'recentes') {
+        triInput.value = '-date_facture';
+    }
+    
+    hideIaSuggestions();
+    document.getElementById('searchForm').submit();
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     var qInput = document.getElementById('q');
     if (qInput) {
@@ -273,10 +384,20 @@ document.addEventListener('DOMContentLoaded', function() {
             qInput.focus();
             qInput.select();
         }
-        // Escape pour effacer la recherche
-        if (e.key === 'Escape' && document.activeElement.id === 'q') {
-            qInput.value = '';
-            document.getElementById('searchForm').submit();
+        // Escape pour effacer la recherche ou fermer suggestions
+        if (e.key === 'Escape') {
+            hideIaSuggestions();
+            if (document.activeElement.id === 'q') {
+                qInput.value = '';
+                document.getElementById('searchForm').submit();
+            }
+        }
+    });
+    
+    // Fermer suggestions si clic ailleurs
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.ia-search-box')) {
+            hideIaSuggestions();
         }
     });
 });

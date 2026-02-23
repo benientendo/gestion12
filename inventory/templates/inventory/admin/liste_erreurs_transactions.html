@@ -1,0 +1,239 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Erreurs de Transactions - Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stats-card { border-radius: 12px; padding: 20px; color: #fff; }
+    .stats-card.total { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .stats-card.non-resolues { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+    .stats-card.critiques { background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%); }
+    .stats-card.aujourd-hui { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+    .stats-card h2 { font-size: 2rem; margin: 0; }
+    .stats-card small { opacity: 0.9; }
+    
+    .erreur-row { transition: background 0.2s; }
+    .erreur-row:hover { background: #f8f9fa; }
+    .erreur-row.non-resolue { border-left: 4px solid #dc3545; }
+    .erreur-row.resolue { border-left: 4px solid #28a745; opacity: 0.7; }
+    
+    .badge-gravite-CRITICAL { background: #dc3545; }
+    .badge-gravite-ERROR { background: #fd7e14; }
+    .badge-gravite-WARNING { background: #ffc107; color: #000; }
+    .badge-gravite-INFO { background: #17a2b8; }
+    
+    .badge-type { background: #6c757d; }
+    
+    .filter-card { background: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 20px; }
+    .filter-card .form-label { font-size: .8rem; font-weight: 600; color: #495057; }
+    
+    .message-preview { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1><i class="fas fa-exclamation-triangle text-danger"></i> Erreurs de Transactions</h1>
+            <p class="text-muted mb-0">Suivi et débogage des erreurs de vente et transactions</p>
+        </div>
+        <div>
+            <a href="{% url 'inventory:admin_dashboard' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Tableau de bord
+            </a>
+        </div>
+    </div>
+    
+    <!-- Statistiques -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stats-card total">
+                <h2>{{ stats.total }}</h2>
+                <small><i class="fas fa-list me-1"></i> Total (période)</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card non-resolues">
+                <h2>{{ stats.non_resolues }}</h2>
+                <small><i class="fas fa-clock me-1"></i> Non résolues</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card critiques">
+                <h2>{{ stats.critiques }}</h2>
+                <small><i class="fas fa-fire me-1"></i> Critiques actives</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card aujourd-hui">
+                <h2>{{ stats.aujourd_hui }}</h2>
+                <small><i class="fas fa-calendar-day me-1"></i> Aujourd'hui</small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Filtres -->
+    <div class="filter-card">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label">Période</label>
+                <select name="periode" class="form-select form-select-sm">
+                    <option value="1" {% if filtres.periode == '1' %}selected{% endif %}>Dernières 24h</option>
+                    <option value="7" {% if filtres.periode == '7' %}selected{% endif %}>7 jours</option>
+                    <option value="30" {% if filtres.periode == '30' %}selected{% endif %}>30 jours</option>
+                    <option value="90" {% if filtres.periode == '90' %}selected{% endif %}>90 jours</option>
+                    <option value="all" {% if filtres.periode == 'all' %}selected{% endif %}>Tout</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Type d'erreur</label>
+                <select name="type" class="form-select form-select-sm">
+                    <option value="">-- Tous --</option>
+                    {% for code, label in types_erreur %}
+                    <option value="{{ code }}" {% if filtres.type == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Gravité</label>
+                <select name="gravite" class="form-select form-select-sm">
+                    <option value="">-- Toutes --</option>
+                    {% for code, label in gravites %}
+                    <option value="{{ code }}" {% if filtres.gravite == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Boutique</label>
+                <select name="boutique" class="form-select form-select-sm">
+                    <option value="">-- Toutes --</option>
+                    {% for b in boutiques %}
+                    <option value="{{ b.id }}" {% if filtres.boutique == b.id|stringformat:"s" %}selected{% endif %}>{{ b.nom }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Statut</label>
+                <select name="resolu" class="form-select form-select-sm">
+                    <option value="">-- Tous --</option>
+                    <option value="0" {% if filtres.resolu == '0' %}selected{% endif %}>Non résolues</option>
+                    <option value="1" {% if filtres.resolu == '1' %}selected{% endif %}>Résolues</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <i class="fas fa-filter me-1"></i> Filtrer
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Liste des erreurs -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            {% if erreurs %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:140px;">Date</th>
+                            <th style="width:100px;">Gravité</th>
+                            <th style="width:100px;">Type</th>
+                            <th>Boutique</th>
+                            <th>Message</th>
+                            <th style="width:100px;">Statut</th>
+                            <th style="width:80px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for erreur in erreurs %}
+                        <tr class="erreur-row {% if erreur.est_resolu %}resolue{% else %}non-resolue{% endif %}">
+                            <td>
+                                <small>{{ erreur.date_creation|date:"d/m/Y" }}</small><br>
+                                <small class="text-muted">{{ erreur.date_creation|time:"H:i:s" }}</small>
+                            </td>
+                            <td>
+                                <span class="badge badge-gravite-{{ erreur.gravite }}">{{ erreur.get_gravite_display }}</span>
+                            </td>
+                            <td>
+                                <span class="badge badge-type">{{ erreur.get_type_erreur_display }}</span>
+                            </td>
+                            <td>
+                                {% if erreur.boutique %}
+                                <strong>{{ erreur.boutique.nom }}</strong>
+                                {% if erreur.commercant %}
+                                <br><small class="text-muted">{{ erreur.commercant.nom_entreprise }}</small>
+                                {% endif %}
+                                {% else %}
+                                <span class="text-muted">N/A</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="message-preview" title="{{ erreur.message }}">{{ erreur.message|truncatechars:60 }}</div>
+                                {% if erreur.utilisateur %}
+                                <small class="text-muted"><i class="fas fa-user me-1"></i>{{ erreur.utilisateur.username }}</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if erreur.est_resolu %}
+                                <span class="badge bg-success"><i class="fas fa-check me-1"></i>Résolu</span>
+                                {% else %}
+                                <span class="badge bg-danger"><i class="fas fa-clock me-1"></i>Actif</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{% url 'inventory:admin_detail_erreur_transaction' erreur.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            {% if erreurs.has_other_pages %}
+            <div class="d-flex justify-content-center py-3">
+                <nav>
+                    <ul class="pagination pagination-sm mb-0">
+                        {% if erreurs.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ erreurs.previous_page_number }}&type={{ filtres.type }}&gravite={{ filtres.gravite }}&boutique={{ filtres.boutique }}&resolu={{ filtres.resolu }}&periode={{ filtres.periode }}">&laquo;</a>
+                        </li>
+                        {% endif %}
+                        
+                        {% for num in erreurs.paginator.page_range %}
+                        {% if erreurs.number == num %}
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                        {% elif num > erreurs.number|add:'-3' and num < erreurs.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}&type={{ filtres.type }}&gravite={{ filtres.gravite }}&boutique={{ filtres.boutique }}&resolu={{ filtres.resolu }}&periode={{ filtres.periode }}">{{ num }}</a>
+                        </li>
+                        {% endif %}
+                        {% endfor %}
+                        
+                        {% if erreurs.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ erreurs.next_page_number }}&type={{ filtres.type }}&gravite={{ filtres.gravite }}&boutique={{ filtres.boutique }}&resolu={{ filtres.resolu }}&periode={{ filtres.periode }}">&raquo;</a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+            
+            {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                <h5>Aucune erreur trouvée</h5>
+                <p class="text-muted">Aucune erreur de transaction ne correspond aux critères sélectionnés.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

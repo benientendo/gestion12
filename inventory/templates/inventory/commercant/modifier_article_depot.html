@@ -48,19 +48,43 @@
                         </div>
                         
                         <div class="row mb-3">
-                            <div class="col-md-12">
+                            <div class="col-md-8">
                                 <label for="description" class="form-label">Description</label>
                                 <textarea class="form-control" id="description" name="description" rows="2">{{ article.description }}</textarea>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="categorie" class="form-label"><i class="fas fa-tag"></i> Catégorie</label>
+                                <select class="form-select" id="categorie" name="categorie">
+                                    <option value="">-- Aucune --</option>
+                                    {% for cat in categories %}
+                                    <option value="{{ cat.id }}" {% if article.categorie and article.categorie.id == cat.id %}selected{% endif %}>{{ cat.nom }}</option>
+                                    {% endfor %}
+                                </select>
                             </div>
                         </div>
                         
                         <div class="row mb-3">
-                            <div class="col-md-12">
+                            <div class="col-md-4">
                                 <label for="devise" class="form-label"><i class="fas fa-coins"></i> Devise principale *</label>
                                 <select class="form-select" id="devise" name="devise" onchange="toggleDeviseLabels()">
                                     <option value="CDF" {% if article.devise == 'CDF' %}selected{% endif %}>CDF (Franc Congolais)</option>
                                     <option value="USD" {% if article.devise == 'USD' %}selected{% endif %}>USD (Dollar US)</option>
                                 </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="date_expiration" class="form-label"><i class="fas fa-calendar-alt"></i> Date d'expiration</label>
+                                <input type="date" class="form-control" id="date_expiration" name="date_expiration" 
+                                       value="{% if article.date_expiration %}{{ article.date_expiration|date:'Y-m-d' }}{% endif %}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label"><i class="fas fa-toggle-on"></i> Statut</label>
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" id="est_actif" name="est_actif" 
+                                           {% if article.est_actif %}checked{% endif %} style="width:3em;height:1.5em;">
+                                    <label class="form-check-label" for="est_actif" style="margin-left:8px;padding-top:3px;">
+                                        Article actif
+                                    </label>
+                                </div>
                             </div>
                         </div>
                         

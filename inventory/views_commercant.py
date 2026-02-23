@@ -3933,6 +3933,24 @@ def modifier_article_depot(request, depot_id, article_id):
             article.prix_vente = Decimal(request.POST.get('prix_vente', '0'))
             article.quantite_stock = int(request.POST.get('quantite_stock', article.quantite_stock))
             
+            # Catégorie
+            categorie_id = request.POST.get('categorie', '').strip()
+            if categorie_id:
+                article.categorie = Categorie.objects.filter(id=categorie_id, boutique=depot).first()
+            else:
+                article.categorie = None
+            
+            # Date d'expiration
+            date_exp_str = request.POST.get('date_expiration', '').strip()
+            if date_exp_str:
+                from datetime import datetime
+                article.date_expiration = datetime.strptime(date_exp_str, '%Y-%m-%d').date()
+            else:
+                article.date_expiration = None
+            
+            # Statut actif
+            article.est_actif = request.POST.get('est_actif') == 'on'
+            
             # Prix USD optionnels
             prix_achat_usd_str = request.POST.get('prix_achat_usd', '').strip()
             prix_vente_usd_str = request.POST.get('prix_vente_usd', '').strip()
@@ -3961,9 +3979,17 @@ def modifier_article_depot(request, depot_id, article_id):
         except Exception as e:
             messages.error(request, f"Erreur lors de la modification: {str(e)}")
     
+    # Récupérer les catégories pour le select (du dépôt + globales + catégorie actuelle de l'article)
+    from django.db.models import Q
+    categories_query = Q(boutique=depot) | Q(boutique__isnull=True)
+    if article.categorie_id:
+        categories_query |= Q(id=article.categorie_id)
+    categories = Categorie.objects.filter(categories_query).distinct().order_by('nom')
+    
     context = {
         'depot': depot,
         'article': article,
+        'categories': categories,
     }
     
     return render(request, 'inventory/commercant/modifier_article_depot.html', context)
@@ -4618,17 +4644,20 @@ def approvisionner_facture(request, depot_id):
     derniers_appros = {}
     last_lignes = LigneApprovisionnement.objects.filter(
         article__in=articles_existants
-    ).select_related('article').order_by('article_id', '-date_creation')
+    ).select_related('article', 'facture').order_by('article_id', '-date_creation')
     seen_ids = set()
     for ligne in last_lignes:
         if ligne.article_id not in seen_ids:
             seen_ids.add(ligne.article_id)
+            # Devise de la facture: CDF = FC, USD = USD
+            devise_facture = ligne.facture.devise if ligne.facture else 'CDF'
             derniers_appros[ligne.article_id] = {
                 'type_quantite': ligne.type_quantite,
                 'nombre_cartons': ligne.nombre_cartons,
                 'pieces_par_carton': ligne.pieces_par_carton,
                 'prix_achat_carton': float(ligne.prix_achat_carton),
                 'prix_achat_unitaire': float(ligne.prix_achat_unitaire),
+                'devise_saisie': devise_facture,  # Devise utilisée lors du dernier appro
             }
     
     if request.method == 'POST':
@@ -5509,3 +5538,132 @@ def regulariser_inventaire_boutique(request, boutique_id, inventaire_id):
         'total_negatif': abs(sum(l.valeur_ecart for l in lignes_ecarts if l.ecart < 0)),
     }
     return render(request, 'inventory/commercant/regulariser_inventaire_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def transfert_entre_boutiques(request, boutique_id):
+    """Transférer des articles d'un point de vente vers un autre"""
+    commercant = request.user.profil_commercant
+    boutique_source = request.boutique
+    
+    # Récupérer les autres boutiques du commerçant (pas la source)
+    autres_boutiques = Boutique.objects.filter(
+        commercant=commercant,
+        est_depot=False
+    ).exclude(id=boutique_source.id).order_by('nom')
+    
+    # Articles avec stock disponible
+    articles = Article.objects.filter(
+        boutique=boutique_source,
+        est_actif=True,
+        quantite_stock__gt=0
+    ).order_by('nom')
+    
+    if request.method == 'POST':
+        boutique_dest_id = request.POST.get('boutique_destination')
+        commentaire = request.POST.get('commentaire', '').strip()
+        articles_selectionnes = request.POST.getlist('articles_selectionnes')
+        
+        if not boutique_dest_id:
+            messages.error(request, "Veuillez sélectionner un point de vente de destination")
+            return redirect('inventory:transfert_entre_boutiques', boutique_id=boutique_source.id)
+        
+        boutique_dest = get_object_or_404(Boutique, id=boutique_dest_id, commercant=commercant)
+        
+        if not articles_selectionnes:
+            messages.error(request, "Veuillez sélectionner au moins un article à transférer")
+            return redirect('inventory:transfert_entre_boutiques', boutique_id=boutique_source.id)
+        
+        transferts_effectues = []
+        erreurs = []
+        
+        for article_id in articles_selectionnes:
+            try:
+                quantite = int(request.POST.get(f'quantite_{article_id}', 1))
+                article_source = Article.objects.get(id=article_id, boutique=boutique_source)
+                
+                if quantite <= 0:
+                    continue
+                
+                if quantite > article_source.quantite_stock:
+                    erreurs.append(f"{article_source.nom}: quantité demandée ({quantite}) > stock disponible ({article_source.quantite_stock})")
+                    continue
+                
+                # Trouver ou créer l'article dans la boutique de destination
+                article_dest, created = Article.objects.get_or_create(
+                    boutique=boutique_dest,
+                    code=article_source.code,
+                    defaults={
+                        'nom': article_source.nom,
+                        'description': article_source.description,
+                        'devise': article_source.devise,
+                        'prix_vente': article_source.prix_vente,
+                        'prix_achat': article_source.prix_achat,
+                        'categorie': None,  # Catégorie peut être différente
+                        'quantite_stock': 0,
+                        'est_actif': True,
+                    }
+                )
+                
+                # Décrémenter le stock source
+                stock_source_avant = article_source.quantite_stock
+                article_source.quantite_stock -= quantite
+                article_source.save()
+                
+                # Incrémenter le stock destination
+                stock_dest_avant = article_dest.quantite_stock
+                article_dest.quantite_stock += quantite
+                article_dest.save()
+                
+                # Enregistrer les mouvements de stock
+                MouvementStock.objects.create(
+                    article=article_source,
+                    type_mouvement='SORTIE',
+                    quantite=-quantite,
+                    stock_avant=stock_source_avant,
+                    stock_apres=article_source.quantite_stock,
+                    commentaire=f"Transfert vers {boutique_dest.nom}",
+                    reference_document=f"TRANS-BTQ-{boutique_source.id}-{boutique_dest.id}",
+                    utilisateur=request.user.username
+                )
+                
+                MouvementStock.objects.create(
+                    article=article_dest,
+                    type_mouvement='ENTREE',
+                    quantite=quantite,
+                    stock_avant=stock_dest_avant,
+                    stock_apres=article_dest.quantite_stock,
+                    commentaire=f"Transfert depuis {boutique_source.nom}",
+                    reference_document=f"TRANS-BTQ-{boutique_source.id}-{boutique_dest.id}",
+                    utilisateur=request.user.username
+                )
+                
+                transferts_effectues.append({
+                    'article': article_source.nom,
+                    'quantite': quantite,
+                    'nouveau': created
+                })
+                
+            except Article.DoesNotExist:
+                erreurs.append(f"Article ID {article_id} introuvable")
+            except Exception as e:
+                erreurs.append(f"Erreur article {article_id}: {str(e)}")
+        
+        if transferts_effectues:
+            nb = len(transferts_effectues)
+            messages.success(request, f"✅ {nb} article(s) transféré(s) vers {boutique_dest.nom}")
+        
+        for erreur in erreurs:
+            messages.warning(request, erreur)
+        
+        return redirect('inventory:commercant_articles_boutique', boutique_id=boutique_source.id)
+    
+    context = {
+        'boutique': boutique_source,
+        'articles': articles,
+        'autres_boutiques': autres_boutiques,
+    }
+    
+    return render(request, 'inventory/commercant/transfert_entre_boutiques.html', context)

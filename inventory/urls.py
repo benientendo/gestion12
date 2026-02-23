@@ -58,6 +58,8 @@ urlpatterns = [
     path('superadmin/boutiques/<int:boutique_id>/toggle-pos/', admin_views.toggle_boutique_pos_admin, name='admin_toggle_boutique_pos'),
     path('superadmin/diagnostic-api/', admin_views.diagnostic_api, name='admin_diagnostic_api'),
     path('superadmin/statistiques-systeme/', admin_views.statistiques_systeme, name='admin_statistiques_systeme'),
+    path('superadmin/erreurs-transactions/', admin_views.liste_erreurs_transactions, name='admin_liste_erreurs_transactions'),
+    path('superadmin/erreurs-transactions/<int:erreur_id>/', admin_views.detail_erreur_transaction, name='admin_detail_erreur_transaction'),
     
     # ===== INTERFACE COMMERÇANT =====
     path('commercant/login/', views_commercant.login_commercant, name='login_commercant'),
@@ -91,6 +93,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/<int:variante_id>/supprimer/', views_commercant.supprimer_variante, name='supprimer_variante'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/<int:variante_id>/stock/', views_commercant.ajuster_stock_variante, name='ajuster_stock_variante'),
     path('commercant/boutiques/<int:boutique_id>/articles/bulk-delete/', views_commercant.bulk_delete_articles, name='bulk_delete_articles'),
+    path('commercant/boutiques/<int:boutique_id>/transfert/', views_commercant.transfert_entre_boutiques, name='transfert_entre_boutiques'),
     path('commercant/boutiques/<int:boutique_id>/articles/importer/', views_commercant.importer_articles_entre_boutiques, name='importer_articles_entre_boutiques'),
     path('commercant/boutiques/<int:boutique_id>/articles/sync-variantes/', views_commercant.sync_variantes_entre_boutiques, name='sync_variantes_entre_boutiques'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/ajuster-stock/', views_commercant.ajuster_stock_article, name='ajuster_stock_article'),
@@ -165,4 +168,9 @@ urlpatterns = [
     path('bilan/<int:bilan_id>/exporter/', views_bilan.exporter_bilan, name='exporter_bilan'),
     path('indicateurs/', views_bilan.tableau_indicateurs, name='tableau_indicateurs'),
     path('indicateurs/rafraichir/', views_bilan.rafraichir_indicateurs, name='rafraichir_indicateurs'),
+    
+    # ===== API DEEPSEEK =====
+    path('api/deepseek/suggest-article/', views.deepseek_suggest_article, name='deepseek_suggest_article'),
+    path('api/deepseek/analyze-price/', views.deepseek_analyze_price, name='deepseek_analyze_price'),
+    path('api/deepseek/suggest-category/', views.deepseek_suggest_category, name='deepseek_suggest_category'),
 ]

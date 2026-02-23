@@ -53,6 +53,9 @@ class ArticleForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if 'categorie' in self.fields:
             self.fields['categorie'].required = False
+        # Prix d'achat optionnel
+        if 'prix_achat' in self.fields:
+            self.fields['prix_achat'].required = False
         # En mode modification, ne pas exiger le champ code (on ne l'édite plus dans certains formulaires)
         if instance is not None and getattr(instance, 'pk', None) and 'code' in self.fields:
             self.fields['code'].required = False

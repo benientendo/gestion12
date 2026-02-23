@@ -410,3 +410,122 @@ def statistiques_systeme(request):
     }
     
     return render(request, 'inventory/admin/statistiques_systeme.html', context)
+
+
+# ===== GESTION DES ERREURS DE TRANSACTION =====
+
+@login_required
+@user_passes_test(is_superuser)
+def liste_erreurs_transactions(request):
+    """Liste des erreurs de transaction pour le débogage."""
+    from .models import ErreurTransaction
+    from django.utils import timezone
+    from datetime import timedelta
+    
+    # Filtres
+    type_erreur = request.GET.get('type', '')
+    gravite = request.GET.get('gravite', '')
+    boutique_id = request.GET.get('boutique', '')
+    commercant_id = request.GET.get('commercant', '')
+    resolu = request.GET.get('resolu', '')
+    periode = request.GET.get('periode', '7')  # 7 jours par défaut
+    
+    erreurs = ErreurTransaction.objects.select_related('boutique', 'commercant', 'utilisateur', 'client_maui').all()
+    
+    # Appliquer les filtres
+    if type_erreur:
+        erreurs = erreurs.filter(type_erreur=type_erreur)
+    if gravite:
+        erreurs = erreurs.filter(gravite=gravite)
+    if boutique_id:
+        erreurs = erreurs.filter(boutique_id=boutique_id)
+    if commercant_id:
+        erreurs = erreurs.filter(commercant_id=commercant_id)
+    if resolu == '1':
+        erreurs = erreurs.filter(est_resolu=True)
+    elif resolu == '0':
+        erreurs = erreurs.filter(est_resolu=False)
+    
+    # Filtre période
+    if periode and periode != 'all':
+        jours = int(periode)
+        date_limite = timezone.now() - timedelta(days=jours)
+        erreurs = erreurs.filter(date_creation__gte=date_limite)
+    
+    # Statistiques
+    stats = {
+        'total': erreurs.count(),
+        'non_resolues': erreurs.filter(est_resolu=False).count(),
+        'critiques': erreurs.filter(gravite='CRITICAL', est_resolu=False).count(),
+        'aujourd_hui': erreurs.filter(date_creation__date=timezone.now().date()).count(),
+    }
+    
+    # Pagination
+    paginator = Paginator(erreurs, 25)
+    page = request.GET.get('page', 1)
+    erreurs_page = paginator.get_page(page)
+    
+    # Listes pour les filtres
+    boutiques = Boutique.objects.all().order_by('nom')
+    commercants = Commercant.objects.all().order_by('nom_entreprise')
+    
+    context = {
+        'erreurs': erreurs_page,
+        'stats': stats,
+        'boutiques': boutiques,
+        'commercants': commercants,
+        'types_erreur': ErreurTransaction.TYPE_ERREUR_CHOICES,
+        'gravites': ErreurTransaction.GRAVITE_CHOICES,
+        'filtres': {
+            'type': type_erreur,
+            'gravite': gravite,
+            'boutique': boutique_id,
+            'commercant': commercant_id,
+            'resolu': resolu,
+            'periode': periode,
+        }
+    }
+    
+    return render(request, 'inventory/admin/liste_erreurs_transactions.html', context)
+
+
+@login_required
+@user_passes_test(is_superuser)
+def detail_erreur_transaction(request, erreur_id):
+    """Détail d'une erreur de transaction."""
+    from .models import ErreurTransaction
+    from django.utils import timezone
+    
+    erreur = get_object_or_404(ErreurTransaction, id=erreur_id)
+    
+    # Marquer comme résolu
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'resoudre':
+            erreur.est_resolu = True
+            erreur.note_resolution = request.POST.get('note_resolution', '')
+            erreur.resolu_par = request.user
+            erreur.date_resolution = timezone.now()
+            erreur.save()
+            messages.success(request, "Erreur marquée comme résolue.")
+        elif action == 'rouvrir':
+            erreur.est_resolu = False
+            erreur.note_resolution = ''
+            erreur.resolu_par = None
+            erreur.date_resolution = None
+            erreur.save()
+            messages.info(request, "Erreur rouverte.")
+        return redirect('inventory:admin_detail_erreur_transaction', erreur_id=erreur.id)
+    
+    # Erreurs similaires (même boutique, même type)
+    erreurs_similaires = ErreurTransaction.objects.filter(
+        boutique=erreur.boutique,
+        type_erreur=erreur.type_erreur
+    ).exclude(id=erreur.id).order_by('-date_creation')[:5]
+    
+    context = {
+        'erreur': erreur,
+        'erreurs_similaires': erreurs_similaires,
+    }
+    
+    return render(request, 'inventory/admin/detail_erreur_transaction.html', context)

@@ -3,6 +3,24 @@
 
 {% block title %}Saisie inventaire - {{ inventaire.reference }}{% endblock %}
 
+{% block extra_css %}
+<style>
+/* === IA INVENTAIRE === */
+.ia-box { position: relative; display: inline-block; }
+.btn-ia-inv { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; border: none; font-size: .8rem; padding: 5px 12px; border-radius: 8px; cursor: pointer; transition: all .2s; }
+.btn-ia-inv:hover { transform: scale(1.05); box-shadow: 0 2px 8px rgba(102,126,234,.4); color: #fff; }
+.ia-menu { position: absolute; top: 100%; right: 0; background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,.15); z-index: 100; margin-top: 5px; min-width: 280px; display: none; }
+.ia-menu.visible { display: block; }
+.ia-menu-header { padding: 10px 14px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; font-size: .8rem; border-radius: 10px 10px 0 0; }
+.ia-menu-item { padding: 12px 14px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background .15s; }
+.ia-menu-item:hover { background: #f5f7ff; }
+.ia-menu-item:last-child { border-bottom: none; border-radius: 0 0 10px 10px; }
+.ia-menu-item .ia-icon { color: #667eea; margin-right: 10px; width: 18px; text-align: center; }
+.ia-menu-item .ia-title { font-weight: 600; font-size: .85rem; }
+.ia-menu-item .ia-desc { font-size: .75rem; color: #6c757d; margin-top: 2px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -44,10 +62,41 @@
                     </select>
                 </div>
                 <div class="col-auto">
-                    <input type="text" name="q" class="form-control form-control-sm" placeholder="Rechercher..." value="{{ recherche }}">
+                    <input type="text" name="q" id="searchInventaire" class="form-control form-control-sm" placeholder="Rechercher un article..." value="{{ recherche }}" autocomplete="off">
                 </div>
                 <div class="col-auto">
                     <button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-search"></i></button>
+                </div>
+                <div class="col-auto" id="searchCount" style="display:none;">
+                    <span class="badge bg-info" id="searchCountBadge">0 trouvé(s)</span>
+                </div>
+                <div class="col-auto ia-box">
+                    <button type="button" class="btn-ia-inv" onclick="toggleIaMenu()">
+                        <i class="fas fa-magic me-1"></i>IA
+                    </button>
+                    <div class="ia-menu" id="iaMenu">
+                        <div class="ia-menu-header"><i class="fas fa-robot me-1"></i> Assistant inventaire</div>
+                        <div class="ia-menu-item" onclick="iaAction('copier_stock')">
+                            <span class="ia-icon"><i class="fas fa-copy"></i></span>
+                            <span class="ia-title">Copier stock système</span>
+                            <div class="ia-desc">Remplir tous les champs vides avec le stock théorique (0 écart)</div>
+                        </div>
+                        <div class="ia-menu-item" onclick="iaAction('vider_tout')">
+                            <span class="ia-icon"><i class="fas fa-eraser"></i></span>
+                            <span class="ia-title">Vider les saisies</span>
+                            <div class="ia-desc">Effacer toutes les valeurs saisies</div>
+                        </div>
+                        <div class="ia-menu-item" onclick="iaAction('focus_vides')">
+                            <span class="ia-icon"><i class="fas fa-search"></i></span>
+                            <span class="ia-title">Aller au premier vide</span>
+                            <div class="ia-desc">Positionner le curseur sur le premier article non saisi</div>
+                        </div>
+                        <div class="ia-menu-item" onclick="iaAction('stats')">
+                            <span class="ia-icon"><i class="fas fa-chart-bar"></i></span>
+                            <span class="ia-title">Résumé rapide</span>
+                            <div class="ia-desc">Voir les statistiques de l'inventaire en cours</div>
+                        </div>
+                    </div>
                 </div>
             </form>
         </div>
@@ -70,7 +119,7 @@
                         </thead>
                         <tbody>
                             {% for ligne in lignes %}
-                            <tr class="{% if ligne.ecart > 0 %}table-success{% elif ligne.ecart < 0 %}table-danger{% endif %}">
+                            <tr class="{% if ligne.ecart > 0 %}table-success{% elif ligne.ecart < 0 %}table-danger{% endif %}" data-search="{{ ligne.article.nom|lower }} {{ ligne.article.code|lower }}">
                                 <td>
                                     <strong>{{ ligne.article.nom }}</strong>
                                     <br><small class="text-muted">{{ ligne.article.code }}</small>
@@ -137,6 +186,77 @@
 </div>
 
 <script>
+// =============================================
+// IA INVENTAIRE - FONCTIONS
+// =============================================
+function toggleIaMenu() {
+    document.getElementById('iaMenu').classList.toggle('visible');
+}
+
+function iaAction(action) {
+    const inputs = document.querySelectorAll('.stock-input');
+    toggleIaMenu();
+    
+    if (action === 'copier_stock') {
+        let count = 0;
+        inputs.forEach(input => {
+            if (input.value === '' || input.value === null) {
+                input.value = input.dataset.theorique;
+                input.dispatchEvent(new Event('input'));
+                count++;
+            }
+        });
+        alert('✅ ' + count + ' champ(s) rempli(s) avec le stock système');
+    }
+    else if (action === 'vider_tout') {
+        if (!confirm('Effacer toutes les saisies de stock physique ?')) return;
+        inputs.forEach(input => {
+            input.value = '';
+            input.dispatchEvent(new Event('input'));
+        });
+    }
+    else if (action === 'focus_vides') {
+        for (let i = 0; i < inputs.length; i++) {
+            if (inputs[i].value === '' || inputs[i].value === null) {
+                inputs[i].focus();
+                inputs[i].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+        }
+        alert('✅ Tous les articles ont été saisis !');
+    }
+    else if (action === 'stats') {
+        let saisis = 0, vides = 0, ecartPos = 0, ecartNeg = 0, ecartZero = 0;
+        inputs.forEach(input => {
+            if (input.value !== '' && input.value !== null) {
+                saisis++;
+                const theorique = parseInt(input.dataset.theorique) || 0;
+                const physique = parseInt(input.value) || 0;
+                const ecart = physique - theorique;
+                if (ecart > 0) ecartPos++;
+                else if (ecart < 0) ecartNeg++;
+                else ecartZero++;
+            } else {
+                vides++;
+            }
+        });
+        alert('📊 RÉSUMÉ INVENTAIRE\n\n' +
+              '📝 Saisis: ' + saisis + '\n' +
+              '⏳ Restants: ' + vides + '\n' +
+              '✅ Sans écart: ' + ecartZero + '\n' +
+              '📈 Écarts positifs: ' + ecartPos + '\n' +
+              '📉 Écarts négatifs: ' + ecartNeg);
+    }
+}
+
+// Fermer menu si clic ailleurs
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.ia-box')) {
+        document.getElementById('iaMenu').classList.remove('visible');
+    }
+});
+
+// Calcul écart en temps réel
 document.querySelectorAll('.stock-input').forEach(input => {
     input.addEventListener('input', function() {
         const theorique = parseInt(this.dataset.theorique) || 0;
@@ -162,5 +282,41 @@ document.querySelectorAll('.stock-input').forEach(input => {
         }
     });
 });
+
+// Recherche instantanée côté client
+(function() {
+    var searchInput = document.getElementById('searchInventaire');
+    if (!searchInput) return;
+    var rows = document.querySelectorAll('tbody tr[data-search]');
+    var countEl = document.getElementById('searchCount');
+    var countBadge = document.getElementById('searchCountBadge');
+    var debounce = null;
+
+    searchInput.addEventListener('input', function() {
+        clearTimeout(debounce);
+        debounce = setTimeout(function() {
+            var q = searchInput.value.trim().toLowerCase();
+            var visible = 0;
+            for (var i = 0; i < rows.length; i++) {
+                var data = rows[i].getAttribute('data-search') || '';
+                if (!q || data.indexOf(q) >= 0) {
+                    rows[i].style.display = '';
+                    visible++;
+                } else {
+                    rows[i].style.display = 'none';
+                }
+            }
+            if (q) {
+                countBadge.textContent = visible + ' trouvé(s)';
+                countEl.style.display = '';
+            } else {
+                countEl.style.display = 'none';
+            }
+        }, 150);
+    });
+
+    // Focus auto sur le champ recherche
+    searchInput.focus();
+})();
 </script>
 {% endblock %}

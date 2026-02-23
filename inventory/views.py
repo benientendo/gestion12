@@ -5,6 +5,8 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth.models import User
 from django.http import HttpResponse, JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 from .models import Categorie, Article, Vente, LigneVente, MouvementStock, Client, SessionClientMaui, Boutique, Commercant
 from django.db.models import Sum, Count, F
 from datetime import datetime, timedelta
@@ -13,6 +15,7 @@ from .user_forms import UserCreateForm, UserEditForm
 from .utils import generate_qr_codes_pdf
 from django.core.paginator import Paginator
 from django.utils import timezone
+from .services.deepseek_service import DeepSeekService
 
 # Create your views here.
 
@@ -908,4 +911,98 @@ def dashboard_clients_maui(request):
     
     return render(request, 'inventory/dashboard_clients_maui.html', context)
 
+# ===== API DEEPSEEK =====
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required
+def deepseek_suggest_article(request):
+    """API pour suggérer des données d'article via DeepSeek"""
+    try:
+        data = json.loads(request.body)
+        article_name = data.get('article_name', '').strip()
+        
+        if not article_name:
+            return JsonResponse({'error': 'Nom d\'article requis'}, status=400)
+        
+        # Récupérer l'ID boutique de l'utilisateur
+        boutique_id = None
+        try:
+            if hasattr(request.user, 'profil_commercant'):
+                boutique_id = request.user.profil_commercant.boutique.id
+        except:
+            pass
+        
+        # Appeler DeepSeek
+        suggestions = DeepSeekService.suggest_article_data(article_name, boutique_id)
+        
+        if suggestions:
+            return JsonResponse({
+                'success': True,
+                'suggestions': suggestions
+            })
+        else:
+            return JsonResponse({
+                'success': False,
+                'error': 'Service DeepSeek indisponible'
+            }, status=503)
+            
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'JSON invalide'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required
+def deepseek_analyze_price(request):
+    """API pour analyser les anomalies de prix"""
+    try:
+        data = json.loads(request.body)
+        article_name = data.get('article_name', '').strip()
+        prix_vente = float(data.get('prix_vente', 0))
+        
+        if not article_name or prix_vente <= 0:
+            return JsonResponse({'error': 'Données incomplètes'}, status=400)
+        
+        # Récupérer l'ID boutique
+        boutique_id = None
+        try:
+            if hasattr(request.user, 'profil_commercant'):
+                boutique_id = request.user.profil_commercant.boutique.id
+        except:
+            pass
+        
+        analysis = DeepSeekService.analyze_price_anomaly(article_name, prix_vente, boutique_id)
+        
+        return JsonResponse({
+            'success': True,
+            'analysis': analysis
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+@login_required
+def deepseek_suggest_category(request):
+    """API pour suggérer une catégorie"""
+    try:
+        data = json.loads(request.body)
+        article_name = data.get('article_name', '').strip()
+        
+        if not article_name:
+            return JsonResponse({'error': 'Nom d\'article requis'}, status=400)
+        
+        category = DeepSeekService.get_category_suggestions(article_name)
+        
+        return JsonResponse({
+            'success': True,
+            'category': category
+        })
+        
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+# ===== FIN API DEEPSEEK =====
 # ===== FIN GESTION DES CLIENTS MAUI =====

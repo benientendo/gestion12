@@ -33,6 +33,10 @@
                     <a href="{% url 'inventory:importer_articles_entre_boutiques' boutique.id %}" class="btn btn-outline-success btn-sm" title="Importer des articles depuis un autre point de vente">
                         <i class="fas fa-file-import"></i> <span class="d-none d-sm-inline">Importer</span>
                     </a>
+                    <!-- Bouton Transférer vers un autre point de vente -->
+                    <a href="{% url 'inventory:transfert_entre_boutiques' boutique.id %}" class="btn btn-outline-warning btn-sm" title="Transférer des articles vers un autre point de vente">
+                        <i class="fas fa-exchange-alt"></i> <span class="d-none d-sm-inline">Transférer</span>
+                    </a>
                     <!-- Bouton Ajouter en premier sur mobile -->
                     <button type="button" class="btn btn-success btn-sm order-first order-md-last" data-bs-toggle="modal" data-bs-target="#ajouterArticleModal">
                         <i class="fas fa-plus"></i> <span class="d-none d-sm-inline">Ajouter</span>

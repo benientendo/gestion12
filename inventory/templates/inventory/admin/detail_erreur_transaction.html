@@ -1,0 +1,209 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Erreur #{{ erreur.id }} - Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .info-card { background: #f8f9fa; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+    .info-card h6 { color: #495057; margin-bottom: 15px; border-bottom: 2px solid #dee2e6; padding-bottom: 8px; }
+    .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+    .info-row:last-child { border-bottom: none; }
+    .info-label { color: #6c757d; font-weight: 500; }
+    .info-value { font-weight: 600; text-align: right; }
+    
+    .badge-gravite-CRITICAL { background: #dc3545; font-size: 1rem; padding: 8px 16px; }
+    .badge-gravite-ERROR { background: #fd7e14; font-size: 1rem; padding: 8px 16px; }
+    .badge-gravite-WARNING { background: #ffc107; color: #000; font-size: 1rem; padding: 8px 16px; }
+    .badge-gravite-INFO { background: #17a2b8; font-size: 1rem; padding: 8px 16px; }
+    
+    .details-box { background: #1e1e1e; color: #d4d4d4; border-radius: 8px; padding: 15px; font-family: monospace; font-size: .85rem; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+    .context-box { background: #fff; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; max-height: 300px; overflow-y: auto; }
+    .context-box pre { margin: 0; white-space: pre-wrap; font-size: .85rem; }
+    
+    .status-resolved { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: #fff; border-radius: 10px; padding: 20px; }
+    .status-active { background: linear-gradient(135deg, #ff416c 0%, #ff4b2b 100%); color: #fff; border-radius: 10px; padding: 20px; }
+    
+    .similar-item { padding: 10px; border-left: 3px solid #6c757d; margin-bottom: 10px; background: #f8f9fa; border-radius: 0 6px 6px 0; }
+    .similar-item:hover { background: #e9ecef; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1>
+                <span class="badge badge-gravite-{{ erreur.gravite }} me-2">{{ erreur.get_gravite_display }}</span>
+                Erreur #{{ erreur.id }}
+            </h1>
+            <p class="text-muted mb-0">
+                <i class="fas fa-clock me-1"></i> {{ erreur.date_creation|date:"d/m/Y à H:i:s" }}
+                <span class="mx-2">|</span>
+                <span class="badge bg-secondary">{{ erreur.get_type_erreur_display }}</span>
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'inventory:admin_liste_erreurs_transactions' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Retour à la liste
+            </a>
+        </div>
+    </div>
+    
+    <div class="row">
+        <!-- Colonne gauche: Détails -->
+        <div class="col-lg-8">
+            <!-- Message d'erreur -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0"><i class="fas fa-exclamation-circle me-2"></i>Message d'erreur</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-0" style="font-size: 1.1rem;">{{ erreur.message }}</p>
+                </div>
+            </div>
+            
+            <!-- Détails techniques (traceback) -->
+            {% if erreur.details %}
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-code me-2"></i>Détails techniques (Traceback)</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="details-box">{{ erreur.details }}</div>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Données de contexte -->
+            {% if erreur.donnees_contexte %}
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-database me-2"></i>Données de contexte</h5>
+                </div>
+                <div class="card-body">
+                    <div class="context-box">
+                        <pre>{{ erreur.donnees_contexte|pprint }}</pre>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Informations de requête -->
+            {% if erreur.url_requete %}
+            <div class="info-card">
+                <h6><i class="fas fa-globe me-2"></i>Informations de requête</h6>
+                <div class="info-row">
+                    <span class="info-label">URL</span>
+                    <span class="info-value"><code>{{ erreur.url_requete }}</code></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Méthode</span>
+                    <span class="info-value"><span class="badge bg-primary">{{ erreur.methode_requete }}</span></span>
+                </div>
+                {% if erreur.adresse_ip %}
+                <div class="info-row">
+                    <span class="info-label">Adresse IP</span>
+                    <span class="info-value">{{ erreur.adresse_ip }}</span>
+                </div>
+                {% endif %}
+                {% if erreur.user_agent %}
+                <div class="info-row">
+                    <span class="info-label">User Agent</span>
+                    <span class="info-value" style="font-size:.75rem;max-width:400px;text-align:right;">{{ erreur.user_agent|truncatechars:80 }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Colonne droite: Contexte & Actions -->
+        <div class="col-lg-4">
+            <!-- Statut -->
+            <div class="{% if erreur.est_resolu %}status-resolved{% else %}status-active{% endif %} mb-4">
+                {% if erreur.est_resolu %}
+                <h5><i class="fas fa-check-circle me-2"></i>Erreur résolue</h5>
+                <p class="mb-1">Par: <strong>{{ erreur.resolu_par.username }}</strong></p>
+                <p class="mb-0"><small>Le {{ erreur.date_resolution|date:"d/m/Y à H:i" }}</small></p>
+                {% if erreur.note_resolution %}
+                <hr style="border-color:rgba(255,255,255,.3);">
+                <p class="mb-0"><small>{{ erreur.note_resolution }}</small></p>
+                {% endif %}
+                {% else %}
+                <h5><i class="fas fa-exclamation-triangle me-2"></i>Erreur active</h5>
+                <p class="mb-0">Cette erreur n'a pas encore été résolue.</p>
+                {% endif %}
+            </div>
+            
+            <!-- Actions -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-tools me-2"></i>Actions</h5>
+                </div>
+                <div class="card-body">
+                    {% if erreur.est_resolu %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="rouvrir">
+                        <button type="submit" class="btn btn-warning w-100">
+                            <i class="fas fa-redo me-1"></i> Rouvrir l'erreur
+                        </button>
+                    </form>
+                    {% else %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="resoudre">
+                        <div class="mb-3">
+                            <label class="form-label">Note de résolution</label>
+                            <textarea name="note_resolution" class="form-control" rows="3" placeholder="Expliquez comment l'erreur a été résolue..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-check me-1"></i> Marquer comme résolu
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Contexte boutique -->
+            <div class="info-card">
+                <h6><i class="fas fa-store me-2"></i>Contexte</h6>
+                <div class="info-row">
+                    <span class="info-label">Boutique</span>
+                    <span class="info-value">{% if erreur.boutique %}{{ erreur.boutique.nom }}{% else %}<span class="text-muted">N/A</span>{% endif %}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Commerçant</span>
+                    <span class="info-value">{% if erreur.commercant %}{{ erreur.commercant.nom_entreprise }}{% else %}<span class="text-muted">N/A</span>{% endif %}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Utilisateur</span>
+                    <span class="info-value">{% if erreur.utilisateur %}{{ erreur.utilisateur.username }}{% else %}<span class="text-muted">N/A</span>{% endif %}</span>
+                </div>
+                {% if erreur.client_maui %}
+                <div class="info-row">
+                    <span class="info-label">Terminal MAUI</span>
+                    <span class="info-value">{{ erreur.client_maui.nom_terminal }}</span>
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Erreurs similaires -->
+            {% if erreurs_similaires %}
+            <div class="info-card">
+                <h6><i class="fas fa-clone me-2"></i>Erreurs similaires</h6>
+                {% for e in erreurs_similaires %}
+                <a href="{% url 'inventory:admin_detail_erreur_transaction' e.id %}" class="text-decoration-none">
+                    <div class="similar-item">
+                        <small class="text-muted">{{ e.date_creation|date:"d/m/Y H:i" }}</small>
+                        <p class="mb-0 text-dark" style="font-size:.85rem;">{{ e.message|truncatechars:50 }}</p>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

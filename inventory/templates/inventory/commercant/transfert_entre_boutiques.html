@@ -1,0 +1,346 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Transfert entre boutiques - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-header {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 15px;
+        margin-bottom: 25px;
+    }
+    .article-select-card {
+        border: 2px solid #e9ecef;
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 10px;
+        transition: all 0.2s;
+        background: white;
+    }
+    .article-select-card:hover {
+        border-color: #11998e;
+        box-shadow: 0 4px 15px rgba(17,153,142,0.15);
+    }
+    .article-select-card.selected {
+        border-color: #28a745;
+        background: #f8fff8;
+    }
+    .article-checkbox {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+    }
+    .quantite-input {
+        width: 100px;
+        text-align: center;
+    }
+    .stock-badge {
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: bold;
+    }
+    .stock-ok { background-color: #d4edda; color: #155724; }
+    .stock-bas { background-color: #fff3cd; color: #856404; }
+    .summary-card {
+        position: sticky;
+        top: 20px;
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+        border-radius: 15px;
+        padding: 20px;
+    }
+    .btn-select-all {
+        background: rgba(255,255,255,0.2);
+        border: 1px solid rgba(255,255,255,0.3);
+        color: white;
+    }
+    .btn-select-all:hover {
+        background: rgba(255,255,255,0.3);
+        color: white;
+    }
+    .search-box {
+        border-radius: 25px;
+        padding-left: 40px;
+    }
+    .search-icon {
+        position: absolute;
+        left: 15px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6c757d;
+    }
+    
+    @media (max-width: 768px) {
+        .summary-card {
+            position: relative;
+            top: 0;
+            margin-bottom: 20px;
+        }
+        .page-header {
+            padding: 15px;
+        }
+        .quantite-input {
+            width: 70px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="page-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h2><i class="fas fa-exchange-alt me-2"></i> Transfert entre boutiques</h2>
+                <p class="mb-0 opacity-75">Transférer des articles de "{{ boutique.nom }}" vers un autre point de vente</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-light">
+                    <i class="fas fa-arrow-left"></i> Retour aux articles
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% if not autres_boutiques %}
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        Vous n'avez pas d'autre point de vente vers lequel transférer. 
+        <a href="{% url 'inventory:commercant_ajouter_boutique' %}">Créez une nouvelle boutique</a> d'abord.
+    </div>
+    {% elif not articles %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>
+        Aucun article avec du stock disponible à transférer.
+    </div>
+    {% else %}
+    <form method="post" id="transfertForm">
+        {% csrf_token %}
+        
+        <div class="row">
+            <!-- Panneau de résumé (mobile first) -->
+            <div class="col-lg-4 order-lg-2 mb-4">
+                <div class="summary-card">
+                    <h5><i class="fas fa-clipboard-list"></i> Résumé du transfert</h5>
+                    <hr style="border-color: rgba(255,255,255,0.3);">
+                    
+                    <!-- Point de vente de destination -->
+                    <div class="mb-4">
+                        <label class="form-label"><strong>Boutique de destination *</strong></label>
+                        <select class="form-select" name="boutique_destination" required>
+                            <option value="">-- Sélectionner --</option>
+                            {% for btq in autres_boutiques %}
+                            <option value="{{ btq.id }}">{{ btq.nom }}{% if btq.ville %} - {{ btq.ville }}{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <!-- Compteur d'articles sélectionnés -->
+                    <div class="mb-4 p-3" style="background: rgba(255,255,255,0.15); border-radius: 10px;">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>Articles sélectionnés:</span>
+                            <strong id="selectedCount">0</strong>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>Quantité totale:</span>
+                            <strong id="totalQuantity">0</strong>
+                        </div>
+                    </div>
+                    
+                    <!-- Commentaire -->
+                    <div class="mb-4">
+                        <label class="form-label">Commentaire (optionnel)</label>
+                        <textarea class="form-control" name="commentaire" rows="2" 
+                                  placeholder="Note pour ce transfert..."></textarea>
+                    </div>
+                    
+                    <!-- Bouton de soumission -->
+                    <button type="submit" class="btn btn-light btn-lg w-100" id="btnSubmit" disabled>
+                        <i class="fas fa-truck"></i> Transférer
+                    </button>
+                    
+                    <small class="d-block text-center mt-3 opacity-75">
+                        <i class="fas fa-info-circle"></i> Le transfert sera effectué immédiatement.
+                    </small>
+                </div>
+            </div>
+            
+            <!-- Liste des articles -->
+            <div class="col-lg-8 order-lg-1">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-boxes"></i> Articles disponibles ({{ articles|length }})</h5>
+                        <div>
+                            <button type="button" class="btn btn-sm btn-select-all" id="selectAll">
+                                <i class="fas fa-check-double"></i> Tout
+                            </button>
+                            <button type="button" class="btn btn-sm btn-select-all ms-1" id="deselectAll">
+                                <i class="fas fa-times"></i> Aucun
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Recherche -->
+                        <div class="position-relative mb-3">
+                            <i class="fas fa-search search-icon"></i>
+                            <input type="text" class="form-control search-box" id="searchArticle" 
+                                   placeholder="Rechercher un article...">
+                        </div>
+                        
+                        <!-- Liste des articles -->
+                        <div id="articlesList">
+                            {% for article in articles %}
+                            <div class="article-select-card" data-article-id="{{ article.id }}" 
+                                 data-article-name="{{ article.nom|lower }}">
+                                <div class="row align-items-center">
+                                    <div class="col-auto">
+                                        <input type="checkbox" class="article-checkbox" 
+                                               name="articles_selectionnes" value="{{ article.id }}"
+                                               id="article_{{ article.id }}">
+                                    </div>
+                                    <div class="col">
+                                        <label for="article_{{ article.id }}" class="mb-0 fw-bold" style="cursor: pointer;">
+                                            {{ article.nom }}
+                                        </label>
+                                        <br>
+                                        <small class="text-muted">
+                                            <code>{{ article.code }}</code>
+                                            {% if article.categorie %} • {{ article.categorie.nom }}{% endif %}
+                                            • {{ article.prix_vente|floatformat:0 }} {{ article.devise }}
+                                        </small>
+                                    </div>
+                                    <div class="col-auto text-center">
+                                        <span class="stock-badge {% if article.quantite_stock <= 5 %}stock-bas{% else %}stock-ok{% endif %}">
+                                            {{ article.quantite_stock }} en stock
+                                        </span>
+                                    </div>
+                                    <div class="col-auto">
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">Qté</span>
+                                            <input type="number" class="form-control quantite-input" 
+                                                   name="quantite_{{ article.id }}" 
+                                                   min="1" max="{{ article.quantite_stock }}" 
+                                                   value="1" disabled>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const checkboxes = document.querySelectorAll('.article-checkbox');
+    const selectedCountEl = document.getElementById('selectedCount');
+    const totalQuantityEl = document.getElementById('totalQuantity');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const searchInput = document.getElementById('searchArticle');
+    
+    if (!checkboxes.length) return;
+    
+    // Fonction pour mettre à jour le résumé
+    function updateSummary() {
+        let selectedCount = 0;
+        let totalQuantity = 0;
+        
+        checkboxes.forEach(cb => {
+            if (cb.checked) {
+                selectedCount++;
+                const articleId = cb.value;
+                const qtyInput = document.querySelector(`input[name="quantite_${articleId}"]`);
+                totalQuantity += parseInt(qtyInput.value) || 0;
+            }
+        });
+        
+        selectedCountEl.textContent = selectedCount;
+        totalQuantityEl.textContent = totalQuantity;
+        btnSubmit.disabled = selectedCount === 0;
+    }
+    
+    // Gérer la sélection des articles
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', function() {
+            const card = this.closest('.article-select-card');
+            const qtyInput = card.querySelector('.quantite-input');
+            
+            if (this.checked) {
+                card.classList.add('selected');
+                qtyInput.disabled = false;
+            } else {
+                card.classList.remove('selected');
+                qtyInput.disabled = true;
+            }
+            
+            updateSummary();
+        });
+    });
+    
+    // Gérer les changements de quantité
+    document.querySelectorAll('.quantite-input').forEach(input => {
+        input.addEventListener('change', updateSummary);
+        input.addEventListener('input', updateSummary);
+    });
+    
+    // Tout sélectionner
+    document.getElementById('selectAll').addEventListener('click', function() {
+        document.querySelectorAll('.article-select-card:not([style*="display: none"]) .article-checkbox').forEach(cb => {
+            cb.checked = true;
+            const card = cb.closest('.article-select-card');
+            card.classList.add('selected');
+            card.querySelector('.quantite-input').disabled = false;
+        });
+        updateSummary();
+    });
+    
+    // Tout désélectionner
+    document.getElementById('deselectAll').addEventListener('click', function() {
+        checkboxes.forEach(cb => {
+            cb.checked = false;
+            const card = cb.closest('.article-select-card');
+            card.classList.remove('selected');
+            card.querySelector('.quantite-input').disabled = true;
+        });
+        updateSummary();
+    });
+    
+    // Recherche d'articles
+    searchInput.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        
+        document.querySelectorAll('.article-select-card').forEach(card => {
+            const articleName = card.dataset.articleName;
+            if (articleName.includes(searchTerm)) {
+                card.style.display = 'block';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    });
+    
+    // Clic sur la carte pour cocher/décocher
+    document.querySelectorAll('.article-select-card').forEach(card => {
+        card.addEventListener('click', function(e) {
+            if (e.target.tagName === 'INPUT') return;
+            
+            const checkbox = this.querySelector('.article-checkbox');
+            checkbox.checked = !checkbox.checked;
+            checkbox.dispatchEvent(new Event('change'));
+        });
+    });
+});
+</script>
+{% endblock %}

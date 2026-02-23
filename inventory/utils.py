@@ -241,3 +241,99 @@ def update_stock_by_article_id(article_id, quantite, type_mouvement="VENTE", ref
     except Exception as e:
         logger.error(f"Erreur lors de la mise à jour du stock: {str(e)}")
         return False, f"Erreur lors de la mise à jour du stock: {str(e)}", None
+
+
+# =============================================
+# CAPTURE DES ERREURS DE TRANSACTION
+# =============================================
+import traceback
+
+def capturer_erreur_transaction(
+    request=None,
+    boutique=None,
+    commercant=None,
+    client_maui=None,
+    type_erreur='VENTE',
+    gravite='ERROR',
+    message='',
+    exception=None,
+    donnees_contexte=None
+):
+    """
+    Capture et enregistre une erreur de transaction pour le suivi.
+    
+    Args:
+        request: Objet HttpRequest (optionnel)
+        boutique: Instance Boutique où l'erreur s'est produite
+        commercant: Instance ProfilCommercant
+        client_maui: Instance Client MAUI (pour les erreurs API)
+        type_erreur: 'VENTE', 'PAIEMENT', 'STOCK', 'SYNC', 'API', 'AUTRE'
+        gravite: 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
+        message: Message d'erreur principal
+        exception: Exception Python capturée
+        donnees_contexte: Dict avec les données de contexte (panier, etc.)
+    
+    Returns:
+        ErreurTransaction instance ou None si échec
+    """
+    try:
+        from .models import ErreurTransaction
+        
+        # Extraire les détails de l'exception
+        details = ''
+        if exception:
+            details = ''.join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+            if not message:
+                message = str(exception)
+        
+        # Extraire les infos de la requête
+        url_requete = ''
+        methode_requete = ''
+        adresse_ip = None
+        user_agent = ''
+        utilisateur = None
+        
+        if request:
+            url_requete = request.build_absolute_uri() if hasattr(request, 'build_absolute_uri') else str(request.path)
+            methode_requete = request.method if hasattr(request, 'method') else ''
+            user_agent = request.META.get('HTTP_USER_AGENT', '')[:500] if hasattr(request, 'META') else ''
+            
+            # Extraire l'IP
+            x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+            if x_forwarded_for:
+                adresse_ip = x_forwarded_for.split(',')[0].strip()
+            else:
+                adresse_ip = request.META.get('REMOTE_ADDR')
+            
+            # Utilisateur connecté
+            if hasattr(request, 'user') and request.user.is_authenticated:
+                utilisateur = request.user
+                
+                # Essayer de récupérer le commerçant si pas fourni
+                if not commercant and hasattr(request.user, 'commercant'):
+                    commercant = request.user.commercant
+        
+        # Créer l'enregistrement
+        erreur = ErreurTransaction.objects.create(
+            boutique=boutique,
+            commercant=commercant,
+            utilisateur=utilisateur,
+            client_maui=client_maui,
+            type_erreur=type_erreur,
+            gravite=gravite,
+            message=message[:1000] if message else 'Erreur non spécifiée',
+            details=details,
+            donnees_contexte=donnees_contexte or {},
+            url_requete=url_requete[:500],
+            methode_requete=methode_requete[:10],
+            adresse_ip=adresse_ip,
+            user_agent=user_agent
+        )
+        
+        logger.warning(f"[ErreurTransaction] {gravite} - {type_erreur} - Boutique: {boutique} - {message[:100]}")
+        
+        return erreur
+        
+    except Exception as e:
+        logger.error(f"Impossible de capturer l'erreur de transaction: {str(e)}")
+        return None

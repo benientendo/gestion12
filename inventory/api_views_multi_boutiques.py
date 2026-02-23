@@ -16,6 +16,7 @@ from django.utils.dateparse import parse_datetime
 from .models_multi_commercants import Boutique, TerminalMaui, SessionTerminalMaui
 from .models_modifications import Article, Categorie, Vente, LigneVente, MouvementStock
 from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer
+from .utils import capturer_erreur_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -497,6 +498,23 @@ class VenteBoutiqueViewSet(viewsets.ModelViewSet):
                 
         except Exception as e:
             logger.error(f"Erreur lors de la finalisation de vente: {str(e)}")
+            
+            # Capturer l'erreur pour le suivi administrateur
+            capturer_erreur_transaction(
+                request=request,
+                boutique=boutique if 'boutique' in locals() else None,
+                client_maui=terminal if 'terminal' in locals() else None,
+                type_erreur='VENTE',
+                gravite='ERROR',
+                message=f"Erreur lors de la finalisation de vente: {str(e)}",
+                exception=e,
+                donnees_contexte={
+                    'lignes': request.data.get('lignes', []),
+                    'montant_total': request.data.get('montant_total'),
+                    'mode_paiement': request.data.get('mode_paiement'),
+                }
+            )
+            
             return Response({
                 'success': False,
                 'error': f'Erreur lors de la finalisation: {str(e)}'
