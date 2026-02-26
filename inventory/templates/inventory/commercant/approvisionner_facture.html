@@ -40,7 +40,9 @@
     .table-articles { width: 100%; font-size: .88rem; border-collapse: collapse; }
     .table-articles thead th { background: #f8f9fa; padding: 7px 10px; border-bottom: 2px solid #dee2e6; font-weight: 600; color: #555; position: sticky; top: 0; font-size: .82rem; }
     .table-articles tbody td { padding: 6px 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
-    .table-articles tbody tr:hover { background: #f0f2ff; }
+    .table-articles tbody tr:hover { background: #f0f2ff; cursor: pointer; }
+    .table-articles tbody tr { transition: background 0.15s ease; }
+    .table-articles tbody tr:active { background: #e0e7ff; }
     .table-articles .text-end { text-align: right; }
     .table-articles .btn-sm { padding: 3px 8px; font-size: .78rem; }
     .table-articles-zone:empty::before { content: "Aucun article ajouté. Saisissez un article ci-dessus puis cliquez Ajouter ou appuyez sur Entrée."; display: block; text-align: center; padding: 24px; color: #999; font-style: italic; font-size: .88rem; }
@@ -984,7 +986,7 @@ function factRafraichirTableau() {
         var totalVente = a.quantite_unites * a.prix_vente;
         var typeLabel = a.type_quantite === 'CARTON' ? a.nombre_cartons + ' crt (' + a.quantite_unites + ' pcs)' : 'Unité';
         var prixAchat = a.prix_achat_unitaire;
-        html += '<tr>';
+        html += '<tr ondblclick="factEditerLigne(' + i + ')" title="Double-clic pour éditer">';
         html += '<td>' + (i + 1) + '</td>';
         html += '<td><strong id="nom_art_' + i + '">' + factEscapeHtml(a.nom) + '</strong>' + (a.article_id ? ' <span class="badge bg-success" style="font-size:.55rem;">existant</span>' : ' <span class="badge bg-warning text-dark" style="font-size:.55rem;">nouveau</span>') + ' <button type="button" class="btn btn-link btn-sm p-0 ms-1" onclick="factModifierNomArticle(' + i + ')" title="Modifier le nom" tabindex="-1"><i class="fas fa-pen" style="font-size:.65rem;color:#6c757d;"></i></button></td>';
         html += '<td>' + typeLabel + '</td>';
@@ -1010,6 +1012,63 @@ function factSupprimerArticle(index) {
         factMajResume();
         factSaveState();
     } catch(err) { console.error('Supprimer article error:', err); alert('Erreur suppression: ' + err.message); }
+}
+
+// Double-clic sur une ligne pour l'éditer dans le formulaire
+function factEditerLigne(index) {
+    try {
+        if (index < 0 || index >= factArticlesAjoutes.length) return;
+        var a = factArticlesAjoutes[index];
+        
+        // Remplir le formulaire avec les données de la ligne
+        getEl('art_nom').value = a.nom;
+        getEl('art_id').value = a.article_id || '';
+        getEl('art_code').value = a.code || '';
+        if (a.article_id) {
+            getEl('art_nom').classList.add('input-matched');
+        }
+        
+        // Catégorie
+        getEl('art_categorie').value = a.categorie_nom || '';
+        getEl('art_categorie_id').value = a.categorie_id || '';
+        getEl('art_categorie_nom').value = a.categorie_nom_custom || '';
+        if (a.categorie_id) {
+            getEl('art_categorie').classList.add('input-matched');
+        }
+        
+        // Type et champs carton
+        getEl('art_type').value = a.type_quantite || 'UNITE';
+        getEl('art_nb_cartons').value = a.nombre_cartons || 0;
+        getEl('art_pcs_carton').value = a.pieces_par_carton || 1;
+        getEl('art_pcs_sup').value = a.pieces_supplementaires || 0;
+        getEl('art_prix_carton').value = a.prix_achat_carton || 0;
+        
+        // Quantité et prix
+        getEl('art_qte').value = a.quantite_unites || 1;
+        getEl('art_prix_achat').value = a.prix_achat_unitaire || 0;
+        getEl('art_prix_vente').value = a.prix_vente || 0;
+        
+        // Mettre à jour l'indicateur de mode
+        updateModeIndicator();
+        
+        // Recalculer l'aperçu
+        calculerSaisie();
+        
+        // Supprimer la ligne de la liste
+        factArticlesAjoutes.splice(index, 1);
+        factRafraichirTableau();
+        factMajResume();
+        factSaveState();
+        
+        // Focus sur le premier champ modifiable (quantité)
+        getEl('art_qte').focus();
+        getEl('art_qte').select();
+        
+        // Feedback visuel
+        getEl('art_nom').classList.add('field-highlight');
+        setTimeout(function() { getEl('art_nom').classList.remove('field-highlight'); }, 500);
+        
+    } catch(err) { console.error('Editer ligne error:', err); alert('Erreur édition: ' + err.message); }
 }
 
 function factModifierNomArticle(index) {

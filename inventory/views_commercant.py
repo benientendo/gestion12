@@ -3986,10 +3986,14 @@ def modifier_article_depot(request, depot_id, article_id):
         categories_query |= Q(id=article.categorie_id)
     categories = Categorie.objects.filter(categories_query).distinct().order_by('nom')
     
+    # Récupérer le taux de change (priorité: dépôt > commerçant > défaut)
+    taux_dollar = depot.taux_dollar or commercant.taux_dollar or 2800
+    
     context = {
         'depot': depot,
         'article': article,
         'categories': categories,
+        'taux_dollar': taux_dollar,
     }
     
     return render(request, 'inventory/commercant/modifier_article_depot.html', context)
@@ -4963,13 +4967,171 @@ def detail_facture_depot(request, depot_id, facture_id):
     
     lignes = facture.lignes.select_related('article', 'categorie')
     
+    # Calculer le bénéfice pour chaque ligne
+    lignes_avec_benefice = []
+    total_benefice = Decimal('0')
+    total_achat = Decimal('0')
+    total_vente = Decimal('0')
+    
+    for ligne in lignes:
+        prix_achat = ligne.prix_achat_unitaire or Decimal('0')
+        prix_vente = ligne.prix_vente_unitaire or Decimal('0')
+        qte = ligne.quantite_unites or 0
+        
+        benefice_unitaire = prix_vente - prix_achat
+        benefice_total = benefice_unitaire * qte
+        achat_total = prix_achat * qte
+        vente_total = prix_vente * qte
+        
+        # Pourcentage de bénéfice (par rapport au prix d'achat)
+        if prix_achat > 0:
+            pourcentage = (benefice_unitaire / prix_achat) * 100
+        else:
+            pourcentage = Decimal('0')
+        
+        ligne.benefice_unitaire = benefice_unitaire
+        ligne.benefice_total = benefice_total
+        ligne.benefice_pourcentage = pourcentage
+        ligne.vente_total = vente_total
+        
+        lignes_avec_benefice.append(ligne)
+        total_benefice += benefice_total
+        total_achat += achat_total
+        total_vente += vente_total
+    
+    # Pourcentage global
+    if total_achat > 0:
+        pourcentage_global = (total_benefice / total_achat) * 100
+    else:
+        pourcentage_global = Decimal('0')
+    
     context = {
         'depot': depot,
         'facture': facture,
-        'lignes': lignes,
+        'lignes': lignes_avec_benefice,
+        'total_benefice': total_benefice,
+        'total_achat': total_achat,
+        'total_vente': total_vente,
+        'pourcentage_global': pourcentage_global,
     }
     
     return render(request, 'inventory/commercant/detail_facture_depot.html', context)
+
+
+@login_required
+@commercant_required
+def supprimer_facture_depot(request, depot_id, facture_id):
+    """
+    Supprimer une facture d'approvisionnement.
+    
+    ATTENTION: Cette action supprime uniquement la facture et ses lignes.
+    Le stock n'est PAS modifié (les articles restent en stock).
+    Pour ajuster le stock, utilisez l'inventaire ou les mouvements de stock.
+    """
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    # Vérifier si la facture existe (évite erreur 404 sur double soumission)
+    facture = FactureApprovisionnement.objects.filter(id=facture_id, depot=depot).first()
+    
+    if not facture:
+        # La facture n'existe pas ou a déjà été supprimée
+        messages.info(request, 'Cette facture a déjà été supprimée ou n\'existe pas.')
+        return redirect('inventory:liste_factures_depot', depot_id=depot_id)
+    
+    if request.method == 'POST':
+        numero = facture.numero_facture
+        
+        # Supprimer la facture (les lignes sont supprimées en cascade)
+        facture.delete()
+        
+        messages.success(request, f'La facture "{numero}" a été supprimée avec succès.')
+        return redirect('inventory:liste_factures_depot', depot_id=depot_id)
+    
+    # GET: afficher confirmation
+    return render(request, 'inventory/commercant/confirmer_suppression_facture.html', {
+        'depot': depot,
+        'facture': facture,
+    })
+
+
+@login_required
+@commercant_required
+def modifier_ligne_facture(request, depot_id, facture_id, ligne_id):
+    """
+    Modifier une ligne de facture d'approvisionnement.
+    
+    Note: Cette fonction modifie UNIQUEMENT la ligne de facture, pas l'article.
+    Une facture est un historique et doit refléter les prix au moment de l'achat.
+    """
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    facture = get_object_or_404(FactureApprovisionnement, id=facture_id, depot=depot)
+    ligne = get_object_or_404(LigneApprovisionnement, id=ligne_id, facture=facture)
+    
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Méthode non autorisée'}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        
+        # Récupérer et valider les nouvelles valeurs
+        quantite_unites = int(data.get('quantite_unites', ligne.quantite_unites) or 0)
+        prix_achat_unitaire = Decimal(str(data.get('prix_achat_unitaire', ligne.prix_achat_unitaire) or 0))
+        prix_vente_unitaire = Decimal(str(data.get('prix_vente_unitaire', ligne.prix_vente_unitaire) or 0))
+        
+        # Validation des données
+        if quantite_unites < 1:
+            return JsonResponse({'success': False, 'error': 'La quantité doit être supérieure à 0'}, status=400)
+        
+        if prix_achat_unitaire < 0:
+            return JsonResponse({'success': False, 'error': 'Le prix d\'achat ne peut pas être négatif'}, status=400)
+        
+        if prix_vente_unitaire < 0:
+            return JsonResponse({'success': False, 'error': 'Le prix de vente ne peut pas être négatif'}, status=400)
+        
+        # Transaction atomique pour garantir la cohérence des données
+        from django.db import transaction
+        with transaction.atomic():
+            # Mettre à jour la ligne de facture uniquement
+            ligne.quantite_unites = quantite_unites
+            ligne.prix_achat_unitaire = prix_achat_unitaire
+            ligne.prix_vente_unitaire = prix_vente_unitaire
+            ligne.prix_achat_total = quantite_unites * prix_achat_unitaire
+            ligne.save()
+            
+            # Recalculer le montant total de la facture
+            total = sum(l.prix_achat_total for l in facture.lignes.all())
+            facture.montant_total = total
+            facture.save()
+        
+        # Calculer le bénéfice pour l'affichage
+        benefice_total = (prix_vente_unitaire - prix_achat_unitaire) * quantite_unites
+        if prix_achat_unitaire > 0:
+            pourcentage = ((prix_vente_unitaire - prix_achat_unitaire) / prix_achat_unitaire) * 100
+        else:
+            pourcentage = Decimal('0')
+        
+        return JsonResponse({
+            'success': True,
+            'ligne': {
+                'id': ligne.id,
+                'quantite_unites': ligne.quantite_unites,
+                'prix_achat_unitaire': float(ligne.prix_achat_unitaire),
+                'prix_vente_unitaire': float(ligne.prix_vente_unitaire),
+                'prix_achat_total': float(ligne.prix_achat_total),
+                'benefice_total': float(benefice_total),
+                'benefice_pourcentage': float(pourcentage),
+            },
+            'facture_total': float(facture.montant_total)
+        })
+        
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Données JSON invalides'}, status=400)
+    except (ValueError, InvalidOperation) as e:
+        return JsonResponse({'success': False, 'error': f'Valeur invalide: {str(e)}'}, status=400)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'Erreur serveur: {str(e)}'}, status=500)
 
 
 @login_required

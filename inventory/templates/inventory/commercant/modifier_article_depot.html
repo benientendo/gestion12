@@ -1,5 +1,5 @@
 {% extends 'inventory/base.html' %}
-{% load static %}
+{% load static l10n %}
 
 {% block title %}Modifier {{ article.nom }} - {{ depot.nom }}{% endblock %}
 
@@ -88,6 +88,11 @@
                             </div>
                         </div>
                         
+                        <!-- Info taux de change -->
+                        <div class="alert alert-info py-2 mb-3">
+                            <i class="fas fa-exchange-alt"></i> <strong>Taux actuel:</strong> 1 USD = <span id="taux_display">{{ taux_dollar }}</span> FC
+                        </div>
+                        
                         <div class="row mb-3">
                             <div class="col-md-6">
                                 <label for="prix_achat" class="form-label">
@@ -95,7 +100,7 @@
                                 </label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" id="prix_achat" name="prix_achat" 
-                                           value="{{ article.prix_achat|floatformat:2 }}" step="0.01" min="0" required>
+                                           value="{{ article.prix_achat|unlocalize }}" step="0.01" min="0" required>
                                     <span class="input-group-text" id="symbol_achat">{% if article.devise == 'USD' %}${% else %}FC{% endif %}</span>
                                 </div>
                             </div>
@@ -105,7 +110,7 @@
                                 </label>
                                 <div class="input-group">
                                     <input type="number" class="form-control" id="prix_vente" name="prix_vente" 
-                                           value="{{ article.prix_vente|floatformat:2 }}" step="0.01" min="0" required>
+                                           value="{{ article.prix_vente|unlocalize }}" step="0.01" min="0" required>
                                     <span class="input-group-text" id="symbol_vente">{% if article.devise == 'USD' %}${% else %}FC{% endif %}</span>
                                 </div>
                             </div>
@@ -140,6 +145,9 @@
 </div>
 
 <script>
+// Taux de change disponible pour les calculs côté client
+const TAUX_DOLLAR = {{ taux_dollar }};
+
 function toggleDeviseLabels() {
     const devise = document.getElementById('devise').value;
     const isCDF = devise === 'CDF';

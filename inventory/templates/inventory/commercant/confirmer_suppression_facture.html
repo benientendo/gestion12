@@ -1,0 +1,75 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Supprimer Facture {{ facture.numero_facture }}{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Confirmer la suppression</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Attention :</strong> Cette action est irréversible.
+                    </div>
+                    
+                    <p class="mb-3">Êtes-vous sûr de vouloir supprimer la facture suivante ?</p>
+                    
+                    <div class="bg-light p-3 rounded mb-3">
+                        <div class="row">
+                            <div class="col-6">
+                                <small class="text-muted">N° Facture</small>
+                                <div class="fw-bold">{{ facture.numero_facture }}</div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">Date</small>
+                                <div class="fw-bold">{{ facture.date_facture|date:"d/m/Y" }}</div>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-6">
+                                <small class="text-muted">Fournisseur</small>
+                                <div class="fw-bold">
+                                    {% if facture.fournisseur %}{{ facture.fournisseur.nom }}{% else %}{{ facture.fournisseur_nom|default:"Non spécifié" }}{% endif %}
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <small class="text-muted">Montant</small>
+                                <div class="fw-bold text-primary">{{ facture.montant_total|floatformat:0 }} {{ facture.devise }}</div>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <small class="text-muted">Nombre d'articles</small>
+                            <div class="fw-bold">{{ facture.lignes.count }} article(s)</div>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info mb-3">
+                        <small>
+                            <i class="fas fa-box me-1"></i>
+                            <strong>Note :</strong> Le stock des articles ne sera pas modifié. 
+                            Pour ajuster le stock, utilisez l'inventaire ou les mouvements de stock.
+                        </small>
+                    </div>
+                    
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="d-flex gap-2">
+                            <a href="{% url 'inventory:detail_facture_depot' depot.id facture.id %}" class="btn btn-secondary flex-fill">
+                                <i class="fas fa-times me-1"></i>Annuler
+                            </a>
+                            <button type="submit" class="btn btn-danger flex-fill">
+                                <i class="fas fa-trash me-1"></i>Supprimer définitivement
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

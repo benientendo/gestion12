@@ -1,5 +1,5 @@
 {% extends 'inventory/base.html' %}
-{% load static %}
+{% load static number_filters %}
 
 {% block title %}Factures d'approvisionnement - {{ depot.nom }}{% endblock %}
 
@@ -92,11 +92,11 @@
         </div>
         <div class="stat-card">
             <div class="stat-label">Montant CDF</div>
-            <div class="stat-value" style="color:#198754;">{{ stats.total_montant_cdf|floatformat:0|default:"0" }} <small>FC</small></div>
+            <div class="stat-value" style="color:#198754;">{{ stats.total_montant_cdf|format_number|default:"0" }} <small>FC</small></div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Montant USD</div>
-            <div class="stat-value" style="color:#0d6efd;">{{ stats.total_montant_usd|floatformat:0|default:"0" }} <small>$</small></div>
+            <div class="stat-value" style="color:#0d6efd;">{{ stats.total_montant_usd|format_number|default:"0" }} <small>$</small></div>
         </div>
     </div>
 
@@ -110,7 +110,7 @@
                         <input type="text" class="form-control form-control-sm" id="q" name="q" value="{{ q }}"
                                placeholder="N° facture, fournisseur, article... ou question IA"
                                oninput="clearTimeout(window._st); window._st=setTimeout(function(){document.getElementById('searchForm').submit()},600);"
-                               onfocus="showIaSuggestions()" onblur="setTimeout(hideIaSuggestions,200)">
+                               onblur="setTimeout(hideIaSuggestions,200)">
                         <button type="button" class="btn-ia" onclick="toggleIaSuggestions()" title="Recherche intelligente">
                             <i class="fas fa-magic"></i>IA
                         </button>
@@ -231,7 +231,7 @@
                                 </span>
                             </td>
                             <td class="text-end montant {% if facture.devise == 'CDF' %}cdf{% else %}usd{% endif %}">
-                                {{ facture.montant_total|floatformat:0 }} {{ facture.devise }}
+                                {{ facture.montant_total|format_number }} {{ facture.devise }}
                             </td>
                             <td class="text-center" onclick="event.stopPropagation();">
                                 <a href="{% url 'inventory:detail_facture_depot' depot.id facture.id %}" class="btn btn-sm btn-outline-primary btn-voir">

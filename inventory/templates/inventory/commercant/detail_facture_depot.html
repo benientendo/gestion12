@@ -1,5 +1,5 @@
 {% extends 'inventory/base.html' %}
-{% load static %}
+{% load static number_filters %}
 
 {% block title %}Facture {{ facture.numero_facture }} - {{ depot.nom }}{% endblock %}
 
@@ -39,9 +39,12 @@
             <h2><i class="fas fa-file-invoice me-2"></i>Facture {{ facture.numero_facture }}</h2>
         </div>
         <div class="col-md-4 text-end">
-            <button class="btn btn-outline-primary" onclick="window.print()">
+            <button class="btn btn-outline-primary me-2" onclick="window.print()">
                 <i class="fas fa-print"></i> Imprimer
             </button>
+            <a href="{% url 'inventory:supprimer_facture_depot' depot.id facture.id %}" class="btn btn-outline-danger">
+                <i class="fas fa-trash"></i> Supprimer
+            </a>
         </div>
     </div>
 
@@ -75,7 +78,7 @@
             <div class="col-md-3">
                 <div class="info-item">
                     <div class="info-label">Montant Total</div>
-                    <div class="info-value">{{ facture.montant_total|floatformat:0 }} {{ facture.devise }}</div>
+                    <div class="info-value">{{ facture.montant_total|format_number }} {{ facture.devise }}</div>
                 </div>
             </div>
         </div>
@@ -98,46 +101,44 @@
                     <thead>
                         <tr>
                             <th>Article</th>
-                            <th>Catégorie</th>
-                            <th class="text-center">Type</th>
-                            <th class="text-center">Cartons</th>
-                            <th class="text-center">Pcs/Carton</th>
-                            <th class="text-center">Total Unités</th>
-                            <th class="text-end">Prix Achat/U</th>
-                            <th class="text-end">Prix Vente/U</th>
-                            <th class="text-end">Total</th>
+                            <th class="text-center">Qté</th>
+                            <th class="text-end">P. Achat</th>
+                            <th class="text-end">P. Vente</th>
+                            <th class="text-end">Total Achat</th>
+                            <th class="text-end text-success">Bénéfice</th>
+                            <th class="text-end text-success">%</th>
+                            <th class="text-center">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for ligne in lignes %}
-                        <tr class="{% if ligne.type_quantite == 'CARTON' %}ligne-carton{% endif %}">
+                        <tr id="ligne-{{ ligne.id }}" class="{% if ligne.type_quantite == 'CARTON' %}ligne-carton{% endif %}">
                             <td>
                                 <strong>{{ ligne.article.nom }}</strong>
                                 <br><small class="text-muted">{{ ligne.article.code }}</small>
                             </td>
-                            <td>{{ ligne.categorie.nom|default:"-" }}</td>
+                            <td class="text-center"><strong id="qte-{{ ligne.id }}">{{ ligne.quantite_unites }}</strong></td>
+                            <td class="text-end" id="pa-{{ ligne.id }}">{{ ligne.prix_achat_unitaire|floatformat:2 }}</td>
+                            <td class="text-end" id="pv-{{ ligne.id }}">{{ ligne.prix_vente_unitaire|floatformat:2 }}</td>
+                            <td class="text-end" id="total-{{ ligne.id }}">{{ ligne.prix_achat_total|format_number }} {{ facture.devise }}</td>
+                            <td class="text-end text-success"><strong id="benef-{{ ligne.id }}">{{ ligne.benefice_total|format_number }} {{ facture.devise }}</strong></td>
+                            <td class="text-end {% if ligne.benefice_pourcentage >= 0 %}text-success{% else %}text-danger{% endif %}" id="pct-{{ ligne.id }}">{{ ligne.benefice_pourcentage|floatformat:1 }}%</td>
                             <td class="text-center">
-                                {% if ligne.type_quantite == 'CARTON' %}
-                                    <span class="badge bg-warning text-dark"><i class="fas fa-box"></i> Carton</span>
-                                {% else %}
-                                    <span class="badge bg-secondary">Unité</span>
-                                {% endif %}
+                                <button class="btn btn-sm btn-outline-primary" onclick="ouvrirModal({{ ligne.id }}, '{{ ligne.article.nom|escapejs }}', {{ ligne.quantite_unites }}, {{ ligne.prix_achat_unitaire }}, {{ ligne.prix_vente_unitaire }})">
+                                    <i class="fas fa-edit"></i>
+                                </button>
                             </td>
-                            <td class="text-center">{{ ligne.nombre_cartons|default:"-" }}</td>
-                            <td class="text-center">{{ ligne.pieces_par_carton|default:"-" }}</td>
-                            <td class="text-center"><strong>{{ ligne.quantite_unites }}</strong></td>
-                            <td class="text-end">{{ ligne.prix_achat_unitaire|floatformat:2 }}</td>
-                            <td class="text-end">{{ ligne.prix_vente_unitaire|floatformat:2 }}</td>
-                            <td class="text-end"><strong>{{ ligne.prix_achat_total|floatformat:0 }} {{ facture.devise }}</strong></td>
                         </tr>
                         {% endfor %}
                     </tbody>
                     <tfoot>
                         <tr class="table-primary">
-                            <td colspan="5"><strong>TOTAL</strong></td>
-                            <td class="text-center"><strong>{{ lignes|length }} articles</strong></td>
+                            <td colspan="2"><strong>TOTAL ({{ lignes|length }} articles)</strong></td>
                             <td colspan="2"></td>
-                            <td class="text-end"><strong>{{ facture.montant_total|floatformat:0 }} {{ facture.devise }}</strong></td>
+                            <td class="text-end" id="total-facture"><strong>{{ total_achat|format_number }} {{ facture.devise }}</strong></td>
+                            <td class="text-end text-success" id="total-benefice"><strong>{{ total_benefice|format_number }} {{ facture.devise }}</strong></td>
+                            <td class="text-end text-success" id="total-pct"><strong>{{ pourcentage_global|floatformat:1 }}%</strong></td>
+                            <td></td>
                         </tr>
                     </tfoot>
                 </table>
@@ -149,4 +150,137 @@
         <small>Enregistré le {{ facture.date_creation|date:"d/m/Y à H:i" }} par {{ facture.created_by|default:"Système" }}</small>
     </div>
 </div>
+
+<!-- Modal de modification -->
+<div class="modal fade" id="modalModifier" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-edit me-2"></i>Modifier l'article</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-ligne-id">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Article</label>
+                    <div id="edit-article-nom" class="form-control-plaintext"></div>
+                </div>
+                <div class="mb-3">
+                    <label for="edit-quantite" class="form-label">Quantité</label>
+                    <input type="number" class="form-control" id="edit-quantite" min="1">
+                </div>
+                <div class="mb-3">
+                    <label for="edit-prix-achat" class="form-label">Prix d'achat unitaire</label>
+                    <input type="number" class="form-control" id="edit-prix-achat" step="0.01" min="0">
+                </div>
+                <div class="mb-3">
+                    <label for="edit-prix-vente" class="form-label">Prix de vente unitaire</label>
+                    <input type="number" class="form-control" id="edit-prix-vente" step="0.01" min="0">
+                </div>
+                <div class="alert alert-info mb-0">
+                    <small><i class="fas fa-info-circle me-1"></i>Les prix de l'article seront également mis à jour.</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                <button type="button" class="btn btn-primary" onclick="sauvegarderModification()">
+                    <i class="fas fa-save me-1"></i>Enregistrer
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const DEPOT_ID = {{ depot.id }};
+const FACTURE_ID = {{ facture.id }};
+const DEVISE = '{{ facture.devise }}';
+const CSRF_TOKEN = '{{ csrf_token }}';
+
+function ouvrirModal(ligneId, articleNom, quantite, prixAchat, prixVente) {
+    document.getElementById('edit-ligne-id').value = ligneId;
+    document.getElementById('edit-article-nom').textContent = articleNom;
+    document.getElementById('edit-quantite').value = quantite;
+    document.getElementById('edit-prix-achat').value = prixAchat;
+    document.getElementById('edit-prix-vente').value = prixVente;
+    
+    const modal = new bootstrap.Modal(document.getElementById('modalModifier'));
+    modal.show();
+}
+
+async function sauvegarderModification() {
+    const ligneId = document.getElementById('edit-ligne-id').value;
+    const quantite = parseInt(document.getElementById('edit-quantite').value);
+    const prixAchat = parseFloat(document.getElementById('edit-prix-achat').value);
+    const prixVente = parseFloat(document.getElementById('edit-prix-vente').value);
+    
+    // Validation côté client
+    if (!quantite || quantite < 1) {
+        afficherErreur('La quantité doit être supérieure à 0');
+        return;
+    }
+    if (isNaN(prixAchat) || prixAchat < 0) {
+        afficherErreur('Le prix d\'achat ne peut pas être négatif');
+        return;
+    }
+    if (isNaN(prixVente) || prixVente < 0) {
+        afficherErreur('Le prix de vente ne peut pas être négatif');
+        return;
+    }
+    
+    // Désactiver le bouton pendant la requête
+    const btnSave = document.querySelector('#modalModifier .btn-primary');
+    const originalText = btnSave.innerHTML;
+    btnSave.disabled = true;
+    btnSave.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Enregistrement...';
+    
+    try {
+        const response = await fetch(`/commercant/depots/${DEPOT_ID}/factures/${FACTURE_ID}/modifier-ligne/${ligneId}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': CSRF_TOKEN
+            },
+            body: JSON.stringify({
+                quantite_unites: quantite,
+                prix_achat_unitaire: prixAchat,
+                prix_vente_unitaire: prixVente
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Fermer le modal et recharger pour afficher les nouvelles valeurs
+            bootstrap.Modal.getInstance(document.getElementById('modalModifier')).hide();
+            location.reload();
+        } else {
+            afficherErreur(data.error || 'Erreur inconnue');
+        }
+    } catch (error) {
+        afficherErreur('Erreur de connexion: ' + error.message);
+    } finally {
+        btnSave.disabled = false;
+        btnSave.innerHTML = originalText;
+    }
+}
+
+function afficherErreur(message) {
+    // Afficher l'erreur dans le modal
+    let alertDiv = document.getElementById('modal-error');
+    if (!alertDiv) {
+        alertDiv = document.createElement('div');
+        alertDiv.id = 'modal-error';
+        alertDiv.className = 'alert alert-danger mt-2';
+        document.querySelector('#modalModifier .modal-body').prepend(alertDiv);
+    }
+    alertDiv.textContent = message;
+    alertDiv.style.display = 'block';
+    
+    // Masquer après 5 secondes
+    setTimeout(() => { alertDiv.style.display = 'none'; }, 5000);
+}
+</script>
 {% endblock %}
