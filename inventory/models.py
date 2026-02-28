@@ -606,7 +606,9 @@ class Boutique(models.Model):
                                  help_text="Commerçant propriétaire de cette boutique")
     
     # Type et catégorie de commerce
-    type_commerce = models.CharField(max_length=50, choices=[
+    TYPE_COMMERCE_CHOICES = [
+        ('GENERAL', 'Commerce Général'),
+        ('MOBILE_MONEY', 'Mobile Money'),
         ('DEPOT', 'Dépôt central'),
         ('PHARMACIE', 'Pharmacie'),
         ('ALIMENTATION', 'Alimentation générale'),
@@ -622,7 +624,8 @@ class Boutique(models.Model):
         ('QUINCAILLERIE', 'Quincaillerie'),
         ('SERVICES_BUREAU', 'Services bureautiques / Cybercafé'),
         ('AUTRE', 'Autre')
-    ], default='BOUTIQUE')
+    ]
+    type_commerce = models.CharField(max_length=50, choices=TYPE_COMMERCE_CHOICES, default='GENERAL')
     
     # Informations de localisation
     adresse = models.TextField(blank=True, help_text="Adresse de la boutique")
@@ -1345,4 +1348,223 @@ class ErreurTransaction(models.Model):
         verbose_name = "Erreur de transaction"
         verbose_name_plural = "Erreurs de transactions"
         ordering = ['-date_creation']
+
+
+class TransactionMobileMoney(models.Model):
+    """
+    Modèle pour les transactions Mobile Money (Dépôt, Retrait, Transfert)
+    """
+    
+    TYPE_OPERATION_CHOICES = [
+        ('DEPOT', 'Dépôt'),
+        ('RETRAIT', 'Retrait'),
+        ('TRANSFERT', 'Transfert'),
+        ('PAIEMENT', 'Paiement facture'),
+    ]
+    
+    OPERATEUR_CHOICES = [
+        ('AIRTEL', 'Airtel Money'),
+        ('VODACOM', 'M-Pesa (Vodacom)'),
+        ('ORANGE', 'Orange Money'),
+        ('AFRICELL', 'Africell Money'),
+        ('AFRIMONEY', 'Afrimoney'),
+    ]
+    
+    STATUT_CHOICES = [
+        ('EN_ATTENTE', 'En attente'),
+        ('CONFIRME', 'Confirmé'),
+        ('ANNULE', 'Annulé'),
+        ('ECHOUE', 'Échoué'),
+    ]
+    
+    # Relation avec la boutique Mobile Money
+    boutique = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name='transactions_mobile_money')
+    
+    # Type d'opération
+    type_operation = models.CharField(max_length=20, choices=TYPE_OPERATION_CHOICES)
+    operateur = models.CharField(max_length=20, choices=OPERATEUR_CHOICES)
+    
+    # Informations client
+    numero_telephone_client = models.CharField(max_length=20, help_text="Numéro de téléphone du client")
+    nom_client = models.CharField(max_length=100, blank=True, help_text="Nom du client (optionnel)")
+    
+    # Pour les transferts
+    numero_destinataire = models.CharField(max_length=20, blank=True, help_text="Numéro du destinataire (pour transferts)")
+    
+    # Montants
+    montant = models.DecimalField(max_digits=15, decimal_places=2, help_text="Montant de la transaction")
+    commission = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Commission perçue")
+    montant_net = models.DecimalField(max_digits=15, decimal_places=2, help_text="Montant net (après commission)")
+    
+    # Référence et statut
+    reference_operateur = models.CharField(max_length=100, blank=True, help_text="Code de confirmation de l'opérateur")
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_ATTENTE')
+    
+    # Métadonnées
+    date_transaction = models.DateTimeField(auto_now_add=True)
+    date_confirmation = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    
+    # Utilisateur qui a effectué la transaction
+    effectue_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    def save(self, *args, **kwargs):
+        # Calculer le montant net si non défini
+        if not self.montant_net:
+            self.montant_net = self.montant - self.commission
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.get_type_operation_display()} - {self.numero_telephone_client} - {self.montant} FC"
+    
+    class Meta:
+        verbose_name = "Transaction Mobile Money"
+        verbose_name_plural = "Transactions Mobile Money"
+        ordering = ['-date_transaction']
+
+
+class VenteCredit(models.Model):
+    """
+    Modèle pour la vente de crédit téléphonique (gros et détail)
+    """
+    
+    TYPE_VENTE_CHOICES = [
+        ('DETAIL', 'Détail'),
+        ('GROS', 'Gros'),
+    ]
+    
+    OPERATEUR_CHOICES = [
+        ('AIRTEL', 'Airtel'),
+        ('VODACOM', 'Vodacom'),
+        ('ORANGE', 'Orange'),
+        ('AFRICELL', 'Africell'),
+        ('AFRIMONEY', 'Afrimoney'),
+    ]
+    
+    # Relation avec la boutique
+    boutique = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name='ventes_credit')
+    
+    # Type de vente
+    type_vente = models.CharField(max_length=10, choices=TYPE_VENTE_CHOICES, default='DETAIL')
+    operateur = models.CharField(max_length=20, choices=OPERATEUR_CHOICES)
+    
+    # Informations client (pour gros)
+    numero_telephone_client = models.CharField(max_length=20, blank=True, help_text="Numéro du client (pour gros)")
+    nom_client = models.CharField(max_length=100, blank=True, help_text="Nom du client (pour gros)")
+    
+    # Unités vendues (montant en FC)
+    unites_vendues = models.DecimalField(max_digits=15, decimal_places=2, default=0, help_text="Unités de crédit vendues (en FC)")
+    montant_recu = models.DecimalField(max_digits=15, decimal_places=2, default=0, help_text="Montant reçu du client")
+    benefice = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Bénéfice réalisé")
+    
+    # Métadonnées
+    date_vente = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True)
+    effectue_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        # Calculer le bénéfice
+        self.benefice = self.montant_recu - self.unites_vendues
+        super().save(*args, **kwargs)
+        # Déduire du stock seulement pour une nouvelle vente
+        if is_new:
+            try:
+                stock = StockCredit.objects.get(boutique=self.boutique, operateur=self.operateur)
+                stock.unites_disponibles -= self.unites_vendues
+                stock.save()
+            except StockCredit.DoesNotExist:
+                pass
+    
+    def __str__(self):
+        return f"Crédit {self.get_operateur_display()} - {self.unites_vendues} FC ({self.get_type_vente_display()})"
+    
+    class Meta:
+        verbose_name = "Vente de crédit"
+        verbose_name_plural = "Ventes de crédit"
+        ordering = ['-date_vente']
+
+
+class StockCredit(models.Model):
+    """
+    Modèle pour gérer le stock d'unités de crédit par opérateur (envoyé par flash)
+    """
+    
+    OPERATEUR_CHOICES = VenteCredit.OPERATEUR_CHOICES
+    
+    boutique = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name='stocks_credit')
+    operateur = models.CharField(max_length=20, choices=OPERATEUR_CHOICES)
+    
+    # Stock en unités (montant total disponible en FC)
+    unites_disponibles = models.DecimalField(max_digits=15, decimal_places=2, default=0, help_text="Unités de crédit disponibles (en FC)")
+    seuil_alerte = models.DecimalField(max_digits=15, decimal_places=2, default=50000, help_text="Seuil d'alerte stock bas")
+    
+    # Suivi des coûts
+    cout_total_achats = models.DecimalField(max_digits=15, decimal_places=2, default=0, help_text="Coût total des achats")
+    
+    # Dernière mise à jour
+    date_mise_a_jour = models.DateTimeField(auto_now=True)
+    
+    @property
+    def est_bas(self):
+        return self.unites_disponibles <= self.seuil_alerte
+    
+    def __str__(self):
+        return f"Stock {self.get_operateur_display()} - {self.boutique.nom}: {self.unites_disponibles} unités"
+    
+    class Meta:
+        verbose_name = "Stock de crédit"
+        verbose_name_plural = "Stocks de crédit"
+        unique_together = ['boutique', 'operateur']
+
+
+class ApprovisionnementCredit(models.Model):
+    """
+    Modèle pour l'approvisionnement en unités de crédit (flash)
+    """
+    
+    OPERATEUR_CHOICES = VenteCredit.OPERATEUR_CHOICES
+    
+    boutique = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name='approvisionnements_credit')
+    operateur = models.CharField(max_length=20, choices=OPERATEUR_CHOICES)
+    
+    # Unités approvisionnées (montant en FC)
+    unites = models.DecimalField(max_digits=15, decimal_places=2, default=0, help_text="Unités envoyées par flash (en FC)")
+    cout_achat = models.DecimalField(max_digits=15, decimal_places=2, help_text="Coût d'achat des unités")
+    
+    # Fournisseur/Source
+    fournisseur = models.CharField(max_length=100, blank=True, help_text="Source du flash")
+    reference = models.CharField(max_length=100, blank=True, help_text="Référence de la transaction")
+    
+    # Métadonnées
+    date_approvisionnement = models.DateTimeField(auto_now_add=True)
+    notes = models.TextField(blank=True)
+    effectue_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    @property
+    def marge(self):
+        """Marge potentielle sur cet approvisionnement"""
+        return self.unites - self.cout_achat
+    
+    def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        # Mettre à jour le stock seulement pour un nouvel approvisionnement
+        if is_new:
+            stock, created = StockCredit.objects.get_or_create(
+                boutique=self.boutique,
+                operateur=self.operateur,
+                defaults={'unites_disponibles': 0, 'cout_total_achats': 0}
+            )
+            stock.unites_disponibles += self.unites
+            stock.cout_total_achats += self.cout_achat
+            stock.save()
+    
+    def __str__(self):
+        return f"Flash {self.get_operateur_display()} - {self.unites} unités"
+    
+    class Meta:
+        verbose_name = "Approvisionnement crédit"
+        verbose_name_plural = "Approvisionnements crédit"
+        ordering = ['-date_approvisionnement']
 

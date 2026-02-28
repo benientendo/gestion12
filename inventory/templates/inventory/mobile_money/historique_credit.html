@@ -1,0 +1,137 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Historique Ventes Crédit - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-history"></i> Historique des Ventes de Crédit</h2>
+        <div>
+            <a href="{% url 'inventory:mobile_money_credit_dashboard' boutique.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Retour
+            </a>
+            <a href="{% url 'inventory:mobile_money_vendre_credit' boutique.id %}" class="btn btn-success">
+                <i class="fas fa-plus"></i> Vendre
+            </a>
+        </div>
+    </div>
+
+    <!-- Filtres -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-2">
+                    <label class="form-label">Type</label>
+                    <select name="type_vente" class="form-select form-select-sm">
+                        <option value="">Tous</option>
+                        <option value="DETAIL" {% if filtres.type_vente == 'DETAIL' %}selected{% endif %}>Détail</option>
+                        <option value="GROS" {% if filtres.type_vente == 'GROS' %}selected{% endif %}>Gros</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Opérateur</label>
+                    <select name="operateur" class="form-select form-select-sm">
+                        <option value="">Tous</option>
+                        {% for code, label in operateurs %}
+                        <option value="{{ code }}" {% if filtres.operateur == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Date début</label>
+                    <input type="date" name="date_debut" class="form-control form-control-sm" value="{{ filtres.date_debut }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Date fin</label>
+                    <input type="date" name="date_fin" class="form-control form-control-sm" value="{{ filtres.date_fin }}">
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary btn-sm w-100">Filtrer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Totaux -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <h4>{{ totaux.count|default:0 }}</h4>
+                    <small>Ventes</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <h4>{{ totaux.total_vente|floatformat:0|default:0 }}</h4>
+                    <small>Montant Vendu (FC)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body text-center">
+                    <h4>{{ totaux.total_achat|floatformat:0|default:0 }}</h4>
+                    <small>Coût Achat (FC)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body text-center">
+                    <h4>{{ totaux.total_benefice|floatformat:0|default:0 }}</h4>
+                    <small>Bénéfice (FC)</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Liste -->
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Opérateur</th>
+                        <th>Client</th>
+                        <th class="text-end">Vente</th>
+                        <th class="text-end">Achat</th>
+                        <th class="text-end text-success">Bénéfice</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for v in ventes %}
+                    <tr>
+                        <td>{{ v.date_vente|date:"d/m/Y H:i" }}</td>
+                        <td>
+                            {% if v.type_vente == 'DETAIL' %}
+                            <span class="badge bg-primary">Détail</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark">Gros</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ v.get_operateur_display }}</td>
+                        <td>
+                            {{ v.numero_telephone_client|default:"-" }}
+                            {% if v.nom_client %}<br><small class="text-muted">{{ v.nom_client }}</small>{% endif %}
+                        </td>
+                        <td class="text-end">{{ v.montant_vente|floatformat:0 }}</td>
+                        <td class="text-end">{{ v.montant_achat|floatformat:0 }}</td>
+                        <td class="text-end text-success fw-bold">{{ v.benefice|floatformat:0 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center py-4 text-muted">Aucune vente trouvée</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock, VarianteArticle
+from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock, VarianteArticle, TransactionMobileMoney, VenteCredit, StockCredit, ApprovisionnementCredit
 
 @admin.register(Categorie)
 class CategorieAdmin(admin.ModelAdmin):
@@ -223,4 +223,60 @@ class NotificationStockAdmin(admin.ModelAdmin):
             date_lecture=None
         )
         self.message_user(request, f"{count} notification(s) marquée(s) comme non lue(s).")
+
+
+@admin.register(TransactionMobileMoney)
+class TransactionMobileMoneyAdmin(admin.ModelAdmin):
+    list_display = ('type_operation', 'operateur', 'numero_telephone_client', 'montant', 'commission', 'statut', 'date_transaction', 'boutique')
+    list_filter = ('type_operation', 'operateur', 'statut', 'boutique', 'date_transaction')
+    search_fields = ('numero_telephone_client', 'nom_client', 'reference_operateur', 'numero_destinataire')
+    readonly_fields = ('date_transaction', 'montant_net')
+    date_hierarchy = 'date_transaction'
+    
+    fieldsets = (
+        ('Boutique', {
+            'fields': ('boutique',)
+        }),
+        ('Opération', {
+            'fields': ('type_operation', 'operateur')
+        }),
+        ('Client', {
+            'fields': ('numero_telephone_client', 'nom_client', 'numero_destinataire')
+        }),
+        ('Montants', {
+            'fields': ('montant', 'commission', 'montant_net')
+        }),
+        ('Statut', {
+            'fields': ('statut', 'reference_operateur')
+        }),
+        ('Métadonnées', {
+            'fields': ('effectue_par', 'notes', 'date_transaction', 'date_confirmation'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(VenteCredit)
+class VenteCreditAdmin(admin.ModelAdmin):
+    list_display = ('type_vente', 'operateur', 'unites_vendues', 'montant_recu', 'benefice', 'date_vente', 'boutique')
+    list_filter = ('type_vente', 'operateur', 'boutique', 'date_vente')
+    search_fields = ('numero_telephone_client', 'nom_client')
+    readonly_fields = ('benefice', 'date_vente')
+    date_hierarchy = 'date_vente'
+
+
+@admin.register(StockCredit)
+class StockCreditAdmin(admin.ModelAdmin):
+    list_display = ('boutique', 'operateur', 'unites_disponibles', 'seuil_alerte', 'date_mise_a_jour')
+    list_filter = ('operateur', 'boutique')
+    readonly_fields = ('date_mise_a_jour',)
+
+
+@admin.register(ApprovisionnementCredit)
+class ApprovisionnementCreditAdmin(admin.ModelAdmin):
+    list_display = ('operateur', 'unites', 'cout_achat', 'fournisseur', 'date_approvisionnement', 'boutique')
+    list_filter = ('operateur', 'boutique', 'date_approvisionnement')
+    search_fields = ('fournisseur', 'reference')
+    readonly_fields = ('date_approvisionnement',)
+    date_hierarchy = 'date_approvisionnement'
 

@@ -2,6 +2,7 @@ from django.urls import path
 from . import views
 from . import admin_views
 from . import views_commercant
+from . import views_mobile_money
 from . import views_bilan
 
 app_name = 'inventory'
@@ -175,4 +176,17 @@ urlpatterns = [
     path('api/deepseek/suggest-article/', views.deepseek_suggest_article, name='deepseek_suggest_article'),
     path('api/deepseek/analyze-price/', views.deepseek_analyze_price, name='deepseek_analyze_price'),
     path('api/deepseek/suggest-category/', views.deepseek_suggest_category, name='deepseek_suggest_category'),
+    
+    # ===== MOBILE MONEY =====
+    # Dashboard et transactions
+    path('mobile-money/<int:boutique_id>/', views_mobile_money.dashboard_mobile_money, name='mobile_money_dashboard'),
+    path('mobile-money/<int:boutique_id>/transaction/', views_mobile_money.nouvelle_transaction, name='mobile_money_nouvelle_transaction'),
+    path('mobile-money/<int:boutique_id>/transactions/', views_mobile_money.liste_transactions, name='mobile_money_transactions'),
+    path('mobile-money/<int:boutique_id>/rapport/', views_mobile_money.rapport_mobile_money, name='mobile_money_rapport'),
+    
+    # Vente de crédit
+    path('mobile-money/<int:boutique_id>/credit/', views_mobile_money.dashboard_credit, name='mobile_money_credit_dashboard'),
+    path('mobile-money/<int:boutique_id>/credit/vendre/', views_mobile_money.vendre_credit, name='mobile_money_vendre_credit'),
+    path('mobile-money/<int:boutique_id>/credit/approvisionner/', views_mobile_money.approvisionner_credit, name='mobile_money_approvisionner_credit'),
+    path('mobile-money/<int:boutique_id>/credit/historique/', views_mobile_money.historique_credit, name='mobile_money_historique_credit'),
 ]

@@ -152,6 +152,11 @@
                             <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-outline-primary" title="Détails">
                                 <i class="fas fa-info-circle"></i>
                             </a>
+                            {% if boutique.type_commerce == 'MOBILE_MONEY' %}
+                            <a href="{% url 'inventory:mobile_money_dashboard' boutique.id %}" class="btn btn-outline-warning" title="Mobile Money">
+                                <i class="fas fa-mobile-alt"></i>
+                            </a>
+                            {% endif %}
                             {% endif %}
                             <a href="{% url 'inventory:modifier_boutique' boutique.id %}" class="btn btn-outline-warning" title="Modifier">
                                 <i class="fas fa-edit"></i>

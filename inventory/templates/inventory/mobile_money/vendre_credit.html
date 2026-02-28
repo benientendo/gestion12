@@ -1,0 +1,75 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Vendre Crédit - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h4><i class="fas fa-sim-card"></i> Vendre du Crédit</h4>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label">Type de vente</label>
+                            <select name="type_vente" class="form-select" required>
+                                <option value="DETAIL">Détail</option>
+                                <option value="GROS">Gros</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Opérateur</label>
+                            <select name="operateur" class="form-select" required>
+                                {% for code, label in operateurs %}
+                                <option value="{{ code }}">{{ label }} {% if stocks %}(Stock: {{ stocks|default_if_none:0 }} FC){% endif %}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Montant Vente (FC)</label>
+                                <input type="number" name="montant_vente" class="form-control" min="0" step="100" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Coût Achat (FC)</label>
+                                <input type="number" name="montant_achat" class="form-control" min="0" step="100" required>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Numéro Client</label>
+                                <input type="tel" name="numero_client" class="form-control">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Nom Client</label>
+                                <input type="text" name="nom_client" class="form-control">
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Notes</label>
+                            <textarea name="notes" class="form-control" rows="2"></textarea>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'inventory:mobile_money_credit_dashboard' boutique.id %}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Retour
+                            </a>
+                            <button type="submit" class="btn btn-success">
+                                <i class="fas fa-check"></i> Vendre
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

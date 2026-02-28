@@ -1,0 +1,276 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Vente de Crédit - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-sim-card text-success"></i> Vente de Crédit</h2>
+            <span class="text-muted">{{ boutique.nom }}</span>
+        </div>
+        <div>
+            <a href="{% url 'inventory:mobile_money_dashboard' boutique.id %}" class="btn btn-outline-primary">
+                <i class="fas fa-mobile-alt"></i> Mobile Money
+            </a>
+            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalVente">
+                <i class="fas fa-plus"></i> Vendre Crédit
+            </button>
+            <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#modalAppro">
+                <i class="fas fa-truck"></i> Approvisionner
+            </button>
+        </div>
+    </div>
+
+    <!-- Statistiques du jour -->
+    <div class="row mb-4">
+        <div class="col-md-2">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats_ventes.total_ventes }}</h3>
+                    <small>Ventes</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats_ventes.unites_vendues|floatformat:0 }}</h3>
+                    <small>Unités Vendues (FC)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-warning text-dark">
+                <div class="card-body text-center">
+                    <h3>{{ stats_ventes.benefice|floatformat:0 }}</h3>
+                    <small>Bénéfice (FC)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-info text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats_ventes.ventes_detail }}</h3>
+                    <small>Ventes Détail</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-secondary text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats_ventes.ventes_gros }}</h3>
+                    <small>Ventes Gros</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Stock de crédit par opérateur -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-dark text-white">
+                    <i class="fas fa-boxes"></i> Stock de Crédit
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Opérateur</th>
+                                <th class="text-end">Stock (FC)</th>
+                                <th>Statut</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for stock in stocks %}
+                            <tr>
+                                <td>
+                                    {% if stock.operateur == 'AIRTEL' %}
+                                    <span class="badge bg-danger">Airtel</span>
+                                    {% elif stock.operateur == 'VODACOM' %}
+                                    <span class="badge bg-primary">M-Pesa</span>
+                                    {% elif stock.operateur == 'ORANGE' %}
+                                    <span class="badge bg-warning text-dark">Orange</span>
+                                    {% elif stock.operateur == 'AFRICELL' %}
+                                    <span class="badge bg-info">Africell</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">{{ stock.get_operateur_display }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end fw-bold">{{ stock.unites_disponibles|floatformat:0 }}</td>
+                                <td>
+                                    {% if stock.est_bas %}
+                                    <span class="badge bg-danger">Bas</span>
+                                    {% else %}
+                                    <span class="badge bg-success">OK</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-center text-muted py-3">
+                                    Aucun stock configuré
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Formulaire vente rapide -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <i class="fas fa-bolt"></i> Vente Rapide
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{% url 'inventory:mobile_money_vendre_credit' boutique.id %}">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label">Type de vente</label>
+                            <select name="type_vente" class="form-select" id="type_vente">
+                                <option value="DETAIL">Détail</option>
+                                <option value="GROS">Gros</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Opérateur</label>
+                            <select name="operateur" class="form-select" required>
+                                {% for code, label in operateurs %}
+                                <option value="{{ code }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Unités vendues (FC)</label>
+                                <input type="number" name="unites_vendues" class="form-control" min="0" step="100" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Montant reçu (FC)</label>
+                                <input type="number" name="montant_recu" class="form-control" min="0" step="100" required>
+                            </div>
+                        </div>
+                        <div class="mb-3 d-none" id="client-info">
+                            <div class="row">
+                                <div class="col-6">
+                                    <label class="form-label">Numéro Client</label>
+                                    <input type="tel" name="numero_client" class="form-control">
+                                </div>
+                                <div class="col-6">
+                                    <label class="form-label">Nom Client</label>
+                                    <input type="text" name="nom_client" class="form-control">
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">
+                            <i class="fas fa-check"></i> Enregistrer Vente
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dernières ventes -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-primary text-white d-flex justify-content-between">
+                    <span><i class="fas fa-history"></i> Dernières Ventes</span>
+                    <a href="{% url 'inventory:mobile_money_historique_credit' boutique.id %}" class="text-white">Voir tout</a>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Heure</th>
+                                <th>Op.</th>
+                                <th class="text-end">Vente</th>
+                                <th class="text-end text-success">Bén.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for v in dernieres_ventes %}
+                            <tr>
+                                <td>{{ v.date_vente|date:"H:i" }}</td>
+                                <td>{{ v.operateur }}</td>
+                                <td class="text-end">{{ v.unites_vendues|floatformat:0 }}</td>
+                                <td class="text-end text-success">{{ v.benefice|floatformat:0 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-3">
+                                    Aucune vente aujourd'hui
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Approvisionnement -->
+<div class="modal fade" id="modalAppro" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-truck"></i> Approvisionner Crédit</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'inventory:mobile_money_approvisionner_credit' boutique.id %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Opérateur</label>
+                        <select name="operateur" class="form-select" required>
+                            {% for code, label in operateurs %}
+                            <option value="{{ code }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Unités (FC)</label>
+                            <input type="number" name="unites" class="form-control" min="0" step="1000" required placeholder="Ex: 50000">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Coût d'Achat (FC)</label>
+                            <input type="number" name="cout_achat" class="form-control" min="0" step="1000" required placeholder="Ex: 48000">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Fournisseur</label>
+                        <input type="text" name="fournisseur" class="form-control" placeholder="Nom du fournisseur">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Référence</label>
+                        <input type="text" name="reference" class="form-control" placeholder="N° transaction">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-info">Approvisionner</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('type_vente').addEventListener('change', function() {
+    const clientInfo = document.getElementById('client-info');
+    if (this.value === 'GROS') {
+        clientInfo.classList.remove('d-none');
+    } else {
+        clientInfo.classList.add('d-none');
+    }
+});
+</script>
+{% endblock %}

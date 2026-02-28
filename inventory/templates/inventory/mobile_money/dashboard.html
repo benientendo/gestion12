@@ -1,0 +1,204 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Dashboard Mobile Money - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-mobile-alt text-primary"></i> {{ boutique.nom }}</h2>
+            <span class="badge bg-info">Mobile Money</span>
+        </div>
+        <div>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalTransaction">
+                <i class="fas fa-plus"></i> Nouvelle Transaction
+            </button>
+            <a href="{% url 'inventory:mobile_money_transactions' boutique.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-list"></i> Historique
+            </a>
+            <a href="{% url 'inventory:mobile_money_rapport' boutique.id %}" class="btn btn-outline-info">
+                <i class="fas fa-chart-bar"></i> Rapport
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistiques du jour -->
+    <div class="row mb-4">
+        <div class="col-md-2">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats_jour.total_transactions }}</h3>
+                    <small>Transactions</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats_jour.total_montant|floatformat:0 }}</h3>
+                    <small>Montant Total (FC)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-warning text-dark">
+                <div class="card-body text-center">
+                    <h3>{{ stats_jour.total_commission|floatformat:0 }}</h3>
+                    <small>Commissions (FC)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-info text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats_jour.depots }}</h3>
+                    <small>Dépôts</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-danger text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats_jour.retraits }}</h3>
+                    <small>Retraits</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="card bg-secondary text-white">
+                <div class="card-body text-center">
+                    <h3>{{ stats_jour.transferts }}</h3>
+                    <small>Transferts</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Formulaire rapide -->
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <i class="fas fa-bolt"></i> Transaction Rapide
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{% url 'inventory:mobile_money_nouvelle_transaction' boutique.id %}">
+                        {% csrf_token %}
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Type</label>
+                                <select name="type_operation" class="form-select" required>
+                                    {% for code, label in types_operation %}
+                                    <option value="{{ code }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Opérateur</label>
+                                <select name="operateur" class="form-select" required>
+                                    {% for code, label in operateurs %}
+                                    <option value="{{ code }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Numéro Client</label>
+                            <input type="tel" name="numero_telephone" class="form-control" placeholder="Ex: 0999999999" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Nom Client (optionnel)</label>
+                            <input type="text" name="nom_client" class="form-control" placeholder="Nom du client">
+                        </div>
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Montant (FC)</label>
+                                <input type="number" name="montant" class="form-control" min="0" step="100" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Commission (FC)</label>
+                                <input type="number" name="commission" class="form-control" min="0" step="50" value="0">
+                            </div>
+                        </div>
+                        <div class="mb-3 d-none" id="destinataire-group">
+                            <label class="form-label">Numéro Destinataire</label>
+                            <input type="tel" name="numero_destinataire" class="form-control" placeholder="Pour transferts">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Référence Opérateur</label>
+                            <input type="text" name="reference" class="form-control" placeholder="Code de confirmation">
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-check"></i> Enregistrer
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dernières transactions -->
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header bg-dark text-white">
+                    <i class="fas fa-history"></i> Dernières Transactions
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Heure</th>
+                                <th>Type</th>
+                                <th>Opérateur</th>
+                                <th>Client</th>
+                                <th class="text-end">Montant</th>
+                                <th class="text-end">Comm.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for t in dernieres_transactions %}
+                            <tr>
+                                <td>{{ t.date_transaction|date:"H:i" }}</td>
+                                <td>
+                                    {% if t.type_operation == 'DEPOT' %}
+                                    <span class="badge bg-info">Dépôt</span>
+                                    {% elif t.type_operation == 'RETRAIT' %}
+                                    <span class="badge bg-danger">Retrait</span>
+                                    {% elif t.type_operation == 'TRANSFERT' %}
+                                    <span class="badge bg-secondary">Transfert</span>
+                                    {% else %}
+                                    <span class="badge bg-warning">Paiement</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ t.get_operateur_display }}</td>
+                                <td>{{ t.numero_telephone_client }}</td>
+                                <td class="text-end">{{ t.montant|floatformat:0 }} FC</td>
+                                <td class="text-end text-success">{{ t.commission|floatformat:0 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">
+                                    Aucune transaction aujourd'hui
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.querySelector('select[name="type_operation"]').addEventListener('change', function() {
+    const destGroup = document.getElementById('destinataire-group');
+    if (this.value === 'TRANSFERT') {
+        destGroup.classList.remove('d-none');
+    } else {
+        destGroup.classList.add('d-none');
+    }
+});
+</script>
+{% endblock %}

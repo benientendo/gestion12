@@ -1,0 +1,68 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Approvisionner Crédit - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h4><i class="fas fa-truck"></i> Approvisionner le Stock de Crédit</h4>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label">Opérateur</label>
+                            <select name="operateur" class="form-select" required>
+                                {% for code, label in operateurs %}
+                                <option value="{{ code }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <label class="form-label">Montant Crédit (FC)</label>
+                                <input type="number" name="montant" class="form-control" min="0" step="1000" required>
+                                <small class="text-muted">Valeur du crédit acheté</small>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label">Coût d'Achat (FC)</label>
+                                <input type="number" name="cout_achat" class="form-control" min="0" step="1000" required>
+                                <small class="text-muted">Prix payé au fournisseur</small>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Fournisseur</label>
+                            <input type="text" name="fournisseur" class="form-control" placeholder="Nom du fournisseur">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Référence / N° Transaction</label>
+                            <input type="text" name="reference" class="form-control" placeholder="Numéro de référence">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Notes</label>
+                            <textarea name="notes" class="form-control" rows="2"></textarea>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'inventory:mobile_money_credit_dashboard' boutique.id %}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Retour
+                            </a>
+                            <button type="submit" class="btn btn-info">
+                                <i class="fas fa-check"></i> Approvisionner
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

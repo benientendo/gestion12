@@ -29,6 +29,14 @@
                     <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-success">
                         <i class="fas fa-sign-in-alt"></i> Entrer dans la Boutique
                     </a>
+                    {% if boutique.type_commerce == 'MOBILE_MONEY' %}
+                    <a href="{% url 'inventory:mobile_money_dashboard' boutique.id %}" class="btn btn-warning ms-2">
+                        <i class="fas fa-mobile-alt"></i> Mobile Money
+                    </a>
+                    <a href="{% url 'inventory:mobile_money_credit_dashboard' boutique.id %}" class="btn btn-info ms-2">
+                        <i class="fas fa-sim-card"></i> Vente Crédit
+                    </a>
+                    {% endif %}
                 </div>
             </div>
         </div>

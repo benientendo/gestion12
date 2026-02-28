@@ -1,0 +1,77 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Nouvelle Transaction - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h4><i class="fas fa-plus-circle"></i> Nouvelle Transaction Mobile Money</h4>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Type d'opération</label>
+                                <select name="type_operation" class="form-select" required>
+                                    {% for code, label in types_operation %}
+                                    <option value="{{ code }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Opérateur</label>
+                                <select name="operateur" class="form-select" required>
+                                    {% for code, label in operateurs %}
+                                    <option value="{{ code }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Numéro de téléphone</label>
+                                <input type="tel" name="numero_telephone" class="form-control" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Nom du client</label>
+                                <input type="text" name="nom_client" class="form-control">
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Montant (FC)</label>
+                                <input type="number" name="montant" class="form-control" min="0" step="100" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Commission (FC)</label>
+                                <input type="number" name="commission" class="form-control" min="0" step="50" value="0">
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Notes</label>
+                            <textarea name="notes" class="form-control" rows="2"></textarea>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'inventory:mobile_money_dashboard' boutique.id %}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Retour
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-check"></i> Enregistrer
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
