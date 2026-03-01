@@ -485,8 +485,8 @@ def articles_boutique(request, boutique_id):
     stock_filter = request.GET.get('stock', '')
     populaires_filter = request.GET.get('populaires', '')
     
-    # Requête optimisée avec select_related dès le début
-    articles = boutique.articles.filter(est_actif=True).select_related('categorie')
+    # Requête optimisée avec select_related et prefetch_related pour les variantes
+    articles = boutique.articles.filter(est_actif=True).select_related('categorie').prefetch_related('variantes')
     
     if search:
         # ⭐ Chercher dans articles ET dans les codes-barres des variantes
