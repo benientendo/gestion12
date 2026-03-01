@@ -187,7 +187,14 @@
                             <span class="badge bg-success">{{ article.stock_total }}</span>
                             {% endif %}
                             {% if article.a_variantes %}
-                            <span class="badge bg-info ms-1" title="{{ article.nb_variantes }} variante(s)"><i class="fas fa-tags"></i> {{ article.nb_variantes }}</span>
+                            <span class="badge bg-info ms-1 badge-variantes" 
+                                  style="cursor: pointer;" 
+                                  title="Cliquer pour voir les variantes"
+                                  data-article-id="{{ article.id }}"
+                                  data-article-nom="{{ article.nom|escapejs }}"
+                                  onclick="afficherVariantes({{ article.id }}, '{{ article.nom|escapejs }}')">
+                                <i class="fas fa-tags"></i> {{ article.nb_variantes }}
+                            </span>
                             {% endif %}
                         </td>
                         <td class="col-exp">
@@ -960,6 +967,49 @@
                 <button type="button" class="btn btn-info btn-sm" id="btnModifierPrix">
                     <i class="fas fa-check"></i> OK
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Détails Variantes -->
+<div class="modal fade" id="variantesModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white py-2">
+                <h6 class="modal-title mb-0"><i class="fas fa-tags me-2"></i>Variantes de l'article</h6>
+                <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div class="text-center mb-3">
+                    <strong id="variantesArticleName" class="d-block fs-5"></strong>
+                </div>
+                <div id="variantesLoading" class="text-center py-3">
+                    <i class="fas fa-spinner fa-spin fa-2x text-info"></i>
+                    <p class="mt-2 text-muted">Chargement des variantes...</p>
+                </div>
+                <div id="variantesContent" style="display: none;">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th><i class="fas fa-barcode"></i> Code-barres</th>
+                                <th><i class="fas fa-tag"></i> Nom</th>
+                                <th class="text-center"><i class="fas fa-boxes"></i> Stock</th>
+                            </tr>
+                        </thead>
+                        <tbody id="variantesTableBody">
+                        </tbody>
+                    </table>
+                    <div class="mt-2 pt-2 border-top text-end">
+                        <small class="text-muted">Stock total: <span id="variantesStockTotal" class="badge bg-primary"></span></small>
+                    </div>
+                </div>
+                <div id="variantesError" class="alert alert-danger" style="display: none;">
+                    <i class="fas fa-exclamation-circle"></i> <span id="variantesErrorMsg"></span>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fermer</button>
             </div>
         </div>
     </div>
@@ -2739,6 +2789,70 @@ document.addEventListener('DOMContentLoaded', function() {
         // Reset marge fields
         document.getElementById('prixAchatModif').value = '';
         document.getElementById('beneficeModifInfo').style.display = 'none';
+    };
+    
+    // ===== AFFICHAGE DES VARIANTES =====
+    window.afficherVariantes = function(articleId, articleNom) {
+        // Ouvrir le modal
+        const modal = new bootstrap.Modal(document.getElementById('variantesModal'));
+        modal.show();
+        
+        // Afficher le nom de l'article
+        document.getElementById('variantesArticleName').textContent = articleNom;
+        
+        // Afficher le loading, masquer le contenu et l'erreur
+        document.getElementById('variantesLoading').style.display = 'block';
+        document.getElementById('variantesContent').style.display = 'none';
+        document.getElementById('variantesError').style.display = 'none';
+        
+        // Charger les variantes via AJAX
+        fetch(`{% url 'inventory:article_variantes_ajax' boutique.id 0 %}`.replace('/0/', `/${articleId}/`), {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('variantesLoading').style.display = 'none';
+            
+            if (data.success) {
+                // Remplir le tableau des variantes
+                const tbody = document.getElementById('variantesTableBody');
+                tbody.innerHTML = '';
+                
+                let stockTotal = 0;
+                data.variantes.forEach(v => {
+                    stockTotal += v.quantite_stock;
+                    const stockClass = v.quantite_stock <= 0 ? 'bg-danger' : 
+                                      v.quantite_stock <= 5 ? 'bg-warning text-dark' : 'bg-success';
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><code class="text-primary">${v.code_barre}</code></td>
+                            <td>
+                                <span class="fw-semibold">${v.nom_variante}</span>
+                                <small class="text-muted d-block">${v.type_attribut}</small>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge ${stockClass}">${v.quantite_stock}</span>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                document.getElementById('variantesStockTotal').textContent = stockTotal;
+                document.getElementById('variantesContent').style.display = 'block';
+            } else {
+                document.getElementById('variantesErrorMsg').textContent = data.message || 'Erreur lors du chargement';
+                document.getElementById('variantesError').style.display = 'block';
+            }
+        })
+        .catch(error => {
+            document.getElementById('variantesLoading').style.display = 'none';
+            document.getElementById('variantesErrorMsg').textContent = 'Erreur de connexion';
+            document.getElementById('variantesError').style.display = 'block';
+            console.error('Erreur:', error);
+        });
     };
     
     // ===== GESTION MARGE DANS MODAL MODIFICATION PRIX =====

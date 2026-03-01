@@ -76,6 +76,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/entrer/', views_commercant.entrer_boutique, name='entrer_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/', views_commercant.articles_boutique, name='commercant_articles_boutique'),
     path('commercant/boutiques/<int:boutique_id>/articles/search/', views_commercant.articles_search_ajax, name='articles_search_ajax'),
+    path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/', views_commercant.article_variantes_ajax, name='article_variantes_ajax'),
     path('commercant/boutiques/<int:boutique_id>/terminaux/', views_commercant.terminaux_boutique, name='commercant_terminaux_boutique'),
     path('commercant/boutiques/<int:boutique_id>/terminaux/creer/', views_commercant.creer_terminal, name='commercant_creer_terminal'),
     path('commercant/boutiques/<int:boutique_id>/terminaux/<int:terminal_id>/modifier/', views_commercant.modifier_terminal, name='modifier_terminal'),

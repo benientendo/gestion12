@@ -489,11 +489,13 @@ def articles_boutique(request, boutique_id):
     articles = boutique.articles.filter(est_actif=True).select_related('categorie')
     
     if search:
+        # ⭐ Chercher dans articles ET dans les codes-barres des variantes
         articles = articles.filter(
             Q(nom__icontains=search) |
             Q(code__icontains=search) |
-            Q(description__icontains=search)
-        )
+            Q(description__icontains=search) |
+            Q(variantes__code_barre__icontains=search, variantes__est_actif=True)
+        ).distinct()
     
     if categorie_id:
         articles = articles.filter(categorie_id=categorie_id)
@@ -564,8 +566,9 @@ def articles_boutique(request, boutique_id):
 @commercant_required
 @boutique_access_required
 def articles_search_ajax(request, boutique_id):
-    """Recherche AJAX d'articles - cherche dans TOUS les articles de la boutique"""
+    """Recherche AJAX d'articles - cherche dans TOUS les articles de la boutique ET leurs variantes"""
     from django.http import JsonResponse
+    from inventory.models import VarianteArticle
     
     boutique = request.boutique
     search = request.GET.get('q', '').strip()
@@ -573,13 +576,26 @@ def articles_search_ajax(request, boutique_id):
     if len(search) < 2:
         return JsonResponse({'articles': [], 'count': 0})
     
+    # 1. Chercher dans les articles directement
     articles = boutique.articles.filter(
         est_actif=True
     ).filter(
         Q(nom__icontains=search) |
         Q(code__icontains=search) |
         Q(description__icontains=search)
-    ).select_related('categorie').order_by('nom')[:50]  # Limiter à 50 résultats
+    ).select_related('categorie').order_by('nom')[:50]
+    
+    # 2. ⭐ Chercher aussi dans les codes-barres des variantes
+    # Récupérer les articles parents des variantes correspondantes
+    articles_from_variantes = boutique.articles.filter(
+        est_actif=True,
+        variantes__code_barre__icontains=search,
+        variantes__est_actif=True
+    ).select_related('categorie').distinct()
+    
+    # Combiner et dédupliquer
+    all_article_ids = set(art.id for art in articles) | set(art.id for art in articles_from_variantes)
+    articles = boutique.articles.filter(id__in=all_article_ids).select_related('categorie').order_by('nom')[:50]
     
     articles_data = []
     for art in articles:
@@ -604,6 +620,41 @@ def articles_search_ajax(request, boutique_id):
         'articles': articles_data,
         'count': len(articles_data),
         'search': search
+    })
+
+@login_required
+@commercant_required
+@boutique_access_required
+def article_variantes_ajax(request, boutique_id, article_id):
+    """Récupérer les variantes d'un article via AJAX"""
+    from django.http import JsonResponse
+    from inventory.models import Article, VarianteArticle
+    
+    boutique = request.boutique
+    
+    try:
+        article = Article.objects.get(id=article_id, boutique=boutique)
+    except Article.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Article non trouvé'})
+    
+    variantes = article.variantes.filter(est_actif=True).order_by('nom_variante')
+    
+    variantes_data = []
+    for v in variantes:
+        variantes_data.append({
+            'id': v.id,
+            'code_barre': v.code_barre,
+            'nom_variante': v.nom_variante,
+            'type_attribut': v.get_type_attribut_display(),
+            'quantite_stock': v.quantite_stock,
+        })
+    
+    return JsonResponse({
+        'success': True,
+        'article_id': article.id,
+        'article_nom': article.nom,
+        'variantes': variantes_data,
+        'count': len(variantes_data)
     })
 
 @login_required
@@ -2291,6 +2342,8 @@ def ajouter_article_boutique(request, boutique_id):
                 
                 # ⭐ Créer les variantes si présentes (AJAX)
                 variantes_creees = 0
+                variante_keys = [k for k in request.POST.keys() if 'variante' in k]
+                print(f"🔍 DEBUG AJAX - POST keys pour variantes: {variante_keys}")
                 for key in request.POST:
                     if key.startswith('variante_code_'):
                         idx = key.replace('variante_code_', '')
@@ -2298,6 +2351,8 @@ def ajouter_article_boutique(request, boutique_id):
                         nom_variante = request.POST.get(f'variante_nom_{idx}', '').strip()
                         type_attribut = request.POST.get(f'variante_type_{idx}', 'AUTRE')
                         stock_variante = request.POST.get(f'variante_stock_{idx}', '0')
+                        
+                        print(f"🏷️ Variante {idx}: code='{code_barre_v}', nom='{nom_variante}', type='{type_attribut}', stock='{stock_variante}'")
                         
                         if code_barre_v and nom_variante:
                             try:
@@ -2372,7 +2427,8 @@ def ajouter_article_boutique(request, boutique_id):
             # ⭐ Créer les variantes si présentes dans le formulaire
             # Stock géré au niveau de chaque variante (enfant)
             variantes_creees = 0
-            print(f"🔍 DEBUG POST keys: {list(request.POST.keys())}")
+            variante_keys = [k for k in request.POST.keys() if 'variante' in k]
+            print(f"🔍 DEBUG FORM POST - variante keys: {variante_keys}")
             for key in request.POST:
                 if key.startswith('variante_code_'):
                     idx = key.replace('variante_code_', '')
