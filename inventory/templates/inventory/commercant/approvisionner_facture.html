@@ -203,22 +203,29 @@
                 </div>
                 <div class="sec-b saisie-article">
                     <div class="row gx-2 align-items-end">
-                        <div class="col-3 mb-1x field-arrows">
+                        <div class="col-4 mb-1x field-arrows">
                             <label class="form-label">Nom de l'article *</label>
                             <input type="text" class="form-control form-control-sm art-field" id="art_nom" list="datalistArticles" placeholder="Tapez pour chercher ou créer" autocomplete="off" oninput="onSaisieArticleInput()" onchange="onSaisieArticleInput()">
                             <input type="hidden" id="art_id" value="">
                             <input type="hidden" id="art_code" value="">
                         </div>
-                        <div class="col-2 mb-1x field-arrows">
-                            <label class="form-label">Catégorie</label>
-                            <input type="text" class="form-control form-control-sm art-field" id="art_categorie" list="datalistCategories" placeholder="Tapez pour rechercher ou créer" autocomplete="off" oninput="onSaisieCategorieInput()">
-                            <input type="hidden" id="art_categorie_id" value="">
-                            <input type="hidden" id="art_categorie_nom" value="">
-                        </div>
                         <div class="col-auto mb-1x">
                             <label class="form-label">Mode</label>
                             <div id="autoModeIndicator" style="padding:5px 12px;border-radius:6px;font-size:.8rem;font-weight:700;text-align:center;min-width:80px;background:#e3f2fd;color:#1565c0;border:1px solid #90caf9;">📦 Carton</div>
                             <input type="hidden" id="art_type" value="CARTON">
+                        </div>
+                        <!-- Panneau info article précédent -->
+                        <div class="col mb-1x" id="infoPrecedentPanel" style="display:none;">
+                            <div style="background:linear-gradient(135deg,#fff8e1,#ffecb3);border:2px solid #ffc107;border-radius:8px;padding:8px 12px;font-size:.78rem;">
+                                <div style="font-weight:700;color:#f57c00;margin-bottom:4px;"><i class="fas fa-history me-1"></i>Données précédentes (en FC)</div>
+                                <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                                    <span id="infoPrevStock" style="background:#e3f2fd;padding:2px 8px;border-radius:4px;"><i class="fas fa-boxes"></i> Stock: <b>-</b></span>
+                                    <span id="infoPrevPrixAchat" style="background:#fff3e0;padding:2px 8px;border-radius:4px;"><i class="fas fa-shopping-cart"></i> P.Achat: <b>-</b> FC</span>
+                                    <span id="infoPrevPrixVente" style="background:#e8f5e9;padding:2px 8px;border-radius:4px;"><i class="fas fa-tag"></i> P.Vente: <b>-</b> FC</span>
+                                    <span id="infoPrevCarton" style="background:#f3e5f5;padding:2px 8px;border-radius:4px;display:none;"><i class="fas fa-box"></i> <span id="infoPrevCartonText">-</span></span>
+                                    <span id="infoPrevDevise" style="background:#ffebee;padding:2px 8px;border-radius:4px;display:none;"><i class="fas fa-money-bill"></i> Dernière: <b id="infoPrevDeviseVal">-</b></span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <!-- Ligne carton (toujours visible) -->
@@ -256,6 +263,12 @@
                                 <span style="color:#999;margin:0 4px;">|</span>
                                 <span id="beneficePct" style="color:#4caf50;">0%</span>
                             </div>
+                        </div>
+                        <div class="col-2 mb-1x field-arrows">
+                            <label class="form-label">Catégorie</label>
+                            <input type="text" class="form-control form-control-sm art-field" id="art_categorie" list="datalistCategories" placeholder="Tapez pour rechercher ou créer" autocomplete="off" oninput="onSaisieCategorieInput()">
+                            <input type="hidden" id="art_categorie_id" value="">
+                            <input type="hidden" id="art_categorie_nom" value="">
                         </div>
                     </div>
                     <!-- Aperçu + bouton ajouter -->
@@ -357,6 +370,12 @@ var FACT_ARTICLES = [
 // Dernières données d'approvisionnement par article (carton, prix, etc.)
 var FACT_DERNIERS_APPROS = {{ derniers_appros_json|safe }};
 {% endlocalize %}
+
+// === HELPER FORMATAGE NOMBRE ===
+function formatNumber(num) {
+    if (num === null || num === undefined) return '0';
+    return Math.round(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
 
 // === HELPERS DEVISE (radio buttons) ===
 function getDevise() {
@@ -654,6 +673,7 @@ function factResetArticleFields() {
     getEl('art_prix_achat').value = '0';
     getEl('art_prix_vente').value = '0';
     getEl('prixAchatFC').style.display = 'none';
+    getEl('infoPrecedentPanel').style.display = 'none';
     updateModeIndicator();
     hideAllHints();
     hideDeviseWarning();
@@ -681,6 +701,37 @@ function onSaisieArticleInput() {
             getEl('art_id').value = match.id;
             getEl('art_code').value = match.code;
             input.classList.add('input-matched');
+
+            // Afficher le panneau d'info précédent
+            var appro = FACT_DERNIERS_APPROS[String(match.id)];
+            var panel = getEl('infoPrecedentPanel');
+            panel.style.display = 'block';
+            
+            // Stock actuel
+            getEl('infoPrevStock').innerHTML = '<i class="fas fa-boxes"></i> Stock: <b>' + match.stock + '</b>';
+            
+            // Prix d'achat (toujours en FC)
+            var prixAchatFC = appro && appro.prix_achat_unitaire > 0 ? appro.prix_achat_unitaire : match.prix_achat;
+            getEl('infoPrevPrixAchat').innerHTML = '<i class="fas fa-shopping-cart"></i> P.Achat: <b>' + formatNumber(prixAchatFC) + '</b> FC';
+            
+            // Prix de vente (toujours en FC)
+            getEl('infoPrevPrixVente').innerHTML = '<i class="fas fa-tag"></i> P.Vente: <b>' + formatNumber(match.prix_vente) + '</b> FC';
+            
+            // Info carton si disponible
+            if (appro && appro.type_quantite === 'CARTON' && appro.pieces_par_carton > 0) {
+                getEl('infoPrevCarton').style.display = 'inline';
+                getEl('infoPrevCartonText').innerHTML = appro.nombre_cartons + ' crt × ' + appro.pieces_par_carton + ' pcs = ' + (appro.nombre_cartons * appro.pieces_par_carton) + ' | ' + formatNumber(appro.prix_achat_carton) + ' FC/crt';
+            } else {
+                getEl('infoPrevCarton').style.display = 'none';
+            }
+            
+            // Devise de la dernière saisie
+            if (appro && appro.devise_saisie) {
+                getEl('infoPrevDevise').style.display = 'inline';
+                getEl('infoPrevDeviseVal').textContent = appro.devise_saisie === 'USD' ? 'USD' : 'FC';
+            } else {
+                getEl('infoPrevDevise').style.display = 'none';
+            }
 
             // Catégorie
             if (match.categorie_id) {
