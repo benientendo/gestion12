@@ -329,14 +329,9 @@ class VarianteArticle(models.Model):
         verbose_name = "Variante d'article"
         verbose_name_plural = "Variantes d'articles"
         ordering = ['article_parent__nom', 'nom_variante']
+        # Code-barres unique par article parent seulement (pas globalement)
+        # L'unicité par boutique est gérée dans les vues
         unique_together = [['code_barre', 'article_parent']]
-        # Contrainte: code_barre unique par boutique (via article_parent)
-        constraints = [
-            models.UniqueConstraint(
-                fields=['code_barre'],
-                name='unique_code_barre_variante'
-            )
-        ]
 
 
 class Vente(models.Model):

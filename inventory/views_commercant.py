@@ -2357,7 +2357,11 @@ def ajouter_article_boutique(request, boutique_id):
                         if code_barre_v and nom_variante:
                             try:
                                 stock_v = int(stock_variante) if stock_variante else 0
-                                if not VarianteArticle.objects.filter(code_barre=code_barre_v).exists():
+                                # Vérifier unicité du code-barres dans la MÊME BOUTIQUE seulement
+                                if not VarianteArticle.objects.filter(
+                                    code_barre=code_barre_v,
+                                    article_parent__boutique=boutique
+                                ).exists():
                                     VarianteArticle.objects.create(
                                         article_parent=article,
                                         code_barre=code_barre_v,
@@ -2441,8 +2445,11 @@ def ajouter_article_boutique(request, boutique_id):
                     if code_barre and nom_variante:
                         try:
                             stock_v = int(stock_variante) if stock_variante else 0
-                            # Vérifier unicité du code-barres
-                            if not VarianteArticle.objects.filter(code_barre=code_barre).exists():
+                            # Vérifier unicité du code-barres dans la MÊME BOUTIQUE seulement
+                            if not VarianteArticle.objects.filter(
+                                code_barre=code_barre,
+                                article_parent__boutique=boutique
+                            ).exists():
                                 VarianteArticle.objects.create(
                                     article_parent=article,
                                     code_barre=code_barre,
@@ -2690,8 +2697,11 @@ def importer_articles_entre_boutiques(request, boutique_id):
                         # Copier les variantes actives (sans stock)
                         variantes_src = art_src.variantes.filter(est_actif=True)
                         for var_src in variantes_src:
-                            # Vérifier que le code-barres n'existe pas déjà
-                            if not VarianteArticle.objects.filter(code_barre=var_src.code_barre).exists():
+                            # Vérifier que le code-barres n'existe pas déjà dans cette boutique
+                            if not VarianteArticle.objects.filter(
+                                code_barre=var_src.code_barre,
+                                article_parent__boutique=boutique
+                            ).exists():
                                 VarianteArticle.objects.create(
                                     article_parent=nouvel_article,
                                     code_barre=var_src.code_barre,
@@ -2770,10 +2780,13 @@ def sync_variantes_entre_boutiques(request, boutique_id):
                 if not art_dest:
                     continue  # Article pas présent dans la destination
                 
-                # Codes-barres déjà existants dans la destination (et globalement)
+                # Codes-barres déjà existants dans la destination (par boutique)
                 for var_src in art_src.variantes.filter(est_actif=True):
-                    if VarianteArticle.objects.filter(code_barre=var_src.code_barre).exists():
-                        continue  # Variante déjà existante
+                    if VarianteArticle.objects.filter(
+                        code_barre=var_src.code_barre,
+                        article_parent__boutique=boutique_dest
+                    ).exists():
+                        continue  # Variante déjà existante dans cette boutique
                     
                     try:
                         VarianteArticle.objects.create(
@@ -2833,9 +2846,9 @@ def ajouter_variante(request, boutique_id, article_id):
     if not nom_variante:
         return JsonResponse({'success': False, 'message': 'Le nom de la variante est obligatoire.'})
     
-    # Vérifier que le code-barres n'existe pas déjà
-    if VarianteArticle.objects.filter(code_barre=code_barre).exists():
-        return JsonResponse({'success': False, 'message': f'Le code-barres "{code_barre}" existe déjà.'})
+    # Vérifier que le code-barres n'existe pas déjà dans cette boutique
+    if VarianteArticle.objects.filter(code_barre=code_barre, article_parent__boutique=boutique).exists():
+        return JsonResponse({'success': False, 'message': f'Le code-barres "{code_barre}" existe déjà dans cette boutique.'})
     
     # Vérifier que le code-barres n'est pas utilisé par un article
     if Article.objects.filter(code=code_barre, boutique=boutique).exists():
