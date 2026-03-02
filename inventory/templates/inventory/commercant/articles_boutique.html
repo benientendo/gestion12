@@ -2571,7 +2571,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <span class="badge bg-info">${article.categorie || 'Sans catégorie'}</span>
                                     <span class="badge bg-primary">${article.quantite_stock} en stock</span>
                                     <span class="text-success fw-bold">${article.prix_vente} ${article.devise}</span>
-                                    ${article.a_variantes ? '<span class="badge bg-warning text-dark"><i class="fas fa-tags"></i> Variantes</span>' : ''}
+                                    ${article.a_variantes ? `<span class="badge bg-info badge-variantes" style="cursor: pointer;" title="Cliquer pour voir les variantes" onclick="afficherVariantes(${article.id}, '${article.nom.replace(/'/g, "\\'")}')"><i class="fas fa-tags"></i> ${article.nb_variantes || ''}</span>` : ''}
                                 </div>
                                 <div class="result-actions">
                                     <button type="button" class="btn btn-success btn-xs quick-action-btn" 
