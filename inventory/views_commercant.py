@@ -4639,6 +4639,7 @@ def historique_mouvements_stock(request, boutique_id):
     # Filtres
     type_mouvement = request.GET.get('type', '')
     article_id = request.GET.get('article', '')
+    search_query = request.GET.get('search', '').strip()
     date_debut = request.GET.get('date_debut', '')
     date_fin = request.GET.get('date_fin', '')
     
@@ -4653,6 +4654,16 @@ def historique_mouvements_stock(request, boutique_id):
     
     if article_id:
         mouvements = mouvements.filter(article_id=article_id)
+    
+    # Recherche par nom ou code d'article
+    if search_query:
+        from django.db.models import Q
+        mouvements = mouvements.filter(
+            Q(article__nom__icontains=search_query) |
+            Q(article__code__icontains=search_query) |
+            Q(reference_document__icontains=search_query) |
+            Q(commentaire__icontains=search_query)
+        )
     
     if date_debut:
         try:
@@ -4694,6 +4705,7 @@ def historique_mouvements_stock(request, boutique_id):
         'article_filter': int(article_id) if article_id else None,
         'date_debut': date_debut,
         'date_fin': date_fin,
+        'search_query': search_query,
     }
     
     return render(request, 'inventory/commercant/historique_mouvements_stock.html', context)

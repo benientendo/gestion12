@@ -1,4 +1,4 @@
-{% extends 'inventory/base.html' %}
+﻿{% extends 'inventory/base.html' %}
 {% load static %}
 {% load humanize %}
 
@@ -65,7 +65,7 @@
 
 {% block content %}
 <div class="container-fluid">
-    <!-- En-tête -->
+    <!-- En-tÃªte -->
     <div class="row mb-4">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -104,7 +104,7 @@
                     <div class="col-6 col-md-2">
                         <div class="stat-item">
                             <div class="stat-value text-success">{{ stats.entrees }}</div>
-                            <div class="stat-label">Entrées</div>
+                            <div class="stat-label">EntrÃ©es</div>
                         </div>
                     </div>
                     <div class="col-6 col-md-2">
@@ -141,6 +141,14 @@
         <div class="col-12">
             <div class="filter-card">
                 <form method="get" class="row g-3 align-items-end">
+                    <!-- Champ de recherche rapide -->
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label fw-bold"><i class="fas fa-search"></i> Recherche rapide</label>
+                        <input type="text" name="search" class="form-control" 
+                               placeholder="Nom article, code, référence..." 
+                               value="{{ search_query }}"
+                               autofocus>
+                    </div>
                     <div class="col-md-3">
                         <label class="form-label fw-bold">Type de mouvement</label>
                         <select name="type" class="form-select">
@@ -160,7 +168,7 @@
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label fw-bold">Date début</label>
+                        <label class="form-label fw-bold">Date dÃ©but</label>
                         <input type="date" name="date_debut" class="form-control" value="{{ date_debut }}">
                     </div>
                     <div class="col-md-2">
@@ -173,10 +181,10 @@
                         </button>
                     </div>
                 </form>
-                {% if type_filter or article_filter or date_debut or date_fin %}
+                {% if search_query or type_filter or article_filter or date_debut or date_fin %}
                 <div class="mt-2">
                     <a href="{% url 'inventory:historique_mouvements_stock' boutique.id %}" class="btn btn-sm btn-outline-secondary">
-                        <i class="fas fa-times"></i> Réinitialiser les filtres
+                        <i class="fas fa-times"></i> RÃ©initialiser les filtres
                     </a>
                 </div>
                 {% endif %}
@@ -189,7 +197,7 @@
         <div class="col-12">
             <div class="card shadow-sm">
                 <div class="card-header bg-dark text-white">
-                    <i class="fas fa-list"></i> Liste des mouvements ({{ stats.total_mouvements }} résultats)
+                    <i class="fas fa-list"></i> Liste des mouvements ({{ stats.total_mouvements }} rÃ©sultats)
                 </div>
                 <div class="card-body p-0">
                     {% if mouvements %}
@@ -200,9 +208,9 @@
                                     <th>Date/Heure</th>
                                     <th>Type</th>
                                     <th>Article</th>
-                                    <th class="text-center">Quantité</th>
-                                    <th class="text-center">Stock Avant → Après</th>
-                                    <th>Référence</th>
+                                    <th class="text-center">QuantitÃ©</th>
+                                    <th class="text-center">Stock Avant â AprÃ¨s</th>
+                                    <th>RÃ©fÃ©rence</th>
                                     <th>Utilisateur</th>
                                     <th>Commentaire</th>
                                 </tr>
@@ -285,8 +293,8 @@
                     {% else %}
                     <div class="text-center py-5">
                         <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                        <h5 class="text-muted">Aucun mouvement de stock trouvé</h5>
-                        <p class="text-muted">Les mouvements de stock apparaîtront ici après des ventes, ajustements ou transferts.</p>
+                        <h5 class="text-muted">Aucun mouvement de stock trouvÃ©</h5>
+                        <p class="text-muted">Les mouvements de stock apparaÃ®tront ici aprÃ¨s des ventes, ajustements ou transferts.</p>
                     </div>
                     {% endif %}
                 </div>
@@ -294,4 +302,53 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Recherche instantanée avec debounce + conservation du curseur
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.querySelector('input[name="search"]');
+    if (!searchInput) return;
+    
+    const form = searchInput.closest('form');
+    let debounceTimer;
+    
+    // Restaurer la position du curseur après rechargement + scroll vers le haut
+    const savedCursorPos = sessionStorage.getItem('mouvements_search_cursor');
+    if (savedCursorPos !== null && searchInput.value.length > 0) {
+        const pos = parseInt(savedCursorPos);
+        // Scroll vers le champ de recherche pour que le tableau soit visible
+        searchInput.scrollIntoView({ behavior: 'instant', block: 'start' });
+        // Petit délai pour laisser le scroll se faire
+        setTimeout(function() {
+            searchInput.focus();
+            searchInput.setSelectionRange(pos, pos);
+        }, 50);
+        sessionStorage.removeItem('mouvements_search_cursor');
+    }
+    
+    // Sauvegarder la position du curseur avant soumission
+    function submitWithCursor() {
+        sessionStorage.setItem('mouvements_search_cursor', searchInput.selectionStart);
+        form.submit();
+    }
+    
+    searchInput.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function() {
+            if (searchInput.value.length >= 2 || searchInput.value.length === 0) {
+                submitWithCursor();
+            }
+        }, 500);
+    });
+    
+    searchInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            clearTimeout(debounceTimer);
+            submitWithCursor();
+        }
+    });
+});
+</script>
 {% endblock %}

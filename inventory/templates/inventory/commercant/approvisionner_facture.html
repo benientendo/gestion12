@@ -202,59 +202,52 @@
                     <span class="text-muted" style="font-weight:normal;font-size:.68rem;">Remplissez puis Enter ou cliquez Ajouter</span>
                 </div>
                 <div class="sec-b saisie-article">
+                    <input type="hidden" id="art_type" value="CARTON">
+                    <!-- Ligne 1: Nom article, Pièces/carton, Prix/carton, Prix vente -->
                     <div class="row gx-2 align-items-end">
-                        <div class="col-4 mb-1x field-arrows">
+                        <div class="col-3 mb-1x field-arrows">
                             <label class="form-label">Nom de l'article *</label>
                             <input type="text" class="form-control form-control-sm art-field" id="art_nom" list="datalistArticles" placeholder="Tapez pour chercher ou créer" autocomplete="off" oninput="onSaisieArticleInput()" onchange="onSaisieArticleInput()">
                             <input type="hidden" id="art_id" value="">
                             <input type="hidden" id="art_code" value="">
-                        </div>
-                        <div class="col-auto mb-1x">
-                            <label class="form-label">Mode</label>
-                            <div id="autoModeIndicator" style="padding:5px 12px;border-radius:6px;font-size:.8rem;font-weight:700;text-align:center;min-width:80px;background:#e3f2fd;color:#1565c0;border:1px solid #90caf9;">📦 Carton</div>
-                            <input type="hidden" id="art_type" value="CARTON">
-                        </div>
-                        <!-- Panneau info article précédent -->
-                        <div class="col mb-1x" id="infoPrecedentPanel" style="display:none;">
-                            <div style="background:linear-gradient(135deg,#fff8e1,#ffecb3);border:2px solid #ffc107;border-radius:8px;padding:8px 12px;font-size:.78rem;">
-                                <div style="font-weight:700;color:#f57c00;margin-bottom:4px;"><i class="fas fa-history me-1"></i>Données précédentes (en FC)</div>
-                                <div style="display:flex;flex-wrap:wrap;gap:8px;">
-                                    <span id="infoPrevStock" style="background:#e3f2fd;padding:2px 8px;border-radius:4px;"><i class="fas fa-boxes"></i> Stock: <b>-</b></span>
-                                    <span id="infoPrevPrixAchat" style="background:#fff3e0;padding:2px 8px;border-radius:4px;"><i class="fas fa-shopping-cart"></i> P.Achat: <b>-</b> FC</span>
-                                    <span id="infoPrevPrixVente" style="background:#e8f5e9;padding:2px 8px;border-radius:4px;"><i class="fas fa-tag"></i> P.Vente: <b>-</b> FC</span>
-                                    <span id="infoPrevCarton" style="background:#f3e5f5;padding:2px 8px;border-radius:4px;display:none;"><i class="fas fa-box"></i> <span id="infoPrevCartonText">-</span></span>
-                                    <span id="infoPrevDevise" style="background:#ffebee;padding:2px 8px;border-radius:4px;display:none;"><i class="fas fa-money-bill"></i> Dernière: <b id="infoPrevDeviseVal">-</b></span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Ligne carton (toujours visible) -->
-                    <div class="row gx-2 align-items-end" id="cartonFields">
-                        <div class="col mb-1x"><label class="form-label">Nb. cartons</label><input type="number" class="form-control form-control-sm art-field" id="art_nb_cartons" min="0" value="0" oninput="calculerSaisie()"><div class="hint-prev" id="hint_nb_cartons" onclick="applyHint('art_nb_cartons',this)">avant: <span class="hint-val"></span></div></div>
-                        <div class="col mb-1x"><label class="form-label">Pièces/carton</label><input type="number" class="form-control form-control-sm art-field" id="art_pcs_carton" min="1" value="1" oninput="calculerSaisie()"><div class="hint-prev" id="hint_pcs_carton" onclick="applyHint('art_pcs_carton',this)">avant: <span class="hint-val"></span></div></div>
-                        <div class="col mb-1x"><label class="form-label">Pièces en +</label><input type="number" class="form-control form-control-sm art-field" id="art_pcs_sup" min="0" value="0" oninput="calculerSaisie()"></div>
-                        <div class="col mb-1x"><label class="form-label">Prix/carton</label><input type="number" class="form-control form-control-sm art-field" id="art_prix_carton" min="0" step="0.01" value="0" oninput="calculerSaisie()"><div class="hint-prev" id="hint_prix_carton" onclick="applyHint('art_prix_carton',this)">avant: <span class="hint-val"></span></div></div>
-                    </div>
-                    <!-- Quantité + Prix (toujours visible) -->
-                    <div class="row gx-2 align-items-end">
-                        <div class="col-1 mb-1x field-arrows">
-                            <label class="form-label">Quantité *</label>
-                            <input type="number" class="form-control form-control-sm art-field" id="art_qte" min="1" value="1" oninput="calculerSaisie()">
                             <div class="hint-prev" id="hint_qte" onclick="applyHint('art_qte',this)">stock: <span class="hint-val"></span></div>
                         </div>
-                        <div class="col-2 mb-1x field-arrows">
-                            <label class="form-label">Prix d'achat unit. *</label>
-                            <input type="number" class="form-control form-control-sm art-field" id="art_prix_achat" min="0" step="0.01" value="0" oninput="calculerSaisie()">
-                            <div class="hint-prev" id="hint_prix_achat" onclick="applyHint('art_prix_achat',this)">avant: <span class="hint-val"></span></div>
+                        <div class="col mb-1x">
+                            <label class="form-label">Pièces/carton</label>
+                            <input type="number" class="form-control form-control-sm art-field" id="art_pcs_carton" min="0" value="0" oninput="calculerSaisie()">
+                            <div class="hint-prev" id="hint_pcs_carton" onclick="applyHint('art_pcs_carton',this)">avant: <span class="hint-val"></span></div>
                         </div>
-                        <div class="col-auto mb-1x" id="prixAchatFC" style="display:none;">
-                            <label class="form-label" style="color:#e65100;font-weight:700;">Équiv. FC</label>
-                            <div style="background:#fff3e0;border:2px solid #ff9800;border-radius:6px;padding:5px 14px;font-size:1.1rem;font-weight:800;color:#e65100;min-width:120px;text-align:center;" id="prixAchatFCVal">0 FC</div>
+                        <div class="col mb-1x">
+                            <label class="form-label" id="lbl_prix_carton">Prix/carton</label>
+                            <div class="d-flex align-items-center gap-1">
+                                <input type="number" class="form-control form-control-sm art-field" id="art_prix_carton" min="0" step="0.01" value="0" oninput="calculerSaisie()" style="flex:1;">
+                                <span id="prix_unit_nouveau" style="display:none;background:#e3f2fd;border:1px solid #1565c0;border-radius:4px;padding:2px 6px;font-size:.75rem;font-weight:700;color:#1565c0;white-space:nowrap;">→ 0 FC/u</span>
+                            </div>
+                            <div class="hint-prev" id="hint_prix_carton" onclick="applyHint('art_prix_carton',this)">avant: <span class="hint-val"></span></div>
+                            <div id="prix_unit_avant" style="display:none;font-size:.7rem;color:#6c757d;">P.U. avant: <span>0</span> FC</div>
+                            <div id="prix_unit_calcule" style="display:none;font-size:.7rem;color:#1565c0;font-weight:600;">P.U. calculé: <span>0</span> FC</div>
                         </div>
-                        <div class="col-2 mb-1x field-arrows">
-                            <label class="form-label" style="color:#198754;font-weight:600;">Prix de vente (FC)</label>
+                        <div class="col mb-1x field-arrows">
+                            <label class="form-label" style="color:#198754;font-weight:600;">Prix vente (FC)</label>
                             <input type="number" class="form-control form-control-sm art-field" id="art_prix_vente" min="0" step="0.01" value="0" oninput="calculerSaisie()" style="border-color:#4caf50;">
                             <div class="hint-prev" id="hint_prix_vente" onclick="applyHint('art_prix_vente',this)">avant: <span class="hint-val"></span></div>
+                        </div>
+                    </div>
+                    <!-- Ligne 2: Nb cartons, Pièces en +, Catégorie, Bénéfice -->
+                    <div class="row gx-2 align-items-end">
+                        <div class="col mb-1x">
+                            <label class="form-label">Nb. cartons</label>
+                            <input type="number" class="form-control form-control-sm art-field" id="art_nb_cartons" min="0" value="0" oninput="calculerSaisie()">
+                        </div>
+                        <div class="col mb-1x">
+                            <label class="form-label">Pièces en +</label>
+                            <input type="number" class="form-control form-control-sm art-field" id="art_pcs_sup" min="0" value="0" oninput="calculerSaisie()">
+                        </div>
+                        <div class="col-2 mb-1x field-arrows">
+                            <label class="form-label">Catégorie</label>
+                            <input type="text" class="form-control form-control-sm art-field" id="art_categorie" list="datalistCategories" placeholder="Tapez pour rechercher" autocomplete="off" oninput="onSaisieCategorieInput()">
+                            <input type="hidden" id="art_categorie_id" value="">
+                            <input type="hidden" id="art_categorie_nom" value="">
                         </div>
                         <div class="col-auto mb-1x" id="beneficeDisplay">
                             <label class="form-label" style="color:#9c27b0;font-weight:600;">Bénéfice/pièce</label>
@@ -264,13 +257,11 @@
                                 <span id="beneficePct" style="color:#4caf50;">0%</span>
                             </div>
                         </div>
-                        <div class="col-2 mb-1x field-arrows">
-                            <label class="form-label">Catégorie</label>
-                            <input type="text" class="form-control form-control-sm art-field" id="art_categorie" list="datalistCategories" placeholder="Tapez pour rechercher ou créer" autocomplete="off" oninput="onSaisieCategorieInput()">
-                            <input type="hidden" id="art_categorie_id" value="">
-                            <input type="hidden" id="art_categorie_nom" value="">
-                        </div>
                     </div>
+                    <!-- Champs cachés pour compatibilité -->
+                    <input type="hidden" id="art_qte" value="1">
+                    <input type="hidden" id="art_prix_achat" value="0">
+                    <div id="prixAchatFC" style="display:none;"><div id="prixAchatFCVal"></div></div>
                     <!-- Aperçu + bouton ajouter -->
                     <div class="saisie-apercu">
                         <div>
@@ -673,7 +664,6 @@ function factResetArticleFields() {
     getEl('art_prix_achat').value = '0';
     getEl('art_prix_vente').value = '0';
     getEl('prixAchatFC').style.display = 'none';
-    getEl('infoPrecedentPanel').style.display = 'none';
     updateModeIndicator();
     hideAllHints();
     hideDeviseWarning();
@@ -702,36 +692,15 @@ function onSaisieArticleInput() {
             getEl('art_code').value = match.code;
             input.classList.add('input-matched');
 
-            // Afficher le panneau d'info précédent
-            var appro = FACT_DERNIERS_APPROS[String(match.id)];
-            var panel = getEl('infoPrecedentPanel');
-            panel.style.display = 'block';
-            
-            // Stock actuel
-            getEl('infoPrevStock').innerHTML = '<i class="fas fa-boxes"></i> Stock: <b>' + match.stock + '</b>';
-            
-            // Prix d'achat (toujours en FC)
-            var prixAchatFC = appro && appro.prix_achat_unitaire > 0 ? appro.prix_achat_unitaire : match.prix_achat;
-            getEl('infoPrevPrixAchat').innerHTML = '<i class="fas fa-shopping-cart"></i> P.Achat: <b>' + formatNumber(prixAchatFC) + '</b> FC';
-            
-            // Prix de vente (toujours en FC)
-            getEl('infoPrevPrixVente').innerHTML = '<i class="fas fa-tag"></i> P.Vente: <b>' + formatNumber(match.prix_vente) + '</b> FC';
-            
-            // Info carton si disponible
-            if (appro && appro.type_quantite === 'CARTON' && appro.pieces_par_carton > 0) {
-                getEl('infoPrevCarton').style.display = 'inline';
-                getEl('infoPrevCartonText').innerHTML = appro.nombre_cartons + ' crt × ' + appro.pieces_par_carton + ' pcs = ' + (appro.nombre_cartons * appro.pieces_par_carton) + ' | ' + formatNumber(appro.prix_achat_carton) + ' FC/crt';
-            } else {
-                getEl('infoPrevCarton').style.display = 'none';
-            }
-            
-            // Devise de la dernière saisie
-            if (appro && appro.devise_saisie) {
-                getEl('infoPrevDevise').style.display = 'inline';
-                getEl('infoPrevDeviseVal').textContent = appro.devise_saisie === 'USD' ? 'USD' : 'FC';
-            } else {
-                getEl('infoPrevDevise').style.display = 'none';
-            }
+            // Nettoyer tous les champs numériques avant d'afficher les hints
+            getEl('art_nb_cartons').value = '0';
+            getEl('art_pcs_carton').value = '0';
+            getEl('art_pcs_sup').value = '0';
+            getEl('art_prix_carton').value = '0';
+            getEl('art_qte').value = '1';
+            getEl('art_prix_achat').value = '0';
+            getEl('art_prix_vente').value = '0';
+            hideAllHints();
 
             // Catégorie
             if (match.categorie_id) {
@@ -771,34 +740,29 @@ function onSaisieArticleInput() {
                 }
             }
 
-            // Si dernière facture était en carton, pré-remplir les champs carton
+            // Afficher les hints avec valeurs ORIGINALES en FC (sans pré-remplir les champs)
+            // L'utilisateur peut cliquer sur le hint pour appliquer la valeur
+            // Si aucune valeur n'est saisie, la valeur précédente sera utilisée à l'ajout
+            
+            // Hints carton (valeurs originales FC) - pas de hint pour nb_cartons et pcs_sup
             if (appro && appro.type_quantite === 'CARTON') {
-                if (appro.nombre_cartons > 0) {
-                    getEl('art_nb_cartons').value = appro.nombre_cartons;
-                    showHint('hint_nb_cartons', appro.nombre_cartons, 'crt');
-                }
                 if (appro.pieces_par_carton > 0) {
-                    getEl('art_pcs_carton').value = appro.pieces_par_carton;
                     showHint('hint_pcs_carton', appro.pieces_par_carton, 'pcs');
                 }
                 if (appro.prix_achat_carton > 0) {
-                    getEl('art_prix_carton').value = prixPourChamp(appro.prix_achat_carton);
                     showHint('hint_prix_carton', appro.prix_achat_carton, 'FC');
                 }
             }
 
-            // Pré-remplir prix d'achat + hint (prix stocké en FC)
+            // Hint prix d'achat (valeur originale FC)
             if (appro && appro.prix_achat_unitaire > 0) {
-                getEl('art_prix_achat').value = prixPourChamp(appro.prix_achat_unitaire);
                 showHint('hint_prix_achat', appro.prix_achat_unitaire, 'FC');
             } else if (match.prix_achat > 0) {
-                getEl('art_prix_achat').value = prixPourChamp(match.prix_achat);
                 showHint('hint_prix_achat', match.prix_achat, 'FC');
             }
 
-            // Prix de vente est toujours en FC, ne pas convertir
+            // Hint prix de vente (toujours en FC)
             if (match.prix_vente > 0) {
-                getEl('art_prix_vente').value = match.prix_vente;
                 showHint('hint_prix_vente', match.prix_vente, 'FC');
             }
 
@@ -836,33 +800,17 @@ function onSaisieCategorieInput() {
 }
 
 // =============================================
-// AUTO-DÉTECTION TYPE QUANTITÉ
+// MODE TOUJOURS CARTON
 // =============================================
 function getAutoType() {
-    var nc = parseInt(getEl('art_nb_cartons').value) || 0;
-    return nc > 0 ? 'CARTON' : 'UNITE';
+    return 'CARTON';
 }
 
 function updateModeIndicator() {
-    var type = getAutoType();
-    var ind = getEl('autoModeIndicator');
-    var qteInput = getEl('art_qte');
-    getEl('art_type').value = type;
-    if (type === 'CARTON') {
-        ind.textContent = '📦 Carton';
-        ind.style.background = '#e3f2fd'; ind.style.color = '#1565c0'; ind.style.borderColor = '#90caf9';
-        qteInput.readOnly = true;
-        qteInput.style.background = '#e9ecef';
-    } else {
-        ind.textContent = '🔢 Pièce';
-        ind.style.background = '#f3e5f5'; ind.style.color = '#7b1fa2'; ind.style.borderColor = '#ce93d8';
-        qteInput.readOnly = false;
-        qteInput.style.background = '';
-    }
+    // Plus de mode à afficher - toujours CARTON
 }
 
 function onSaisieTypeChange(skipFocus) {
-    updateModeIndicator();
     calculerSaisie();
 }
 
@@ -871,38 +819,67 @@ function onSaisieTypeChange(skipFocus) {
 // =============================================
 function calculerSaisie() {
     try {
-        // Auto-détection du mode
-        updateModeIndicator();
-        var type = getAutoType();
         var devise = getDevise();
         var total = 0, qteUnites = 0;
-        if (type === 'CARTON') {
-            var nc = parseFloat(getEl('art_nb_cartons').value) || 0;
-            var ppc = parseFloat(getEl('art_pcs_carton').value) || 1;
-            var ps = parseFloat(getEl('art_pcs_sup').value) || 0;
-            var pc = parseFloat(getEl('art_prix_carton').value) || 0;
-            var pu = ppc > 0 ? pc / ppc : 0;
-            var pps = pu;
-            qteUnites = (nc * ppc) + ps;
-            total = (nc * pc) + (ps * pps);
-            // Synchroniser quantité et prix d'achat unitaire calculés
-            getEl('art_qte').value = qteUnites;
-            getEl('art_prix_achat').value = Math.round(pu * 100) / 100;
-        } else {
-            qteUnites = parseFloat(getEl('art_qte').value) || 0;
-            var pa = parseFloat(getEl('art_prix_achat').value) || 0;
-            total = qteUnites * pa;
-        }
-        getEl('saisieTotal').textContent = 'Sous-total: ' + factFormatNumber(total) + (type === 'CARTON' ? ' (' + qteUnites + ' unités)' : '');
-        // Afficher l'équivalent FC du prix d'achat unitaire
+        // Mode toujours CARTON
+        var nc = parseFloat(getEl('art_nb_cartons').value) || 0;
+        var ppc = parseFloat(getEl('art_pcs_carton').value) || 0;
+        var ps = parseFloat(getEl('art_pcs_sup').value) || 0;
+        var pc = parseFloat(getEl('art_prix_carton').value) || 0;
+        var pu = ppc > 0 ? pc / ppc : 0;
+        var pps = pu;
+        qteUnites = (nc * ppc) + ps;
+        total = (nc * pc) + (ps * pps);
+        // Synchroniser quantité et prix d'achat unitaire calculés
+        getEl('art_qte').value = qteUnites;
+        getEl('art_prix_achat').value = Math.round(pu * 100) / 100;
+        getEl('saisieTotal').textContent = 'Sous-total: ' + factFormatNumber(total) + ' (' + qteUnites + ' unités)';
+        // Afficher prix unitaire avant + nouveau
         var taux = factGetTaux();
-        var pa_unit = parseFloat(getEl('art_prix_achat').value) || 0;
-        if (devise === 'USD' && pa_unit > 0) {
-            getEl('prixAchatFCVal').textContent = factFormatNumber(pa_unit * taux) + ' FC';
-            getEl('prixAchatFC').style.display = '';
-        } else {
-            getEl('prixAchatFC').style.display = 'none';
+        var lblPrixCarton = getEl('lbl_prix_carton');
+        var prixUnitAvant = getEl('prix_unit_avant');
+        var prixUnitNouveau = getEl('prix_unit_nouveau');
+        
+        // Récupérer le prix unitaire précédent depuis le hint
+        var hintPrixAchat = getEl('hint_prix_achat');
+        var prixUnitAvantVal = hintPrixAchat && hintPrixAchat.dataset.hintValue ? parseFloat(hintPrixAchat.dataset.hintValue) : 0;
+        
+        // Calculer le nouveau prix unitaire (en FC)
+        var nouveauPrixUnit = pu; // Prix unitaire calculé depuis prix_carton / pcs_carton
+        if (devise === 'USD' && taux > 0) {
+            nouveauPrixUnit = pu * taux; // Convertir en FC si USD
         }
+        
+        // Afficher le nouveau prix unitaire à côté du champ
+        var prixUnitCalcule = getEl('prix_unit_calcule');
+        if (pc > 0 && ppc > 0) {
+            prixUnitNouveau.textContent = '→ ' + factFormatNumber(Math.round(nouveauPrixUnit)) + ' FC/u';
+            prixUnitNouveau.style.display = '';
+            // Afficher prix unitaire calculé en dessous
+            prixUnitCalcule.innerHTML = 'P.U. calculé: <span>' + factFormatNumber(Math.round(nouveauPrixUnit)) + '</span> FC';
+            prixUnitCalcule.style.display = '';
+            // Afficher prix unitaire avant en dessous
+            if (prixUnitAvantVal > 0) {
+                prixUnitAvant.innerHTML = 'P.U. avant: <span>' + factFormatNumber(Math.round(prixUnitAvantVal)) + '</span> FC';
+                prixUnitAvant.style.display = '';
+            } else {
+                prixUnitAvant.style.display = 'none';
+            }
+        } else {
+            prixUnitNouveau.style.display = 'none';
+            prixUnitAvant.style.display = 'none';
+            prixUnitCalcule.style.display = 'none';
+        }
+        
+        // Label selon devise
+        if (devise === 'USD') {
+            lblPrixCarton.textContent = 'Prix/carton ($)';
+            lblPrixCarton.style.color = '#1565c0';
+        } else {
+            lblPrixCarton.textContent = 'Prix/carton';
+            lblPrixCarton.style.color = '';
+        }
+        var pa_unit = parseFloat(getEl('art_prix_achat').value) || 0;
         // Prix de vente toujours en FC, pas de conversion nécessaire
         if (devise === 'USD' && total > 0) {
             getEl('saisieTotalConv').textContent = factFormatNumber(total * factGetTaux());
@@ -941,7 +918,18 @@ function ajouterArticle() {
         var nom = getEl('art_nom').value.trim();
         if (!nom) { alert('Saisissez le nom de l\'article'); getEl('art_nom').focus(); return; }
 
-        var type = getAutoType();
+        // Fonction pour récupérer la valeur du hint si le champ est vide/0
+        function getValeurOuHint(fieldId, hintId, defaultVal) {
+            var val = parseFloat(getEl(fieldId).value) || 0;
+            if (val === 0 && hintId) {
+                var hint = getEl(hintId);
+                if (hint && hint.dataset.hintValue) {
+                    val = parseFloat(hint.dataset.hintValue) || 0;
+                }
+            }
+            return val || defaultVal;
+        }
+
         var art = {
             article_id: getEl('art_id').value || null,
             code: getEl('art_code').value || '',
@@ -949,26 +937,21 @@ function ajouterArticle() {
             description: '',
             categorie_id: getEl('art_categorie_id').value || (factSelectedArticle ? factSelectedArticle.categorie_id : null) || null,
             categorie_nom: getEl('art_categorie_nom').value || '',
-            type_quantite: type
+            type_quantite: 'CARTON'
         };
 
-        art.prix_vente = parseFloat(getEl('art_prix_vente').value) || 0;
+        // Prix de vente: utiliser hint si champ vide
+        art.prix_vente = getValeurOuHint('art_prix_vente', 'hint_prix_vente', 0);
 
-        if (type === 'CARTON') {
-            art.nombre_cartons = parseInt(getEl('art_nb_cartons').value) || 0;
-            art.pieces_par_carton = parseInt(getEl('art_pcs_carton').value) || 1;
-            art.pieces_supplementaires = parseInt(getEl('art_pcs_sup').value) || 0;
-            art.prix_achat_carton = parseFloat(getEl('art_prix_carton').value) || 0;
-            art.prix_achat_unitaire = art.pieces_par_carton > 0 ? art.prix_achat_carton / art.pieces_par_carton : 0;
-            art.prix_piece_sup = art.prix_achat_unitaire;
-            art.quantite_unites = (art.nombre_cartons * art.pieces_par_carton) + art.pieces_supplementaires;
-        } else {
-            art.quantite_unites = parseInt(getEl('art_qte').value) || 0;
-            art.prix_achat_unitaire = parseFloat(getEl('art_prix_achat').value) || 0;
-            art.nombre_cartons = 0;
-            art.pieces_par_carton = 1;
-            art.prix_achat_carton = 0;
-        }
+        // Mode toujours CARTON - nb_cartons et pcs_sup sans valeurs précédentes
+        art.nombre_cartons = parseInt(getEl('art_nb_cartons').value) || 0;
+        art.pieces_par_carton = parseInt(getEl('art_pcs_carton').value) || parseInt(getEl('hint_pcs_carton').dataset.hintValue) || 0;
+        art.pieces_supplementaires = parseInt(getEl('art_pcs_sup').value) || 0;
+        // Prix carton: utiliser hint si champ vide (valeur en FC)
+        art.prix_achat_carton = getValeurOuHint('art_prix_carton', 'hint_prix_carton', 0);
+        art.prix_achat_unitaire = art.pieces_par_carton > 0 ? art.prix_achat_carton / art.pieces_par_carton : 0;
+        art.prix_piece_sup = art.prix_achat_unitaire;
+        art.quantite_unites = (art.nombre_cartons * art.pieces_par_carton) + art.pieces_supplementaires;
 
         if (art.quantite_unites <= 0) { alert('La quantité doit être supérieure à 0'); return; }
 
@@ -1002,7 +985,7 @@ function factViderChamps() {
     getEl('art_categorie_id').value = '';
     getEl('art_categorie_nom').value = '';
     getEl('art_nb_cartons').value = '0';
-    getEl('art_pcs_carton').value = '1';
+    getEl('art_pcs_carton').value = '0';
     getEl('art_pcs_sup').value = '0';
     getEl('art_prix_carton').value = '0';
     getEl('art_qte').value = '1';
@@ -1010,7 +993,17 @@ function factViderChamps() {
     getEl('art_prix_vente').value = '0';
     getEl('saisieTotal').textContent = 'Sous-total: 0';
     getEl('saisieConversion').style.display = 'none';
-    getEl('prixAchatFC').style.display = 'none';
+    // Masquer les affichages de prix unitaire
+    getEl('prix_unit_nouveau').style.display = 'none';
+    getEl('prix_unit_avant').style.display = 'none';
+    getEl('prix_unit_calcule').style.display = 'none';
+    // Réinitialiser bénéfice
+    var elBeneficeFC = getEl('beneficeFC');
+    var elBeneficePct = getEl('beneficePct');
+    if (elBeneficeFC) elBeneficeFC.textContent = '0 FC';
+    if (elBeneficePct) { elBeneficePct.textContent = '0%'; elBeneficePct.style.color = '#4caf50'; }
+    // Réinitialiser article sélectionné
+    factSelectedArticle = null;
     updateModeIndicator();
     hideAllHints();
 }
