@@ -61,6 +61,8 @@ urlpatterns = [
     path('superadmin/statistiques-systeme/', admin_views.statistiques_systeme, name='admin_statistiques_systeme'),
     path('superadmin/erreurs-transactions/', admin_views.liste_erreurs_transactions, name='admin_liste_erreurs_transactions'),
     path('superadmin/erreurs-transactions/<int:erreur_id>/', admin_views.detail_erreur_transaction, name='admin_detail_erreur_transaction'),
+    path('superadmin/ventes-rejetees/', admin_views.admin_ventes_rejetees, name='admin_ventes_rejetees'),
+    path('superadmin/ventes-rejetees/<int:vente_id>/traiter/', admin_views.admin_traiter_vente_rejetee, name='admin_traiter_vente_rejetee'),
     
     # ===== INTERFACE COMMERÇANT =====
     path('commercant/login/', views_commercant.login_commercant, name='login_commercant'),

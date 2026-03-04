@@ -1,0 +1,291 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Ventes Rejetées - Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stats-card { border-radius: 12px; padding: 20px; color: #fff; }
+    .stats-card.total { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+    .stats-card.non-traitees { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+    .stats-card h2 { font-size: 2rem; margin: 0; }
+    .stats-card small { opacity: 0.9; }
+    
+    .vente-row { transition: background 0.2s; }
+    .vente-row:hover { background: #f8f9fa; }
+    .vente-row.non-traitee { border-left: 4px solid #dc3545; }
+    .vente-row.traitee { border-left: 4px solid #28a745; opacity: 0.7; }
+    
+    .badge-raison-INSUFFICIENT_STOCK { background: #dc3545; }
+    .badge-raison-ARTICLE_NOT_FOUND { background: #fd7e14; }
+    .badge-raison-PRIX_MODIFIE { background: #ffc107; color: #000; }
+    .badge-raison-TOTAL_INCOHERENT { background: #17a2b8; }
+    .badge-raison-BOUTIQUE_MISMATCH { background: #6f42c1; }
+    .badge-raison-DUPLICATE { background: #6c757d; }
+    .badge-raison-INVALID_FORMAT { background: #e83e8c; }
+    .badge-raison-OTHER { background: #343a40; }
+    
+    .filter-card { background: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 20px; }
+    .filter-card .form-label { font-size: .8rem; font-weight: 600; color: #495057; }
+    
+    .message-erreur { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
+    .lignes-vente { font-size: .75rem; color: #6c757d; }
+    .stock-info { font-size: .8rem; }
+    .stock-info .demande { color: #dc3545; font-weight: 600; }
+    .stock-info .dispo { color: #28a745; font-weight: 600; }
+    
+    .chart-container { background: #fff; border-radius: 10px; padding: 15px; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1><i class="fas fa-ban text-danger"></i> Ventes Rejetées</h1>
+            <p class="text-muted mb-0">Suivi des ventes refusées de tous les points de vente</p>
+        </div>
+        <div>
+            <a href="{% url 'inventory:admin_dashboard' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i> Tableau de bord
+            </a>
+        </div>
+    </div>
+    
+    <!-- Statistiques -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stats-card total">
+                <h2>{{ total_rejetees }}</h2>
+                <small><i class="fas fa-list me-1"></i> Total ventes rejetées</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stats-card non-traitees">
+                <h2>{{ non_traitees }}</h2>
+                <small><i class="fas fa-exclamation-circle me-1"></i> Non traitées</small>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="chart-container h-100">
+                <h6 class="mb-2"><i class="fas fa-chart-pie text-primary"></i> Par raison</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for stat in stats_par_raison %}
+                    <span class="badge badge-raison-{{ stat.raison_rejet }}">
+                        {{ stat.raison_display }}: {{ stat.count }}
+                    </span>
+                    {% empty %}
+                    <span class="text-muted">Aucune donnée</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stats par boutique -->
+    {% if stats_par_boutique %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="chart-container">
+                <h6 class="mb-2"><i class="fas fa-store text-info"></i> Par boutique (Top 10)</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% for stat in stats_par_boutique %}
+                    <span class="badge bg-info">{{ stat.boutique__nom }}: {{ stat.count }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- Filtres -->
+    <div class="filter-card">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label">Boutique</label>
+                <select name="boutique" class="form-select form-select-sm">
+                    <option value="">Toutes</option>
+                    {% for boutique in boutiques %}
+                    <option value="{{ boutique.id }}" {% if boutique_filter == boutique.id|stringformat:"s" %}selected{% endif %}>
+                        {{ boutique.nom }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Raison</label>
+                <select name="raison" class="form-select form-select-sm">
+                    <option value="">Toutes</option>
+                    {% for code, label in raisons %}
+                    <option value="{{ code }}" {% if raison_filter == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Statut</label>
+                <select name="traitee" class="form-select form-select-sm">
+                    <option value="">Tous</option>
+                    <option value="0" {% if traitee_filter == '0' %}selected{% endif %}>Non traitées</option>
+                    <option value="1" {% if traitee_filter == '1' %}selected{% endif %}>Traitées</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Date début</label>
+                <input type="date" name="date_debut" class="form-control form-control-sm" value="{{ date_debut }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Date fin</label>
+                <input type="date" name="date_fin" class="form-control form-control-sm" value="{{ date_fin }}">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <i class="fas fa-filter"></i> Filtrer
+                </button>
+            </div>
+        </form>
+        {% if boutique_filter or raison_filter or date_debut or date_fin or traitee_filter %}
+        <div class="mt-2">
+            <a href="{% url 'inventory:admin_ventes_rejetees' %}" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-times"></i> Réinitialiser
+            </a>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Tableau des ventes rejetées -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-list"></i> Liste des ventes rejetées ({{ total_rejetees }})</span>
+        </div>
+        <div class="card-body p-0">
+            {% if ventes_details %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Boutique</th>
+                            <th>Terminal</th>
+                            <th>UID Vente</th>
+                            <th>Raison</th>
+                            <th>Détails</th>
+                            <th>Montant</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for vente in ventes_details %}
+                        <tr class="vente-row {% if vente.traitee %}traitee{% else %}non-traitee{% endif %}">
+                            <td class="text-nowrap">
+                                <strong>{{ vente.date_tentative|date:"d/m/Y" }}</strong><br>
+                                <small class="text-muted">{{ vente.date_tentative|time:"H:i:s" }}</small>
+                            </td>
+                            <td><span class="badge bg-info">{{ vente.boutique }}</span></td>
+                            <td><small>{{ vente.terminal }}</small></td>
+                            <td><code class="small">{{ vente.vente_uid|truncatechars:15 }}</code></td>
+                            <td>
+                                <span class="badge badge-raison-{{ vente.raison_code }}">{{ vente.raison }}</span>
+                            </td>
+                            <td>
+                                {% if vente.article_concerne != '-' %}
+                                <div><strong>Article:</strong> {{ vente.article_concerne }}</div>
+                                {% endif %}
+                                {% if vente.stock_demande is not None and vente.stock_disponible is not None %}
+                                <div class="stock-info">
+                                    Demandé: <span class="demande">{{ vente.stock_demande }}</span> |
+                                    Dispo: <span class="dispo">{{ vente.stock_disponible }}</span>
+                                </div>
+                                {% endif %}
+                                <div class="message-erreur" title="{{ vente.message_erreur }}">
+                                    {{ vente.message_erreur|truncatechars:50 }}
+                                </div>
+                                {% if vente.lignes %}
+                                <div class="lignes-vente mt-1">
+                                    <strong>Articles ({{ vente.nb_lignes }}):</strong>
+                                    {% for ligne in vente.lignes %}
+                                    <div>• {{ ligne.article }} x{{ ligne.quantite }}</div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <strong>{{ vente.montant|floatformat:0|intcomma }} FC</strong>
+                            </td>
+                            <td>
+                                {% if vente.traitee %}
+                                <span class="badge bg-success"><i class="fas fa-check"></i> Traitée</span>
+                                {% else %}
+                                <span class="badge bg-danger"><i class="fas fa-clock"></i> En attente</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-primary" 
+                                        data-bs-toggle="modal" data-bs-target="#modalTraiter{{ vente.id }}">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        
+                        <!-- Modal Traiter -->
+                        <div class="modal fade" id="modalTraiter{{ vente.id }}" tabindex="-1">
+                            <div class="modal-dialog">
+                                <div class="modal-content">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Traiter la vente {{ vente.vente_uid }}</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <form method="post" action="{% url 'inventory:admin_traiter_vente_rejetee' vente.id %}">
+                                        {% csrf_token %}
+                                        <div class="modal-body">
+                                            <div class="mb-3">
+                                                <strong>Boutique:</strong> {{ vente.boutique }}<br>
+                                                <strong>Raison:</strong> {{ vente.raison }}<br>
+                                                <strong>Message:</strong> {{ vente.message_erreur }}
+                                            </div>
+                                            {% if vente.article_concerne != '-' %}
+                                            <div class="alert alert-warning">
+                                                <strong>Article concerné:</strong> {{ vente.article_concerne }}<br>
+                                                {% if vente.stock_demande is not None %}
+                                                Stock demandé: {{ vente.stock_demande }} | Disponible: {{ vente.stock_disponible }}
+                                                {% endif %}
+                                            </div>
+                                            {% endif %}
+                                            <div class="mb-3">
+                                                <label class="form-label">Notes de traitement</label>
+                                                <textarea name="notes" class="form-control" rows="3" placeholder="Décrivez les actions effectuées...">{{ vente.notes_traitement }}</textarea>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            {% if vente.traitee %}
+                                            <button type="submit" name="action" value="rouvrir" class="btn btn-warning">
+                                                <i class="fas fa-undo"></i> Rouvrir
+                                            </button>
+                                            {% else %}
+                                            <button type="submit" name="action" value="traiter" class="btn btn-success">
+                                                <i class="fas fa-check"></i> Marquer comme traitée
+                                            </button>
+                                            {% endif %}
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                <h5 class="text-muted">Aucune vente rejetée</h5>
+                <p class="text-muted">Toutes les ventes ont été synchronisées avec succès.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

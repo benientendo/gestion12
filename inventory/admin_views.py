@@ -6,7 +6,7 @@ from django.db import transaction, connection
 from django.http import JsonResponse
 from django.core.paginator import Paginator
 from django.db.models import Count, Sum
-from .models import Client, Commercant, Boutique, Article, Vente, LigneVente
+from .models import Client, Commercant, Boutique, Article, Vente, LigneVente, VenteRejetee
 from .forms import ClientForm, CommercantForm
 import logging
 import secrets
@@ -529,3 +529,146 @@ def detail_erreur_transaction(request, erreur_id):
     }
     
     return render(request, 'inventory/admin/detail_erreur_transaction.html', context)
+
+
+# ===== VENTES REJETÉES (ADMIN) =====
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_ventes_rejetees(request):
+    """Affiche toutes les ventes rejetées de tous les points de vente pour l'administrateur."""
+    from django.utils import timezone
+    from decimal import Decimal
+    
+    # Filtres
+    boutique_filter = request.GET.get('boutique', '')
+    raison_filter = request.GET.get('raison', '')
+    date_debut = request.GET.get('date_debut', '')
+    date_fin = request.GET.get('date_fin', '')
+    traitee_filter = request.GET.get('traitee', '')
+    
+    # Requête de base
+    ventes_rejetees = VenteRejetee.objects.select_related('boutique', 'terminal').order_by('-date_tentative')
+    
+    # Appliquer les filtres
+    if boutique_filter:
+        ventes_rejetees = ventes_rejetees.filter(boutique_id=boutique_filter)
+    if raison_filter:
+        ventes_rejetees = ventes_rejetees.filter(raison_rejet=raison_filter)
+    if date_debut:
+        ventes_rejetees = ventes_rejetees.filter(date_tentative__date__gte=date_debut)
+    if date_fin:
+        ventes_rejetees = ventes_rejetees.filter(date_tentative__date__lte=date_fin)
+    if traitee_filter == '1':
+        ventes_rejetees = ventes_rejetees.filter(traitee=True)
+    elif traitee_filter == '0':
+        ventes_rejetees = ventes_rejetees.filter(traitee=False)
+    
+    # Statistiques globales
+    total_rejetees = ventes_rejetees.count()
+    non_traitees = ventes_rejetees.filter(traitee=False).count()
+    
+    # Stats par raison
+    stats_par_raison = ventes_rejetees.values('raison_rejet').annotate(
+        count=Count('id')
+    ).order_by('-count')
+    
+    raisons_display = dict(VenteRejetee.RAISONS_REJET)
+    for stat in stats_par_raison:
+        stat['raison_display'] = raisons_display.get(stat['raison_rejet'], stat['raison_rejet'])
+    
+    # Stats par boutique
+    stats_par_boutique = ventes_rejetees.values('boutique__nom').annotate(
+        count=Count('id')
+    ).order_by('-count')[:10]
+    
+    # Préparer les détails
+    ventes_details = []
+    for vente in ventes_rejetees[:100]:  # Limiter à 100
+        try:
+            donnees = vente.donnees_vente
+            montant = Decimal('0')
+            nb_lignes = 0
+            lignes = []
+            
+            if isinstance(donnees, dict):
+                montant = Decimal(str(donnees.get('montant_total', 0)))
+                lignes_data = donnees.get('lignes', [])
+                nb_lignes = len(lignes_data)
+                for ligne in lignes_data[:5]:  # Max 5 lignes par vente
+                    lignes.append({
+                        'article': ligne.get('article_nom', ligne.get('article', 'N/A')),
+                        'quantite': ligne.get('quantite', 0),
+                        'prix': ligne.get('prix_unitaire', 0),
+                    })
+            
+            ventes_details.append({
+                'id': vente.id,
+                'vente_uid': vente.vente_uid,
+                'boutique': vente.boutique.nom,
+                'terminal': vente.terminal.nom_terminal if vente.terminal else 'N/A',
+                'date_tentative': vente.date_tentative,
+                'date_vente_originale': vente.date_vente_originale,
+                'raison': vente.get_raison_rejet_display(),
+                'raison_code': vente.raison_rejet,
+                'message_erreur': vente.message_erreur,
+                'article_concerne': vente.article_concerne_nom or '-',
+                'stock_demande': vente.stock_demande,
+                'stock_disponible': vente.stock_disponible,
+                'montant': montant,
+                'nb_lignes': nb_lignes,
+                'lignes': lignes,
+                'traitee': vente.traitee,
+                'action_requise': vente.get_action_requise_display(),
+                'notes_traitement': vente.notes_traitement,
+            })
+        except Exception as e:
+            logger.error(f"Erreur parsing vente rejetée {vente.id}: {e}")
+    
+    # Liste des boutiques pour le filtre
+    boutiques = Boutique.objects.filter(est_active=True).order_by('nom')
+    
+    context = {
+        'ventes_details': ventes_details,
+        'total_rejetees': total_rejetees,
+        'non_traitees': non_traitees,
+        'stats_par_raison': stats_par_raison,
+        'stats_par_boutique': stats_par_boutique,
+        'boutiques': boutiques,
+        'raisons': VenteRejetee.RAISONS_REJET,
+        'boutique_filter': boutique_filter,
+        'raison_filter': raison_filter,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+        'traitee_filter': traitee_filter,
+    }
+    
+    return render(request, 'inventory/admin/ventes_rejetees.html', context)
+
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_traiter_vente_rejetee(request, vente_id):
+    """Marquer une vente rejetée comme traitée."""
+    from django.utils import timezone
+    
+    vente = get_object_or_404(VenteRejetee, id=vente_id)
+    
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'traiter':
+            vente.traitee = True
+            vente.date_traitement = timezone.now()
+            vente.traite_par = request.user.username
+            vente.notes_traitement = request.POST.get('notes', '')
+            vente.save()
+            messages.success(request, f"Vente {vente.vente_uid} marquée comme traitée.")
+        elif action == 'rouvrir':
+            vente.traitee = False
+            vente.date_traitement = None
+            vente.traite_par = ''
+            vente.notes_traitement = ''
+            vente.save()
+            messages.info(request, f"Vente {vente.vente_uid} rouverte.")
+    
+    return redirect('inventory:admin_ventes_rejetees')
