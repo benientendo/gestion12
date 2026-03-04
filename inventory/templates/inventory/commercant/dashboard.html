@@ -504,13 +504,6 @@
                            class="btn btn-warning btn-sm" onclick="event.stopPropagation();">
                             <i class="fas fa-clipboard-list"></i> Inventaire
                         </a>
-                        <a href="{% url 'inventory:commercant_ventes_refusees_boutique' boutique.id %}" 
-                           class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation();">
-                            <i class="fas fa-ban"></i> Ventes Refusées
-                            {% if boutique.nb_ventes_refusees_jour > 0 %}
-                            <span class="badge bg-danger">{{ boutique.nb_ventes_refusees_jour }}</span>
-                            {% endif %}
-                        </a>
                     </div>
                 </div>
                 
