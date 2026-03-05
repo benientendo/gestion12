@@ -221,7 +221,7 @@
                             <label class="form-label" id="lbl_prix_carton">Prix/carton</label>
                             <div class="d-flex align-items-center gap-1">
                                 <input type="number" class="form-control form-control-sm art-field" id="art_prix_carton" min="0" step="0.01" value="0" oninput="calculerSaisie()" style="flex:1;">
-                                <span id="prix_unit_nouveau" style="display:none;background:#e3f2fd;border:1px solid #1565c0;border-radius:4px;padding:2px 6px;font-size:.75rem;font-weight:700;color:#1565c0;white-space:nowrap;">→ 0 FC/u</span>
+                                <span id="prix_unit_nouveau" style="display:none;background:#1565c0;border-radius:6px;padding:4px 10px;font-size:.82rem;font-weight:700;color:#fff;white-space:nowrap;letter-spacing:.3px;">0 FC/u</span>
                             </div>
                             <div class="hint-prev" id="hint_prix_carton" onclick="applyHint('art_prix_carton',this)">avant: <span class="hint-val"></span></div>
                             <div id="prix_unit_avant" style="display:none;font-size:.7rem;color:#6c757d;">P.U. avant: <span>0</span> FC</div>
@@ -852,11 +852,14 @@ function calculerSaisie() {
         
         // Afficher le nouveau prix unitaire à côté du champ
         var prixUnitCalcule = getEl('prix_unit_calcule');
-        if (pc > 0 && ppc > 0) {
-            prixUnitNouveau.textContent = '→ ' + factFormatNumber(Math.round(nouveauPrixUnit)) + ' FC/u';
+        if (ppc > 0) {
+            var labelUnit = factFormatNumber(Math.round(nouveauPrixUnit)) + ' FC/u';
+            prixUnitNouveau.textContent = labelUnit;
             prixUnitNouveau.style.display = '';
+            // Couleur selon si prix carton saisi ou non
+            prixUnitNouveau.style.background = pc > 0 ? '#1565c0' : '#90a4ae';
             // Afficher prix unitaire calculé en dessous
-            prixUnitCalcule.innerHTML = 'P.U. calculé: <span>' + factFormatNumber(Math.round(nouveauPrixUnit)) + '</span> FC';
+            prixUnitCalcule.innerHTML = 'P.achat/u: <span>' + factFormatNumber(Math.round(nouveauPrixUnit)) + '</span> FC';
             prixUnitCalcule.style.display = '';
             // Afficher prix unitaire avant en dessous
             if (prixUnitAvantVal > 0) {
