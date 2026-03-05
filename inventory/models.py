@@ -110,11 +110,11 @@ class Article(models.Model):
     # Devise principale de l'article (détermine la devise des prix)
     devise = models.CharField(max_length=3, choices=DEVISE_CHOICES, default='CDF', help_text="Devise des prix de cet article")
     # Les prix sont dans la devise sélectionnée
-    prix_vente = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)], help_text="Prix de vente dans la devise de l'article")
-    prix_achat = models.DecimalField(max_digits=10, decimal_places=2, default=0, help_text="Prix d'achat dans la devise de l'article")
+    prix_vente = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(0)], help_text="Prix de vente dans la devise de l'article")
+    prix_achat = models.DecimalField(max_digits=15, decimal_places=2, default=0, help_text="Prix d'achat dans la devise de l'article")
     # Champs de conversion (optionnels, pour affichage dans l'autre devise)
-    prix_vente_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)], help_text="Prix de vente converti en USD (si devise=CDF)")
-    prix_achat_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix d'achat converti en USD (si devise=CDF)")
+    prix_vente_usd = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)], help_text="Prix de vente converti en USD (si devise=CDF)")
+    prix_achat_usd = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, help_text="Prix d'achat converti en USD (si devise=CDF)")
     categorie = models.ForeignKey(Categorie, on_delete=models.SET_NULL, null=True, related_name='articles')
     boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='articles', null=True, blank=True)
     quantite_stock = models.IntegerField(default=0)
@@ -395,9 +395,9 @@ class LigneVente(models.Model):
         help_text="Variante spécifique vendue (optionnel)"
     )
     quantite = models.PositiveIntegerField()
-    prix_unitaire = models.DecimalField(max_digits=10, decimal_places=2)
+    prix_unitaire = models.DecimalField(max_digits=15, decimal_places=2)
     # Prix original avant négociation (pour traçabilité)
-    prix_original = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, 
+    prix_original = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, 
                                          help_text="Prix original avant négociation")
     # Indique si le prix a été négocié
     est_negocie = models.BooleanField(default=False, help_text="Prix négocié avec le client")
@@ -405,7 +405,7 @@ class LigneVente(models.Model):
     motif_reduction = models.CharField(max_length=255, blank=True, default='', 
                                         help_text="Motif/justification de la réduction accordée")
     # Prix en dollars USD
-    prix_unitaire_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, help_text="Prix unitaire en USD")
+    prix_unitaire_usd = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, help_text="Prix unitaire en USD")
     devise = models.CharField(max_length=3, choices=[('CDF', 'Franc Congolais'), ('USD', 'Dollar US')], default='CDF')
     
     @property
