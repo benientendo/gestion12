@@ -64,7 +64,7 @@ for r in rejets:
             boutique=boutique,
             client_maui=r.terminal,
             montant_total=Decimal(str(data.get('montant_total', 0))),
-            date_vente=r.date_tentative,
+            date_vente=data.get('date_vente') or r.date_tentative,
             paye=data.get('paye', True),
             est_annulee=False
         )
