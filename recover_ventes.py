@@ -64,10 +64,8 @@ for r in rejets:
             boutique=boutique,
             client_maui=r.terminal,
             montant_total=Decimal(str(data.get('montant_total', 0))),
-            montant_recu=Decimal(str(data.get('montant_recu', data.get('montant_total', 0)))),
-            monnaie_rendue=Decimal(str(data.get('monnaie_rendue', 0))),
             date_vente=r.date_tentative,
-            paye=True,
+            paye=data.get('paye', True),
             est_annulee=False
         )
         print(f"  Vente creee: {vente.numero_facture} - {vente.montant_total} CDF")
