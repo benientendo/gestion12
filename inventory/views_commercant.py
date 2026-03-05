@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 import json
 import qrcode
@@ -445,12 +445,24 @@ def detail_boutique(request, boutique_id):
     # Ventes récentes limitées pour affichage
     ventes_recentes_display = ventes_recentes[:10]
     
-    # Compteur des ventes refusées du jour
+    # Compteur des ventes refusées du jour + total potentiel
     aujourd_hui = timezone.now().date()
-    nb_ventes_refusees_jour = VenteRejetee.objects.filter(
+    ventes_refusees_jour = VenteRejetee.objects.filter(
         boutique=boutique,
         date_tentative__date=aujourd_hui
-    ).count()
+    )
+    nb_ventes_refusees_jour = ventes_refusees_jour.count()
+    
+    # Calculer le total potentiel des ventes refusées
+    total_potentiel_refusees = Decimal('0')
+    for vente in ventes_refusees_jour:
+        try:
+            donnees = vente.donnees_vente
+            if isinstance(donnees, dict):
+                montant = donnees.get('montant_total', 0)
+                total_potentiel_refusees += Decimal(str(montant))
+        except (TypeError, ValueError, KeyError):
+            pass
     
     context = {
         'boutique': boutique,
@@ -465,7 +477,8 @@ def detail_boutique(request, boutique_id):
         'total_ventes': total_ventes,
         'chiffre_affaires': chiffre_affaires,
         'ventes_recentes': ventes_recentes_display,
-        'nb_ventes_refusees_jour': nb_ventes_refusees_jour
+        'nb_ventes_refusees_jour': nb_ventes_refusees_jour,
+        'total_potentiel_refusees': total_potentiel_refusees
     }
     
     return render(request, 'inventory/commercant/details_boutique.html', context)
@@ -5910,3 +5923,105 @@ def transfert_entre_boutiques(request, boutique_id):
     }
     
     return render(request, 'inventory/commercant/transfert_entre_boutiques.html', context)
+
+
+# ===== ALERTES STOCK (RÉGULARISATION) =====
+
+@login_required
+def alertes_stock_boutique(request, boutique_id):
+    """
+    Affiche les alertes de stock pour une boutique.
+    Permet au commerçant de voir et régulariser les écarts de stock.
+    """
+    boutique = get_object_or_404(Boutique, id=boutique_id)
+    
+    # Vérifier que l'utilisateur a accès à cette boutique (ou est superuser)
+    if not request.user.is_superuser:
+        try:
+            commercant = request.user.profil_commercant
+            if boutique not in commercant.boutiques.all():
+                return HttpResponseForbidden("Accès non autorisé à cette boutique")
+        except:
+            return HttpResponseForbidden("Accès non autorisé")
+    
+    
+    # Filtres
+    statut_filtre = request.GET.get('statut', 'EN_ATTENTE')
+    date_debut = request.GET.get('date_debut')
+    date_fin = request.GET.get('date_fin')
+    
+    # Récupérer les alertes
+    alertes = AlerteStock.objects.filter(boutique=boutique).select_related(
+        'article', 'variante', 'vente', 'terminal', 'regularise_par'
+    ).order_by('-date_creation')
+    
+    # Appliquer les filtres
+    if statut_filtre and statut_filtre != 'TOUS':
+        alertes = alertes.filter(statut=statut_filtre)
+    
+    if date_debut:
+        try:
+            date_debut_dt = datetime.strptime(date_debut, '%Y-%m-%d')
+            alertes = alertes.filter(date_creation__date__gte=date_debut_dt)
+        except ValueError:
+            pass
+    
+    if date_fin:
+        try:
+            date_fin_dt = datetime.strptime(date_fin, '%Y-%m-%d')
+            alertes = alertes.filter(date_creation__date__lte=date_fin_dt)
+        except ValueError:
+            pass
+    
+    # Statistiques
+    stats = {
+        'total': AlerteStock.objects.filter(boutique=boutique).count(),
+        'en_attente': AlerteStock.objects.filter(boutique=boutique, statut='EN_ATTENTE').count(),
+        'regularisees': AlerteStock.objects.filter(boutique=boutique, statut='REGULARISE').count(),
+        'ignorees': AlerteStock.objects.filter(boutique=boutique, statut='IGNORE').count(),
+    }
+    
+    # Traitement des actions POST
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        alerte_id = request.POST.get('alerte_id')
+        notes = request.POST.get('notes', '')
+        
+        if alerte_id:
+            try:
+                alerte = AlerteStock.objects.get(id=alerte_id, boutique=boutique)
+                
+                if action == 'regulariser':
+                    alerte.regulariser(request.user, notes)
+                    messages.success(request, f"✅ Alerte régularisée pour {alerte.nom_article_complet}")
+                elif action == 'ignorer':
+                    alerte.ignorer(request.user, notes)
+                    messages.info(request, f"ℹ️ Alerte ignorée pour {alerte.nom_article_complet}")
+                elif action == 'ajuster_stock':
+                    # Ajuster le stock à 0 si négatif
+                    if alerte.variante:
+                        if alerte.variante.quantite_stock < 0:
+                            alerte.variante.quantite_stock = 0
+                            alerte.variante.save()
+                    else:
+                        if alerte.article.quantite_stock < 0:
+                            alerte.article.quantite_stock = 0
+                            alerte.article.save()
+                    alerte.regulariser(request.user, f"Stock ajusté à 0. {notes}")
+                    messages.success(request, f"✅ Stock ajusté à 0 pour {alerte.nom_article_complet}")
+                    
+            except AlerteStock.DoesNotExist:
+                messages.error(request, "Alerte non trouvée")
+        
+        return redirect('inventory:commercant_alertes_stock', boutique_id=boutique_id)
+    
+    context = {
+        'boutique': boutique,
+        'alertes': alertes[:100],  # Limiter à 100 alertes
+        'stats': stats,
+        'statut_filtre': statut_filtre,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+    }
+    
+    return render(request, 'inventory/commercant/alertes_stock.html', context)

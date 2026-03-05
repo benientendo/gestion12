@@ -1,5 +1,6 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
+{% load humanize %}
 
 {% block title %}{{ boutique.nom }} - Détails Boutique{% endblock %}
 
@@ -22,6 +23,12 @@
                         {% if nb_ventes_refusees_jour > 0 %}
                         <span class="badge bg-light text-danger">{{ nb_ventes_refusees_jour }}</span>
                         {% endif %}
+                        {% if total_potentiel_refusees > 0 %}
+                        <span class="badge bg-warning text-dark ms-1">{{ total_potentiel_refusees|floatformat:0|intcomma }} FC</span>
+                        {% endif %}
+                    </a>
+                    <a href="{% url 'inventory:commercant_alertes_stock' boutique.id %}" class="btn btn-warning me-2">
+                        <i class="fas fa-exclamation-triangle"></i> Alertes Stock
                     </a>
                     <a href="{% url 'inventory:modifier_boutique' boutique.id %}" class="btn btn-primary me-2">
                         <i class="fas fa-edit"></i> Modifier

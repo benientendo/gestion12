@@ -19,7 +19,7 @@ from django.conf import settings
 import json
 import logging
 
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock
 from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 
 logger = logging.getLogger(__name__)
@@ -1853,13 +1853,19 @@ def sync_ventes_simple(request):
                             except VarianteArticle.DoesNotExist:
                                 logger.warning(f"⚠️ Variante {variante_id} non trouvée pour article {article.nom}, vente sur article parent")
                         
-                        # Vérifier le stock disponible (variante ou article parent)
+                        # ⭐ NOUVEAU: Vérifier le stock mais NE PAS REJETER - créer une alerte à la place
+                        stock_insuffisant = False
+                        stock_avant_vente = 0
                         if variante:
+                            stock_avant_vente = variante.quantite_stock
                             if variante.quantite_stock < quantite:
-                                raise ValueError(f'INSUFFICIENT_STOCK|{article.id}|{variante.nom_complet}|{quantite}|{variante.quantite_stock}|Stock insuffisant pour {variante.nom_complet} (dispo: {variante.quantite_stock}, demandé: {quantite})')
+                                stock_insuffisant = True
+                                logger.warning(f"⚠️ ALERTE STOCK: {variante.nom_complet} - demandé: {quantite}, dispo: {variante.quantite_stock}")
                         else:
+                            stock_avant_vente = article.quantite_stock
                             if article.quantite_stock < quantite:
-                                raise ValueError(f'INSUFFICIENT_STOCK|{article.id}|{article.nom}|{quantite}|{article.quantite_stock}|Stock insuffisant pour {article.nom} (dispo: {article.quantite_stock}, demandé: {quantite})')
+                                stock_insuffisant = True
+                                logger.warning(f"⚠️ ALERTE STOCK: {article.nom} - demandé: {quantite}, dispo: {article.quantite_stock}")
                         
                         # Créer la ligne de vente avec support USD
                         prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
@@ -1931,7 +1937,25 @@ def sync_ventes_simple(request):
                                 commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
                             )
                         
+                        # ⭐ NOUVEAU: Créer une AlerteStock si stock insuffisant (au lieu de rejeter)
+                        if stock_insuffisant:
+                            stock_apres_vente = variante.quantite_stock if variante else article.quantite_stock
+                            AlerteStock.objects.create(
+                                vente=vente,
+                                boutique=boutique,
+                                terminal=terminal,
+                                article=article,
+                                variante=variante,
+                                quantite_vendue=quantite,
+                                stock_serveur_avant=stock_avant_vente,
+                                stock_serveur_apres=stock_apres_vente,
+                                ecart=stock_avant_vente - quantite,
+                                numero_facture=vente.numero_facture
+                            )
+                            logger.warning(f"🚨 ALERTE STOCK CRÉÉE: {variante.nom_complet if variante else article.nom} - Stock: {stock_avant_vente} → {stock_apres_vente}")
+                        
                         montant_total += prix_unitaire * quantite
+
                         montant_total_usd = (montant_total_usd or 0) + (prix_unitaire_usd * quantite if prix_unitaire_usd else 0)
                         lignes_creees.append({
                             'article_nom': article.nom,

@@ -273,6 +273,34 @@
         </div>
     </div>
 
+    <!-- Alertes Stock - Accès rapide -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0" style="background: linear-gradient(135deg, #f59f00 0%, #e67700 100%);">
+                <div class="card-body text-white">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h4 class="mb-2">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                Alertes Stock & Régularisation
+                            </h4>
+                            <p class="mb-0 opacity-90">
+                                Consultez les écarts de stock et régularisez les ventes avec stock insuffisant
+                            </p>
+                        </div>
+                        <div class="col-md-4 text-center text-md-end">
+                            {% for boutique in boutiques %}
+                            <a href="{% url 'inventory:commercant_alertes_stock' boutique.id %}" class="btn btn-light btn-sm me-1 mb-1">
+                                <i class="fas fa-store me-1"></i>{{ boutique.nom|truncatechars:15 }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Actions Rapides - Accès Bilan -->
     <div class="row mb-4">
         <div class="col-12">

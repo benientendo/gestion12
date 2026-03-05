@@ -1,0 +1,279 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Alertes Stock - {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-exclamation-triangle text-warning"></i> Alertes Stock</h2>
+            <p class="text-muted mb-0">{{ boutique.nom }} - Régularisation des écarts de stock</p>
+        </div>
+        <div>
+            <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Retour
+            </a>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    {% if messages %}
+    {% for message in messages %}
+    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <!-- Statistiques -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">{{ stats.total }}</h3>
+                    <small>Total alertes</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">{{ stats.en_attente }}</h3>
+                    <small>En attente</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">{{ stats.regularisees }}</h3>
+                    <small>Régularisées</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-secondary text-white">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">{{ stats.ignorees }}</h3>
+                    <small>Ignorées</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtres -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Statut</label>
+                    <select name="statut" class="form-select">
+                        <option value="EN_ATTENTE" {% if statut_filtre == 'EN_ATTENTE' %}selected{% endif %}>En attente</option>
+                        <option value="REGULARISE" {% if statut_filtre == 'REGULARISE' %}selected{% endif %}>Régularisées</option>
+                        <option value="IGNORE" {% if statut_filtre == 'IGNORE' %}selected{% endif %}>Ignorées</option>
+                        <option value="TOUS" {% if statut_filtre == 'TOUS' %}selected{% endif %}>Toutes</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Date début</label>
+                    <input type="date" name="date_debut" class="form-control" value="{{ date_debut|default:'' }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Date fin</label>
+                    <input type="date" name="date_fin" class="form-control" value="{{ date_fin|default:'' }}">
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter"></i> Filtrer
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Liste des alertes -->
+    <div class="card">
+        <div class="card-header bg-warning text-dark">
+            <h5 class="mb-0"><i class="fas fa-list"></i> Alertes à traiter ({{ alertes|length }})</h5>
+        </div>
+        <div class="card-body p-0">
+            {% if alertes %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Facture</th>
+                            <th>Article</th>
+                            <th>Type</th>
+                            <th class="text-center">Vendu</th>
+                            <th class="text-center">Stock avant</th>
+                            <th class="text-center">Stock après</th>
+                            <th class="text-center">Écart</th>
+                            <th>Action suggérée</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for alerte in alertes %}
+                        <tr class="{% if alerte.statut == 'EN_ATTENTE' %}table-warning{% elif alerte.statut == 'REGULARISE' %}table-success{% else %}table-secondary{% endif %}">
+                            <td>
+                                <small>{{ alerte.date_creation|date:"d/m/Y H:i" }}</small>
+                            </td>
+                            <td>
+                                <code>{{ alerte.numero_facture|truncatechars:15 }}</code>
+                            </td>
+                            <td>
+                                <strong>{{ alerte.nom_article_complet }}</strong>
+                                {% if alerte.terminal %}
+                                <br><small class="text-muted">Terminal: {{ alerte.terminal.nom_terminal }}</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if alerte.type_alerte == 'STOCK_NEGATIF' %}
+                                <span class="badge bg-danger">Stock négatif</span>
+                                {% elif alerte.type_alerte == 'STOCK_INSUFFISANT' %}
+                                <span class="badge bg-warning text-dark">Insuffisant</span>
+                                {% else %}
+                                <span class="badge bg-info">Écart</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-primary">{{ alerte.quantite_vendue }}</span>
+                            </td>
+                            <td class="text-center">{{ alerte.stock_serveur_avant }}</td>
+                            <td class="text-center">
+                                {% if alerte.stock_serveur_apres < 0 %}
+                                <span class="text-danger fw-bold">{{ alerte.stock_serveur_apres }}</span>
+                                {% else %}
+                                {{ alerte.stock_serveur_apres }}
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="{% if alerte.ecart < 0 %}text-danger fw-bold{% endif %}">
+                                    {{ alerte.ecart }}
+                                </span>
+                            </td>
+                            <td>
+                                <small>{{ alerte.action_suggeree|truncatechars:50 }}</small>
+                            </td>
+                            <td>
+                                {% if alerte.statut == 'EN_ATTENTE' %}
+                                <span class="badge bg-warning text-dark">En attente</span>
+                                {% elif alerte.statut == 'REGULARISE' %}
+                                <span class="badge bg-success">Régularisé</span>
+                                <br><small class="text-muted">{{ alerte.date_regularisation|date:"d/m H:i" }}</small>
+                                {% else %}
+                                <span class="badge bg-secondary">Ignoré</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if alerte.statut == 'EN_ATTENTE' %}
+                                <div class="btn-group-vertical btn-group-sm">
+                                    <button type="button" class="btn btn-success btn-sm" 
+                                            data-bs-toggle="modal" data-bs-target="#modalRegulariser{{ alerte.id }}">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                    {% if alerte.stock_serveur_apres < 0 %}
+                                    <form method="post" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="ajuster_stock">
+                                        <input type="hidden" name="alerte_id" value="{{ alerte.id }}">
+                                        <button type="submit" class="btn btn-warning btn-sm" title="Ajuster stock à 0">
+                                            <i class="fas fa-balance-scale"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    <form method="post" class="d-inline">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="ignorer">
+                                        <input type="hidden" name="alerte_id" value="{{ alerte.id }}">
+                                        <button type="submit" class="btn btn-secondary btn-sm" title="Ignorer">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                                
+                                <!-- Modal Régulariser -->
+                                <div class="modal fade" id="modalRegulariser{{ alerte.id }}" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <form method="post">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="regulariser">
+                                                <input type="hidden" name="alerte_id" value="{{ alerte.id }}">
+                                                <div class="modal-header bg-success text-white">
+                                                    <h5 class="modal-title">Régulariser l'alerte</h5>
+                                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <p><strong>Article:</strong> {{ alerte.nom_article_complet }}</p>
+                                                    <p><strong>Écart:</strong> {{ alerte.ecart }} articles</p>
+                                                    <p><strong>Action suggérée:</strong></p>
+                                                    <p class="alert alert-info">{{ alerte.action_suggeree }}</p>
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Notes de régularisation</label>
+                                                        <textarea name="notes" class="form-control" rows="3" 
+                                                                  placeholder="Ex: Inventaire vérifié, stock ajusté manuellement..."></textarea>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                                                    <button type="submit" class="btn btn-success">
+                                                        <i class="fas fa-check"></i> Marquer comme régularisé
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% else %}
+                                {% if alerte.notes_regularisation %}
+                                <small class="text-muted" title="{{ alerte.notes_regularisation }}">
+                                    <i class="fas fa-comment"></i>
+                                </small>
+                                {% endif %}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                <h5>Aucune alerte</h5>
+                <p class="text-muted">Pas d'alerte de stock pour les critères sélectionnés.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Légende -->
+    <div class="card mt-4">
+        <div class="card-body">
+            <h6><i class="fas fa-info-circle"></i> Légende</h6>
+            <div class="row">
+                <div class="col-md-4">
+                    <span class="badge bg-warning text-dark">Insuffisant</span>
+                    <small class="text-muted">Stock serveur était inférieur à la quantité vendue</small>
+                </div>
+                <div class="col-md-4">
+                    <span class="badge bg-danger">Stock négatif</span>
+                    <small class="text-muted">Stock serveur est devenu négatif après la vente</small>
+                </div>
+                <div class="col-md-4">
+                    <span class="badge bg-info">Écart</span>
+                    <small class="text-muted">Différence détectée entre stock client et serveur</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

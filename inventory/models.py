@@ -1563,3 +1563,102 @@ class ApprovisionnementCredit(models.Model):
         verbose_name_plural = "Approvisionnements crédit"
         ordering = ['-date_approvisionnement']
 
+
+class AlerteStock(models.Model):
+    """
+    Modèle pour enregistrer les alertes de stock lors des ventes.
+    Créé quand une vente est acceptée malgré un écart de stock entre client et serveur.
+    Permet au commerçant de régulariser les écarts en fin de journée.
+    """
+    
+    STATUT_CHOICES = [
+        ('EN_ATTENTE', 'En attente de régularisation'),
+        ('REGULARISE', 'Régularisé'),
+        ('IGNORE', 'Ignoré'),
+    ]
+    
+    TYPE_ALERTE_CHOICES = [
+        ('STOCK_INSUFFISANT', 'Stock insuffisant'),
+        ('STOCK_NEGATIF', 'Stock devenu négatif'),
+        ('ECART_STOCK', 'Écart de stock détecté'),
+    ]
+    
+    # Lien avec la vente et la boutique
+    vente = models.ForeignKey('Vente', on_delete=models.CASCADE, related_name='alertes_stock')
+    boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='alertes_stock')
+    terminal = models.ForeignKey('Client', on_delete=models.SET_NULL, null=True, blank=True, related_name='alertes_stock')
+    
+    # Article concerné
+    article = models.ForeignKey('Article', on_delete=models.CASCADE, related_name='alertes_stock')
+    variante = models.ForeignKey('VarianteArticle', on_delete=models.SET_NULL, null=True, blank=True, related_name='alertes_stock')
+    
+    # Détails de l'écart
+    type_alerte = models.CharField(max_length=30, choices=TYPE_ALERTE_CHOICES, default='STOCK_INSUFFISANT')
+    quantite_vendue = models.PositiveIntegerField(help_text="Quantité vendue par le client")
+    stock_serveur_avant = models.IntegerField(help_text="Stock serveur avant la vente")
+    stock_serveur_apres = models.IntegerField(help_text="Stock serveur après la vente (peut être négatif)")
+    ecart = models.IntegerField(help_text="Écart de stock (négatif = manque)")
+    
+    # Statut de régularisation
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_ATTENTE')
+    date_regularisation = models.DateTimeField(null=True, blank=True)
+    regularise_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='alertes_regularisees')
+    notes_regularisation = models.TextField(blank=True, help_text="Notes sur la régularisation effectuée")
+    
+    # Action suggérée
+    action_suggeree = models.TextField(blank=True, help_text="Action suggérée pour régulariser")
+    
+    # Métadonnées
+    date_creation = models.DateTimeField(auto_now_add=True)
+    numero_facture = models.CharField(max_length=100, blank=True)
+    
+    def save(self, *args, **kwargs):
+        # Calculer l'écart automatiquement
+        if not self.ecart:
+            self.ecart = self.stock_serveur_avant - self.quantite_vendue
+        
+        # Définir le type d'alerte automatiquement
+        if self.stock_serveur_apres < 0:
+            self.type_alerte = 'STOCK_NEGATIF'
+        elif self.stock_serveur_avant < self.quantite_vendue:
+            self.type_alerte = 'STOCK_INSUFFISANT'
+        
+        # Générer l'action suggérée
+        if not self.action_suggeree:
+            nom_article = self.variante.nom_complet if self.variante else self.article.nom
+            if self.stock_serveur_apres < 0:
+                self.action_suggeree = f"Vérifier l'inventaire physique de '{nom_article}'. Stock serveur négatif ({self.stock_serveur_apres}). Ajuster le stock ou récupérer {abs(self.stock_serveur_apres)} article(s)."
+            else:
+                self.action_suggeree = f"Vérifier le stock de '{nom_article}'. Écart détecté lors de la vente."
+        
+        super().save(*args, **kwargs)
+    
+    def regulariser(self, user, notes=""):
+        """Marquer l'alerte comme régularisée"""
+        self.statut = 'REGULARISE'
+        self.date_regularisation = timezone.now()
+        self.regularise_par = user
+        self.notes_regularisation = notes
+        self.save()
+    
+    def ignorer(self, user, notes=""):
+        """Marquer l'alerte comme ignorée"""
+        self.statut = 'IGNORE'
+        self.date_regularisation = timezone.now()
+        self.regularise_par = user
+        self.notes_regularisation = notes
+        self.save()
+    
+    @property
+    def nom_article_complet(self):
+        if self.variante:
+            return self.variante.nom_complet
+        return self.article.nom
+    
+    def __str__(self):
+        return f"Alerte {self.get_type_alerte_display()} - {self.nom_article_complet} ({self.ecart})"
+    
+    class Meta:
+        verbose_name = "Alerte stock"
+        verbose_name_plural = "Alertes stock"
+        ordering = ['-date_creation']
