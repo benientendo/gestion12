@@ -32,11 +32,15 @@ recovered = 0
 for r in rejets:
     print(f"\n--- Traitement {r.vente_uid} ---")
     
+    print(f"  donnees_vente: {r.donnees_vente[:200] if r.donnees_vente else 'VIDE'}")
+    print(f"  article_concerne_nom: {r.article_concerne_nom}")
+    print(f"  stock_disponible: {r.stock_disponible}, stock_demande: {r.stock_demande}")
+    
     try:
         data = json.loads(r.donnees_vente) if r.donnees_vente else {}
-    except:
-        print("  ERREUR: Impossible de parser les donnees JSON")
-        continue
+    except Exception as e:
+        print(f"  ERREUR JSON: {e}")
+        data = {}
     
     # Verifier si la vente existe deja
     if Vente.objects.filter(numero_facture=r.vente_uid).exists():
