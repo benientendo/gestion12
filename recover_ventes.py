@@ -103,19 +103,13 @@ for r in rejets:
             
             # Determiner le stock actuel
             if variante:
-                stock_avant = variante.stock
-                stock_apres = max(0, stock_avant - quantite)
-                variante.stock = stock_apres
-                variante.save()
-                nom_complet = f"{article.nom} - {variante.nom}"
+                stock_avant = variante.quantite_stock
+                nom_complet = f"{article.nom} - {variante.nom_variante}"
             else:
                 stock_avant = article.quantite_stock
-                stock_apres = max(0, stock_avant - quantite)
-                article.quantite_stock = stock_apres
-                article.save()
                 nom_complet = article.nom
             
-            # Creer AlerteStock si stock negatif
+            # Ne pas modifier le stock - juste creer une alerte si necessaire
             if stock_avant < quantite:
                 AlerteStock.objects.create(
                     boutique=boutique,
@@ -126,11 +120,11 @@ for r in rejets:
                     nom_article_complet=nom_complet,
                     quantite_vendue=quantite,
                     stock_serveur_avant=stock_avant,
-                    stock_serveur_apres=stock_apres,
+                    stock_serveur_apres=max(0, stock_avant - quantite),
                     ecart=quantite - stock_avant,
                     statut='EN_ATTENTE'
                 )
-                print(f"    AlerteStock creee: {nom_complet} (ecart: {quantite - stock_avant})")
+                print(f"    AlerteStock: {nom_complet} (ecart: {quantite - stock_avant})")
             
             print(f"    Ligne: {nom_complet} x{quantite} @ {prix_unitaire}")
         
