@@ -117,7 +117,6 @@ for r in rejets:
                     terminal=r.terminal,
                     article=article,
                     variante=variante,
-                    nom_article_complet=nom_complet,
                     quantite_vendue=quantite,
                     stock_serveur_avant=stock_avant,
                     stock_serveur_apres=max(0, stock_avant - quantite),
