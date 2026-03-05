@@ -862,17 +862,18 @@ function calculerSaisie() {
             // Afficher prix unitaire calculé en dessous
             prixUnitCalcule.innerHTML = 'P.achat/u: <span>' + factFormatNumber(Math.round(nouveauPrixUnit)) + '</span> FC';
             prixUnitCalcule.style.display = '';
-            // Afficher prix unitaire avant en dessous
-            if (prixUnitAvantVal > 0) {
-                prixUnitAvant.innerHTML = 'P.U. avant: <span>' + factFormatNumber(Math.round(prixUnitAvantVal)) + '</span> FC';
-                prixUnitAvant.style.display = '';
-            } else {
-                prixUnitAvant.style.display = 'none';
-            }
         } else {
             prixUnitNouveau.style.display = 'none';
-            prixUnitAvant.style.display = 'none';
             prixUnitCalcule.style.display = 'none';
+        }
+        
+        // Afficher prix unitaire AVANT (toujours visible si article a des données précédentes)
+        if (prixUnitAvantVal > 0) {
+            prixUnitAvant.innerHTML = '<i class="fas fa-history" style="font-size:.65rem;margin-right:3px;"></i>Avant: <span style="background:#fff3cd;padding:1px 5px;border-radius:3px;font-weight:700;">' + factFormatNumber(Math.round(prixUnitAvantVal)) + ' FC/u</span>';
+            prixUnitAvant.style.display = '';
+            prixUnitAvant.style.color = '#856404';
+        } else {
+            prixUnitAvant.style.display = 'none';
         }
         
         // Label selon devise
