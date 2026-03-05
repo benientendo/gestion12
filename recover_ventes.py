@@ -32,15 +32,22 @@ recovered = 0
 for r in rejets:
     print(f"\n--- Traitement {r.vente_uid} ---")
     
-    print(f"  donnees_vente: {r.donnees_vente[:200] if r.donnees_vente else 'VIDE'}")
+    print(f"  donnees_vente type: {type(r.donnees_vente)}")
     print(f"  article_concerne_nom: {r.article_concerne_nom}")
     print(f"  stock_disponible: {r.stock_disponible}, stock_demande: {r.stock_demande}")
     
-    try:
-        data = json.loads(r.donnees_vente) if r.donnees_vente else {}
-    except Exception as e:
-        print(f"  ERREUR JSON: {e}")
+    # donnees_vente peut etre un dict (JSONField) ou une string
+    if isinstance(r.donnees_vente, dict):
+        data = r.donnees_vente
+    elif isinstance(r.donnees_vente, str):
+        try:
+            data = json.loads(r.donnees_vente)
+        except:
+            data = {}
+    else:
         data = {}
+    
+    print(f"  data keys: {data.keys() if data else 'VIDE'}")
     
     # Verifier si la vente existe deja
     if Vente.objects.filter(numero_facture=r.vente_uid).exists():
