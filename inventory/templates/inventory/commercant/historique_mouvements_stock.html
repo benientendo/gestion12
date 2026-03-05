@@ -306,49 +306,118 @@
 
 {% block extra_js %}
 <script>
-// Recherche instantanée avec debounce + conservation du curseur
 document.addEventListener('DOMContentLoaded', function() {
     const searchInput = document.querySelector('input[name="search"]');
+    const typeSelect = document.querySelector('select[name="type"]');
+    const articleSelect = document.querySelector('select[name="article"]');
+    const dateDebut = document.querySelector('input[name="date_debut"]');
+    const dateFin = document.querySelector('input[name="date_fin"]');
+    const tableBody = document.querySelector('.table-mouvements tbody');
+    const tableWrapper = document.querySelector('.table-responsive');
+    const emptyDiv = document.querySelector('.text-center.py-5');
+    const cardHeader = document.querySelector('.card-header');
+
     if (!searchInput) return;
-    
-    const form = searchInput.closest('form');
+
     let debounceTimer;
-    
-    // Restaurer la position du curseur après rechargement + scroll vers le haut
-    const savedCursorPos = sessionStorage.getItem('mouvements_search_cursor');
-    if (savedCursorPos !== null && searchInput.value.length > 0) {
-        const pos = parseInt(savedCursorPos);
-        // Scroll vers le champ de recherche pour que le tableau soit visible
-        searchInput.scrollIntoView({ behavior: 'instant', block: 'start' });
-        // Petit délai pour laisser le scroll se faire
-        setTimeout(function() {
-            searchInput.focus();
-            searchInput.setSelectionRange(pos, pos);
-        }, 50);
-        sessionStorage.removeItem('mouvements_search_cursor');
+
+    const TYPE_COLORS = {
+        'ENTREE': 'success', 'SORTIE': 'danger', 'VENTE': 'primary',
+        'AJUSTEMENT': 'warning', 'RETOUR': 'info'
+    };
+
+    function buildParams() {
+        const params = new URLSearchParams();
+        if (searchInput.value) params.set('search', searchInput.value);
+        if (typeSelect && typeSelect.value) params.set('type', typeSelect.value);
+        if (articleSelect && articleSelect.value) params.set('article', articleSelect.value);
+        if (dateDebut && dateDebut.value) params.set('date_debut', dateDebut.value);
+        if (dateFin && dateFin.value) params.set('date_fin', dateFin.value);
+        return params;
     }
-    
-    // Sauvegarder la position du curseur avant soumission
-    function submitWithCursor() {
-        sessionStorage.setItem('mouvements_search_cursor', searchInput.selectionStart);
-        form.submit();
+
+    function renderRow(m) {
+        const qClass = m.quantite > 0 ? 'quantite-positive' : 'quantite-negative';
+        const qPrefix = m.quantite > 0 ? '+' : '';
+        const color = TYPE_COLORS[m.type] || 'secondary';
+        const stockChange = (m.stock_avant !== null && m.stock_apres !== null)
+            ? `<div class="stock-change justify-content-center">
+                <span class="badge bg-secondary">${m.stock_avant}</span>
+                <i class="fas fa-arrow-right stock-arrow text-muted"></i>
+                <span class="badge ${m.stock_apres > m.stock_avant ? 'bg-success' : m.stock_apres < m.stock_avant ? 'bg-danger' : 'bg-secondary'}">${m.stock_apres}</span>
+               </div>`
+            : '<span class="text-muted">-</span>';
+        return `<tr class="mouvement-${m.type.toLowerCase()}">
+            <td class="text-nowrap"><strong>${m.date}</strong><br><small class="text-muted">${m.heure}</small></td>
+            <td><span class="badge badge-${m.type.toLowerCase()} bg-${color}">${m.type_display}</span></td>
+            <td><strong>${m.article_nom}</strong><br><small class="text-muted">${m.article_code}</small></td>
+            <td class="text-center"><span class="${qClass}">${qPrefix}${m.quantite}</span></td>
+            <td class="text-center">${stockChange}</td>
+            <td>${m.reference ? `<code class="small">${m.reference}</code>` : '<span class="text-muted">-</span>'}</td>
+            <td>${m.utilisateur ? `<small><i class="fas fa-user"></i> ${m.utilisateur}</small>` : '<span class="text-muted">-</span>'}</td>
+            <td>${m.commentaire ? `<small class="text-muted">${m.commentaire}</small>` : '<span class="text-muted">-</span>'}</td>
+        </tr>`;
     }
-    
+
+    function doSearch() {
+        const params = buildParams();
+        const url = window.location.pathname + '?' + params.toString();
+
+        fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(data => {
+                // Mettre à jour le compteur
+                if (cardHeader) {
+                    cardHeader.innerHTML = `<i class="fas fa-list"></i> Liste des mouvements (${data.stats.total_mouvements} résultats)`;
+                }
+                // Mettre à jour les stats
+                const statValues = document.querySelectorAll('.stat-value');
+                if (statValues.length >= 6) {
+                    statValues[0].textContent = data.stats.total_mouvements;
+                    statValues[1].textContent = data.stats.entrees;
+                    statValues[2].textContent = data.stats.sorties;
+                    statValues[3].textContent = data.stats.ventes;
+                    statValues[4].textContent = data.stats.ajustements;
+                    statValues[5].textContent = data.stats.retours;
+                }
+                // Mettre à jour le tableau
+                if (data.mouvements.length === 0) {
+                    if (tableWrapper) tableWrapper.style.display = 'none';
+                    if (emptyDiv) emptyDiv.style.display = '';
+                } else {
+                    if (tableWrapper) tableWrapper.style.display = '';
+                    if (emptyDiv) emptyDiv.style.display = 'none';
+                    if (tableBody) {
+                        tableBody.innerHTML = data.mouvements.map(renderRow).join('');
+                    }
+                }
+                // Mettre à jour l'URL sans rechargement
+                window.history.replaceState(null, '', url);
+            })
+            .catch(() => {});
+    }
+
+    // Debounce sur la saisie du champ texte (400ms)
     searchInput.addEventListener('input', function() {
         clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(function() {
-            if (searchInput.value.length >= 2 || searchInput.value.length === 0) {
-                submitWithCursor();
-            }
-        }, 500);
+        debounceTimer = setTimeout(doSearch, 400);
     });
-    
-    searchInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
+
+    // Déclenchement immédiat sur les selects et dates
+    if (typeSelect) typeSelect.addEventListener('change', doSearch);
+    if (articleSelect) articleSelect.addEventListener('change', doSearch);
+    if (dateDebut) dateDebut.addEventListener('change', doSearch);
+    if (dateFin) dateFin.addEventListener('change', doSearch);
+
+    // Empêcher la soumission du formulaire (on gère tout en AJAX)
+    const form = searchInput.closest('form');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
             clearTimeout(debounceTimer);
-            submitWithCursor();
-        }
-    });
+            doSearch();
+        });
+    }
 });
 </script>
 {% endblock %}

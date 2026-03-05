@@ -4708,6 +4708,29 @@ def historique_mouvements_stock(request, boutique_id):
     # Types de mouvement pour le filtre
     types_mouvement = MouvementStock.TYPES
     
+    # Réponse AJAX : retourner JSON uniquement les données du tableau
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        mouvements_data = []
+        for m in mouvements[:200]:
+            mouvements_data.append({
+                'date': m.date_mouvement.strftime('%d/%m/%Y'),
+                'heure': m.date_mouvement.strftime('%H:%M'),
+                'type': m.type_mouvement,
+                'type_display': m.get_type_mouvement_display(),
+                'article_nom': m.article.nom,
+                'article_code': m.article.code or '',
+                'quantite': m.quantite,
+                'stock_avant': m.stock_avant,
+                'stock_apres': m.stock_apres,
+                'reference': m.reference_document or '',
+                'utilisateur': str(m.utilisateur) if m.utilisateur else '',
+                'commentaire': (m.commentaire or '')[:60],
+            })
+        return JsonResponse({
+            'mouvements': mouvements_data,
+            'stats': stats,
+        })
+
     context = {
         'boutique': boutique,
         'mouvements': mouvements[:200],  # Limiter à 200 pour performance
