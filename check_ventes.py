@@ -3,29 +3,48 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'gestion_magazin.settings')
 django.setup()
 
-from inventory.models import Vente, VenteRejetee, Boutique
+from inventory.models import Vente, Boutique
 from django.utils import timezone
-from decimal import Decimal
+from datetime import datetime
+import pytz
 
-today = timezone.now().date()
 boutique = Boutique.objects.filter(nom='KMC KIMPESE 01').first()
 
-print(f"=== KMC KIMPESE 01 - {today} ===")
+# Corriger les 2 ventes - utiliser la date reelle du UID
+corrections = [
+    {
+        'numero_facture': '-DT6213K-20260304174449860-19f76e28',
+        'date_correcte': datetime(2026, 3, 4, 17, 44, 49, tzinfo=pytz.UTC)
+    },
+    {
+        'numero_facture': '-DT6213K-20260304182805450-f446bc5c',
+        'date_correcte': datetime(2026, 3, 4, 18, 28, 5, tzinfo=pytz.UTC)
+    },
+]
 
-# Rejets non traites aujourd'hui
-rejets = VenteRejetee.objects.filter(boutique=boutique, date_tentative__date=today, traitee=False)
-print(f"\nRejets NON traites aujourd'hui: {rejets.count()}")
+for corr in corrections:
+    vente = Vente.objects.filter(numero_facture=corr['numero_facture']).first()
+    if vente:
+        ancienne_date = vente.date_vente
+        vente.date_vente = corr['date_correcte']
+        vente.save()
+        print(f"Corrige: {corr['numero_facture'][:30]}")
+        print(f"  Avant: {ancienne_date}")
+        print(f"  Apres: {vente.date_vente}")
+    else:
+        print(f"Vente non trouvee: {corr['numero_facture']}")
 
-# Toutes les ventes aujourd'hui
-ventes = Vente.objects.filter(boutique=boutique, date_vente__date=today)
-total = sum([v.montant_total for v in ventes])
-print(f"Ventes enregistrees aujourd'hui: {ventes.count()}")
-print(f"Total recette aujourd'hui: {total} CDF")
+print("\nVerification finale:")
+from django.utils import timezone as tz
+today = tz.now().date()
+import datetime as dt
+yesterday = today - dt.timedelta(days=1)
 
-# Detail des ventes
-print("\nDetail ventes:")
-for v in ventes.order_by('date_vente'):
-    print(f"  {v.date_vente.strftime('%H:%M')} | {v.numero_facture[:30]} | {v.montant_total} CDF")
+v_hier = Vente.objects.filter(boutique=boutique, date_vente__date=yesterday)
+v_auj = Vente.objects.filter(boutique=boutique, date_vente__date=today)
+print(f"KMC KIMPESE 01 - Ventes hier (4 mars): {v_hier.count()} = {sum(v.montant_total for v in v_hier)} CDF")
+print(f"KMC KIMPESE 01 - Ventes aujourd'hui (5 mars): {v_auj.count()} = {sum(v.montant_total for v in v_auj)} CDF")
+
 
 
 
