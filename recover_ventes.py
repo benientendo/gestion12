@@ -23,7 +23,7 @@ today = timezone.now().date()
 rejets = VenteRejetee.objects.filter(
     boutique=boutique,
     date_tentative__date=today,
-    est_traitee=False
+    traitee=False
 ).order_by('date_tentative')
 
 print(f"Ventes rejetees a recuperer: {rejets.count()}")
@@ -41,7 +41,7 @@ for r in rejets:
     # Verifier si la vente existe deja
     if Vente.objects.filter(numero_facture=r.vente_uid).exists():
         print(f"  SKIP: Vente {r.vente_uid} existe deja")
-        r.est_traitee = True
+        r.traitee = True
         r.notes_traitement = "Vente deja existante"
         r.save()
         continue
@@ -126,7 +126,7 @@ for r in rejets:
             print(f"    Ligne: {nom_complet} x{quantite} @ {prix_unitaire}")
         
         # Marquer le rejet comme traite
-        r.est_traitee = True
+        r.traitee = True
         r.date_traitement = timezone.now()
         r.notes_traitement = f"Converti en vente {vente.id} avec AlerteStock"
         r.save()
