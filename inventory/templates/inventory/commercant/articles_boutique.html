@@ -2256,7 +2256,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Badge variantes avec nombre
         const variantesBadge = article.a_variantes ? 
-            `<span class="badge bg-info ms-1" title="${article.nb_variantes || ''} variante(s)"><i class="fas fa-tags"></i> ${article.nb_variantes || ''}</span>` : '';
+            `<span class="badge bg-info ms-1 badge-variantes" style="cursor: pointer;" title="Cliquer pour voir les variantes" onclick="afficherVariantes(${article.id}, '${article.nom.replace(/'/g, "\\'")}')"><i class="fas fa-tags"></i> ${article.nb_variantes || ''}</span>` : '';
         
         return `
             <tr data-article-id="${article.id}" 
