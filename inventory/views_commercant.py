@@ -2546,8 +2546,8 @@ def modifier_article_boutique(request, boutique_id, article_id):
     variantes = article.variantes.all().order_by('nom_variante')
     variante_form = VarianteArticleForm()
     
-    # Calculer le stock total des variantes
-    stock_total_variantes = sum(v.quantite_stock for v in variantes.filter(est_actif=True))
+    # Stock toujours sur le parent
+    stock_total_variantes = article.quantite_stock
     
     context = {
         'form': form,
