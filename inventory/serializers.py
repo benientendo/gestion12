@@ -37,10 +37,7 @@ class ArticleSerializer(serializers.ModelSerializer):
         return obj.variantes.filter(est_actif=True).exists()
     
     def get_quantite_stock(self, obj):
-        """⭐ Retourne la SOMME des stocks variantes si article a variantes, sinon stock article."""
-        variantes_actives = obj.variantes.filter(est_actif=True)
-        if variantes_actives.exists():
-            return sum(v.quantite_stock for v in variantes_actives)
+        """Stock toujours sur le parent — les variantes sont des identifiants de vente uniquement."""
         return obj.quantite_stock
     
     def get_full_details(self, obj):
@@ -127,7 +124,8 @@ class ArticleAvecVariantesSerializer(serializers.ModelSerializer):
         return obj.variantes.filter(est_actif=True).exists()
     
     def get_stock_total_variantes(self, obj):
-        return sum(v.quantite_stock for v in obj.variantes.filter(est_actif=True))
+        """Stock toujours sur le parent — identique à quantite_stock."""
+        return obj.quantite_stock
 
 
 class LigneVenteSerializer(serializers.ModelSerializer):

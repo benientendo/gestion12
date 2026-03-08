@@ -1001,15 +1001,14 @@
                         <thead class="table-light">
                             <tr>
                                 <th><i class="fas fa-barcode"></i> Code-barres</th>
-                                <th><i class="fas fa-tag"></i> Nom</th>
-                                <th class="text-center"><i class="fas fa-boxes"></i> Stock</th>
+                                <th><i class="fas fa-tag"></i> Nom / Type</th>
                             </tr>
                         </thead>
                         <tbody id="variantesTableBody">
                         </tbody>
                     </table>
                     <div class="mt-2 pt-2 border-top text-end">
-                        <small class="text-muted">Stock total: <span id="variantesStockTotal" class="badge bg-primary"></span></small>
+                        <small class="text-muted">Stock disponible (article): <span id="variantesStockTotal" class="badge bg-primary"></span></small>
                     </div>
                 </div>
                 <div id="variantesError" class="alert alert-danger" style="display: none;">
@@ -2833,11 +2832,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 const tbody = document.getElementById('variantesTableBody');
                 tbody.innerHTML = '';
                 
-                let stockTotal = 0;
+                const stockParent = data.stock_parent ?? 0;
                 data.variantes.forEach(v => {
-                    stockTotal += v.quantite_stock;
-                    const stockClass = v.quantite_stock <= 0 ? 'bg-danger' : 
-                                      v.quantite_stock <= 5 ? 'bg-warning text-dark' : 'bg-success';
                     tbody.innerHTML += `
                         <tr>
                             <td><code class="text-primary">${v.code_barre}</code></td>
@@ -2845,14 +2841,14 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <span class="fw-semibold">${v.nom_variante}</span>
                                 <small class="text-muted d-block">${v.type_attribut}</small>
                             </td>
-                            <td class="text-center">
-                                <span class="badge ${stockClass}">${v.quantite_stock}</span>
-                            </td>
                         </tr>
                     `;
                 });
                 
-                document.getElementById('variantesStockTotal').textContent = stockTotal;
+                const stockClass = stockParent <= 0 ? 'bg-danger' : stockParent <= 5 ? 'bg-warning text-dark' : 'bg-primary';
+                const stockEl = document.getElementById('variantesStockTotal');
+                stockEl.textContent = stockParent;
+                stockEl.className = `badge ${stockClass}`;
                 document.getElementById('variantesContent').style.display = 'block';
             } else {
                 document.getElementById('variantesErrorMsg').textContent = data.message || 'Erreur lors du chargement';

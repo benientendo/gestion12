@@ -191,14 +191,8 @@ class Article(models.Model):
     @property
     def stock_total(self):
         """
-        Retourne le stock total:
-        - Si variantes: somme des stocks des variantes
-        - Sinon: quantite_stock de l'article
+        Stock toujours sur le parent — les variantes sont des identifiants de vente uniquement.
         """
-        if self.a_variantes:
-            return self.variantes.filter(est_actif=True).aggregate(
-                total=models.Sum('quantite_stock')
-            )['total'] or 0
         return self.quantite_stock
     
     @property

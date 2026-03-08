@@ -659,13 +659,13 @@ def article_variantes_ajax(request, boutique_id, article_id):
             'code_barre': v.code_barre,
             'nom_variante': v.nom_variante,
             'type_attribut': v.get_type_attribut_display(),
-            'quantite_stock': v.quantite_stock,
         })
     
     return JsonResponse({
         'success': True,
         'article_id': article.id,
         'article_nom': article.nom,
+        'stock_parent': article.quantite_stock,
         'variantes': variantes_data,
         'count': len(variantes_data)
     })
@@ -2084,11 +2084,8 @@ def verifier_code_barre(request, boutique_id):
     
     if variante:
         parent = variante.article_parent
-        # ⭐ SOMME de toutes les quantités des variantes actives
-        from django.db.models import Sum
-        total_stock_variantes = parent.variantes.filter(est_actif=True).aggregate(
-            total=Sum('quantite_stock')
-        )['total'] or 0
+        # Stock toujours sur le parent
+        stock_parent = parent.quantite_stock
         
         return JsonResponse({
             'existe': True,
@@ -2097,7 +2094,7 @@ def verifier_code_barre(request, boutique_id):
                 'id': parent.id,
                 'nom': parent.nom,
                 'code': parent.code,
-                'stock': total_stock_variantes,  # SOMME des stocks variantes
+                'stock': stock_parent,
                 'prix': float(parent.prix_vente or 0),
                 'devise': parent.devise,
                 'a_variantes': True
@@ -2107,7 +2104,7 @@ def verifier_code_barre(request, boutique_id):
                 'nom': variante.nom_variante,
                 'nom_complet': variante.nom_complet,
                 'code_barre': variante.code_barre,
-                'stock': total_stock_variantes,  # SOMME des stocks variantes
+                'stock': stock_parent,
                 'type_attribut': variante.type_attribut
             }
         })
@@ -2170,22 +2167,21 @@ def modifier_article_existant(request, boutique_id):
                 article.save()
                 modifications.append(f"Prix: {ancien_prix} → {prix_vente}")
         
-        # ⭐ Le stock se modifie sur LA VARIANTE SPÉCIFIQUE
+        # Stock toujours sur le PARENT — la variante est un identifiant de vente
         if quantite > 0:
-            ancien_stock = variante.quantite_stock
-            variante.quantite_stock += quantite
-            variante.save()
-            modifications.append(f"Stock variante: {ancien_stock} → {variante.quantite_stock} (+{quantite})")
+            ancien_stock = article.quantite_stock
+            article.quantite_stock += quantite
+            article.save()
+            modifications.append(f"Stock parent: {ancien_stock} → {article.quantite_stock} (+{quantite})")
             
-            # Créer un mouvement de stock (référence article parent)
             MouvementStock.objects.create(
                 article=article,
                 type_mouvement='ENTREE',
                 quantite=quantite,
                 stock_avant=ancien_stock,
-                stock_apres=variante.quantite_stock,
+                stock_apres=article.quantite_stock,
                 reference_document=f"VAR-{variante.id}-{boutique.id}",
-                commentaire=f"Ajout stock variante '{variante.nom_variante}'"
+                commentaire=f"Ajout stock via variante '{variante.nom_variante}'"
             )
         
         if modifications:
@@ -2195,7 +2191,7 @@ def modifier_article_existant(request, boutique_id):
                 'article': {
                     'id': article.id,
                     'nom': article.nom,
-                    'stock': article.stock_total,  # ⭐ Somme des stocks variantes
+                    'stock': article.quantite_stock,
                     'prix': float(article.prix_vente or 0)
                 }
             })
