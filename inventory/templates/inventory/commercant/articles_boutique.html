@@ -126,7 +126,8 @@
                         <th class="col-nom">Nom</th>
                         <th class="col-code">Code</th>
                         <th class="col-cat">Catégorie</th>
-                        <th class="col-prix">Prix</th>
+                        <th class="col-prix">P.U. Vente</th>
+                        <th class="col-total">Total Vente</th>
                         <th class="col-stock">Stock</th>
                         <th class="col-exp">Expiration</th>
                         <th class="col-actions">Actions</th>
@@ -176,6 +177,13 @@
                             <span class="text-success">$ {{ article.prix_vente|floatformat:2 }}</span>
                             {% else %}
                             {{ article.prix_vente|floatformat:0 }} <small>FC</small>
+                            {% endif %}
+                        </td>
+                        <td class="col-total">
+                            {% if article.devise == 'USD' %}
+                            <span class="text-primary fw-bold">$ {% widthratio article.prix_vente 1 article.stock_total %}</span>
+                            {% else %}
+                            <span class="text-primary fw-bold">{% widthratio article.prix_vente 1 article.stock_total %} <small>FC</small></span>
                             {% endif %}
                         </td>
                         <td class="col-stock">
@@ -1134,7 +1142,8 @@
 .col-nom { width: auto; }
 .col-code { width: 110px; }
 .col-cat { width: 120px; }
-.col-prix { width: 110px; }
+.col-prix { width: 100px; }
+.col-total { width: 110px; }
 .col-stock { width: 70px; }
 .col-actions { width: 180px; }
 
@@ -2284,6 +2293,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 </td>
                 <td class="col-prix">
                     <span class="${prixClass}">${prixFormatted}</span>
+                </td>
+                <td class="col-total">
+                    <span class="text-primary fw-bold">${isUSD ? `$ ${Math.round(article.prix_vente * article.quantite_stock)}` : `${Math.round(article.prix_vente * article.quantite_stock)} <small>FC</small>`}</span>
                 </td>
                 <td class="col-stock">
                     <span class="badge ${stockBadgeClass}">${article.quantite_stock}</span>
