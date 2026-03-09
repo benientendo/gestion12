@@ -2757,6 +2757,617 @@ def annuler_vente_simple(request):
 
 
 # =============================================================================
+# 🚫 NOTIFICATION VENTE REJETÉE (Traçabilité audit)
+# =============================================================================
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def notifier_rejet_vente_simple(request):
+    """
+    Enregistre une trace d'audit (MouvementStock AJUSTEMENT, quantite=0) pour chaque
+    article d'une vente rejetée par Django lors du batch sync MAUI.
+    Le stock Django N'EST PAS modifié (il n'a jamais été décrémenté).
+
+    Format attendu:
+    {
+        "reference": "VENTE-20240101-001",
+        "motif_rejet": "Article introuvable",
+        "articles": [
+            {"article_id": 123, "quantite": 2},
+            {"article_id": 456, "quantite": 1}
+        ]
+    }
+    """
+    try:
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or
+            request.headers.get('Device-Serial') or
+            request.META.get('HTTP_X_DEVICE_SERIAL')
+        )
+
+        if not numero_serie:
+            return Response({'error': 'Numéro de série requis', 'code': 'MISSING_SERIAL'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            terminal = Client.objects.select_related('boutique').get(
+                numero_serie=numero_serie, est_actif=True)
+            boutique = terminal.boutique
+        except Client.DoesNotExist:
+            return Response({'error': 'Terminal non trouvé', 'code': 'TERMINAL_NOT_FOUND'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data
+        reference = data.get('reference') or data.get('Reference') or ''
+        motif_rejet = data.get('motif_rejet') or data.get('MotifRejet') or 'Rejet inconnu'
+        articles = data.get('articles') or []
+
+        if not reference:
+            return Response({'error': 'Référence vente requise', 'code': 'MISSING_REFERENCE'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        traces_creees = []
+
+        with transaction.atomic():
+            for item in articles:
+                article_id = item.get('article_id') or item.get('ArticleId')
+                quantite = item.get('quantite') or item.get('Quantite') or 0
+
+                if not article_id:
+                    continue
+
+                try:
+                    article = Article.objects.get(id=article_id, boutique=boutique)
+                except Article.DoesNotExist:
+                    logger.warning(f"⚠️ Article {article_id} non trouvé pour trace rejet {reference}")
+                    continue
+
+                MouvementStock.objects.create(
+                    article=article,
+                    type_mouvement='AJUSTEMENT',
+                    quantite=0,
+                    stock_avant=article.quantite_stock,
+                    stock_apres=article.quantite_stock,
+                    reference_document=f"REJET-{reference}",
+                    utilisateur=terminal.nom_terminal,
+                    commentaire=(
+                        f"Vente rejetée #{reference} — "
+                        f"Qté tentée: {quantite} — "
+                        f"Motif: {motif_rejet} — "
+                        f"Stock Django inchangé (jamais décrémenté)"
+                    )
+                )
+
+                traces_creees.append({
+                    'article_id': article.id,
+                    'nom': article.nom,
+                    'quantite_tentee': quantite,
+                    'stock_actuel': article.quantite_stock,
+                })
+
+                logger.info(f"📋 Trace rejet créée: {article.nom} — vente {reference}")
+
+        return Response({
+            'success': True,
+            'message': f'{len(traces_creees)} trace(s) créée(s) pour la vente rejetée {reference}',
+            'reference': reference,
+            'motif_rejet': motif_rejet,
+            'traces': traces_creees,
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"❌ Erreur notif rejet vente: {str(e)}")
+        return Response({'error': 'Erreur lors de la notification', 'details': str(e)},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# =============================================================================
+# 🧠 ANALYSE INTELLIGENTE DES MOUVEMENTS (IA)
+# =============================================================================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def analyse_mouvements_simple(request):
+    """
+    🧠 Analyse intelligente des mouvements de stock et performance financière.
+
+    Params GET:
+      debut   : YYYY-MM-DD  (défaut: 1er du mois)
+      fin     : YYYY-MM-DD  (défaut: aujourd'hui)
+      mode    : 'resume' | 'complet'  (défaut: resume)
+    """
+    from datetime import datetime, timedelta
+    from django.db.models import Count, F, Q, ExpressionWrapper, DecimalField
+
+    try:
+        # --- Terminal & Boutique ---
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or
+            request.headers.get('Device-Serial') or
+            request.META.get('HTTP_X_DEVICE_SERIAL')
+        )
+        if not numero_serie:
+            return Response({'error': 'Numéro de série requis', 'code': 'MISSING_SERIAL'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            terminal = Client.objects.select_related('boutique').get(
+                numero_serie=numero_serie, est_actif=True)
+            boutique = terminal.boutique
+        except Client.DoesNotExist:
+            return Response({'error': 'Terminal non trouvé', 'code': 'TERMINAL_NOT_FOUND'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # --- Plage de dates ---
+        maintenant = timezone.now()
+        debut_mois = maintenant.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        def parse_date_param(param, defaut, heure_fin=False):
+            val = request.GET.get(param)
+            if val:
+                try:
+                    dt = datetime.strptime(val, '%Y-%m-%d')
+                    if heure_fin:
+                        dt = dt.replace(hour=23, minute=59, second=59)
+                    return timezone.make_aware(dt)
+                except ValueError:
+                    pass
+            return defaut
+
+        debut = parse_date_param('debut', debut_mois)
+        fin = parse_date_param('fin', maintenant, heure_fin=True)
+        nb_jours = max(1, (fin - debut).days + 1)
+        mode = request.GET.get('mode', 'resume')
+
+        # --- QuerySets de base ---
+        articles_qs = Article.objects.filter(boutique=boutique, est_actif=True)
+        mouvements_qs = MouvementStock.objects.filter(
+            article__boutique=boutique,
+            date_mouvement__gte=debut,
+            date_mouvement__lte=fin
+        )
+        ventes_qs = Vente.objects.filter(
+            boutique=boutique,
+            date_vente__gte=debut,
+            date_vente__lte=fin,
+            est_annulee=False
+        )
+        alertes_qs = AlerteStock.objects.filter(boutique=boutique, statut='EN_ATTENTE')
+
+        # ================================================================
+        # 1. RÉSUMÉ FINANCIER — source de vérité : LigneVente
+        # ================================================================
+        lignes_cdf = LigneVente.objects.filter(
+            vente__boutique=boutique,
+            vente__date_vente__gte=debut,
+            vente__date_vente__lte=fin,
+            vente__est_annulee=False,
+            devise='CDF'
+        )
+        lignes_usd = LigneVente.objects.filter(
+            vente__boutique=boutique,
+            vente__date_vente__gte=debut,
+            vente__date_vente__lte=fin,
+            vente__est_annulee=False,
+            devise='USD'
+        )
+
+        agg_cdf = lignes_cdf.aggregate(
+            ca=Sum(ExpressionWrapper(F('quantite') * F('prix_unitaire'),
+                                     output_field=DecimalField())),
+            ca_negocie=Sum(ExpressionWrapper(F('quantite') * F('prix_unitaire'),
+                                              output_field=DecimalField()),
+                           filter=Q(est_negocie=True)),
+            nb_lignes=Count('id')
+        )
+        agg_usd = lignes_usd.aggregate(
+            ca=Sum(ExpressionWrapper(F('quantite') * F('prix_unitaire'),
+                                     output_field=DecimalField()))
+        )
+
+        ca_cdf = float(agg_cdf['ca'] or 0)
+        ca_usd = float(agg_usd['ca'] or 0)
+        ca_negocie_cdf = float(agg_cdf['ca_negocie'] or 0)
+        nb_lignes_total = agg_cdf['nb_lignes'] or 0
+
+        # Valeur du stock restant (prix vente et coût)
+        agg_stock = articles_qs.aggregate(
+            valeur_vente=Sum(ExpressionWrapper(F('quantite_stock') * F('prix_vente'),
+                                               output_field=DecimalField())),
+            valeur_cout=Sum(ExpressionWrapper(F('quantite_stock') * F('prix_achat'),
+                                              output_field=DecimalField()))
+        )
+        stock_valeur_vente = float(agg_stock['valeur_vente'] or 0)
+        stock_valeur_cout = float(agg_stock['valeur_cout'] or 0)
+
+        # ================================================================
+        # 2. RÉSUMÉ MOUVEMENTS par type
+        # ================================================================
+        mouv_agg = mouvements_qs.values('type_mouvement').annotate(
+            nb=Count('id'),
+            total_qte=Sum('quantite')
+        )
+        mouv = {m['type_mouvement']: m for m in mouv_agg}
+
+        def get_mouv(typ, absval=False):
+            d = mouv.get(typ, {})
+            q = d.get('total_qte', 0) or 0
+            return {'nb': d.get('nb', 0) or 0, 'total_qte': abs(q) if absval else q}
+
+        # ================================================================
+        # 3. ALERTES & ARTICLES À RISQUE
+        # ================================================================
+        articles_negatifs = list(
+            articles_qs.filter(quantite_stock__lt=0)
+            .values('id', 'nom', 'code', 'quantite_stock', 'prix_vente', 'prix_achat', 'devise')
+            .order_by('quantite_stock')[:30]
+        )
+
+        # Regrouper alertes EN_ATTENTE par article
+        alertes_list = list(
+            alertes_qs.select_related('article').values(
+                'article__id', 'article__nom', 'article__code',
+                'article__quantite_stock', 'article__prix_achat',
+                'quantite_vendue', 'ecart', 'numero_facture', 'date_creation'
+            ).order_by('-date_creation')[:100]
+        )
+        alertes_par_art = {}
+        for a in alertes_list:
+            aid = a['article__id']
+            if aid not in alertes_par_art:
+                alertes_par_art[aid] = {
+                    'article_id': aid,
+                    'nom': a['article__nom'],
+                    'code': a['article__code'],
+                    'stock_actuel': a['article__quantite_stock'],
+                    'qte_a_regulariser': 0,
+                    'nb_alertes': 0,
+                    'ventes': []
+                }
+            alertes_par_art[aid]['nb_alertes'] += 1
+            alertes_par_art[aid]['qte_a_regulariser'] += max(0, abs(a['ecart']))
+            if a['numero_facture'] not in alertes_par_art[aid]['ventes']:
+                alertes_par_art[aid]['ventes'].append(a['numero_facture'])
+
+        articles_a_regulariser = sorted(
+            alertes_par_art.values(), key=lambda x: x['nb_alertes'], reverse=True)[:20]
+
+        pertes_estimees = sum(
+            abs(float(a['quantite_stock'])) * float(a['prix_achat'])
+            for a in articles_negatifs
+        )
+        nb_alertes_total = alertes_qs.count()
+
+        # ================================================================
+        # 4. TOP ARTICLES VENDUS
+        # ================================================================
+        top_articles = list(
+            LigneVente.objects.filter(
+                vente__boutique=boutique,
+                vente__date_vente__gte=debut,
+                vente__date_vente__lte=fin,
+                vente__est_annulee=False
+            )
+            .values('article__id', 'article__nom', 'article__code', 'article__devise')
+            .annotate(
+                total_qte=Sum('quantite'),
+                ca=Sum(ExpressionWrapper(F('quantite') * F('prix_unitaire'),
+                                         output_field=DecimalField())),
+                nb_ventes=Count('vente', distinct=True)
+            )
+            .order_by('-ca')[:10]
+        )
+
+        # ================================================================
+        # 5. ANALYSE IA — score + insights + recommandations + anomalies
+        # ================================================================
+        score = 100
+        insights = []
+        recommandations = []
+        anomalies = []
+
+        total_articles = articles_qs.count()
+        nb_negatifs = len(articles_negatifs)
+
+        # Pénalité articles négatifs (max -40)
+        if total_articles > 0:
+            pct_neg = nb_negatifs / total_articles * 100
+            score -= min(40, round(pct_neg * 2))
+
+        # Pénalité alertes non traitées (max -20)
+        score -= min(20, round(nb_alertes_total * 0.5))
+
+        # Rotation du stock
+        if stock_valeur_vente > 0 and ca_cdf > 0:
+            rotation = (ca_cdf / stock_valeur_vente) * (365 / nb_jours)
+            if rotation < 2:
+                score -= 10
+                insights.append({
+                    'type': 'ROTATION_FAIBLE',
+                    'niveau': 'WARNING',
+                    'message': (f"Rotation stock: {rotation:.1f}×/an — "
+                                f"la marchandise reste trop longtemps en stock."),
+                    'valeur': round(rotation, 2)
+                })
+            elif rotation >= 12:
+                insights.append({
+                    'type': 'ROTATION_ELEVEE',
+                    'niveau': 'INFO',
+                    'message': f"Excellente rotation: {rotation:.1f}×/an — stock bien géré.",
+                    'valeur': round(rotation, 2)
+                })
+        else:
+            rotation = 0
+
+        score = max(0, min(100, score))
+
+        # Insight stocks négatifs
+        if nb_negatifs > 0:
+            deficit_total = sum(abs(a['quantite_stock']) for a in articles_negatifs)
+            insights.append({
+                'type': 'STOCK_NEGATIF',
+                'niveau': 'CRITIQUE' if nb_negatifs > 5 else 'ALERTE',
+                'message': (f"{nb_negatifs} article(s) en stock négatif "
+                            f"— déficit total: {deficit_total} unités "
+                            f"— perte estimée: {round(pertes_estimees):,} CDF"),
+                'articles': [{'nom': a['nom'], 'stock': a['quantite_stock']}
+                             for a in articles_negatifs[:5]]
+            })
+            recommandations.append({
+                'priorite': 'HAUTE',
+                'action': 'REGULARISER_STOCK_NEGATIF',
+                'message': (f"Réapprovisionner ou ajuster manuellement "
+                            f"{nb_negatifs} article(s) en déficit."),
+                'articles': [a['nom'] for a in articles_negatifs[:5]]
+            })
+
+        # Insight prix négociés
+        if ca_negocie_cdf > 0 and ca_cdf > 0:
+            pct_neg_prix = ca_negocie_cdf / ca_cdf * 100
+            nb_neg = lignes_cdf.filter(est_negocie=True).count()
+            insights.append({
+                'type': 'PRIX_NEGOCIE',
+                'niveau': 'WARNING' if pct_neg_prix > 25 else 'INFO',
+                'message': (f"{nb_neg} ligne(s) à prix négocié = {pct_neg_prix:.1f}% du CA CDF "
+                            f"— écart avec le catalogue."),
+                'valeur': round(pct_neg_prix, 1)
+            })
+            if pct_neg_prix > 30:
+                recommandations.append({
+                    'priorite': 'MOYENNE',
+                    'action': 'VERIFIER_NEGOCIATIONS',
+                    'message': "Plus de 30% du CA vendu à prix réduit. Vérifier les autorisations."
+                })
+
+        # Insight alertes en attente
+        if nb_alertes_total > 0:
+            insights.append({
+                'type': 'ALERTES_EN_ATTENTE',
+                'niveau': 'ALERTE' if nb_alertes_total > 3 else 'INFO',
+                'message': f"{nb_alertes_total} alerte(s) de stock non régularisée(s).",
+            })
+            recommandations.append({
+                'priorite': 'HAUTE',
+                'action': 'TRAITER_ALERTES',
+                'message': f"Régulariser {nb_alertes_total} alerte(s) de sur-vente en attente."
+            })
+
+        # Anomalie : trop d'ajustements manuels
+        nb_ajust = mouv.get('AJUSTEMENT', {}).get('nb', 0) or 0
+        if nb_ajust > 10:
+            anomalies.append({
+                'type': 'AJUSTEMENTS_EXCESSIFS',
+                'niveau': 'WARNING',
+                'message': (f"{nb_ajust} ajustements manuels sur la période — "
+                            f"possible erreur de saisie ou incohérence de stock.")
+            })
+
+        # Anomalie : ventes sans mouvement de stock (incohérence)
+        nb_ventes_periode = ventes_qs.count()
+        nb_mouv_vente = mouv.get('VENTE', {}).get('nb', 0) or 0
+        if nb_ventes_periode > 0 and nb_mouv_vente == 0:
+            anomalies.append({
+                'type': 'VENTES_SANS_MOUVEMENT',
+                'niveau': 'ALERTE',
+                'message': (f"{nb_ventes_periode} vente(s) enregistrée(s) mais "
+                            f"0 mouvement de stock de type VENTE trouvé — incohérence à vérifier.")
+            })
+
+        # Trier recommandations par priorité
+        prio_order = {'HAUTE': 0, 'MOYENNE': 1, 'BASSE': 2}
+        recommandations.sort(key=lambda r: prio_order.get(r.get('priorite', 'BASSE'), 2))
+
+        # ================================================================
+        # 6. RÉPONSE
+        # ================================================================
+        response_data = {
+            'periode': {
+                'debut': debut.strftime('%Y-%m-%d'),
+                'fin': fin.strftime('%Y-%m-%d'),
+                'nb_jours': nb_jours
+            },
+            'boutique': {'id': boutique.id, 'nom': boutique.nom},
+            'resume_financier': {
+                'chiffre_affaires_cdf': round(ca_cdf, 2),
+                'chiffre_affaires_usd': round(ca_usd, 2),
+                'valeur_stock_prix_vente_cdf': round(stock_valeur_vente, 2),
+                'valeur_stock_prix_cout_cdf': round(stock_valeur_cout, 2),
+                'marge_potentielle_cdf': round(max(0, stock_valeur_vente - stock_valeur_cout), 2),
+                'nb_ventes': nb_ventes_periode,
+                'nb_lignes_vente': nb_lignes_total
+            },
+            'mouvements_resume': {
+                'entrees': get_mouv('ENTREE'),
+                'sorties': get_mouv('SORTIE', absval=True),
+                'ventes': get_mouv('VENTE', absval=True),
+                'retours': get_mouv('RETOUR'),
+                'ajustements': get_mouv('AJUSTEMENT')
+            },
+            'alertes_stock': {
+                'total_en_attente': nb_alertes_total,
+                'articles_stock_negatif': articles_negatifs,
+                'articles_a_regulariser': articles_a_regulariser,
+                'pertes_estimees_cdf': round(pertes_estimees, 2)
+            },
+            'analyse_ia': {
+                'score_sante_stock': score,
+                'niveau_sante': (
+                    'EXCELLENT' if score >= 85 else
+                    'BON' if score >= 70 else
+                    'MOYEN' if score >= 50 else
+                    'CRITIQUE'
+                ),
+                'rotation_stock_annuelle': round(rotation, 2),
+                'insights': insights,
+                'recommandations': recommandations,
+                'anomalies': anomalies
+            },
+            'top_articles_vendus': [
+                {
+                    'article_id': a['article__id'],
+                    'nom': a['article__nom'],
+                    'code': a['article__code'],
+                    'devise': a['article__devise'],
+                    'qte_vendue': a['total_qte'],
+                    'ca': round(float(a['ca'] or 0), 2),
+                    'nb_ventes': a['nb_ventes']
+                }
+                for a in top_articles
+            ]
+        }
+
+        # Mode complet : détail par article
+        if mode == 'complet':
+            detail = []
+            for art in articles_qs.select_related('categorie').order_by('-quantite_stock')[:200]:
+                agg_art = MouvementStock.objects.filter(
+                    article=art,
+                    date_mouvement__gte=debut,
+                    date_mouvement__lte=fin
+                ).aggregate(
+                    qte_vendue=Sum('quantite', filter=Q(type_mouvement='VENTE')),
+                    qte_entree=Sum('quantite', filter=Q(type_mouvement='ENTREE')),
+                    qte_retour=Sum('quantite', filter=Q(type_mouvement='RETOUR')),
+                    nb_mouv=Count('id')
+                )
+                qte_vendue = abs(agg_art['qte_vendue'] or 0)
+                detail.append({
+                    'id': art.id,
+                    'code': art.code,
+                    'nom': art.nom,
+                    'categorie': art.categorie.nom if art.categorie else '',
+                    'devise': art.devise,
+                    'prix_vente': float(art.prix_vente),
+                    'prix_achat': float(art.prix_achat),
+                    'stock_actuel': art.quantite_stock,
+                    'valeur_stock_vente': round(art.quantite_stock * float(art.prix_vente), 2),
+                    'valeur_stock_cout': round(art.quantite_stock * float(art.prix_achat), 2),
+                    'qte_vendue_periode': qte_vendue,
+                    'ca_periode': round(qte_vendue * float(art.prix_vente), 2),
+                    'qte_entree_periode': agg_art['qte_entree'] or 0,
+                    'qte_retour_periode': agg_art['qte_retour'] or 0,
+                    'nb_mouvements': agg_art['nb_mouv'] or 0,
+                    'alerte_stock': art.quantite_stock < 0
+                })
+            response_data['detail_par_article'] = sorted(
+                detail, key=lambda x: x['ca_periode'], reverse=True)
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"❌ Erreur analyse mouvements: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return Response({'error': "Erreur lors de l'analyse", 'details': str(e)},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def regulariser_alerte_stock_simple(request):
+    """
+    ✅ Régularise une ou plusieurs alertes de stock en créant un MouvementStock ENTREE.
+
+    Format:
+    {
+        "article_id": 123,
+        "quantite_ajout": 5,
+        "notes": "Réapprovisionnement après contrôle"
+    }
+    """
+    try:
+        numero_serie = (
+            request.headers.get('X-Device-Serial') or
+            request.headers.get('Device-Serial') or
+            request.META.get('HTTP_X_DEVICE_SERIAL')
+        )
+        if not numero_serie:
+            return Response({'error': 'Numéro de série requis', 'code': 'MISSING_SERIAL'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            terminal = Client.objects.select_related('boutique').get(
+                numero_serie=numero_serie, est_actif=True)
+            boutique = terminal.boutique
+        except Client.DoesNotExist:
+            return Response({'error': 'Terminal non trouvé', 'code': 'TERMINAL_NOT_FOUND'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data
+        article_id = data.get('article_id')
+        quantite_ajout = int(data.get('quantite_ajout', 0))
+        notes = data.get('notes') or 'Régularisation manuelle via terminal'
+
+        if not article_id or quantite_ajout <= 0:
+            return Response({'error': 'article_id et quantite_ajout (>0) requis'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            article = Article.objects.get(id=article_id, boutique=boutique)
+        except Article.DoesNotExist:
+            return Response({'error': f'Article {article_id} non trouvé'}, status=status.HTTP_404_NOT_FOUND)
+
+        with transaction.atomic():
+            stock_avant = article.quantite_stock
+            article.quantite_stock += quantite_ajout
+            article.save(update_fields=['quantite_stock'])
+
+            MouvementStock.objects.create(
+                article=article,
+                type_mouvement='ENTREE',
+                quantite=quantite_ajout,
+                stock_avant=stock_avant,
+                stock_apres=article.quantite_stock,
+                reference_document=f"REGUL-{terminal.nom_terminal}-{timezone.now().strftime('%Y%m%d%H%M%S')}",
+                utilisateur=terminal.nom_terminal,
+                commentaire=f"Régularisation stock: {notes}"
+            )
+
+            # Marquer les alertes de cet article comme régularisées
+            nb_alertes = AlerteStock.objects.filter(
+                article=article, boutique=boutique, statut='EN_ATTENTE'
+            ).update(
+                statut='REGULARISE',
+                date_regularisation=timezone.now(),
+                notes_regularisation=notes
+            )
+
+        logger.info(f"✅ Régularisation: {article.nom} +{quantite_ajout} ({stock_avant} → {article.quantite_stock})")
+
+        return Response({
+            'success': True,
+            'article': {'id': article.id, 'nom': article.nom, 'code': article.code},
+            'stock_avant': stock_avant,
+            'quantite_ajoutee': quantite_ajout,
+            'stock_apres': article.quantite_stock,
+            'alertes_resolues': nb_alertes
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        logger.error(f"❌ Erreur régularisation: {str(e)}")
+        return Response({'error': 'Erreur régularisation', 'details': str(e)},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# =============================================================================
 # 💰 RAPPORT DES NÉGOCIATIONS DE PRIX
 # =============================================================================
 

@@ -48,7 +48,15 @@ urlpatterns = [
     path('ventes/reconciliation/', api_views_v2_simple.reconcilier_ventes, name='reconcilier_ventes'),
     path('ventes/annuler', api_views_v2_simple.annuler_vente_simple, name='annuler_vente_no_slash'),  # Sans slash pour MAUI
     path('ventes/annuler/', api_views_v2_simple.annuler_vente_simple, name='annuler_vente'),
+    path('ventes/notifier-rejet', api_views_v2_simple.notifier_rejet_vente_simple, name='notifier_rejet_no_slash'),
+    path('ventes/notifier-rejet/', api_views_v2_simple.notifier_rejet_vente_simple, name='notifier_rejet'),
     
+    # ===== ANALYSE IA MOUVEMENTS =====
+    path('analyse/mouvements', api_views_v2_simple.analyse_mouvements_simple, name='analyse_mouvements_no_slash'),
+    path('analyse/mouvements/', api_views_v2_simple.analyse_mouvements_simple, name='analyse_mouvements'),
+    path('analyse/regulariser', api_views_v2_simple.regulariser_alerte_stock_simple, name='regulariser_alerte_no_slash'),
+    path('analyse/regulariser/', api_views_v2_simple.regulariser_alerte_stock_simple, name='regulariser_alerte'),
+
     # ===== RAPPORTS DE CAISSE =====
     path('rapports-caisse/', RapportCaisseListCreateView.as_view(), name='rapports_caisse_simple'),
     
