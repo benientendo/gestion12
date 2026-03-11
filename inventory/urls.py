@@ -128,6 +128,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/export-ca-pdf/', views_commercant.exporter_ca_quotidien_pdf, name='exporter_ca_quotidien_pdf'),
     path('commercant/boutiques/<int:boutique_id>/export-ca-mensuel-pdf/', views_commercant.exporter_ca_mensuel_pdf, name='exporter_ca_mensuel_pdf'),
     path('commercant/api/boutique/<int:boutique_id>/stats/', views_commercant.api_stats_boutique, name='commercant_api_stats_boutique'),
+    path('commercant/api/boutique/<int:boutique_id>/ca-jour/', views_commercant.api_ca_jour_boutique, name='api_ca_jour_boutique'),
     path('commercant/api/vente/<int:vente_id>/details/', views_commercant.api_vente_details, name='api_vente_details'),
     
     # Gestion des dépôts

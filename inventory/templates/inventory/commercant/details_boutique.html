@@ -52,6 +52,63 @@
         </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- RECETTE DU JOUR — Rafraîchissement temps réel         -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm" id="card-ca-jour">
+                <div class="card-header d-flex justify-content-between align-items-center py-2"
+                     style="background: linear-gradient(135deg,#1a237e,#283593); color:#fff;">
+                    <span class="fw-bold fs-6">
+                        <i class="fas fa-chart-line me-2"></i>Recette du Jour
+                        <span id="ca-date" class="ms-2 opacity-75 small"></span>
+                    </span>
+                    <span id="ca-status-badge" class="badge bg-light text-dark" style="font-size:.75rem;">
+                        <i class="fas fa-sync-alt fa-spin me-1" id="ca-spinner" style="display:none;"></i>
+                        <span id="ca-status-text">Chargement…</span>
+                    </span>
+                </div>
+                <div class="card-body py-3">
+                    <div class="row g-3 align-items-center">
+                        <!-- CDF brut -->
+                        <div class="col-6 col-md-3 text-center">
+                            <div class="text-muted small mb-1">Recette brute CDF</div>
+                            <div id="ca-cdf" class="fw-bold fs-4 text-primary">—</div>
+                            <div class="text-muted small"><span id="nb-ventes-cdf">—</span> ventes</div>
+                        </div>
+                        <!-- CDF net -->
+                        <div class="col-6 col-md-3 text-center border-start">
+                            <div class="text-muted small mb-1">Recette nette CDF <small class="text-danger">(- dép.)</small></div>
+                            <div id="ca-cdf-net" class="fw-bold fs-4 text-success">—</div>
+                            <div class="text-muted small">Dép. : <span id="depenses-cdf">—</span> FC</div>
+                        </div>
+                        <!-- USD -->
+                        <div class="col-6 col-md-3 text-center border-start">
+                            <div class="text-muted small mb-1">Recette USD</div>
+                            <div id="ca-usd" class="fw-bold fs-4 text-warning">—</div>
+                            <div class="text-muted small"><span id="nb-ventes-usd">—</span> ventes</div>
+                        </div>
+                        <!-- Total ventes -->
+                        <div class="col-6 col-md-3 text-center border-start">
+                            <div class="text-muted small mb-1">Total ventes</div>
+                            <div id="nb-ventes-total" class="fw-bold fs-3 text-dark">—</div>
+                            <div class="text-muted small" style="font-size:.7rem;">
+                                Serveur : <span id="ca-heure-serveur">—</span><br>
+                                <span id="ca-derniere-vente" class="text-info"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Barre de staleness -->
+                    <div id="ca-stale-bar" class="mt-2 alert alert-warning py-1 px-2 small mb-0" style="display:none;">
+                        <i class="fas fa-exclamation-triangle me-1"></i>
+                        Données non rafraîchies depuis <strong id="ca-stale-since"></strong> — vérifiez la connexion.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row">
         <!-- Informations de la boutique -->
         <div class="col-md-4">
@@ -64,30 +121,22 @@
                         <strong>Code Boutique:</strong><br>
                         <span class="text-muted">{{ boutique.code }}</span>
                     </div>
-                    
                     <div class="mb-3">
                         <strong>Type de Commerce:</strong><br>
                         <span class="badge bg-primary">{{ boutique.get_type_commerce_display }}</span>
                     </div>
-                    
                     <div class="mb-3">
                         <strong>Adresse:</strong><br>
-                        <span class="text-muted">
-                            {{ boutique.adresse }}<br>
-                            {{ boutique.code_postal }} {{ boutique.ville }}
-                        </span>
+                        <span class="text-muted">{{ boutique.adresse }}, {{ boutique.code_postal }} {{ boutique.ville }}</span>
                     </div>
-                    
                     <div class="mb-3">
                         <strong>Téléphone:</strong><br>
                         <span class="text-muted">{{ boutique.telephone|default:"Non renseigné" }}</span>
                     </div>
-                    
                     <div class="mb-3">
                         <strong>Email:</strong><br>
                         <span class="text-muted">{{ boutique.email|default:"Non renseigné" }}</span>
                     </div>
-                    
                     <div class="mb-3">
                         <strong>Statut:</strong><br>
                         {% if boutique.est_active %}
@@ -96,12 +145,10 @@
                             <span class="badge bg-danger">Inactive</span>
                         {% endif %}
                     </div>
-                    
                     <div class="mb-3">
                         <strong>Créée le:</strong><br>
                         <span class="text-muted">{{ boutique.date_creation|date:"d/m/Y à H:i" }}</span>
                     </div>
-                    
                     <div class="mb-3">
                         <strong>Dernière modification:</strong><br>
                         <span class="text-muted">{{ boutique.date_mise_a_jour|date:"d/m/Y à H:i" }}</span>
@@ -109,6 +156,201 @@
                 </div>
             </div>
         </div>
+
+        <!-- Statistiques 30 jours -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-chart-bar"></i> Statistiques (30 jours)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <strong>Nombre de ventes :</strong><br>
+                        <span class="fs-5 fw-bold text-primary">{{ nb_ventes }}</span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Chiffre d'affaires :</strong><br>
+                        <span class="fs-5 fw-bold text-success">{{ chiffre_affaires|floatformat:0|intcomma }} FC</span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Articles en stock bas :</strong><br>
+                        <span class="badge bg-warning text-dark fs-6">{{ articles_stock_bas|length }}</span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>Terminaux actifs :</strong><br>
+                        <span class="badge bg-info text-dark fs-6">{{ terminaux|length }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Articles populaires -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-star"></i> Top 5 Articles (30 jours)</h5>
+                </div>
+                <div class="card-body p-0">
+                    {% if articles_populaires %}
+                    <ol class="list-group list-group-flush list-group-numbered">
+                        {% for art in articles_populaires %}
+                        <li class="list-group-item d-flex justify-content-between align-items-start">
+                            <div class="ms-2 me-auto">
+                                <div class="fw-bold small">{{ art.nom }}</div>
+                            </div>
+                            <span class="badge bg-primary rounded-pill">{{ art.total_vendu }} u.</span>
+                        </li>
+                        {% endfor %}
+                    </ol>
+                    {% else %}
+                    <p class="text-muted p-3 mb-0">Aucune vente enregistrée.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
     </div>
 </div>
+
+<script>
+(function () {
+    "use strict";
+
+    /* ─── Configuration ─────────────────────────────────────── */
+    const API_URL      = "{% url 'inventory:api_ca_jour_boutique' boutique.id %}";
+    const INTERVAL_MS  = 15_000;   // 15 s quand actif
+    const STALE_MS     = 120_000;  // alerte si pas rafraîchi depuis 2 min
+    const BACKOFF      = [15, 30, 60, 120, 300]; // secondes en cas d'erreur
+
+    /* ─── État interne ──────────────────────────────────────── */
+    let timerId        = null;
+    let errorCount     = 0;
+    let lastOkAt       = null;          // Date du dernier succès
+    let lastVenteTs    = null;          // timestamp dernière vente connu
+    let staleTimerId   = null;
+
+    /* ─── Sélecteurs DOM ────────────────────────────────────── */
+    const $ = id => document.getElementById(id);
+    const elCdf      = $('ca-cdf');
+    const elCdfNet   = $('ca-cdf-net');
+    const elUsd      = $('ca-usd');
+    const elNbCdf    = $('nb-ventes-cdf');
+    const elNbUsd    = $('nb-ventes-usd');
+    const elNbTotal  = $('nb-ventes-total');
+    const elDep      = $('depenses-cdf');
+    const elHeure    = $('ca-heure-serveur');
+    const elDerniere = $('ca-derniere-vente');
+    const elSpinner  = $('ca-spinner');
+    const elStatus   = $('ca-status-text');
+    const elBadge    = $('ca-status-badge');
+    const elStale    = $('ca-stale-bar');
+    const elStaleSince = $('ca-stale-since');
+    const elDate     = $('ca-date');
+
+    /* ─── Helpers ───────────────────────────────────────────── */
+    function fmt(n) {
+        return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(n);
+    }
+    function fmtUsd(n) {
+        return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+    }
+    function setStatus(text, badgeClass) {
+        elStatus.textContent = text;
+        elBadge.className = 'badge ' + badgeClass;
+    }
+    function showSpinner(on) {
+        elSpinner.style.display = on ? 'inline-block' : 'none';
+    }
+    function scheduleNext(delaySec) {
+        clearTimeout(timerId);
+        timerId = setTimeout(poll, delaySec * 1000);
+    }
+    function humanDuration(ms) {
+        const s = Math.round(ms / 1000);
+        if (s < 60) return s + ' s';
+        return Math.floor(s / 60) + ' min ' + (s % 60) + ' s';
+    }
+    function startStaleWatcher() {
+        clearInterval(staleTimerId);
+        staleTimerId = setInterval(() => {
+            if (!lastOkAt) return;
+            const age = Date.now() - lastOkAt;
+            if (age > STALE_MS) {
+                elStale.style.display = 'block';
+                elStaleSince.textContent = humanDuration(age);
+            } else {
+                elStale.style.display = 'none';
+            }
+        }, 5000);
+    }
+
+    /* ─── Mise à jour du DOM ────────────────────────────────── */
+    function render(data) {
+        elCdf.textContent    = fmt(data.ca_cdf)     + ' FC';
+        elCdfNet.textContent = fmt(data.ca_cdf_net) + ' FC';
+        elUsd.textContent    = '$ ' + fmtUsd(data.ca_usd);
+        elNbCdf.textContent  = data.nb_ventes_cdf;
+        elNbUsd.textContent  = data.nb_ventes_usd;
+        elNbTotal.textContent = data.nb_ventes;
+        elDep.textContent    = fmt(data.depenses_cdf);
+        elHeure.textContent  = data.heure_serveur;
+
+        if (data.derniere_vente_ts) {
+            const d = new Date(data.derniere_vente_ts);
+            elDerniere.textContent = 'Dern. vente : ' + d.toLocaleTimeString('fr-FR');
+        } else {
+            elDerniere.textContent = 'Aucune vente aujourd\'hui';
+        }
+    }
+
+    /* ─── Appel API ─────────────────────────────────────────── */
+    async function poll() {
+        showSpinner(true);
+        try {
+            const resp = await fetch(API_URL, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+            });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const data = await resp.json();
+
+            render(data);
+            errorCount = 0;
+            lastOkAt   = Date.now();
+            elStale.style.display = 'none';
+
+            /* Changer le badge selon si une vente est arrivée */
+            const hasNew = data.derniere_vente_ts && data.derniere_vente_ts !== lastVenteTs;
+            lastVenteTs  = data.derniere_vente_ts;
+            setStatus('En direct ✓', hasNew ? 'bg-success text-white' : 'bg-light text-dark');
+            scheduleNext(INTERVAL_MS / 1000);
+        } catch (err) {
+            errorCount++;
+            const delaySec = BACKOFF[Math.min(errorCount - 1, BACKOFF.length - 1)];
+            setStatus('Erreur — retry dans ' + delaySec + 's', 'bg-danger text-white');
+            scheduleNext(delaySec);
+        } finally {
+            showSpinner(false);
+        }
+    }
+
+    /* ─── Visibility API : pause quand onglet masqué ────────── */
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            clearTimeout(timerId);
+            showSpinner(false);
+            setStatus('En pause (onglet masqué)', 'bg-secondary text-white');
+        } else {
+            /* Reprise immédiate au retour sur l'onglet */
+            poll();
+        }
+    });
+
+    /* ─── Initialisation ────────────────────────────────────── */
+    elDate.textContent = new Date().toLocaleDateString('fr-FR', {
+        weekday: 'long', day: 'numeric', month: 'long'
+    });
+    startStaleWatcher();
+    poll();   // premier appel immédiat
+})();
+</script>
 {% endblock %}

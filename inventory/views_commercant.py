@@ -807,6 +807,72 @@ def api_stats_boutique(request, boutique_id):
             'error': str(e)
         }, status=500)
 
+@login_required
+@commercant_required
+@boutique_access_required
+def api_ca_jour_boutique(request, boutique_id):
+    """
+    Endpoint léger : CA du jour en temps réel pour un point de vente.
+    - Sépare CDF et USD
+    - Renvoie le timestamp de la dernière vente pour détection de changement côté client
+    - Conçu pour le polling intelligent (Visibility API + backoff exponentiel)
+    """
+    boutique = request.boutique
+    aujourd_hui = timezone.now().date()
+
+    ventes_qs = Vente.objects.filter(
+        client_maui__boutique=boutique,
+        date_vente__date=aujourd_hui,
+        paye=True,
+        est_annulee=False,
+    )
+
+    # Agrégats CDF
+    agg_cdf = ventes_qs.filter(devise='CDF').aggregate(
+        total=Sum('montant_total'),
+        nb=Count('id'),
+    )
+    ca_cdf = float(agg_cdf['total'] or 0)
+    nb_cdf = int(agg_cdf['nb'] or 0)
+
+    # Agrégats USD
+    agg_usd = ventes_qs.filter(devise='USD').aggregate(
+        total=Sum('montant_total_usd'),
+        nb=Count('id'),
+    )
+    ca_usd = float(agg_usd['total'] or 0)
+    nb_usd = int(agg_usd['nb'] or 0)
+
+    # Dépenses du jour appliquées (rapports de caisse CDF)
+    depenses_cdf = float(
+        RapportCaisse.objects.filter(
+            boutique=boutique,
+            date_rapport__date=aujourd_hui,
+            depense_appliquee=True,
+            devise='CDF',
+        ).aggregate(total=Sum('depense'))['total'] or 0
+    )
+
+    # Timestamp de la dernière vente → permet au client de savoir si les données ont changé
+    derniere_vente_ts = (
+        ventes_qs.order_by('-date_vente')
+        .values_list('date_vente', flat=True)
+        .first()
+    )
+
+    return JsonResponse({
+        'ca_cdf':        ca_cdf,
+        'ca_cdf_net':    round(ca_cdf - depenses_cdf, 2),
+        'ca_usd':        ca_usd,
+        'nb_ventes_cdf': nb_cdf,
+        'nb_ventes_usd': nb_usd,
+        'nb_ventes':     nb_cdf + nb_usd,
+        'depenses_cdf':  depenses_cdf,
+        'derniere_vente_ts': derniere_vente_ts.isoformat() if derniere_vente_ts else None,
+        'heure_serveur': timezone.now().strftime('%H:%M:%S'),
+    })
+
+
 # ===== GESTION AVANCÉE DES BOUTIQUES =====
 
 @login_required
