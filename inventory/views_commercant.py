@@ -6044,3 +6044,284 @@ def alertes_stock_boutique(request, boutique_id):
     }
     
     return render(request, 'inventory/commercant/alertes_stock.html', context)
+
+
+# ===== ANALYSE IA DES MOUVEMENTS =====
+
+@login_required
+def analyse_ia_mouvements(request, boutique_id):
+    """
+    🧠 Dashboard d'analyse intelligente des mouvements de stock.
+    Calcule le score de santé, les insights, les anomalies et les recommandations.
+    """
+    from django.db.models import ExpressionWrapper, DecimalField
+
+    boutique = get_object_or_404(Boutique, id=boutique_id)
+    if not request.user.is_superuser:
+        try:
+            commercant = request.user.profil_commercant
+            if boutique not in commercant.boutiques.all():
+                return HttpResponseForbidden("Accès non autorisé à cette boutique")
+        except Exception:
+            return HttpResponseForbidden("Accès non autorisé")
+
+    # --- POST : régularisation rapide ---
+    if request.method == 'POST':
+        article_id = request.POST.get('article_id')
+        quantite_ajout = request.POST.get('quantite_ajout', '0')
+        notes = request.POST.get('notes', 'Régularisation manuelle')
+        try:
+            article = Article.objects.get(id=article_id, boutique=boutique)
+            qte = int(quantite_ajout)
+            if qte > 0:
+                stock_avant = article.quantite_stock
+                article.quantite_stock += qte
+                article.save(update_fields=['quantite_stock'])
+                MouvementStock.objects.create(
+                    article=article,
+                    type_mouvement='ENTREE',
+                    quantite=qte,
+                    stock_avant=stock_avant,
+                    stock_apres=article.quantite_stock,
+                    reference_document=f"REGUL-WEB-{timezone.now().strftime('%Y%m%d%H%M%S')}",
+                    utilisateur=request.user.username,
+                    commentaire=f"Régularisation web: {notes}"
+                )
+                AlerteStock.objects.filter(
+                    article=article, boutique=boutique, statut='EN_ATTENTE'
+                ).update(
+                    statut='REGULARISE',
+                    date_regularisation=timezone.now(),
+                    regularise_par=request.user,
+                    notes_regularisation=notes
+                )
+                messages.success(request, f"✅ Stock de « {article.nom} » ajusté : +{qte} unités")
+        except (Article.DoesNotExist, ValueError):
+            messages.error(request, "Erreur lors de la régularisation")
+        return redirect('inventory:analyse_ia_mouvements', boutique_id=boutique_id)
+
+    # --- Plage de dates ---
+    maintenant = timezone.now()
+    debut_mois = maintenant.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    debut_str = request.GET.get('debut', '')
+    fin_str   = request.GET.get('fin',   '')
+
+    try:
+        debut = timezone.make_aware(datetime.strptime(debut_str, '%Y-%m-%d')) if debut_str else debut_mois
+    except ValueError:
+        debut = debut_mois
+    try:
+        fin = timezone.make_aware(datetime.strptime(fin_str, '%Y-%m-%d').replace(
+            hour=23, minute=59, second=59)) if fin_str else maintenant
+    except ValueError:
+        fin = maintenant
+
+    nb_jours = max(1, (fin - debut).days + 1)
+
+    # --- QuerySets ---
+    articles_qs  = Article.objects.filter(boutique=boutique, est_actif=True)
+    mouvements_qs = MouvementStock.objects.filter(
+        article__boutique=boutique, date_mouvement__gte=debut, date_mouvement__lte=fin)
+    ventes_qs = Vente.objects.filter(
+        boutique=boutique, date_vente__gte=debut, date_vente__lte=fin, est_annulee=False)
+    alertes_qs = AlerteStock.objects.filter(boutique=boutique, statut='EN_ATTENTE')
+
+    # --- 1. Résumé financier ---
+    def ca_devise(devise):
+        return float(
+            LigneVente.objects.filter(
+                vente__boutique=boutique,
+                vente__date_vente__gte=debut, vente__date_vente__lte=fin,
+                vente__est_annulee=False, devise=devise
+            ).aggregate(
+                ca=Sum(ExpressionWrapper(F('quantite') * F('prix_unitaire'),
+                                         output_field=DecimalField()))
+            )['ca'] or 0
+        )
+
+    ca_cdf = ca_devise('CDF')
+    ca_usd = ca_devise('USD')
+    ca_negocie = float(
+        LigneVente.objects.filter(
+            vente__boutique=boutique,
+            vente__date_vente__gte=debut, vente__date_vente__lte=fin,
+            vente__est_annulee=False, est_negocie=True
+        ).aggregate(
+            ca=Sum(ExpressionWrapper(F('quantite') * F('prix_unitaire'),
+                                     output_field=DecimalField()))
+        )['ca'] or 0
+    )
+
+    agg_stock = articles_qs.aggregate(
+        val_vente=Sum(ExpressionWrapper(F('quantite_stock') * F('prix_vente'),
+                                        output_field=DecimalField())),
+        val_cout=Sum(ExpressionWrapper(F('quantite_stock') * F('prix_achat'),
+                                       output_field=DecimalField()))
+    )
+    stock_val_vente = float(agg_stock['val_vente'] or 0)
+    stock_val_cout  = float(agg_stock['val_cout'] or 0)
+
+    # --- 2. Mouvements par type ---
+    from django.db.models import Count
+    mouv_raw = mouvements_qs.values('type_mouvement').annotate(
+        nb=Count('id'), total_qte=Sum('quantite'))
+    mouv = {m['type_mouvement']: m for m in mouv_raw}
+
+    def gm(typ, abs_val=False):
+        d = mouv.get(typ, {})
+        q = d.get('total_qte', 0) or 0
+        return {'nb': d.get('nb', 0) or 0, 'total_qte': abs(q) if abs_val else q}
+
+    mouvements_resume = {
+        'entrees':     gm('ENTREE'),
+        'sorties':     gm('SORTIE', True),
+        'ventes':      gm('VENTE', True),
+        'retours':     gm('RETOUR'),
+        'ajustements': gm('AJUSTEMENT'),
+    }
+
+    # --- 3. Alertes & stocks négatifs ---
+    articles_negatifs = list(
+        articles_qs.filter(quantite_stock__lt=0)
+        .select_related('categorie').order_by('quantite_stock')[:30]
+    )
+
+    alertes_list = list(alertes_qs.select_related('article', 'vente').order_by('-date_creation')[:100])
+    alertes_par_art = {}
+    for al in alertes_list:
+        aid = al.article_id
+        if aid not in alertes_par_art:
+            alertes_par_art[aid] = {
+                'article': al.article,
+                'nb_alertes': 0,
+                'qte_ecart': 0,
+                'ventes': []
+            }
+        alertes_par_art[aid]['nb_alertes'] += 1
+        alertes_par_art[aid]['qte_ecart'] += abs(al.ecart)
+        if al.numero_facture not in alertes_par_art[aid]['ventes']:
+            alertes_par_art[aid]['ventes'].append(al.numero_facture)
+
+    articles_a_regulariser = sorted(
+        alertes_par_art.values(), key=lambda x: x['nb_alertes'], reverse=True)[:20]
+
+    pertes_estimees = sum(
+        abs(a.quantite_stock) * float(a.prix_achat) for a in articles_negatifs)
+    nb_alertes_total = alertes_qs.count()
+
+    # --- 4. Top articles vendus ---
+    top_articles = list(
+        LigneVente.objects.filter(
+            vente__boutique=boutique,
+            vente__date_vente__gte=debut, vente__date_vente__lte=fin,
+            vente__est_annulee=False
+        )
+        .values('article__id', 'article__nom', 'article__code', 'article__devise')
+        .annotate(
+            total_qte=Sum('quantite'),
+            ca=Sum(ExpressionWrapper(F('quantite') * F('prix_unitaire'),
+                                     output_field=DecimalField())),
+            nb_ventes=Count('vente', distinct=True)
+        ).order_by('-ca')[:10]
+    )
+
+    # --- 5. Analyse IA ---
+    score = 100
+    insights = []
+    recommandations = []
+    anomalies = []
+
+    total_articles = articles_qs.count()
+    nb_neg = len(articles_negatifs)
+
+    if total_articles > 0:
+        score -= min(40, round(nb_neg / total_articles * 100 * 2))
+    score -= min(20, round(nb_alertes_total * 0.5))
+
+    rotation = 0
+    if stock_val_vente > 0 and ca_cdf > 0:
+        rotation = (ca_cdf / stock_val_vente) * (365 / nb_jours)
+        if rotation < 2:
+            score -= 10
+            insights.append({'type': 'ROTATION_FAIBLE', 'niveau': 'warning',
+                'icon': 'fa-sync-alt', 'color': 'warning',
+                'message': f"Rotation stock faible : {rotation:.1f}×/an — marchandise immobilisée."})
+        elif rotation >= 12:
+            insights.append({'type': 'ROTATION_ELEVEE', 'niveau': 'success',
+                'icon': 'fa-check-circle', 'color': 'success',
+                'message': f"Excellente rotation : {rotation:.1f}×/an — stock bien géré."})
+
+    score = max(0, min(100, score))
+
+    if nb_neg > 0:
+        deficit = sum(abs(a.quantite_stock) for a in articles_negatifs)
+        insights.append({'type': 'STOCK_NEGATIF', 'niveau': 'danger',
+            'icon': 'fa-exclamation-circle', 'color': 'danger',
+            'message': f"{nb_neg} article(s) en stock négatif — déficit : {deficit} unités — perte estimée : {round(pertes_estimees):,} CDF"})
+        recommandations.append({'priorite': 'HAUTE', 'color': 'danger',
+            'icon': 'fa-first-aid',
+            'action': 'Réapprovisionner ou ajuster manuellement les articles en déficit.'})
+
+    if ca_negocie > 0 and ca_cdf > 0:
+        pct = ca_negocie / ca_cdf * 100
+        lvl = 'warning' if pct > 25 else 'info'
+        insights.append({'type': 'PRIX_NEGOCIE', 'niveau': lvl,
+            'icon': 'fa-tag', 'color': lvl,
+            'message': f"{pct:.1f}% du CA CDF vendu à prix négocié — écart avec catalogue."})
+        if pct > 30:
+            recommandations.append({'priorite': 'MOYENNE', 'color': 'warning',
+                'icon': 'fa-shield-alt',
+                'action': 'Plus de 30% du CA à prix réduit. Vérifier les autorisations de remise.'})
+
+    if nb_alertes_total > 0:
+        insights.append({'type': 'ALERTES_EN_ATTENTE', 'niveau': 'warning',
+            'icon': 'fa-bell', 'color': 'warning',
+            'message': f"{nb_alertes_total} alerte(s) de stock non régularisée(s)."})
+        recommandations.append({'priorite': 'HAUTE', 'color': 'danger',
+            'icon': 'fa-tools',
+            'action': f"Régulariser les {nb_alertes_total} alerte(s) de sur-vente en attente."})
+
+    nb_ajust = mouv.get('AJUSTEMENT', {}).get('nb', 0) or 0
+    if nb_ajust > 10:
+        anomalies.append({'color': 'warning', 'icon': 'fa-random',
+            'message': f"{nb_ajust} ajustements manuels sur la période — vérifier la cohérence."})
+
+    nb_ventes_periode = ventes_qs.count()
+    nb_mouv_vente = mouv.get('VENTE', {}).get('nb', 0) or 0
+    if nb_ventes_periode > 0 and nb_mouv_vente == 0:
+        anomalies.append({'color': 'danger', 'icon': 'fa-unlink',
+            'message': f"{nb_ventes_periode} vente(s) enregistrée(s) mais aucun mouvement VENTE trouvé."})
+
+    niveau_sante = ('EXCELLENT' if score >= 85 else 'BON' if score >= 70
+                    else 'MOYEN' if score >= 50 else 'CRITIQUE')
+    score_color   = ('success' if score >= 85 else 'info' if score >= 70
+                     else 'warning' if score >= 50 else 'danger')
+
+    context = {
+        'boutique': boutique,
+        'debut': debut.strftime('%Y-%m-%d'),
+        'fin': fin.strftime('%Y-%m-%d'),
+        'nb_jours': nb_jours,
+        'ca_cdf': ca_cdf,
+        'ca_usd': ca_usd,
+        'ca_negocie': ca_negocie,
+        'stock_val_vente': stock_val_vente,
+        'stock_val_cout': stock_val_cout,
+        'marge_potentielle': max(0, stock_val_vente - stock_val_cout),
+        'nb_ventes': nb_ventes_periode,
+        'mouvements_resume': mouvements_resume,
+        'articles_negatifs': articles_negatifs,
+        'articles_a_regulariser': articles_a_regulariser,
+        'pertes_estimees': pertes_estimees,
+        'nb_alertes_total': nb_alertes_total,
+        'top_articles': top_articles,
+        'score': score,
+        'score_color': score_color,
+        'niveau_sante': niveau_sante,
+        'rotation': round(rotation, 1),
+        'insights': insights,
+        'recommandations': recommandations,
+        'anomalies': anomalies,
+    }
+    return render(request, 'inventory/commercant/analyse_ia_mouvements.html', context)

@@ -1,0 +1,446 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Analyse IA Mouvements — {{ boutique.nom }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+
+  <!-- EN-TÊTE -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2><i class="fas fa-brain text-primary"></i> Analyse IA des Mouvements</h2>
+      <p class="text-muted mb-0">{{ boutique.nom }} — du <strong>{{ debut }}</strong> au <strong>{{ fin }}</strong> ({{ nb_jours }} jour{{ nb_jours|pluralize }})</p>
+    </div>
+    <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-outline-secondary">
+      <i class="fas fa-arrow-left"></i> Retour
+    </a>
+  </div>
+
+  <!-- MESSAGES -->
+  {% if messages %}
+  {% for message in messages %}
+  <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+    {{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <!-- FILTRE PÉRIODE -->
+  <div class="card mb-4 shadow-sm">
+    <div class="card-body py-2">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-auto">
+          <label class="form-label small mb-1">Début</label>
+          <input type="date" name="debut" class="form-control form-control-sm" value="{{ debut }}">
+        </div>
+        <div class="col-auto">
+          <label class="form-label small mb-1">Fin</label>
+          <input type="date" name="fin" class="form-control form-control-sm" value="{{ fin }}">
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Filtrer</button>
+        </div>
+        <div class="col-auto ms-3 d-flex gap-2">
+          <a href="?debut={% now "Y-m-01" %}&fin={% now "Y-m-d" %}" class="btn btn-outline-secondary btn-sm">Ce mois</a>
+          <a href="?" class="btn btn-outline-secondary btn-sm">Tout</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- SCORE DE SANTÉ + KPIs -->
+  <div class="row g-3 mb-4">
+
+    <!-- Score jauge -->
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100 text-center border-{{ score_color }}">
+        <div class="card-body d-flex flex-column justify-content-center">
+          <div class="mb-2">
+            <span class="display-4 fw-bold text-{{ score_color }}">{{ score }}</span>
+            <span class="text-muted">/100</span>
+          </div>
+          <div class="progress mb-2" style="height:12px">
+            <div class="progress-bar bg-{{ score_color }}" style="width:{{ score }}%"></div>
+          </div>
+          <h5 class="mb-0">
+            <span class="badge bg-{{ score_color }}">{{ niveau_sante }}</span>
+          </h5>
+          <small class="text-muted mt-1">Score santé du stock</small>
+          {% if rotation > 0 %}
+          <small class="text-muted">Rotation : <strong>{{ rotation }}×/an</strong></small>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- CA CDF -->
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100 border-0 bg-light">
+        <div class="card-body">
+          <div class="d-flex align-items-center mb-2">
+            <div class="rounded-circle bg-success bg-opacity-10 p-2 me-2">
+              <i class="fas fa-coins text-success"></i>
+            </div>
+            <small class="text-muted">CA Période (CDF)</small>
+          </div>
+          <h4 class="fw-bold mb-0">{{ ca_cdf|floatformat:0|intcomma }} FC</h4>
+          {% if ca_negocie > 0 %}
+          <small class="text-warning"><i class="fas fa-tag"></i> dont {{ ca_negocie|floatformat:0|intcomma }} FC négociés</small>
+          {% endif %}
+          <hr class="my-2">
+          <small class="text-muted">{{ nb_ventes }} vente{{ nb_ventes|pluralize }}</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- CA USD -->
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100 border-0 bg-light">
+        <div class="card-body">
+          <div class="d-flex align-items-center mb-2">
+            <div class="rounded-circle bg-primary bg-opacity-10 p-2 me-2">
+              <i class="fas fa-dollar-sign text-primary"></i>
+            </div>
+            <small class="text-muted">CA Période (USD)</small>
+          </div>
+          <h4 class="fw-bold mb-0">{{ ca_usd|floatformat:2 }} $</h4>
+          <hr class="my-2">
+          <small class="text-muted">Ventes en dollars</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- Valeur stock -->
+    <div class="col-md-3">
+      <div class="card shadow-sm h-100 border-0 bg-light">
+        <div class="card-body">
+          <div class="d-flex align-items-center mb-2">
+            <div class="rounded-circle bg-info bg-opacity-10 p-2 me-2">
+              <i class="fas fa-boxes text-info"></i>
+            </div>
+            <small class="text-muted">Valeur stock actuel</small>
+          </div>
+          <h4 class="fw-bold mb-0">{{ stock_val_vente|floatformat:0|intcomma }} FC</h4>
+          <small class="text-muted">Coût : {{ stock_val_cout|floatformat:0|intcomma }} FC</small>
+          <hr class="my-2">
+          <small class="text-success">Marge potentielle : {{ marge_potentielle|floatformat:0|intcomma }} FC</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+
+    <!-- INSIGHTS IA -->
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-white">
+          <h6 class="mb-0"><i class="fas fa-lightbulb text-warning"></i> Insights IA</h6>
+        </div>
+        <div class="card-body p-0">
+          {% if insights %}
+          <ul class="list-group list-group-flush">
+            {% for insight in insights %}
+            <li class="list-group-item d-flex align-items-start gap-2 py-2">
+              <span class="badge bg-{{ insight.color }} mt-1" style="min-width:8px;height:8px;border-radius:50%;padding:4px"></span>
+              <div>
+                <i class="fas {{ insight.icon }} text-{{ insight.color }} me-1"></i>
+                <small>{{ insight.message }}</small>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <div class="p-3 text-center text-muted">
+            <i class="fas fa-check-circle text-success fa-2x mb-2"></i><br>
+            <small>Aucun insight — stock en bonne santé !</small>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- RECOMMANDATIONS -->
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-white">
+          <h6 class="mb-0"><i class="fas fa-tasks text-primary"></i> Recommandations</h6>
+        </div>
+        <div class="card-body p-0">
+          {% if recommandations %}
+          <ul class="list-group list-group-flush">
+            {% for r in recommandations %}
+            <li class="list-group-item d-flex align-items-start gap-2 py-2">
+              <span class="badge bg-{{ r.color }} mt-1">{{ r.priorite }}</span>
+              <small><i class="fas {{ r.icon }} text-{{ r.color }} me-1"></i>{{ r.action }}</small>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <div class="p-3 text-center text-muted">
+            <i class="fas fa-thumbs-up text-success fa-2x mb-2"></i><br>
+            <small>Aucune recommandation pour cette période.</small>
+          </div>
+          {% endif %}
+          {% if anomalies %}
+          <div class="border-top">
+            <div class="px-3 pt-2 pb-1"><small class="text-muted fw-bold">ANOMALIES</small></div>
+            {% for a in anomalies %}
+            <div class="px-3 pb-2">
+              <span class="badge bg-{{ a.color }}"><i class="fas {{ a.icon }}"></i></span>
+              <small class="text-{{ a.color }}"> {{ a.message }}</small>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RÉSUMÉ MOUVEMENTS -->
+  <div class="row g-3 mb-4">
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-header bg-white">
+          <h6 class="mb-0"><i class="fas fa-exchange-alt text-secondary"></i> Résumé des mouvements — {{ debut }} → {{ fin }}</h6>
+        </div>
+        <div class="card-body">
+          <div class="row text-center g-2">
+            <div class="col">
+              <div class="p-3 rounded bg-success bg-opacity-10">
+                <div class="fs-4 fw-bold text-success">+{{ mouvements_resume.entrees.total_qte }}</div>
+                <small class="text-muted">Entrées ({{ mouvements_resume.entrees.nb }} mvt)</small>
+              </div>
+            </div>
+            <div class="col">
+              <div class="p-3 rounded bg-danger bg-opacity-10">
+                <div class="fs-4 fw-bold text-danger">-{{ mouvements_resume.ventes.total_qte }}</div>
+                <small class="text-muted">Ventes ({{ mouvements_resume.ventes.nb }} mvt)</small>
+              </div>
+            </div>
+            <div class="col">
+              <div class="p-3 rounded bg-warning bg-opacity-10">
+                <div class="fs-4 fw-bold text-warning">-{{ mouvements_resume.sorties.total_qte }}</div>
+                <small class="text-muted">Sorties ({{ mouvements_resume.sorties.nb }} mvt)</small>
+              </div>
+            </div>
+            <div class="col">
+              <div class="p-3 rounded bg-info bg-opacity-10">
+                <div class="fs-4 fw-bold text-info">+{{ mouvements_resume.retours.total_qte }}</div>
+                <small class="text-muted">Retours ({{ mouvements_resume.retours.nb }} mvt)</small>
+              </div>
+            </div>
+            <div class="col">
+              <div class="p-3 rounded bg-secondary bg-opacity-10">
+                <div class="fs-4 fw-bold text-secondary">{{ mouvements_resume.ajustements.total_qte }}</div>
+                <small class="text-muted">Ajustements ({{ mouvements_resume.ajustements.nb }} mvt)</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+
+    <!-- TOP ARTICLES VENDUS -->
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100">
+        <div class="card-header bg-white d-flex justify-content-between">
+          <h6 class="mb-0"><i class="fas fa-trophy text-warning"></i> Top 10 articles vendus</h6>
+          <small class="text-muted">Par CA</small>
+        </div>
+        <div class="card-body p-0">
+          {% if top_articles %}
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th>#</th><th>Article</th><th class="text-end">Qté</th><th class="text-end">CA</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for a in top_articles %}
+                <tr>
+                  <td><span class="badge bg-secondary">{{ forloop.counter }}</span></td>
+                  <td>
+                    <strong>{{ a.article__nom }}</strong><br>
+                    <small class="text-muted">{{ a.article__code }}</small>
+                  </td>
+                  <td class="text-end">{{ a.total_qte }}</td>
+                  <td class="text-end text-success fw-bold">
+                    {{ a.ca|floatformat:0|intcomma }}
+                    <small>{{ a.article__devise }}</small>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="p-4 text-center text-muted"><small>Aucune vente sur cette période.</small></div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- ARTICLES STOCK NÉGATIF -->
+    <div class="col-md-6">
+      <div class="card shadow-sm h-100 {% if articles_negatifs %}border-danger{% endif %}">
+        <div class="card-header bg-white d-flex justify-content-between">
+          <h6 class="mb-0">
+            <i class="fas fa-exclamation-triangle text-danger"></i> Stock négatif
+            {% if articles_negatifs %}<span class="badge bg-danger">{{ articles_negatifs|length }}</span>{% endif %}
+          </h6>
+          <small class="text-muted">Pertes estimées : <strong class="text-danger">{{ pertes_estimees|floatformat:0|intcomma }} FC</strong></small>
+        </div>
+        <div class="card-body p-0">
+          {% if articles_negatifs %}
+          <div class="table-responsive" style="max-height:300px;overflow-y:auto">
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-light sticky-top">
+                <tr><th>Article</th><th class="text-center">Stock</th><th class="text-end">Régulariser</th></tr>
+              </thead>
+              <tbody>
+                {% for art in articles_negatifs %}
+                <tr>
+                  <td>
+                    <strong>{{ art.nom }}</strong><br>
+                    <small class="text-muted">{{ art.code }}</small>
+                  </td>
+                  <td class="text-center">
+                    <span class="badge bg-danger">{{ art.quantite_stock }}</span>
+                  </td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-outline-success"
+                      data-bs-toggle="modal" data-bs-target="#modalRegul"
+                      data-article-id="{{ art.id }}"
+                      data-article-nom="{{ art.nom }}"
+                      data-stock="{{ art.quantite_stock }}">
+                      <i class="fas fa-plus"></i>
+                    </button>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="p-4 text-center text-muted">
+            <i class="fas fa-check-circle text-success fa-2x mb-2"></i><br>
+            <small>Aucun article en stock négatif.</small>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ARTICLES À RÉGULARISER (AlerteStock) -->
+  {% if articles_a_regulariser %}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header bg-warning bg-opacity-10">
+      <h6 class="mb-0">
+        <i class="fas fa-tools text-warning"></i> Articles à régulariser
+        <span class="badge bg-warning text-dark">{{ nb_alertes_total }} alerte{{ nb_alertes_total|pluralize }}</span>
+        <a href="{% url 'inventory:commercant_alertes_stock' boutique.id %}" class="btn btn-sm btn-warning ms-2">
+          Voir toutes les alertes
+        </a>
+      </h6>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Article</th>
+              <th class="text-center">Stock actuel</th>
+              <th class="text-center">Nb alertes</th>
+              <th class="text-center">Écart total</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in articles_a_regulariser %}
+            <tr>
+              <td>
+                <strong>{{ item.article.nom }}</strong>
+                <small class="text-muted d-block">{{ item.article.code }}</small>
+              </td>
+              <td class="text-center">
+                <span class="badge {% if item.article.quantite_stock < 0 %}bg-danger{% else %}bg-secondary{% endif %}">
+                  {{ item.article.quantite_stock }}
+                </span>
+              </td>
+              <td class="text-center"><span class="badge bg-warning text-dark">{{ item.nb_alertes }}</span></td>
+              <td class="text-center text-danger fw-bold">-{{ item.qte_ecart }}</td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-outline-success"
+                  data-bs-toggle="modal" data-bs-target="#modalRegul"
+                  data-article-id="{{ item.article.id }}"
+                  data-article-nom="{{ item.article.nom }}"
+                  data-stock="{{ item.article.quantite_stock }}">
+                  <i class="fas fa-plus"></i> Régulariser
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- MODAL RÉGULARISATION -->
+<div class="modal fade" id="modalRegul" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title"><i class="fas fa-plus-circle text-success"></i> Régulariser le stock</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="article_id" id="regulArticleId">
+        <div class="modal-body">
+          <p class="mb-2">Article : <strong id="regulArticleNom"></strong></p>
+          <p class="mb-3">Stock actuel : <span class="badge bg-danger" id="regulStock"></span></p>
+          <div class="mb-3">
+            <label class="form-label">Quantité à ajouter</label>
+            <input type="number" name="quantite_ajout" class="form-control" min="1" value="1" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Notes</label>
+            <input type="text" name="notes" class="form-control" placeholder="Motif de la régularisation">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Annuler</button>
+          <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-check"></i> Appliquer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var modalRegul = document.getElementById('modalRegul');
+  if (modalRegul) {
+    modalRegul.addEventListener('show.bs.modal', function (event) {
+      var btn = event.relatedTarget;
+      document.getElementById('regulArticleId').value  = btn.dataset.articleId;
+      document.getElementById('regulArticleNom').textContent = btn.dataset.articleNom;
+      document.getElementById('regulStock').textContent = btn.dataset.stock;
+    });
+  }
+});
+</script>
+{% endblock %}

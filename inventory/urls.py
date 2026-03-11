@@ -107,6 +107,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/mouvements-stock/', views_commercant.historique_mouvements_stock, name='historique_mouvements_stock'),
     path('commercant/boutiques/<int:boutique_id>/ventes-refusees/', views_commercant.ventes_refusees_boutique, name='commercant_ventes_refusees_boutique'),
     path('commercant/boutiques/<int:boutique_id>/alertes-stock/', views_commercant.alertes_stock_boutique, name='commercant_alertes_stock'),
+    path('commercant/boutiques/<int:boutique_id>/analyse-ia/', views_commercant.analyse_ia_mouvements, name='analyse_ia_mouvements'),
     
     # Inventaire boutiques
     path('commercant/boutiques/<int:boutique_id>/inventaires/', views_commercant.liste_inventaires_boutique, name='liste_inventaires_boutique'),
