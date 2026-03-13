@@ -33,6 +33,10 @@
                     <a href="{% url 'inventory:importer_articles_entre_boutiques' boutique.id %}" class="btn btn-outline-success btn-sm" title="Importer des articles depuis un autre point de vente">
                         <i class="fas fa-file-import"></i> <span class="d-none d-sm-inline">Importer</span>
                     </a>
+                    <!-- Bouton Facture Fournisseur -->
+                    <a href="{% url 'inventory:approvisionner_facture_boutique' boutique.id %}" class="btn btn-info btn-sm" title="Créer une facture d'approvisionnement">
+                        <i class="fas fa-file-invoice-dollar"></i> <span class="d-none d-sm-inline">Facture Fournisseur</span>
+                    </a>
                     <!-- Bouton Transférer vers un autre point de vente -->
                     <a href="{% url 'inventory:transfert_entre_boutiques' boutique.id %}" class="btn btn-outline-warning btn-sm" title="Transférer des articles vers un autre point de vente">
                         <i class="fas fa-exchange-alt"></i> <span class="d-none d-sm-inline">Transférer</span>

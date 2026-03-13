@@ -181,6 +181,17 @@
                     </div>
                 </div>
                 
+                <!-- Factures -->
+                <div class="col-md-6 mb-4">
+                    <div class="card module-card h-100 text-center p-4" onclick="window.location.href='{% url 'inventory:liste_toutes_factures_commercant' %}?boutique={{ boutique.id }}'">
+                        <div class="card-body">
+                            <i class="fas fa-file-invoice-dollar module-icon text-primary"></i>
+                            <h4>Mes Factures</h4>
+                            <p class="text-muted">Factures d'approvisionnement</p>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Rapports -->
                 <div class="col-md-6 mb-4">
                     <div class="card module-card h-100 text-center p-4" onclick="window.location.href='{% url 'inventory:rapport_ca_quotidien' boutique.id %}'">
@@ -257,6 +268,16 @@
                             <div>
                                 <strong>Inventaire</strong><br>
                                 <small class="text-muted">Vérifier le stock physique</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="quick-action" onclick="window.location.href='{% url 'inventory:liste_toutes_factures_commercant' %}?boutique={{ boutique.id }}'">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-file-invoice-dollar text-primary me-3"></i>
+                            <div>
+                                <strong>Mes Factures</strong><br>
+                                <small class="text-muted">Factures d'approvisionnement</small>
                             </div>
                         </div>
                     </div>

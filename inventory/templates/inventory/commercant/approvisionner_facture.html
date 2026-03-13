@@ -142,7 +142,12 @@
 <div class="page-facture">
     <div class="facture-header">
         <h5><i class="fas fa-file-invoice me-1"></i>Facture Fournisseur &mdash; {{ depot.nom }}</h5>
-        <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left"></i> Retour</a>
+        <div style="display:flex;gap:8px;">
+            <a href="{% url 'inventory:suivi_articles_recents' depot.id %}" class="btn btn-info btn-sm" title="Suivi des articles récemment enregistrés">
+                <i class="fas fa-chart-line me-1"></i>Suivi Articles
+            </a>
+            <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left"></i> Retour</a>
+        </div>
     </div>
 
     <form method="post" id="factureForm" onsubmit="return validerFormulaire()" class="facture-body">
@@ -1069,6 +1074,18 @@ function factEditerLigne(index) {
         if (index < 0 || index >= factArticlesAjoutes.length) return;
         var a = factArticlesAjoutes[index];
         
+        // Les prix dans l'article sont TOUJOURS en CDF (stockés après conversion)
+        // Si le formulaire est en USD, on doit reconvertir CDF → USD pour l'édition
+        var deviseActuelle = getDevise();
+        var taux = factGetTaux();
+        
+        function prixPourEdition(prixCDF) {
+            if (deviseActuelle === 'USD' && taux > 0 && prixCDF > 0) {
+                return Math.round((prixCDF / taux) * 100) / 100;
+            }
+            return prixCDF;
+        }
+        
         // Remplir le formulaire avec les données de la ligne
         getEl('art_nom').value = a.nom;
         getEl('art_id').value = a.article_id || '';
@@ -1090,12 +1107,13 @@ function factEditerLigne(index) {
         getEl('art_nb_cartons').value = a.nombre_cartons || 0;
         getEl('art_pcs_carton').value = a.pieces_par_carton || 1;
         getEl('art_pcs_sup').value = a.pieces_supplementaires || 0;
-        getEl('art_prix_carton').value = a.prix_achat_carton || 0;
+        // Convertir le prix carton si nécessaire
+        getEl('art_prix_carton').value = prixPourEdition(a.prix_achat_carton || 0);
         
-        // Quantité et prix
+        // Quantité et prix (convertir les prix d'achat si nécessaire)
         getEl('art_qte').value = a.quantite_unites || 1;
-        getEl('art_prix_achat').value = a.prix_achat_unitaire || 0;
-        getEl('art_prix_vente').value = a.prix_vente || 0;
+        getEl('art_prix_achat').value = prixPourEdition(a.prix_achat_unitaire || 0);
+        getEl('art_prix_vente').value = a.prix_vente || 0;  // Prix de vente toujours en FC
         
         // Mettre à jour l'indicateur de mode
         updateModeIndicator();

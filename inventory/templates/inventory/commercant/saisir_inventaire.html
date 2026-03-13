@@ -3,17 +3,86 @@
 
 {% block title %}Saisie inventaire - {{ inventaire.reference }}{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* Professional styling for inventory */
+    .stock-input {
+        font-size: 1.1rem;
+        font-weight: 700;
+        border: 2px solid #dee2e6;
+        transition: all 0.2s;
+    }
+    .stock-input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        transform: scale(1.05);
+    }
+    .stock-input:not(:placeholder-shown) {
+        background-color: #e8f5e9;
+        border-color: #28a745;
+    }
+    kbd {
+        background: #667eea;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 0.85rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .table > tbody > tr:hover {
+        background-color: #f8f9ff;
+    }
+    .valeur-stock {
+        font-size: 0.95rem;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid py-4">
     <!-- En-tête -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h2><i class="fas fa-edit text-primary"></i> Saisie inventaire</h2>
             <p class="mb-0 text-muted">{{ inventaire.reference }} - {{ depot.nom }}</p>
         </div>
         <div>
-            <span class="badge bg-success me-2">{{ nb_saisis }} saisis</span>
-            <span class="badge bg-warning text-dark">{{ nb_non_saisis }} restants</span>
+            <span class="badge bg-success me-2 fs-6">✓ {{ nb_saisis }} saisis</span>
+            <span class="badge bg-warning text-dark fs-6">⏳ {{ nb_non_saisis }} restants</span>
+        </div>
+    </div>
+
+    <!-- Statistiques professionnelles -->
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <div class="card border-primary">
+                <div class="card-body p-2 text-center">
+                    <small class="text-muted d-block">Progression</small>
+                    <h5 class="mb-0 text-primary">
+                        {% widthratio nb_saisis 1 inventaire.lignes.count|default:1 %}%
+                    </h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-info">
+                <div class="card-body p-2 text-center">
+                    <small class="text-muted d-block">Articles totaux</small>
+                    <h5 class="mb-0 text-info">{{ inventaire.lignes.count }}</h5>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card border-success">
+                <div class="card-body p-2">
+                    <small class="text-muted d-block">⚡ Raccourcis clavier</small>
+                    <small class="text-success fw-bold">
+                        <kbd>Enter</kbd> = Stock suivant | 
+                        <kbd>Shift+Enter</kbd> = Commentaire | 
+                        <kbd>Tab</kbd> = Retour au stock
+                    </small>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -69,11 +138,14 @@
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th style="width: 30%">Article</th>
-                                <th class="text-center" style="width: 15%">Stock système</th>
-                                <th class="text-center" style="width: 20%">Stock physique</th>
-                                <th class="text-center" style="width: 10%">Écart</th>
-                                <th style="width: 25%">Commentaire</th>
+                                <th style="width: 20%">Article</th>
+                                <th class="text-end" style="width: 10%">P.A. (FC)</th>
+                                <th class="text-end" style="width: 10%">P.V. (FC)</th>
+                                <th class="text-center" style="width: 10%">Stock système</th>
+                                <th class="text-center" style="width: 12%">Stock physique</th>
+                                <th class="text-center" style="width: 8%">Écart</th>
+                                <th class="text-end" style="width: 12%">Valeur stock</th>
+                                <th style="width: 18%">Commentaire</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -83,6 +155,12 @@
                                     <strong>{{ ligne.article.nom }}</strong>
                                     <br><small class="text-muted">{{ ligne.article.code }}</small>
                                 </td>
+                                <td class="text-end align-middle">
+                                    <span class="text-primary fw-bold">{{ ligne.article.prix_achat|floatformat:0 }}</span>
+                                </td>
+                                <td class="text-end align-middle">
+                                    <span class="text-success fw-bold">{{ ligne.article.prix_vente|floatformat:0 }}</span>
+                                </td>
                                 <td class="text-center align-middle">
                                     <span class="badge bg-secondary fs-6">{{ ligne.stock_theorique }}</span>
                                 </td>
@@ -91,7 +169,8 @@
                                            class="form-control form-control-lg text-center stock-input"
                                            value="{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% endif %}"
                                            min="0" placeholder="?" data-theorique="{{ ligne.stock_theorique }}"
-                                           data-ligne-id="{{ ligne.id }}">
+                                           data-ligne-id="{{ ligne.id }}" data-prix-vente="{{ ligne.article.prix_vente }}"
+                                           tabindex="{{ forloop.counter }}">
                                 </td>
                                 <td class="text-center align-middle">
                                     <span class="ecart-display" id="ecart_{{ ligne.id }}">
@@ -104,15 +183,24 @@
                                         {% endif %}
                                     </span>
                                 </td>
+                                <td class="text-end align-middle">
+                                    <span class="valeur-stock fw-bold" id="valeur_{{ ligne.id }}">
+                                        {% if ligne.stock_physique is not None %}
+                                        <span class="text-info">{{ ligne.stock_physique|default:0|mul:ligne.article.prix_vente|floatformat:0 }} FC</span>
+                                        {% else %}
+                                        <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </span>
+                                </td>
                                 <td>
                                     <input type="text" name="commentaire_{{ ligne.id }}" 
-                                           class="form-control form-control-sm"
+                                           class="form-control form-control-sm commentaire-input"
                                            value="{{ ligne.commentaire }}" placeholder="Justification...">
                                 </td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="5" class="text-center text-muted py-4">
+                                <td colspan="8" class="text-center text-muted py-4">
                                     {% if filtre == 'non_saisis' %}
                                     Tous les articles ont été saisis !
                                     {% else %}
@@ -153,16 +241,21 @@
 </div>
 
 <script>
-// Calcul écart en temps réel
+// Calcul écart et valeur stock en temps réel
 document.querySelectorAll('.stock-input').forEach(input => {
     input.addEventListener('input', function() {
         const theorique = parseInt(this.dataset.theorique) || 0;
         const physique = parseInt(this.value);
         const ligneId = this.dataset.ligneId;
+        const prixVente = parseFloat(this.dataset.prixVente) || 0;
         const ecartEl = document.getElementById('ecart_' + ligneId);
+        const valeurEl = document.getElementById('valeur_' + ligneId);
         
         if (!isNaN(physique)) {
             const ecart = physique - theorique;
+            const valeurStock = physique * prixVente;
+            
+            // Mise à jour écart
             if (ecart > 0) {
                 ecartEl.innerHTML = '<span class="badge bg-success">+' + ecart + '</span>';
                 this.closest('tr').className = 'table-success';
@@ -173,9 +266,56 @@ document.querySelectorAll('.stock-input').forEach(input => {
                 ecartEl.innerHTML = '<span class="badge bg-secondary">0</span>';
                 this.closest('tr').className = '';
             }
+            
+            // Mise à jour valeur stock
+            valeurEl.innerHTML = '<span class="text-info">' + valeurStock.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' FC</span>';
         } else {
             ecartEl.innerHTML = '';
+            valeurEl.innerHTML = '<span class="text-muted">—</span>';
             this.closest('tr').className = '';
+        }
+    });
+    
+    // Navigation rapide avec Enter (champs importants uniquement)
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const allInputs = Array.from(document.querySelectorAll('.stock-input'));
+            const currentIndex = allInputs.indexOf(this);
+            if (currentIndex < allInputs.length - 1) {
+                allInputs[currentIndex + 1].focus();
+                allInputs[currentIndex + 1].select();
+            } else {
+                // Dernier champ - focus sur le bouton enregistrer
+                document.querySelector('button[name="continuer"]').focus();
+            }
+        }
+        // Shift+Enter pour aller au commentaire si nécessaire
+        if (e.key === 'Enter' && e.shiftKey) {
+            e.preventDefault();
+            const commentaireInput = this.closest('tr').querySelector('.commentaire-input');
+            if (commentaireInput) {
+                commentaireInput.focus();
+            }
+        }
+    });
+});
+
+// Navigation intelligente pour les commentaires (Tab pour revenir au stock suivant)
+document.querySelectorAll('.commentaire-input').forEach(input => {
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault();
+            // Trouver le prochain champ stock_physique
+            const currentRow = this.closest('tr');
+            const nextRow = currentRow.nextElementSibling;
+            if (nextRow && nextRow.querySelector('.stock-input')) {
+                nextRow.querySelector('.stock-input').focus();
+                nextRow.querySelector('.stock-input').select();
+            } else {
+                // Dernier article - focus sur enregistrer
+                document.querySelector('button[name="continuer"]').focus();
+            }
         }
     });
 });

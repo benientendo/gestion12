@@ -1,0 +1,233 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Gestion des Collaborateurs{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-users text-primary"></i> Mes Collaborateurs</h2>
+            <p class="text-muted mb-0">Gérez les employés qui vous aident avec l'inventaire</p>
+        </div>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#ajouterCollaborateurModal">
+            <i class="fas fa-user-plus"></i> Ajouter un collaborateur
+        </button>
+    </div>
+
+    <!-- Statistiques -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h3 class="text-primary mb-0">{{ collaborateurs.count }}</h3>
+                    <small class="text-muted">Collaborateurs actifs</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h3 class="text-success mb-0">{{ collaborateurs_inventaire }}</h3>
+                    <small class="text-muted">Rôle inventaire</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="alert alert-info mb-0">
+                <i class="fas fa-info-circle"></i> <strong>Astuce :</strong> Les collaborateurs avec rôle "Inventaire" peuvent uniquement compter les articles. Ils ne peuvent pas modifier les prix ou supprimer des données.
+            </div>
+        </div>
+    </div>
+
+    <!-- Liste des collaborateurs -->
+    <div class="card shadow-sm">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Nom</th>
+                            <th>Nom d'utilisateur</th>
+                            <th>Téléphone</th>
+                            <th>Rôle</th>
+                            <th>Boutiques autorisées</th>
+                            <th>Statut</th>
+                            <th>Dernière connexion</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for collab in collaborateurs %}
+                        <tr>
+                            <td>
+                                <strong>{{ collab.nom_complet }}</strong>
+                                {% if collab.code_pin %}
+                                <br><small class="text-muted"><i class="fas fa-key"></i> PIN configuré</small>
+                                {% endif %}
+                            </td>
+                            <td><code>{{ collab.user.username }}</code></td>
+                            <td>{{ collab.telephone|default:"—" }}</td>
+                            <td>
+                                <span class="badge bg-{% if collab.role == 'INVENTAIRE' %}info{% elif collab.role == 'VENDEUR' %}success{% else %}primary{% endif %}">
+                                    {{ collab.get_role_display }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if collab.boutiques_autorisees.exists %}
+                                    {% for boutique in collab.boutiques_autorisees.all %}
+                                        <span class="badge bg-secondary">{{ boutique.nom }}</span>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-muted">Toutes</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if collab.est_actif %}
+                                <span class="badge bg-success">Actif</span>
+                                {% else %}
+                                <span class="badge bg-danger">Inactif</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if collab.date_derniere_connexion %}
+                                {{ collab.date_derniere_connexion|date:"d/m/Y H:i" }}
+                                {% else %}
+                                <span class="text-muted">Jamais</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-primary" onclick="editerCollaborateur({{ collab.id }})">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="btn btn-outline-danger" onclick="supprimerCollaborateur({{ collab.id }}, '{{ collab.nom_complet }}')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">
+                                <i class="fas fa-users fa-3x mb-3 d-block"></i>
+                                Aucun collaborateur. Cliquez sur "Ajouter un collaborateur" pour commencer.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Ajouter Collaborateur -->
+<div class="modal fade" id="ajouterCollaborateurModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="{% url 'inventory:ajouter_collaborateur' %}">
+                {% csrf_token %}
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="fas fa-user-plus"></i> Ajouter un Collaborateur</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nom complet <span class="text-danger">*</span></label>
+                            <input type="text" name="nom_complet" class="form-control" required placeholder="Ex: Jean Dupont">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Téléphone</label>
+                            <input type="tel" name="telephone" class="form-control" placeholder="Ex: +243 900 000 000">
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Nom d'utilisateur <span class="text-danger">*</span></label>
+                            <input type="text" name="username" class="form-control" required placeholder="Ex: jean.dupont">
+                            <small class="text-muted">Utilisé pour se connecter</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Mot de passe <span class="text-danger">*</span></label>
+                            <input type="password" name="password" class="form-control" required placeholder="Minimum 6 caractères">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Rôle <span class="text-danger">*</span></label>
+                            <select name="role" class="form-select" required>
+                                <option value="INVENTAIRE" selected>Inventaire uniquement (Recommandé)</option>
+                                <option value="VENDEUR">Vendeur</option>
+                                <option value="GESTIONNAIRE">Gestionnaire</option>
+                            </select>
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle"></i> "Inventaire" = Peut seulement compter les articles
+                            </small>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Code PIN (optionnel)</label>
+                            <input type="text" name="code_pin" class="form-control" maxlength="6" placeholder="Ex: 1234">
+                            <small class="text-muted">Pour accès rapide (4-6 chiffres)</small>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Boutiques autorisées</label>
+                        <select name="boutiques" class="form-select" multiple size="3">
+                            {% for boutique in boutiques %}
+                            <option value="{{ boutique.id }}">{{ boutique.nom }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle"></i> Laissez vide pour autoriser toutes les boutiques. 
+                            Maintenez Ctrl pour sélectionner plusieurs.
+                        </small>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <i class="fas fa-shield-alt"></i> <strong>Sécurité :</strong> 
+                        Le collaborateur pourra se connecter avec son nom d'utilisateur et mot de passe. 
+                        Avec le rôle "Inventaire", il ne pourra QUE compter les articles, rien d'autre.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Créer le collaborateur
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function editerCollaborateur(id) {
+    // TODO: Implémenter l'édition
+    alert('Fonctionnalité en cours de développement');
+}
+
+function supprimerCollaborateur(id, nom) {
+    if (confirm(`Êtes-vous sûr de vouloir supprimer le collaborateur "${nom}" ?\n\nCette action est irréversible.`)) {
+        fetch(`/commercant/collaborateurs/${id}/supprimer/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Erreur lors de la suppression');
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

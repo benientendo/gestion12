@@ -295,8 +295,8 @@
                 <a href="{% url 'inventory:approvisionner_facture' depot.id %}" class="btn btn-primary btn-sm me-2" title="Approvisionnement par facture fournisseur">
                     <i class="fas fa-file-invoice"></i> Facture Fournisseur
                 </a>
-                <a href="{% url 'inventory:liste_factures_depot' depot.id %}" class="btn btn-outline-primary btn-sm me-2" title="Voir les factures">
-                    <i class="fas fa-list"></i> Factures
+                <a href="{% url 'inventory:liste_toutes_factures_commercant' %}?boutique={{ depot.id }}" class="btn btn-outline-primary btn-sm me-2" title="Mes factures d'approvisionnement">
+                    <i class="fas fa-file-invoice-dollar"></i> Mes Factures
                 </a>
                 <a href="{% url 'inventory:liste_inventaires' depot.id %}" class="btn btn-outline-secondary btn-sm me-2" title="Gérer les inventaires">
                     <i class="fas fa-clipboard-list"></i> Inventaires

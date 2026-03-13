@@ -1,0 +1,247 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Modifier Vente #{{ vente.id }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.article-row {
+    background: #f8f9fa;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+}
+.btn-remove-line {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+.btn-remove-line:hover {
+    background: #c82333;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-edit text-primary"></i> Modifier Vente #{{ vente.id }}</h2>
+            <p class="text-muted mb-0">
+                Date: {{ vente.date_vente|date:"d/m/Y H:i" }} | 
+                Montant actuel: {{ vente.montant_total|floatformat:0 }} FC
+            </p>
+        </div>
+        <a href="{% url 'inventory:commercant_ventes_boutique' boutique.id %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Retour
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <form method="post" id="venteForm">
+                {% csrf_token %}
+                
+                <div id="lignesContainer">
+                    {% for ligne in vente.lignes.all %}
+                    <div class="article-row" data-index="{{ forloop.counter0 }}">
+                        <div class="row align-items-center">
+                            <div class="col-md-4">
+                                <label class="form-label">Article</label>
+                                <select name="article_id_{{ forloop.counter0 }}" class="form-select" required>
+                                    <option value="">Sélectionner...</option>
+                                    {% for article in articles %}
+                                    <option value="{{ article.id }}" 
+                                            data-prix="{{ article.prix_vente }}"
+                                            data-stock="{{ article.stock }}"
+                                            {% if article.id == ligne.article.id %}selected{% endif %}>
+                                        {{ article.nom }} (Stock: {{ article.stock }})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Quantité</label>
+                                <input type="number" 
+                                       name="quantite_{{ forloop.counter0 }}" 
+                                       class="form-control quantite-input" 
+                                       value="{{ ligne.quantite }}"
+                                       min="1" 
+                                       required>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Prix unitaire (FC)</label>
+                                <input type="number" 
+                                       name="prix_unitaire_{{ forloop.counter0 }}" 
+                                       class="form-control prix-input" 
+                                       value="{{ ligne.prix_unitaire|floatformat:0 }}"
+                                       min="0" 
+                                       step="1"
+                                       required>
+                            </div>
+                            <div class="col-md-2 text-end">
+                                <label class="form-label">Total</label>
+                                <div class="fw-bold text-success total-ligne">
+                                    {{ ligne.total|floatformat:0 }} FC
+                                </div>
+                                <button type="button" class="btn-remove-line mt-2" onclick="removeLigne(this)">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="mt-3">
+                    <button type="button" class="btn btn-outline-primary" onclick="addLigne()">
+                        <i class="fas fa-plus me-1"></i>Ajouter un article
+                    </button>
+                </div>
+
+                <hr class="my-4">
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Note :</strong> La modification restaurera le stock des anciens articles 
+                            et déduira le stock des nouveaux articles.
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <h4>Montant Total: <span id="montantTotal" class="text-success">0 FC</span></h4>
+                    </div>
+                </div>
+
+                <div class="text-end mt-4">
+                    <a href="{% url 'inventory:commercant_ventes_boutique' boutique.id %}" class="btn btn-secondary me-2">
+                        Annuler
+                    </a>
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="fas fa-save me-1"></i>Enregistrer les modifications
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let ligneIndex = {{ vente.lignes.count }};
+
+// Calculer le total en temps réel
+document.addEventListener('input', function(e) {
+    if (e.target.classList.contains('quantite-input') || e.target.classList.contains('prix-input')) {
+        updateTotals();
+    }
+});
+
+// Mettre à jour le prix quand on change d'article
+document.addEventListener('change', function(e) {
+    if (e.target.name && e.target.name.startsWith('article_id_')) {
+        const index = e.target.name.split('_')[2];
+        const selectedOption = e.target.options[e.target.selectedIndex];
+        const prix = selectedOption.dataset.prix;
+        
+        if (prix) {
+            document.querySelector(`input[name="prix_unitaire_${index}"]`).value = prix;
+            updateTotals();
+        }
+    }
+});
+
+function updateTotals() {
+    let total = 0;
+    document.querySelectorAll('.article-row').forEach(row => {
+        const index = row.dataset.index;
+        const quantite = parseFloat(document.querySelector(`input[name="quantite_${index}"]`)?.value) || 0;
+        const prix = parseFloat(document.querySelector(`input[name="prix_unitaire_${index}"]`)?.value) || 0;
+        const ligneTotal = quantite * prix;
+        
+        const totalElement = row.querySelector('.total-ligne');
+        if (totalElement) {
+            totalElement.textContent = ligneTotal.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' FC';
+        }
+        
+        total += ligneTotal;
+    });
+    
+    document.getElementById('montantTotal').textContent = total.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' FC';
+}
+
+function addLigne() {
+    const container = document.getElementById('lignesContainer');
+    const newRow = document.createElement('div');
+    newRow.className = 'article-row';
+    newRow.dataset.index = ligneIndex;
+    
+    newRow.innerHTML = `
+        <div class="row align-items-center">
+            <div class="col-md-4">
+                <label class="form-label">Article</label>
+                <select name="article_id_${ligneIndex}" class="form-select" required>
+                    <option value="">Sélectionner...</option>
+                    {% for article in articles %}
+                    <option value="{{ article.id }}" 
+                            data-prix="{{ article.prix_vente }}"
+                            data-stock="{{ article.stock }}">
+                        {{ article.nom }} (Stock: {{ article.stock }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Quantité</label>
+                <input type="number" 
+                       name="quantite_${ligneIndex}" 
+                       class="form-control quantite-input" 
+                       value="1"
+                       min="1" 
+                       required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Prix unitaire (FC)</label>
+                <input type="number" 
+                       name="prix_unitaire_${ligneIndex}" 
+                       class="form-control prix-input" 
+                       value="0"
+                       min="0" 
+                       step="1"
+                       required>
+            </div>
+            <div class="col-md-2 text-end">
+                <label class="form-label">Total</label>
+                <div class="fw-bold text-success total-ligne">0 FC</div>
+                <button type="button" class="btn-remove-line mt-2" onclick="removeLigne(this)">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    
+    container.appendChild(newRow);
+    ligneIndex++;
+    updateTotals();
+}
+
+function removeLigne(btn) {
+    if (document.querySelectorAll('.article-row').length <= 1) {
+        alert('La vente doit contenir au moins un article.');
+        return;
+    }
+    
+    if (confirm('Supprimer cette ligne ?')) {
+        btn.closest('.article-row').remove();
+        updateTotals();
+    }
+}
+
+// Calculer le total initial
+updateTotals();
+</script>
+{% endblock %}

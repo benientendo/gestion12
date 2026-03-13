@@ -225,6 +225,9 @@
                             <span class="badge bg-success ms-2" style="cursor: pointer;" data-bs-toggle="modal" data-bs-target="#tauxDollarModal" title="Cliquez pour modifier">
                                 <i class="fas fa-exchange-alt"></i> 1$ = {{ commercant.taux_dollar|floatformat:0 }} FC
                             </span>
+                            <a href="{% url 'inventory:liste_toutes_factures_commercant' %}" class="badge bg-info ms-2 text-decoration-none" title="Voir toutes vos factures d'approvisionnement">
+                                <i class="fas fa-file-invoice-dollar"></i> Mes Factures
+                            </a>
                         </p>
                     </div>
                     <div class="col-12 col-md-4 text-center text-md-end">

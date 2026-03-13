@@ -4,6 +4,10 @@ from . import admin_views
 from . import views_commercant
 from . import views_mobile_money
 from . import views_bilan
+from . import views_collaborateurs
+from . import views_pin_login
+from . import views_auto_assign
+from . import views_modifier_vente
 
 app_name = 'inventory'
 
@@ -31,6 +35,7 @@ urlpatterns = [
     
     # Authentification
     path('login/', views.user_login, name='login'),
+    path('login/pin/', views_pin_login.login_pin, name='login_pin'),
     path('logout/', views.user_logout, name='logout'),
     path('change-password/', views.change_password, name='change_password'),
     
@@ -104,6 +109,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier-prix/', views_commercant.modifier_prix_article, name='modifier_prix_article'),
     path('commercant/boutiques/<int:boutique_id>/categories/', views_commercant.categories_boutique, name='commercant_categories_boutique'),
     path('commercant/boutiques/<int:boutique_id>/ventes/', views_commercant.ventes_boutique, name='commercant_ventes_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/ventes/<int:vente_id>/modifier/', views_modifier_vente.modifier_vente, name='modifier_vente'),
     path('commercant/boutiques/<int:boutique_id>/mouvements-stock/', views_commercant.historique_mouvements_stock, name='historique_mouvements_stock'),
     path('commercant/boutiques/<int:boutique_id>/ventes-refusees/', views_commercant.ventes_refusees_boutique, name='commercant_ventes_refusees_boutique'),
     path('commercant/boutiques/<int:boutique_id>/alertes-stock/', views_commercant.alertes_stock_boutique, name='commercant_alertes_stock'),
@@ -114,6 +120,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/inventaires/nouveau/', views_commercant.nouvel_inventaire_boutique, name='nouvel_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/', views_commercant.detail_inventaire_boutique, name='detail_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/saisir/', views_commercant.saisir_inventaire_boutique, name='saisir_inventaire_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/auto-assigner/', views_auto_assign.auto_assigner_inventaire, name='auto_assigner_inventaire'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/terminer/', views_commercant.terminer_inventaire_boutique, name='terminer_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/regulariser/', views_commercant.regulariser_inventaire_boutique, name='regulariser_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/', views_commercant.rapports_caisse_boutique, name='commercant_rapports_caisse_boutique'),
@@ -146,8 +153,9 @@ urlpatterns = [
     path('commercant/depots/<int:depot_id>/valider-transferts-multiples/', views_commercant.valider_transferts_multiples, name='valider_transferts_multiples'),
     path('commercant/depots/<int:depot_id>/bon-transfert/<str:reference_lot>/', views_commercant.bon_transfert, name='bon_transfert'),
     
-    # Approvisionnement par facture
+    # Approvisionnement par facture (dépôt)
     path('commercant/depots/<int:depot_id>/approvisionner-facture/', views_commercant.approvisionner_facture, name='approvisionner_facture'),
+    path('commercant/depots/<int:depot_id>/suivi-articles-recents/', views_commercant.suivi_articles_recents, name='suivi_articles_recents'),
     path('commercant/depots/<int:depot_id>/factures/', views_commercant.liste_factures_depot, name='liste_factures_depot'),
     path('commercant/depots/<int:depot_id>/factures/<int:facture_id>/', views_commercant.detail_facture_depot, name='detail_facture_depot'),
     path('commercant/depots/<int:depot_id>/factures/<int:facture_id>/modifier-ligne/<int:ligne_id>/', views_commercant.modifier_ligne_facture, name='modifier_ligne_facture'),
@@ -155,6 +163,15 @@ urlpatterns = [
     path('commercant/depots/<int:depot_id>/api/fournisseurs/', views_commercant.api_fournisseurs, name='api_fournisseurs'),
     path('commercant/depots/<int:depot_id>/fournisseurs/creer/', views_commercant.creer_fournisseur, name='creer_fournisseur'),
     path('commercant/depots/<int:depot_id>/modifier-taux-dollar/', views_commercant.modifier_taux_dollar_depot, name='modifier_taux_dollar_depot'),
+    
+    # Approvisionnement par facture (point de vente)
+    path('commercant/boutiques/<int:boutique_id>/approvisionner-facture/', views_commercant.approvisionner_facture_boutique, name='approvisionner_facture_boutique'),
+    
+    # Liste centralisée de toutes les factures (dépôts + boutiques)
+    path('commercant/mes-factures/', views_commercant.liste_toutes_factures_commercant, name='liste_toutes_factures_commercant'),
+    
+    # Détail facture flexible (sans depot_id requis - meilleure pratique)
+    path('commercant/factures/<int:facture_id>/', views_commercant.detail_facture_flexible, name='detail_facture_flexible'),
     
     # Inventaire
     path('commercant/depots/<int:depot_id>/inventaires/', views_commercant.liste_inventaires, name='liste_inventaires'),
@@ -195,4 +212,10 @@ urlpatterns = [
     path('mobile-money/<int:boutique_id>/credit/vendre/', views_mobile_money.vendre_credit, name='mobile_money_vendre_credit'),
     path('mobile-money/<int:boutique_id>/credit/approvisionner/', views_mobile_money.approvisionner_credit, name='mobile_money_approvisionner_credit'),
     path('mobile-money/<int:boutique_id>/credit/historique/', views_mobile_money.historique_credit, name='mobile_money_historique_credit'),
+    
+    # ===== GESTION DES COLLABORATEURS =====
+    path('commercant/collaborateurs/', views_collaborateurs.gestion_collaborateurs, name='gestion_collaborateurs'),
+    path('commercant/collaborateurs/ajouter/', views_collaborateurs.ajouter_collaborateur, name='ajouter_collaborateur'),
+    path('commercant/collaborateurs/<int:collaborateur_id>/supprimer/', views_collaborateurs.supprimer_collaborateur, name='supprimer_collaborateur'),
+    path('commercant/collaborateurs/<int:collaborateur_id>/toggle-statut/', views_collaborateurs.toggle_collaborateur_statut, name='toggle_collaborateur_statut'),
 ]

@@ -1,7 +1,7 @@
 {% extends 'inventory/base.html' %}
 {% load static number_filters %}
 
-{% block title %}Factures d'approvisionnement - {{ depot.nom }}{% endblock %}
+{% block title %}Mes Factures{% if boutique_selectionnee %} — {{ boutique_selectionnee.nom }}{% endif %}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -9,7 +9,7 @@
 .factures-header h2 { margin:0; font-size:1.35rem; }
 .factures-header .sub { color:#6c757d; font-size:.82rem; }
 .stats-bar { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
-.stat-card { background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:10px 16px; min-width:140px; flex:1; }
+.stat-card { background:#fff; border:1px solid #e9ecef; border-radius:8px; padding:10px 16px; min-width:130px; flex:1; }
 .stat-card .stat-label { font-size:.7rem; color:#6c757d; text-transform:uppercase; letter-spacing:.5px; }
 .stat-card .stat-value { font-size:1.25rem; font-weight:700; color:#212529; }
 .stat-card .stat-value small { font-size:.7rem; font-weight:400; color:#6c757d; }
@@ -22,37 +22,33 @@
 .search-bar .btn-search { height:38px; }
 .results-info { font-size:.78rem; color:#6c757d; margin-bottom:8px; display:flex; align-items:center; gap:8px; }
 .results-info strong { color:#212529; }
+/* Table */
 .table-factures { width:100%; border-collapse:separate; border-spacing:0; }
 .table-factures thead th { background:#f8f9fa; font-size:.72rem; text-transform:uppercase; letter-spacing:.5px; color:#6c757d; padding:8px 12px; border-bottom:2px solid #dee2e6; position:sticky; top:0; white-space:nowrap; z-index:2; }
 .table-factures thead th a { color:#6c757d; text-decoration:none; }
 .table-factures thead th a:hover { color:#0d6efd; }
 .table-factures thead th .sort-icon { font-size:.6rem; margin-left:3px; }
 .table-factures tbody tr { transition: background .15s; cursor:pointer; }
-.table-factures tbody tr:hover { background:#f0f4ff; }
+.table-factures tbody tr:hover { filter: brightness(0.96); }
 .table-factures tbody td { padding:10px 12px; border-bottom:1px solid #f0f0f0; font-size:.85rem; vertical-align:middle; }
+/* ⭐ Distinction visuelle Dépôt vs Point de vente */
+.row-depot { background: #fffbea; border-left: 3px solid #ffc107; }
+.row-boutique { background: #f0fff4; border-left: 3px solid #28a745; }
 .table-factures .num-facture { font-weight:600; color:#0d6efd; }
 .table-factures .fournisseur { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .table-factures .montant { font-weight:600; white-space:nowrap; }
 .table-factures .montant.cdf { color:#198754; }
-.table-factures .montant.usd { color:#0d6efd; }
 .badge-articles { background:#e8f0fe; color:#1a73e8; font-weight:600; padding:3px 8px; border-radius:12px; font-size:.75rem; }
-.badge-type { font-weight:600; padding:3px 8px; border-radius:12px; font-size:.7rem; }
-.badge-depot { background:#ffc107; color:#000; }
-.badge-boutique { background:#28a745; color:#fff; }
+/* ⭐ Badges type très lisibles */
+.badge-type { font-weight:700; padding:4px 10px; border-radius:20px; font-size:.72rem; display:inline-flex; align-items:center; gap:4px; }
+.badge-depot { background:#ffc107; color:#000; box-shadow:0 1px 4px rgba(255,193,7,.4); }
+.badge-boutique { background:#198754; color:#fff; box-shadow:0 1px 4px rgba(25,135,84,.4); }
 .articles-list { font-size:.7rem; color:#6c757d; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .btn-voir { font-size:.75rem; padding:3px 10px; }
-.pagination-bar { display:flex; align-items:center; justify-content:space-between; margin-top:12px; font-size:.8rem; }
-.pagination-bar .page-info { color:#6c757d; }
-.pagination-bar .pagination { margin:0; }
-.pagination-bar .page-link { font-size:.8rem; padding:4px 10px; }
-.empty-state { text-align:center; padding:50px 20px; color:#adb5bd; }
-.empty-state i { font-size:3rem; margin-bottom:12px; }
-.highlight { background:#fff3cd; padding:1px 2px; border-radius:2px; }
-/* === RECHERCHE IA === */
+/* IA Search */
 .ia-search-box { position:relative; }
 .btn-ia { background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); color:#fff; border:none; font-size:.75rem; padding:4px 10px; border-radius:6px; cursor:pointer; transition:all .2s; }
 .btn-ia:hover { transform:scale(1.05); box-shadow:0 2px 8px rgba(102,126,234,.4); }
-.btn-ia i { margin-right:4px; }
 .ia-suggestions { position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid #e0e0e0; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,.15); z-index:100; margin-top:4px; display:none; }
 .ia-suggestions.visible { display:block; }
 .ia-suggestions .ia-header { padding:8px 12px; background:#f8f9fa; border-bottom:1px solid #eee; font-size:.7rem; color:#6c757d; }
@@ -62,28 +58,75 @@
 .ia-suggestion .ia-icon { color:#667eea; margin-right:8px; }
 .ia-suggestion .ia-text { font-size:.85rem; }
 .ia-suggestion .ia-desc { font-size:.7rem; color:#6c757d; margin-top:2px; }
+/* Légende */
+.legend-bar { display:flex; gap:16px; margin-bottom:10px; font-size:.78rem; align-items:center; flex-wrap:wrap; }
+.legend-item { display:flex; align-items:center; gap:6px; }
+.legend-color { width:14px; height:14px; border-radius:3px; }
+/* Pagination */
+.pagination-bar { display:flex; align-items:center; justify-content:space-between; margin-top:12px; font-size:.8rem; }
+.pagination-bar .page-info { color:#6c757d; }
+.pagination-bar .pagination { margin:0; }
+.pagination-bar .page-link { font-size:.8rem; padding:4px 10px; }
+.empty-state { text-align:center; padding:50px 20px; color:#adb5bd; }
+.empty-state i { font-size:3rem; margin-bottom:12px; }
+/* Contexte actif */
+.context-badge { display:inline-flex; align-items:center; gap:6px; background:#e8f0fe; color:#1a73e8; border-radius:20px; padding:4px 12px; font-size:.78rem; font-weight:600; }
 @media(max-width:768px) {
     .search-bar .search-row { flex-direction:column; }
     .stats-bar { flex-direction:column; }
+    .factures-header { flex-direction:column; align-items:flex-start; }
 }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid py-3">
+
     <!-- Header -->
     <div class="factures-header">
         <div>
-            <h2><i class="fas fa-file-invoice me-2"></i>Mes Factures d'approvisionnement</h2>
-            <span class="sub">Toutes vos factures (Dépôts + Boutiques) &mdash; {{ total_count }} facture{{ total_count|pluralize }}</span>
+            <h2>
+                <i class="fas fa-file-invoice-dollar me-2"></i>Mes Factures
+                {% if boutique_selectionnee %}
+                <span class="context-badge ms-2">
+                    {% if boutique_selectionnee.est_depot %}🏢{% else %}🏪{% endif %}
+                    {{ boutique_selectionnee.nom }}
+                </span>
+                {% endif %}
+            </h2>
+            <span class="sub">
+                {% if boutique_selectionnee %}
+                    Factures de {{ boutique_selectionnee.nom }} &mdash; {{ filtered_count }} / {{ total_count }} facture{{ total_count|pluralize }}
+                {% else %}
+                    Toutes vos factures d'approvisionnement &mdash; {{ total_count }} facture{{ total_count|pluralize }}
+                {% endif %}
+            </span>
         </div>
-        <div style="display:flex;gap:8px;">
-            <a href="{% url 'inventory:approvisionner_facture' depot.id %}" class="btn btn-primary btn-sm">
-                <i class="fas fa-plus me-1"></i>Nouvelle facture
-            </a>
-            <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-outline-secondary btn-sm">
-                <i class="fas fa-arrow-left me-1"></i>Retour
-            </a>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            {% if boutique_selectionnee %}
+                {% if boutique_selectionnee.est_depot %}
+                <a href="{% url 'inventory:approvisionner_facture' boutique_selectionnee.id %}" class="btn btn-primary btn-sm">
+                    <i class="fas fa-plus me-1"></i>Nouvelle facture
+                </a>
+                <a href="{% url 'inventory:detail_depot' boutique_selectionnee.id %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-arrow-left me-1"></i>Retour au dépôt
+                </a>
+                {% else %}
+                <a href="{% url 'inventory:approvisionner_facture_boutique' boutique_selectionnee.id %}" class="btn btn-primary btn-sm">
+                    <i class="fas fa-plus me-1"></i>Nouvelle facture
+                </a>
+                <a href="{% url 'inventory:entrer_boutique' boutique_selectionnee.id %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-arrow-left me-1"></i>Retour au point de vente
+                </a>
+                {% endif %}
+                <a href="{% url 'inventory:liste_toutes_factures_commercant' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-list me-1"></i>Toutes les factures
+                </a>
+            {% else %}
+                <a href="{% url 'inventory:commercant_dashboard' %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-arrow-left me-1"></i>Tableau de bord
+                </a>
+            {% endif %}
         </div>
     </div>
 
@@ -93,13 +136,13 @@
             <div class="stat-label">Total factures</div>
             <div class="stat-value">{{ stats.nb_factures|default:0 }}</div>
         </div>
-        <div class="stat-card">
-            <div class="stat-label">Factures Dépôt</div>
-            <div class="stat-value" style="color:#ffc107;">{{ stats.nb_factures_depot|default:0 }}</div>
+        <div class="stat-card" style="border-left:3px solid #ffc107;">
+            <div class="stat-label">🏢 Dépôt global</div>
+            <div class="stat-value" style="color:#b8860b;">{{ stats.nb_factures_depot|default:0 }}</div>
         </div>
-        <div class="stat-card">
-            <div class="stat-label">Factures Boutique</div>
-            <div class="stat-value" style="color:#28a745;">{{ stats.nb_factures_boutique|default:0 }}</div>
+        <div class="stat-card" style="border-left:3px solid #198754;">
+            <div class="stat-label">🏪 Point de vente</div>
+            <div class="stat-value" style="color:#198754;">{{ stats.nb_factures_boutique|default:0 }}</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Montant Total (CDF)</div>
@@ -107,23 +150,23 @@
         </div>
     </div>
 
-    <!-- Barre de recherche -->
+    <!-- Recherche -->
     <div class="search-bar">
-        <form method="get" id="searchForm">
+        <form method="get" id="searchForm" action="">
             <div class="search-row">
                 <div class="search-main ia-search-box">
                     <label for="q"><i class="fas fa-search me-1"></i>Recherche</label>
                     <div style="display:flex;gap:6px;">
                         <input type="text" class="form-control form-control-sm" id="q" name="q" value="{{ q }}"
-                               placeholder="N° facture, fournisseur, article... ou question IA"
+                               placeholder="N° facture, fournisseur, article..."
                                oninput="clearTimeout(window._st); window._st=setTimeout(function(){document.getElementById('searchForm').submit()},600);"
                                onblur="setTimeout(hideIaSuggestions,200)">
                         <button type="button" class="btn-ia" onclick="toggleIaSuggestions()" title="Recherche intelligente">
-                            <i class="fas fa-magic"></i>IA
+                            <i class="fas fa-magic"></i> IA
                         </button>
                     </div>
                     <div class="ia-suggestions" id="iaSuggestions">
-                        <div class="ia-header"><i class="fas fa-lightbulb me-1"></i>Suggestions de recherche intelligente</div>
+                        <div class="ia-header"><i class="fas fa-lightbulb me-1"></i>Suggestions intelligentes</div>
                         <div class="ia-suggestion" onclick="applyIaSearch('ce mois')">
                             <span class="ia-icon"><i class="fas fa-calendar-alt"></i></span>
                             <span class="ia-text">Factures de ce mois</span>
@@ -144,10 +187,15 @@
                             <span class="ia-text">Factures à gros montant</span>
                             <div class="ia-desc">Trier par montant décroissant</div>
                         </div>
-                        <div class="ia-suggestion" onclick="applyIaSearch('recentes')">
-                            <span class="ia-icon"><i class="fas fa-clock"></i></span>
-                            <span class="ia-text">Factures les plus récentes</span>
-                            <div class="ia-desc">Trier par date décroissante</div>
+                        <div class="ia-suggestion" onclick="applyIaSearch('depot')">
+                            <span class="ia-icon">🏢</span>
+                            <span class="ia-text">Dépôt global uniquement</span>
+                            <div class="ia-desc">Filtrer les factures du dépôt</div>
+                        </div>
+                        <div class="ia-suggestion" onclick="applyIaSearch('boutique')">
+                            <span class="ia-icon">🏪</span>
+                            <span class="ia-text">Point de vente uniquement</span>
+                            <div class="ia-desc">Filtrer les factures du point de vente</div>
                         </div>
                     </div>
                 </div>
@@ -155,8 +203,8 @@
                     <label for="type">Type</label>
                     <select class="form-select form-select-sm" id="type" name="type" onchange="this.form.submit()">
                         <option value="">Tous</option>
-                        <option value="depot" {% if type_filter == 'depot' %}selected{% endif %}>Dépôt</option>
-                        <option value="boutique" {% if type_filter == 'boutique' %}selected{% endif %}>Boutique</option>
+                        <option value="depot" {% if type_filter == 'depot' %}selected{% endif %}>🏢 Dépôt global</option>
+                        <option value="boutique" {% if type_filter == 'boutique' %}selected{% endif %}>🏪 Point de vente</option>
                     </select>
                 </div>
                 <div class="search-filter">
@@ -178,39 +226,43 @@
                     <label for="date_fin">Au</label>
                     <input type="date" class="form-control form-control-sm" id="date_fin" name="date_fin" value="{{ date_fin }}" onchange="this.form.submit()">
                 </div>
-                <div>
+                {% if q or date_debut or date_fin or type_filter or boutique_filter %}
+                <div class="search-filter">
                     <label>&nbsp;</label>
-                    {% if q or type_filter or boutique_filter or date_debut or date_fin %}
-                    <div class="search-filter">
-                        <label>&nbsp;</label>
-                        <a href="{% url 'inventory:liste_factures_depot' depot.id %}" class="btn btn-outline-secondary btn-sm btn-search" title="Effacer filtres">
-                            <i class="fas fa-times"></i>
-                        </a>
-                    </div>
-                    {% endif %}
+                    <a href="{% url 'inventory:liste_toutes_factures_commercant' %}" class="btn btn-outline-secondary btn-sm btn-search w-100">
+                        <i class="fas fa-times"></i> Effacer
+                    </a>
                 </div>
+                {% endif %}
             </div>
             <input type="hidden" name="tri" value="{{ tri }}">
         </form>
     </div>
 
-    <!-- Info résultats -->
-    {% if q or type_filter or boutique_filter or date_debut or date_fin %}
-    <div class="results-info">
-        <i class="fas fa-filter"></i>
-        <strong>{{ filtered_count }}</strong> résultat{{ filtered_count|pluralize }} sur {{ total_count }}
-        {% if q %}&mdash; recherche: <em>"{{ q }}"</em>{% endif %}
-        {% if type_filter %}&mdash; type: <strong>{% if type_filter == 'depot' %}Dépôt{% else %}Boutique{% endif %}</strong>{% endif %}
-        {% if boutique_selectionnee %}&mdash; lieu: <strong>{% if boutique_selectionnee.est_depot %}🏢{% else %}🏪{% endif %} {{ boutique_selectionnee.nom }}</strong>{% endif %}
-        {% if date_debut %}&mdash; du <strong>{{ date_debut }}</strong>{% endif %}
-        {% if date_fin %}&mdash; au <strong>{{ date_fin }}</strong>{% endif %}
+    <!-- Résultats + légende -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+        <div class="results-info">
+            <i class="fas fa-list-ul"></i>
+            <span><strong>{{ filtered_count }}</strong> facture{{ filtered_count|pluralize }}
+            {% if filtered_count != total_count %}sur <strong>{{ total_count }}</strong>{% endif %}</span>
+            {% if q %}&mdash; recherche : <em>"{{ q }}"</em>{% endif %}
+        </div>
+        <div class="legend-bar">
+            <div class="legend-item">
+                <div class="legend-color" style="background:#ffc107;"></div>
+                <span>🏢 Dépôt global</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background:#198754;"></div>
+                <span>🏪 Point de vente</span>
+            </div>
+        </div>
     </div>
-    {% endif %}
 
-    <!-- Tableau -->
+    <!-- Table -->
     <div class="card shadow-sm">
         <div class="card-body p-0">
-            <div class="table-responsive" style="max-height:calc(100vh - 340px);overflow-y:auto;">
+            <div class="table-responsive" style="max-height:calc(100vh - 360px); overflow-y:auto;">
                 <table class="table-factures">
                     <thead>
                         <tr>
@@ -219,7 +271,8 @@
                                     N° Facture {% if tri == 'numero_facture' %}<i class="fas fa-sort-up sort-icon"></i>{% elif tri == '-numero_facture' %}<i class="fas fa-sort-down sort-icon"></i>{% endif %}
                                 </a>
                             </th>
-                            <th>Type</th>
+                            <th>Provenance</th>
+                            <th>Boutique / Dépôt</th>
                             <th>
                                 <a href="?q={{ q }}&type={{ type_filter }}&boutique={{ boutique_filter }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&tri={% if tri == '-date_facture' %}date_facture{% else %}-date_facture{% endif %}">
                                     Date {% if tri == '-date_facture' %}<i class="fas fa-sort-down sort-icon"></i>{% elif tri == 'date_facture' %}<i class="fas fa-sort-up sort-icon"></i>{% endif %}
@@ -232,37 +285,36 @@
                                     Montant (CDF) {% if tri == '-montant_total' %}<i class="fas fa-sort-down sort-icon"></i>{% elif tri == 'montant_total' %}<i class="fas fa-sort-up sort-icon"></i>{% endif %}
                                 </a>
                             </th>
-                            <th class="text-center" style="width:80px;">Action</th>
+                            <th class="text-center" style="width:70px;">Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for facture in factures %}
-                        <tr onclick="window.location='{% url 'inventory:detail_facture_depot' facture.depot.id facture.id %}'" style="cursor:pointer;">
+                        <tr class="{% if facture.depot.est_depot %}row-depot{% else %}row-boutique{% endif %}"
+                            onclick="window.location='{% url 'inventory:detail_facture_depot' facture.depot.id facture.id %}'">
                             <td class="num-facture">{{ facture.numero_facture }}</td>
                             <td>
                                 {% if facture.depot.est_depot %}
-                                <span class="badge-type badge-depot">DÉPÔT</span>
+                                <span class="badge-type badge-depot"><i class="fas fa-warehouse"></i> DÉPÔT</span>
                                 {% else %}
-                                <span class="badge-type badge-boutique">BOUTIQUE</span>
+                                <span class="badge-type badge-boutique"><i class="fas fa-store"></i> POINT DE VENTE</span>
                                 {% endif %}
+                            </td>
+                            <td class="fournisseur" title="{{ facture.depot.nom }}">
+                                {% if facture.depot.est_depot %}🏢{% else %}🏪{% endif %} {{ facture.depot.nom }}
                             </td>
                             <td>{{ facture.date_facture|date:"d/m/Y" }}</td>
                             <td class="fournisseur">
-                                {% if facture.fournisseur %}
-                                    {{ facture.fournisseur.nom }}
-                                {% else %}
-                                    {{ facture.fournisseur_nom|default:"-" }}
-                                {% endif %}
+                                {% if facture.fournisseur %}{{ facture.fournisseur.nom }}{% else %}{{ facture.fournisseur_nom|default:"—" }}{% endif %}
                             </td>
                             <td>
-                                <span class="badge-articles">{{ facture.lignes.all|length }}</span>
+                                <span class="badge-articles">{{ facture.lignes.count }} art.</span>
                                 <span class="articles-list">
-                                    {% for ligne in facture.lignes.all %}{% if forloop.counter <= 3 %}{% if not forloop.first %}, {% endif %}{{ ligne.article.nom }}{% endif %}{% endfor %}{% if facture.lignes.all|length > 3 %} +{{ facture.lignes.all|length|add:"-3" }}{% endif %}
+                                    {% for ligne in facture.lignes.all %}{% if forloop.counter <= 3 %}{% if not forloop.first %}, {% endif %}{{ ligne.article.nom }}{% endif %}{% endfor %}
+                                    {% if facture.lignes.count > 3 %} +{{ facture.lignes.count|add:"-3" }}{% endif %}
                                 </span>
                             </td>
-                            <td class="text-end montant cdf">
-                                {{ facture.montant_total|format_number }} FC
-                            </td>
+                            <td class="text-end montant cdf">{{ facture.montant_total|format_number }} FC</td>
                             <td class="text-center" onclick="event.stopPropagation();">
                                 <a href="{% url 'inventory:detail_facture_depot' facture.depot.id facture.id %}" class="btn btn-sm btn-outline-primary btn-voir">
                                     <i class="fas fa-eye"></i>
@@ -271,16 +323,15 @@
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="7">
+                            <td colspan="8">
                                 <div class="empty-state">
-                                    {% if q or type_filter or date_debut or date_fin %}
+                                    {% if q or type_filter or date_debut or date_fin or boutique_filter %}
                                         <i class="fas fa-search d-block"></i>
                                         <p>Aucune facture ne correspond à votre recherche</p>
-                                        <a href="{% url 'inventory:liste_factures_depot' depot.id %}" class="btn btn-outline-primary btn-sm">Effacer les filtres</a>
+                                        <a href="{% url 'inventory:liste_toutes_factures_commercant' %}" class="btn btn-outline-primary btn-sm">Effacer les filtres</a>
                                     {% else %}
                                         <i class="fas fa-inbox d-block"></i>
                                         <p>Aucune facture enregistrée</p>
-                                        <a href="{% url 'inventory:approvisionner_facture' depot.id %}" class="btn btn-primary btn-sm">Créer une facture</a>
                                     {% endif %}
                                 </div>
                             </td>
@@ -296,8 +347,7 @@
     {% if page_obj.paginator.num_pages > 1 %}
     <div class="pagination-bar">
         <span class="page-info">
-            Page {{ page_obj.number }} sur {{ page_obj.paginator.num_pages }}
-            ({{ filtered_count }} facture{{ filtered_count|pluralize }})
+            Page {{ page_obj.number }} sur {{ page_obj.paginator.num_pages }} ({{ filtered_count }} facture{{ filtered_count|pluralize }})
         </span>
         <nav>
             <ul class="pagination pagination-sm">
@@ -316,7 +366,7 @@
                         <a class="page-link" href="?q={{ q }}&type={{ type_filter }}&boutique={{ boutique_filter }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&tri={{ tri }}&page={{ num }}">{{ num }}</a>
                     </li>
                     {% elif num == 2 or num == page_obj.paginator.num_pages|add:"-1" %}
-                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                    <li class="page-item disabled"><span class="page-link">…</span></li>
                     {% endif %}
                 {% endfor %}
                 {% if page_obj.has_next %}
@@ -331,104 +381,60 @@
     </div>
     {% endif %}
 </div>
-
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// =============================================
-// RECHERCHE IA - FONCTIONS
-// =============================================
-function showIaSuggestions() {
-    // Ne pas afficher si déjà visible ou si texte dans le champ
-    var q = document.getElementById('q').value.trim();
-    if (q.length === 0) {
-        document.getElementById('iaSuggestions').classList.add('visible');
-    }
-}
-
 function hideIaSuggestions() {
     document.getElementById('iaSuggestions').classList.remove('visible');
 }
-
 function toggleIaSuggestions() {
-    var el = document.getElementById('iaSuggestions');
-    el.classList.toggle('visible');
+    document.getElementById('iaSuggestions').classList.toggle('visible');
 }
-
 function applyIaSearch(type) {
     var today = new Date();
     var dateDebut = document.getElementById('date_debut');
     var dateFin = document.getElementById('date_fin');
     var triInput = document.querySelector('input[name="tri"]');
-    var deviseSelect = document.getElementById('devise');
-    
-    // Reset
-    dateDebut.value = '';
-    dateFin.value = '';
+    var typeSelect = document.getElementById('type');
+    dateDebut.value = ''; dateFin.value = '';
     document.getElementById('q').value = '';
-    
-    function formatDate(d) {
-        return d.toISOString().split('T')[0];
-    }
-    
+    typeSelect.value = '';
+    function fmt(d) { return d.toISOString().split('T')[0]; }
     if (type === 'ce mois') {
-        var firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-        var lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        dateDebut.value = formatDate(firstDay);
-        dateFin.value = formatDate(lastDay);
+        dateDebut.value = fmt(new Date(today.getFullYear(), today.getMonth(), 1));
+        dateFin.value = fmt(new Date(today.getFullYear(), today.getMonth() + 1, 0));
     } else if (type === 'mois dernier') {
-        var firstDay = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        var lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
-        dateDebut.value = formatDate(firstDay);
-        dateFin.value = formatDate(lastDay);
+        dateDebut.value = fmt(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+        dateFin.value = fmt(new Date(today.getFullYear(), today.getMonth(), 0));
     } else if (type === 'cette semaine') {
-        var day = today.getDay();
-        var diff = today.getDate() - day + (day === 0 ? -6 : 1);
-        var monday = new Date(today.setDate(diff));
-        today = new Date(); // Reset today
-        dateDebut.value = formatDate(monday);
-        dateFin.value = formatDate(today);
+        var day = today.getDay(), diff = today.getDate() - day + (day === 0 ? -6 : 1);
+        var monday = new Date(today); monday.setDate(diff);
+        dateDebut.value = fmt(monday); dateFin.value = fmt(new Date());
     } else if (type === 'gros montant') {
         triInput.value = '-montant_total';
-    } else if (type === 'recentes') {
-        triInput.value = '-date_facture';
+    } else if (type === 'depot') {
+        typeSelect.value = 'depot';
+    } else if (type === 'boutique') {
+        typeSelect.value = 'boutique';
     }
-    
     hideIaSuggestions();
     document.getElementById('searchForm').submit();
 }
-
 document.addEventListener('DOMContentLoaded', function() {
     var qInput = document.getElementById('q');
-    if (qInput) {
-        // Focus + curseur à la FIN du texte
-        qInput.focus();
-        var len = qInput.value.length;
-        qInput.setSelectionRange(len, len);
-    }
-    // Raccourci clavier: / pour focus recherche
+    if (qInput) { qInput.focus(); var l = qInput.value.length; qInput.setSelectionRange(l, l); }
     document.addEventListener('keydown', function(e) {
-        if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-            e.preventDefault();
-            qInput.focus();
-            qInput.select();
+        if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+            e.preventDefault(); qInput.focus(); qInput.select();
         }
-        // Escape pour effacer la recherche ou fermer suggestions
         if (e.key === 'Escape') {
             hideIaSuggestions();
-            if (document.activeElement.id === 'q') {
-                qInput.value = '';
-                document.getElementById('searchForm').submit();
-            }
+            if (document.activeElement.id === 'q') { qInput.value = ''; document.getElementById('searchForm').submit(); }
         }
     });
-    
-    // Fermer suggestions si clic ailleurs
     document.addEventListener('click', function(e) {
-        if (!e.target.closest('.ia-search-box')) {
-            hideIaSuggestions();
-        }
+        if (!e.target.closest('.ia-search-box')) hideIaSuggestions();
     });
 });
 </script>

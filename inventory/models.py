@@ -505,6 +505,62 @@ class MouvementStock(models.Model):
 
 # ===== MODÈLES MULTI-COMMERÇANTS =====
 
+class Collaborateur(models.Model):
+    """
+    Modèle représentant un employé/collaborateur qui aide à l'inventaire.
+    Compte séparé avec permissions limitées.
+    """
+    
+    ROLE_CHOICES = [
+        ('INVENTAIRE', 'Inventaire uniquement'),
+        ('VENDEUR', 'Vendeur'),
+        ('GESTIONNAIRE', 'Gestionnaire'),
+    ]
+    
+    # Compte utilisateur Django
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profil_collaborateur')
+    
+    # Lien avec le commerçant
+    commercant = models.ForeignKey('Commercant', on_delete=models.CASCADE, related_name='collaborateurs',
+                                   help_text="Commerçant pour lequel travaille ce collaborateur")
+    
+    # Informations personnelles
+    nom_complet = models.CharField(max_length=100)
+    telephone = models.CharField(max_length=20, blank=True)
+    
+    # Permissions et rôle
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='INVENTAIRE',
+                           help_text="Rôle et permissions du collaborateur")
+    
+    # Boutiques autorisées (peut être limité à certaines boutiques)
+    boutiques_autorisees = models.ManyToManyField('Boutique', blank=True, 
+                                                   related_name='collaborateurs_autorises',
+                                                   help_text="Boutiques auxquelles ce collaborateur a accès")
+    
+    # Statut
+    est_actif = models.BooleanField(default=True, help_text="Le collaborateur peut-il se connecter?")
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_derniere_connexion = models.DateTimeField(null=True, blank=True)
+    
+    # Code PIN pour accès rapide (optionnel)
+    code_pin = models.CharField(max_length=6, blank=True, help_text="Code PIN à 4-6 chiffres pour accès rapide")
+    
+    def __str__(self):
+        return f"{self.nom_complet} ({self.get_role_display()})"
+    
+    def peut_acceder_boutique(self, boutique):
+        """Vérifie si le collaborateur peut accéder à cette boutique"""
+        if not self.boutiques_autorisees.exists():
+            # Si aucune boutique spécifiée, accès à toutes les boutiques du commerçant
+            return boutique.commercant == self.commercant
+        return self.boutiques_autorisees.filter(id=boutique.id).exists()
+    
+    class Meta:
+        verbose_name = "Collaborateur"
+        verbose_name_plural = "Collaborateurs"
+        ordering = ['nom_complet']
+
+
 class Commercant(models.Model):
     """
     Modèle représentant un commerçant (entreprise ou personne) 
@@ -1259,7 +1315,14 @@ class LigneInventaire(models.Model):
     est_regularise = models.BooleanField(default=False)
     commentaire = models.TextField(blank=True, help_text="Commentaire ou justification de l'écart")
     
+    # Multi-utilisateurs et traçabilité
+    assigne_a = models.CharField(max_length=100, blank=True, help_text="Nom de l'employé assigné à compter cet article")
+    saisi_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, 
+                                   related_name='lignes_inventaire_saisies',
+                                   help_text="Utilisateur qui a saisi le stock physique")
+    
     date_saisie = models.DateTimeField(null=True, blank=True)
+    date_modification = models.DateTimeField(null=True, blank=True, help_text="Dernière modification du stock physique")
     
     def save(self, *args, **kwargs):
         # Calculer l'écart si stock physique renseigné

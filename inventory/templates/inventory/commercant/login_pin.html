@@ -1,0 +1,164 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Connexion Rapide - PIN{% endblock %}
+
+{% block extra_css %}
+<style>
+.pin-container {
+    max-width: 400px;
+    margin: 100px auto;
+}
+.pin-input {
+    font-size: 3rem;
+    text-align: center;
+    letter-spacing: 1rem;
+    font-weight: bold;
+    border: 3px solid #667eea;
+    border-radius: 15px;
+    padding: 20px;
+}
+.pin-input:focus {
+    box-shadow: 0 0 20px rgba(102, 126, 234, 0.5);
+    border-color: #764ba2;
+}
+.pin-pad {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-top: 30px;
+}
+.pin-btn {
+    font-size: 2rem;
+    padding: 30px;
+    border: 2px solid #667eea;
+    background: white;
+    border-radius: 15px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.pin-btn:hover {
+    background: #667eea;
+    color: white;
+    transform: scale(1.05);
+}
+.pin-btn:active {
+    transform: scale(0.95);
+}
+.pin-clear {
+    background: #dc3545;
+    color: white;
+    border-color: #dc3545;
+}
+.pin-clear:hover {
+    background: #c82333;
+}
+.pin-submit {
+    background: #28a745;
+    color: white;
+    border-color: #28a745;
+}
+.pin-submit:hover {
+    background: #218838;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pin-container">
+    <div class="card shadow-lg">
+        <div class="card-body p-5">
+            <div class="text-center mb-4">
+                <i class="fas fa-user-shield fa-4x text-primary mb-3"></i>
+                <h3>Connexion Rapide</h3>
+                <p class="text-muted">Entrez votre code PIN</p>
+            </div>
+
+            <form method="post" id="pinForm">
+                {% csrf_token %}
+                <input type="password" 
+                       name="pin" 
+                       id="pinInput" 
+                       class="form-control pin-input" 
+                       maxlength="6" 
+                       placeholder="••••" 
+                       autocomplete="off"
+                       readonly>
+                
+                <div class="pin-pad">
+                    <button type="button" class="pin-btn" onclick="addPin('1')">1</button>
+                    <button type="button" class="pin-btn" onclick="addPin('2')">2</button>
+                    <button type="button" class="pin-btn" onclick="addPin('3')">3</button>
+                    <button type="button" class="pin-btn" onclick="addPin('4')">4</button>
+                    <button type="button" class="pin-btn" onclick="addPin('5')">5</button>
+                    <button type="button" class="pin-btn" onclick="addPin('6')">6</button>
+                    <button type="button" class="pin-btn" onclick="addPin('7')">7</button>
+                    <button type="button" class="pin-btn" onclick="addPin('8')">8</button>
+                    <button type="button" class="pin-btn" onclick="addPin('9')">9</button>
+                    <button type="button" class="pin-btn pin-clear" onclick="clearPin()">
+                        <i class="fas fa-backspace"></i>
+                    </button>
+                    <button type="button" class="pin-btn" onclick="addPin('0')">0</button>
+                    <button type="button" class="pin-btn pin-submit" onclick="submitPin()">
+                        <i class="fas fa-check"></i>
+                    </button>
+                </div>
+            </form>
+
+            <div class="text-center mt-4">
+                <a href="{% url 'inventory:login' %}" class="text-muted">
+                    <i class="fas fa-arrow-left me-1"></i>Connexion classique
+                </a>
+            </div>
+
+            {% if error %}
+            <div class="alert alert-danger mt-3">
+                <i class="fas fa-exclamation-triangle me-2"></i>{{ error }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+let pinValue = '';
+
+function addPin(digit) {
+    if (pinValue.length < 6) {
+        pinValue += digit;
+        document.getElementById('pinInput').value = pinValue;
+        
+        // Auto-submit si 6 chiffres
+        if (pinValue.length === 6) {
+            setTimeout(submitPin, 300);
+        }
+    }
+}
+
+function clearPin() {
+    if (pinValue.length > 0) {
+        pinValue = pinValue.slice(0, -1);
+        document.getElementById('pinInput').value = pinValue;
+    }
+}
+
+function submitPin() {
+    if (pinValue.length >= 4) {
+        document.getElementById('pinForm').submit();
+    } else {
+        alert('Le PIN doit contenir au moins 4 chiffres');
+    }
+}
+
+// Support clavier physique
+document.addEventListener('keydown', function(e) {
+    if (e.key >= '0' && e.key <= '9') {
+        addPin(e.key);
+    } else if (e.key === 'Backspace') {
+        clearPin();
+    } else if (e.key === 'Enter') {
+        submitPin();
+    }
+});
+</script>
+{% endblock %}

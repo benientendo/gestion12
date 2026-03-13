@@ -15,10 +15,40 @@
                 </ol>
             </nav>
         </div>
-        <a href="{% url 'inventory:nouvel_inventaire_boutique' boutique.id %}" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Nouvel inventaire
-        </a>
+        <div>
+            <a href="{% url 'inventory:gestion_collaborateurs' %}" class="btn btn-success me-2" title="Gérer vos employés pour l'inventaire">
+                <i class="fas fa-users me-1"></i>Gérer les collaborateurs
+            </a>
+            <a href="{% url 'inventory:nouvel_inventaire_boutique' boutique.id %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Nouvel inventaire
+            </a>
+        </div>
     </div>
+
+    {% if nb_collaborateurs == 0 %}
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        <div class="d-flex align-items-start">
+            <i class="fas fa-info-circle fa-2x me-3 mt-1"></i>
+            <div>
+                <h5 class="alert-heading mb-2">💡 Conseil : Configurez vos collaborateurs d'abord</h5>
+                <p class="mb-2">
+                    Pour un inventaire efficace avec plusieurs employés, créez d'abord vos collaborateurs. 
+                    Vous pourrez ensuite :
+                </p>
+                <ul class="mb-2">
+                    <li>Leur donner un code PIN pour connexion rapide (3 secondes)</li>
+                    <li>Auto-assigner les articles à compter</li>
+                    <li>Suivre qui a compté quoi</li>
+                    <li>Travailler simultanément sur le même inventaire</li>
+                </ul>
+                <a href="{% url 'inventory:gestion_collaborateurs' %}" class="btn btn-sm btn-success">
+                    <i class="fas fa-users me-1"></i>Créer mes collaborateurs maintenant
+                </a>
+            </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endif %}
 
     {% if inventaires %}
     <div class="card shadow-sm">

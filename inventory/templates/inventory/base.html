@@ -110,6 +110,13 @@
                                         <i class="bi bi-person-circle"></i>
                                     </a>
                                     <div class="dropdown-menu dropdown-menu-end shadow" aria-labelledby="userDropdown">
+                                        {% if user.profil_commercant %}
+                                        <a class="dropdown-item" href="{% url 'inventory:gestion_collaborateurs' %}">
+                                            <i class="bi bi-people fa-sm fa-fw me-2 text-primary"></i>
+                                            <strong>Mes Collaborateurs</strong>
+                                        </a>
+                                        <div class="dropdown-divider"></div>
+                                        {% endif %}
                                         <a class="dropdown-item" href="{% url 'inventory:change_password' %}">
                                             <i class="bi bi-key fa-sm fa-fw me-2 text-gray-400"></i>
                                             Modifier mot de passe

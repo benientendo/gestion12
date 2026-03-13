@@ -3,21 +3,29 @@
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
-from django.http import JsonResponse, HttpResponseForbidden
-from django.db.models import Count, Sum, Q, F
+from django.http import JsonResponse, HttpResponse
+from django.db.models import Q, Sum, Count, F, Avg, Max, Min, Prefetch
 from django.db import transaction
 from django.utils import timezone
-from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
+from django.views.decorators.http import require_POST
+from decimal import Decimal
 from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation
+import json
+import csv
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import cm
 from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 import json
 import qrcode
 from PIL import Image
 import io
+
+# ... (rest of the code remains the same)
 import uuid
 from django.core.files.base import ContentFile
 
@@ -5042,23 +5050,260 @@ def approvisionner_facture(request, depot_id):
 
 @login_required
 @commercant_required
+@boutique_access_required
+def approvisionner_facture_boutique(request, boutique_id):
+    """Créer une facture d'approvisionnement pour un point de vente (local à la boutique)."""
+    boutique = request.boutique
+    commercant = request.user.profil_commercant
+    
+    # Récupérer les fournisseurs et catégories
+    fournisseurs = Fournisseur.objects.filter(commercant=commercant, est_actif=True)
+    categories = Categorie.objects.filter(boutique=boutique)
+    articles_existants = Article.objects.filter(boutique=boutique, est_actif=True).order_by('nom')
+    
+    # Récupérer les dernières données d'approvisionnement par article (pour pré-remplissage)
+    derniers_appros = {}
+    last_lignes = LigneApprovisionnement.objects.filter(
+        article__in=articles_existants
+    ).select_related('article', 'facture').order_by('article_id', '-date_creation')
+    seen_ids = set()
+    for ligne in last_lignes:
+        if ligne.article_id not in seen_ids:
+            seen_ids.add(ligne.article_id)
+            # Devise de la facture: CDF = FC, USD = USD
+            devise_facture = ligne.facture.devise if ligne.facture else 'CDF'
+            derniers_appros[ligne.article_id] = {
+                'type_quantite': ligne.type_quantite,
+                'nombre_cartons': ligne.nombre_cartons,
+                'pieces_par_carton': ligne.pieces_par_carton,
+                'prix_achat_carton': float(ligne.prix_achat_carton),
+                'prix_achat_unitaire': float(ligne.prix_achat_unitaire),
+                'devise_saisie': devise_facture,
+            }
+    
+    if request.method == 'POST':
+        try:
+            with transaction.atomic():
+                # Données de la facture
+                numero_facture = request.POST.get('numero_facture', '').strip()
+                fournisseur_id = request.POST.get('fournisseur_id', '').strip()
+                fournisseur_nom = request.POST.get('fournisseur_nom', '').strip()
+                date_facture_str = request.POST.get('date_facture', '')
+                devise = request.POST.get('devise', 'CDF')
+                notes = request.POST.get('notes', '')
+                
+                if not numero_facture:
+                    messages.error(request, "Le numéro de facture est obligatoire")
+                    return redirect('inventory:approvisionner_facture_boutique', boutique_id=boutique.id)
+                
+                # Gérer le fournisseur
+                fournisseur = None
+                if fournisseur_id:
+                    fournisseur = Fournisseur.objects.filter(id=fournisseur_id, commercant=commercant).first()
+                elif fournisseur_nom:
+                    # Créer un nouveau fournisseur
+                    fournisseur, created = Fournisseur.objects.get_or_create(
+                        nom=fournisseur_nom,
+                        commercant=commercant,
+                        defaults={'est_actif': True}
+                    )
+                
+                # Date de facture
+                try:
+                    date_facture = datetime.strptime(date_facture_str, '%Y-%m-%d').date() if date_facture_str else timezone.now().date()
+                except ValueError:
+                    date_facture = timezone.now().date()
+                
+                # Vérifier unicité du numéro de facture pour cette boutique
+                if FactureApprovisionnement.objects.filter(numero_facture=numero_facture, depot=boutique).exists():
+                    msg = f"Le numéro de facture '{numero_facture}' existe déjà."
+                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                        return JsonResponse({'success': False, 'message': msg}, status=400)
+                    messages.error(request, msg)
+                    return redirect('inventory:approvisionner_facture_boutique', boutique_id=boutique.id)
+                
+                # Créer la facture (utiliser le champ depot même pour une boutique)
+                facture = FactureApprovisionnement.objects.create(
+                    numero_facture=numero_facture,
+                    fournisseur=fournisseur,
+                    fournisseur_nom=fournisseur_nom if not fournisseur else '',
+                    depot=boutique,  # Boutique stockée dans le champ depot
+                    date_facture=date_facture,
+                    devise=devise,
+                    notes=notes,
+                    created_by=request.user.username
+                )
+                
+                # Traiter les lignes d'articles
+                articles_json_str = request.POST.get('articles_json', '[]')
+                articles_data = json.loads(articles_json_str) if articles_json_str else []
+                
+                if not articles_data:
+                    messages.error(request, "Veuillez ajouter au moins un article à la facture")
+                    return redirect('inventory:approvisionner_facture_boutique', boutique_id=boutique.id)
+                
+                for art_data in articles_data:
+                    # Récupérer ou créer l'article
+                    article_id = art_data.get('article_id')
+                    if article_id:
+                        article = Article.objects.get(id=article_id, boutique=boutique)
+                    else:
+                        # Créer un nouvel article
+                        code = art_data.get('code', '').strip()
+                        if not code:
+                            code = f"ART-{uuid.uuid4().hex[:8].upper()}"
+                        
+                        categorie_id = art_data.get('categorie_id')
+                        categorie_nom = art_data.get('categorie_nom', '').strip()
+                        if categorie_id:
+                            categorie = Categorie.objects.filter(id=categorie_id).first()
+                        elif categorie_nom:
+                            categorie, _ = Categorie.objects.get_or_create(
+                                nom__iexact=categorie_nom,
+                                boutique=boutique,
+                                defaults={'nom': categorie_nom}
+                            )
+                        else:
+                            categorie = None
+                        
+                        # Si facture en USD, l'article sera stocké en CDF (après conversion)
+                        devise_article = 'CDF' if devise == 'USD' else devise
+                        
+                        article = Article.objects.create(
+                            code=code,
+                            nom=art_data.get('nom', 'Article sans nom'),
+                            description=art_data.get('description', ''),
+                            devise=devise_article,
+                            prix_achat=Decimal(str(art_data.get('prix_achat_unitaire', 0))),
+                            prix_vente=Decimal(str(art_data.get('prix_vente', 0))),
+                            quantite_stock=0,
+                            boutique=boutique,
+                            categorie=categorie,
+                            est_actif=True
+                        )
+                    
+                    # Données de la ligne
+                    type_quantite = art_data.get('type_quantite', 'UNITE')
+                    nombre_cartons = int(art_data.get('nombre_cartons', 0))
+                    pieces_par_carton = int(art_data.get('pieces_par_carton', 1))
+                    pieces_supplementaires = int(art_data.get('pieces_supplementaires', 0))
+                    quantite_unites = int(art_data.get('quantite_unites', 0))
+                    prix_achat_carton = Decimal(str(art_data.get('prix_achat_carton', 0)))
+                    prix_achat_unitaire = Decimal(str(art_data.get('prix_achat_unitaire', 0)))
+                    prix_piece_sup = Decimal(str(art_data.get('prix_piece_sup', 0)))
+                    prix_vente = Decimal(str(art_data.get('prix_vente', 0)))
+                    
+                    # Calculs pour cartons (avec pièces supplémentaires)
+                    if type_quantite == 'CARTON':
+                        if prix_achat_carton > 0 and pieces_par_carton > 0:
+                            prix_achat_unitaire = prix_achat_carton / pieces_par_carton
+                        if prix_piece_sup == 0 and pieces_supplementaires > 0:
+                            prix_piece_sup = prix_achat_unitaire
+                        quantite_unites = (nombre_cartons * pieces_par_carton) + pieces_supplementaires
+                    
+                    # Calcul du prix total
+                    if type_quantite == 'CARTON':
+                        prix_achat_total = (nombre_cartons * prix_achat_carton) + (pieces_supplementaires * prix_piece_sup)
+                    else:
+                        prix_achat_total = quantite_unites * prix_achat_unitaire
+                    
+                    # Créer la ligne d'approvisionnement
+                    LigneApprovisionnement.objects.create(
+                        facture=facture,
+                        article=article,
+                        categorie=article.categorie,
+                        type_quantite=type_quantite,
+                        nombre_cartons=nombre_cartons,
+                        pieces_par_carton=pieces_par_carton,
+                        quantite_unites=quantite_unites,
+                        prix_achat_carton=prix_achat_carton,
+                        prix_achat_unitaire=prix_achat_unitaire,
+                        prix_achat_total=prix_achat_total,
+                        prix_vente_unitaire=prix_vente
+                    )
+                    
+                    # Mettre à jour le stock de l'article
+                    stock_avant = article.quantite_stock
+                    article.quantite_stock += quantite_unites
+                    article.prix_achat = prix_achat_unitaire
+                    if prix_vente > 0:
+                        article.prix_vente = prix_vente
+                    article.save()
+                    
+                    # Enregistrer le mouvement de stock
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='ENTREE',
+                        quantite=quantite_unites,
+                        stock_avant=stock_avant,
+                        stock_apres=article.quantite_stock,
+                        commentaire=f"Facture {numero_facture} - {fournisseur.nom if fournisseur else fournisseur_nom}",
+                        reference_document=f"FACT-{facture.id}",
+                        utilisateur=request.user.username
+                    )
+                
+                # Recalculer le montant total
+                facture.calculer_montant_total()
+                
+                # Si requête AJAX, retourner JSON
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        'success': True,
+                        'message': f"Facture {numero_facture} enregistrée avec {len(articles_data)} article(s)",
+                        'facture_id': facture.id,
+                    })
+                
+                messages.success(request, f"Facture {numero_facture} enregistrée avec {len(articles_data)} article(s)")
+                return redirect('inventory:detail_boutique', boutique_id=boutique.id)
+                
+        except Exception as e:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({'success': False, 'message': str(e)}, status=400)
+            messages.error(request, f"Erreur: {str(e)}")
+    
+    context = {
+        'boutique': boutique,
+        'depot': boutique,  # Alias pour compatibilité avec le template
+        'fournisseurs': fournisseurs,
+        'categories': categories,
+        'articles_existants': articles_existants,
+        'derniers_appros_json': json.dumps(derniers_appros),
+        'today': timezone.now().date().isoformat(),
+    }
+    
+    return render(request, 'inventory/commercant/approvisionner_facture.html', context)
+
+
+@login_required
+@commercant_required
 def liste_factures_depot(request, depot_id):
     """Liste des factures d'approvisionnement d'un dépôt avec recherche."""
     from django.core.paginator import Paginator
     from django.db.models import Prefetch
+    from django.shortcuts import redirect
 
     commercant = request.user.profil_commercant
-    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    # Si le dépôt n'existe pas, rediriger vers la page centralisée des factures
+    try:
+        depot = Boutique.objects.get(id=depot_id, commercant=commercant, est_depot=True)
+    except Boutique.DoesNotExist:
+        messages.warning(request, f"Le dépôt demandé n'existe pas. Voici toutes vos factures.")
+        return redirect('inventory:liste_toutes_factures_commercant')
 
-    factures = FactureApprovisionnement.objects.filter(depot=depot).select_related(
-        'fournisseur'
+    # Afficher TOUTES les factures du commerçant (dépôt + boutiques)
+    factures = FactureApprovisionnement.objects.filter(
+        depot__commercant=commercant
+    ).select_related(
+        'fournisseur', 'depot'
     ).prefetch_related(
         Prefetch('lignes', queryset=LigneApprovisionnement.objects.select_related('article'))
     )
 
     # --- Recherche ---
     q = request.GET.get('q', '').strip()
-    devise_filter = request.GET.get('devise', '').strip()
+    type_filter = request.GET.get('type', '').strip()  # 'depot' ou 'boutique'
+    boutique_filter = request.GET.get('boutique', '').strip()
     date_debut = request.GET.get('date_debut', '').strip()
     date_fin = request.GET.get('date_fin', '').strip()
     tri = request.GET.get('tri', '-date_facture')
@@ -5071,11 +5316,27 @@ def liste_factures_depot(request, depot_id):
             Q(fournisseur__nom__icontains=q) |
             Q(fournisseur_nom__icontains=q) |
             Q(notes__icontains=q) |
+            Q(depot__nom__icontains=q) |
             Q(lignes__article__nom__icontains=q)
         ).distinct()
 
-    if devise_filter in ('CDF', 'USD'):
-        factures = factures.filter(devise=devise_filter)
+    # Filtre par type (dépôt vs boutique)
+    if type_filter == 'depot':
+        factures = factures.filter(depot__est_depot=True)
+    elif type_filter == 'boutique':
+        factures = factures.filter(depot__est_depot=False)
+    
+    # Filtre par boutique/dépôt spécifique
+    boutique_selectionnee = None
+    if boutique_filter:
+        try:
+            boutique_id = int(boutique_filter)
+            boutique_selectionnee = Boutique.objects.filter(
+                id=boutique_id, commercant=commercant
+            ).first()
+            factures = factures.filter(depot_id=boutique_id)
+        except ValueError:
+            pass
 
     if date_debut:
         try:
@@ -5106,24 +5367,34 @@ def liste_factures_depot(request, depot_id):
     page_num = request.GET.get('page', 1)
     page_obj = paginator.get_page(page_num)
 
-    # Stats rapides
-    stats = FactureApprovisionnement.objects.filter(depot=depot).aggregate(
-        total_montant_cdf=Sum('montant_total', filter=Q(devise='CDF')),
-        total_montant_usd=Sum('montant_total', filter=Q(devise='USD')),
+    # Stats rapides (toutes les factures du commerçant)
+    stats = FactureApprovisionnement.objects.filter(
+        depot__commercant=commercant
+    ).aggregate(
+        total_montant=Sum('montant_total'),  # Toutes les factures sont en CDF
         nb_factures=Count('id'),
+        nb_factures_depot=Count('id', filter=Q(depot__est_depot=True)),
+        nb_factures_boutique=Count('id', filter=Q(depot__est_depot=False)),
     )
 
     # Fournisseurs distincts pour filtre rapide
-    fournisseurs = FactureApprovisionnement.objects.filter(depot=depot).exclude(
+    fournisseurs = FactureApprovisionnement.objects.filter(
+        depot__commercant=commercant
+    ).exclude(
         fournisseur__isnull=True
     ).values_list('fournisseur__nom', flat=True).distinct().order_by('fournisseur__nom')
+    
+    # Liste des boutiques/dépôts pour filtre
+    boutiques_depots = Boutique.objects.filter(commercant=commercant).order_by('-est_depot', 'nom')
 
     context = {
         'depot': depot,
         'factures': page_obj,
         'page_obj': page_obj,
         'q': q,
-        'devise_filter': devise_filter,
+        'type_filter': type_filter,
+        'boutique_filter': boutique_filter,
+        'boutique_selectionnee': boutique_selectionnee,
         'date_debut': date_debut,
         'date_fin': date_fin,
         'tri': tri,
@@ -5131,6 +5402,7 @@ def liste_factures_depot(request, depot_id):
         'filtered_count': filtered_count,
         'stats': stats,
         'fournisseurs': list(fournisseurs),
+        'boutiques_depots': boutiques_depots,
     }
 
     return render(request, 'inventory/commercant/liste_factures_depot.html', context)
@@ -5138,12 +5410,218 @@ def liste_factures_depot(request, depot_id):
 
 @login_required
 @commercant_required
+def liste_toutes_factures_commercant(request):
+    """Liste centralisée de TOUTES les factures du commerçant (dépôts + boutiques) avec distinction."""
+    from django.core.paginator import Paginator
+    from django.db.models import Prefetch
+    
+    commercant = request.user.profil_commercant
+    
+    # Récupérer TOUTES les factures du commerçant (dépôts ET boutiques)
+    factures = FactureApprovisionnement.objects.filter(
+        depot__commercant=commercant
+    ).select_related(
+        'fournisseur', 'depot'
+    ).prefetch_related(
+        Prefetch('lignes', queryset=LigneApprovisionnement.objects.select_related('article'))
+    )
+    
+    # --- Filtres ---
+    q = request.GET.get('q', '').strip()
+    date_debut = request.GET.get('date_debut', '').strip()
+    date_fin = request.GET.get('date_fin', '').strip()
+    type_filter = request.GET.get('type', '').strip()  # 'depot' ou 'boutique'
+    boutique_filter = request.GET.get('boutique', '').strip()
+    tri = request.GET.get('tri', '-date_facture')
+    
+    total_count = factures.count()
+    
+    # Filtre par recherche
+    if q:
+        factures = factures.filter(
+            Q(numero_facture__icontains=q) |
+            Q(fournisseur__nom__icontains=q) |
+            Q(fournisseur_nom__icontains=q) |
+            Q(notes__icontains=q) |
+            Q(depot__nom__icontains=q) |
+            Q(lignes__article__nom__icontains=q)
+        ).distinct()
+    
+    # Filtre par type (dépôt vs boutique)
+    if type_filter == 'depot':
+        factures = factures.filter(depot__est_depot=True)
+    elif type_filter == 'boutique':
+        factures = factures.filter(depot__est_depot=False)
+    
+    # Filtre par boutique/dépôt spécifique
+    if boutique_filter:
+        try:
+            factures = factures.filter(depot_id=int(boutique_filter))
+        except ValueError:
+            pass
+    
+    # Filtre par date
+    if date_debut:
+        try:
+            factures = factures.filter(date_facture__gte=datetime.strptime(date_debut, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    if date_fin:
+        try:
+            factures = factures.filter(date_facture__lte=datetime.strptime(date_fin, '%Y-%m-%d').date())
+        except ValueError:
+            pass
+    
+    # Tri
+    allowed_sorts = {
+        '-date_facture': '-date_facture',
+        'date_facture': 'date_facture',
+        '-montant_total': '-montant_total',
+        'montant_total': 'montant_total',
+        '-numero_facture': '-numero_facture',
+        'numero_facture': 'numero_facture',
+    }
+    factures = factures.order_by(allowed_sorts.get(tri, '-date_facture'))
+    
+    filtered_count = factures.count()
+    
+    # Pagination
+    paginator = Paginator(factures, 25)
+    page_num = request.GET.get('page', 1)
+    page_obj = paginator.get_page(page_num)
+    
+    # Stats globales (toutes les factures sont en CDF)
+    stats = FactureApprovisionnement.objects.filter(depot__commercant=commercant).aggregate(
+        total_montant=Sum('montant_total'),  # Toutes les factures sont en CDF
+        nb_factures=Count('id'),
+        nb_factures_depot=Count('id', filter=Q(depot__est_depot=True)),
+        nb_factures_boutique=Count('id', filter=Q(depot__est_depot=False)),
+    )
+    
+    # Liste des boutiques/dépôts pour filtre
+    boutiques_depots = Boutique.objects.filter(commercant=commercant).order_by('-est_depot', 'nom')
+    
+    # ⭐ Boutique/dépôt sélectionné (pour boutons contextuels)
+    boutique_selectionnee = None
+    if boutique_filter:
+        try:
+            boutique_selectionnee = Boutique.objects.filter(
+                id=int(boutique_filter), commercant=commercant
+            ).first()
+        except ValueError:
+            pass
+    
+    # Fournisseurs distincts
+    fournisseurs = FactureApprovisionnement.objects.filter(
+        depot__commercant=commercant
+    ).exclude(
+        fournisseur__isnull=True
+    ).values_list('fournisseur__nom', flat=True).distinct().order_by('fournisseur__nom')
+    
+    context = {
+        'factures': page_obj,
+        'page_obj': page_obj,
+        'q': q,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+        'type_filter': type_filter,
+        'boutique_filter': boutique_filter,
+        'boutique_selectionnee': boutique_selectionnee,
+        'tri': tri,
+        'total_count': total_count,
+        'filtered_count': filtered_count,
+        'stats': stats,
+        'fournisseurs': list(fournisseurs),
+        'boutiques_depots': boutiques_depots,
+    }
+    
+    return render(request, 'inventory/commercant/liste_toutes_factures.html', context)
+
+
+@login_required
+@commercant_required
 def detail_facture_depot(request, depot_id, facture_id):
     """Détail d'une facture d'approvisionnement."""
     commercant = request.user.profil_commercant
-    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
-    facture = get_object_or_404(FactureApprovisionnement, id=facture_id, depot=depot)
+    # Récupérer la facture et vérifier qu'elle appartient au commerçant
+    facture = get_object_or_404(
+        FactureApprovisionnement, 
+        id=facture_id, 
+        depot__commercant=commercant
+    )
+    # Utiliser le vrai dépôt de la facture, pas celui dans l'URL
+    depot = facture.depot
     
+    lignes = facture.lignes.select_related('article', 'categorie')
+    
+    # Calculer le bénéfice pour chaque ligne
+    lignes_avec_benefice = []
+    total_benefice = Decimal('0')
+    total_achat = Decimal('0')
+    total_vente = Decimal('0')
+    
+    for ligne in lignes:
+        prix_achat = ligne.prix_achat_unitaire or Decimal('0')
+        prix_vente = ligne.prix_vente_unitaire or Decimal('0')
+        qte = ligne.quantite_unites or 0
+        
+        benefice_unitaire = prix_vente - prix_achat
+        benefice_total = benefice_unitaire * qte
+        achat_total = prix_achat * qte
+        vente_total = prix_vente * qte
+        
+        # Pourcentage de bénéfice (par rapport au prix d'achat)
+        if prix_achat > 0:
+            pourcentage = (benefice_unitaire / prix_achat) * 100
+        else:
+            pourcentage = Decimal('0')
+        
+        ligne.benefice_unitaire = benefice_unitaire
+        ligne.benefice_total = benefice_total
+        ligne.benefice_pourcentage = pourcentage
+        ligne.vente_total = vente_total
+        
+        lignes_avec_benefice.append(ligne)
+        total_benefice += benefice_total
+        total_achat += achat_total
+        total_vente += vente_total
+    
+    # Pourcentage global
+    if total_achat > 0:
+        pourcentage_global = (total_benefice / total_achat) * 100
+    else:
+        pourcentage_global = Decimal('0')
+    
+    context = {
+        'depot': depot,
+        'facture': facture,
+        'lignes': lignes_avec_benefice,
+        'total_benefice': total_benefice,
+        'total_achat': total_achat,
+        'total_vente': total_vente,
+        'pourcentage_global': pourcentage_global,
+    }
+    
+    return render(request, 'inventory/commercant/detail_facture_depot.html', context)
+
+
+@login_required
+@commercant_required
+def detail_facture_flexible(request, facture_id):
+    """
+    Détail d'une facture d'approvisionnement (route flexible sans depot_id).
+    Meilleure pratique: détecte automatiquement le dépôt/boutique de la facture.
+    """
+    commercant = request.user.profil_commercant
+    
+    # Récupérer la facture et vérifier qu'elle appartient au commerçant
+    facture = get_object_or_404(
+        FactureApprovisionnement.objects.select_related('depot', 'fournisseur'),
+        id=facture_id,
+        depot__commercant=commercant
+    )
+    
+    depot = facture.depot
     lignes = facture.lignes.select_related('article', 'categorie')
     
     # Calculer le bénéfice pour chaque ligne
@@ -5641,11 +6119,17 @@ def regulariser_inventaire(request, depot_id, inventaire_id):
 def liste_inventaires_boutique(request, boutique_id):
     """Liste des inventaires d'une boutique."""
     boutique = request.boutique
+    commercant = request.user.profil_commercant
     inventaires = Inventaire.objects.filter(boutique=boutique).order_by('-date_creation')
+    
+    # Compter les collaborateurs actifs pour afficher un message si nécessaire
+    from .models import Collaborateur
+    nb_collaborateurs = Collaborateur.objects.filter(commercant=commercant, est_actif=True).count()
     
     context = {
         'boutique': boutique,
         'inventaires': inventaires,
+        'nb_collaborateurs': nb_collaborateurs,
     }
     return render(request, 'inventory/commercant/liste_inventaires_boutique.html', context)
 
@@ -5737,6 +6221,23 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     
     if request.method == 'POST':
         lignes_mises_a_jour = 0
+        prix_modifies = 0
+        
+        # Traiter les modifications de prix de vente
+        for key, value in request.POST.items():
+            if key.startswith('prix_vente_'):
+                ligne_id = key.replace('prix_vente_', '')
+                try:
+                    ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
+                    nouveau_prix = Decimal(value.strip())
+                    if nouveau_prix != ligne.article.prix_vente and nouveau_prix > 0:
+                        ligne.article.prix_vente = nouveau_prix
+                        ligne.article.save(update_fields=['prix_vente'])
+                        prix_modifies += 1
+                except (LigneInventaire.DoesNotExist, ValueError, InvalidOperation):
+                    pass
+        
+        # Traiter les stocks et autres données
         for key, value in request.POST.items():
             if key.startswith('stock_physique_'):
                 ligne_id = key.replace('stock_physique_', '')
@@ -5747,12 +6248,38 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                         commentaire_key = f'commentaire_{ligne_id}'
                         if commentaire_key in request.POST:
                             ligne.commentaire = request.POST[commentaire_key]
+                        # Sauvegarder l'assignation
+                        assigne_key = f'assigne_{ligne_id}'
+                        if assigne_key in request.POST:
+                            ligne.assigne_a = request.POST[assigne_key].strip()
+                        
+                        # Traçabilité : enregistrer qui a saisi et quand
+                        ligne.saisi_par = request.user
+                        ligne.date_modification = timezone.now()
+                        
                         ligne.save()
                         lignes_mises_a_jour += 1
                 except (LigneInventaire.DoesNotExist, ValueError):
                     pass
+            # Sauvegarder les assignations même sans stock physique
+            elif key.startswith('assigne_'):
+                ligne_id = key.replace('assigne_', '')
+                try:
+                    ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
+                    ligne.assigne_a = value.strip()
+                    ligne.save()
+                except LigneInventaire.DoesNotExist:
+                    pass
         
-        messages.success(request, f"{lignes_mises_a_jour} lignes mises à jour")
+        msg_parts = []
+        if lignes_mises_a_jour > 0:
+            msg_parts.append(f"{lignes_mises_a_jour} lignes mises à jour")
+        if prix_modifies > 0:
+            msg_parts.append(f"{prix_modifies} prix modifiés")
+        
+        if msg_parts:
+            messages.success(request, " | ".join(msg_parts))
+        
         inventaire.calculer_statistiques()
         
         if 'continuer' in request.POST:
@@ -5762,6 +6289,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     filtre = request.GET.get('filtre', 'non_saisis')
     categorie_id = request.GET.get('categorie')
     recherche = request.GET.get('q', '')
+    assigne_a_filtre = request.GET.get('assigne_a', '')
     
     lignes = inventaire.lignes.select_related('article', 'article__categorie')
     
@@ -5781,7 +6309,17 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
             Q(article__code__icontains=recherche)
         )
     
+    # Filtre par employé assigné
+    if assigne_a_filtre:
+        if assigne_a_filtre == 'NON_ASSIGNE':
+            lignes = lignes.filter(Q(assigne_a='') | Q(assigne_a__isnull=True))
+        else:
+            lignes = lignes.filter(assigne_a=assigne_a_filtre)
+    
     categories = Categorie.objects.filter(boutique=boutique)
+    
+    # Liste des employés uniques pour le filtre
+    employes_list = inventaire.lignes.exclude(assigne_a='').exclude(assigne_a__isnull=True).values_list('assigne_a', flat=True).distinct().order_by('assigne_a')
     
     context = {
         'boutique': boutique,
@@ -5792,6 +6330,8 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'filtre': filtre,
         'categorie_id': categorie_id,
         'recherche': recherche,
+        'assigne_a_filtre': assigne_a_filtre,
+        'employes_list': employes_list,
         'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
         'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
     }
@@ -6391,3 +6931,110 @@ def analyse_ia_mouvements(request, boutique_id):
         'anomalies': anomalies,
     }
     return render(request, 'inventory/commercant/analyse_ia_mouvements.html', context)
+
+
+@login_required
+@commercant_required
+def suivi_articles_recents(request, depot_id):
+    """Suivi des factures récemment enregistrées avec leurs détails et coûts."""
+    from django.db.models import Sum, Count, Q, Prefetch
+    from datetime import datetime, timedelta, date as date_type
+    
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant)
+    
+    # Filtres de date
+    date_debut = request.GET.get('date_debut', '').strip()
+    date_fin = request.GET.get('date_fin', '').strip()
+    
+    # Par défaut: aujourd'hui uniquement
+    aujourd_hui = datetime.now().date()
+    if not date_debut:
+        date_debut = aujourd_hui.strftime('%Y-%m-%d')
+    if not date_fin:
+        date_fin = aujourd_hui.strftime('%Y-%m-%d')
+    
+    # Convertir en objets date
+    try:
+        debut = datetime.strptime(date_debut, '%Y-%m-%d').date()
+        fin = datetime.strptime(date_fin, '%Y-%m-%d').date()
+    except ValueError:
+        debut = aujourd_hui
+        fin = aujourd_hui
+        date_debut = debut.strftime('%Y-%m-%d')
+        date_fin = fin.strftime('%Y-%m-%d')
+    
+    # Récupérer toutes les factures dans la période
+    factures = FactureApprovisionnement.objects.filter(
+        depot__commercant=commercant,
+        date_facture__gte=debut,
+        date_facture__lte=fin
+    ).select_related(
+        'fournisseur', 'depot'
+    ).prefetch_related(
+        Prefetch('lignes', queryset=LigneApprovisionnement.objects.select_related('article'))
+    ).order_by('-date_facture', '-id')
+    
+    # Préparer les données des factures avec détails
+    factures_list = []
+    for facture in factures:
+        lignes_detail = []
+        for ligne in facture.lignes.all():
+            article_nom = ligne.article.nom if ligne.article else (ligne.nom_custom or "Article sans nom")
+            lignes_detail.append({
+                'article_nom': article_nom,
+                'quantite': ligne.quantite_unites,
+                'prix_achat_unitaire': ligne.prix_achat_unitaire,
+                'prix_vente_unitaire': ligne.prix_vente_unitaire,
+                'cout_achat': ligne.prix_achat_total,
+                'valeur_vente': ligne.quantite_unites * ligne.prix_vente_unitaire,
+                'benefice': (ligne.prix_vente_unitaire - ligne.prix_achat_unitaire) * ligne.quantite_unites,
+            })
+        
+        factures_list.append({
+            'facture': facture,
+            'lignes': lignes_detail,
+            'nb_articles': len(lignes_detail),
+            'est_aujourd_hui': facture.date_facture == aujourd_hui,
+        })
+    
+    # Statistiques globales
+    stats = factures.aggregate(
+        nb_factures=Count('id'),
+        cout_total=Sum('montant_total'),
+    )
+    
+    # Compter les factures d'aujourd'hui
+    stats['nb_factures_aujourd_hui'] = factures.filter(date_facture=aujourd_hui).count()
+    
+    # Calculer valeur de vente et bénéfice potentiel
+    valeur_vente_totale = Decimal('0')
+    benefice_potentiel_total = Decimal('0')
+    nb_articles_total = 0
+    
+    for f in factures_list:
+        for ligne in f['lignes']:
+            valeur_vente_totale += ligne['valeur_vente']
+            benefice_potentiel_total += ligne['benefice']
+            nb_articles_total += 1
+    
+    stats['valeur_vente_totale'] = valeur_vente_totale
+    stats['benefice_potentiel_total'] = benefice_potentiel_total
+    stats['nb_articles_total'] = nb_articles_total
+    
+    # Calculer le pourcentage de bénéfice global
+    if stats['cout_total'] and stats['cout_total'] > 0:
+        stats['pourcentage_benefice'] = (stats['benefice_potentiel_total'] / stats['cout_total']) * 100
+    else:
+        stats['pourcentage_benefice'] = Decimal('0')
+    
+    context = {
+        'depot': depot,
+        'factures': factures_list,
+        'stats': stats,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+        'aujourd_hui': aujourd_hui,
+    }
+    
+    return render(request, 'inventory/commercant/suivi_articles_recents.html', context)
