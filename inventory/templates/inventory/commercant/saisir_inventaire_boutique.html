@@ -85,15 +85,35 @@ kbd {
                 </div>
             </div>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-3">
             <div class="card border-success">
                 <div class="card-body p-2">
                     <small class="text-muted d-block">⚡ Raccourcis clavier</small>
                     <small class="text-success fw-bold">
-                        <kbd>Enter</kbd> = Stock suivant | 
-                        <kbd>Shift+Enter</kbd> = Commentaire | 
-                        <kbd>Tab</kbd> = Retour au stock
+                        <kbd>Enter</kbd> = Suivant | 
+                        <kbd>Shift+Enter</kbd> = Commentaire
                     </small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-warning">
+                <div class="card-body p-2">
+                    <small class="text-muted d-block">👥 Lien collaborateurs</small>
+                    <div class="input-group input-group-sm">
+                        <input type="text" 
+                               class="form-control" 
+                               id="pinLoginUrl" 
+                               value="http://{{ request.get_host }}/login/pin/" 
+                               readonly 
+                               style="font-size: 0.75rem;">
+                        <button class="btn btn-warning" 
+                                type="button" 
+                                onclick="copyPinUrl()" 
+                                title="Copier le lien">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -500,6 +520,42 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+
+// === COPIER LIEN PIN COLLABORATEURS ===
+function copyPinUrl() {
+    const urlInput = document.getElementById('pinLoginUrl');
+    urlInput.select();
+    urlInput.setSelectionRange(0, 99999); // Pour mobile
+    
+    navigator.clipboard.writeText(urlInput.value).then(() => {
+        // Notification de succès
+        const notification = document.createElement('div');
+        notification.className = 'alert alert-success alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
+        notification.style.zIndex = '9999';
+        notification.innerHTML = `
+            <i class="fas fa-check-circle me-2"></i>
+            <strong>Lien copié !</strong> Partagez-le avec vos collaborateurs pour qu'ils se connectent avec leur code PIN.
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 4000);
+        
+        // Animation du bouton
+        const btn = event.target.closest('button');
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i>';
+        btn.classList.add('btn-success');
+        btn.classList.remove('btn-warning');
+        
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-warning');
+        }, 2000);
+    }).catch(err => {
+        alert('Erreur lors de la copie : ' + err);
+    });
+}
 
 // === MODE SCANNER CODES-BARRES ===
 let scannerMode = false;
