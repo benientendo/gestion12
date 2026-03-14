@@ -41,9 +41,26 @@ def login_pin(request):
                 f"Bienvenue {collaborateur.nom_complet} ! Connexion rapide réussie."
             )
             
-            # Rediriger vers le dashboard ou l'inventaire
-            next_url = request.GET.get('next', 'inventory:commercant_dashboard')
-            return redirect(next_url)
+            # Rediriger vers l'inventaire en cours si disponible
+            from .models import Inventaire
+            
+            # Chercher un inventaire en cours pour ce commerçant
+            inventaire_en_cours = Inventaire.objects.filter(
+                boutique__commercant=collaborateur.commercant,
+                statut='EN_COURS'
+            ).first()
+            
+            if inventaire_en_cours:
+                # Rediriger directement vers la saisie d'inventaire
+                return redirect(
+                    'inventory:saisir_inventaire_boutique',
+                    boutique_id=inventaire_en_cours.boutique.id,
+                    inventaire_id=inventaire_en_cours.id
+                )
+            else:
+                # Si pas d'inventaire en cours, rediriger vers le dashboard
+                next_url = request.GET.get('next', 'inventory:commercant_dashboard')
+                return redirect(next_url)
             
         except Collaborateur.DoesNotExist:
             return render(request, 'inventory/commercant/login_pin.html', {

@@ -82,33 +82,50 @@ def generer_qr_code_article(article):
         return False
 
 def commercant_required(view_func):
-    """Décorateur pour vérifier que l'utilisateur est un commerçant"""
+    """Décorateur pour vérifier que l'utilisateur est un commerçant ou un collaborateur actif"""
     def wrapper(request, *args, **kwargs):
         if not request.user.is_authenticated:
             return redirect('inventory:login_commercant')
         
         try:
+            # Essayer d'abord comme commerçant
             commercant = request.user.profil_commercant
             if not commercant.est_actif:
                 messages.error(request, "Votre compte commerçant est désactivé.")
                 return redirect('inventory:login_commercant')
+            return view_func(request, *args, **kwargs)
         except Commercant.DoesNotExist:
-            messages.error(request, "Vous n'avez pas de profil commerçant.")
-            return redirect('inventory:login_commercant')
-        
-        return view_func(request, *args, **kwargs)
+            # Si pas commerçant, vérifier si c'est un collaborateur
+            try:
+                from .models import Collaborateur
+                collaborateur = Collaborateur.objects.get(user=request.user, est_actif=True)
+                # Les collaborateurs ont accès
+                return view_func(request, *args, **kwargs)
+            except Collaborateur.DoesNotExist:
+                messages.error(request, "Vous n'avez pas de profil commerçant ou collaborateur.")
+                return redirect('inventory:login_commercant')
     return wrapper
 
 def boutique_access_required(view_func):
-    """Décorateur pour vérifier l'accès à une boutique spécifique"""
+    """Décorateur pour vérifier l'accès à une boutique spécifique (commerçant ou collaborateur)"""
     def wrapper(request, boutique_id, *args, **kwargs):
         try:
+            # Essayer d'abord comme commerçant
             commercant = request.user.profil_commercant
             boutique = get_object_or_404(Boutique, id=boutique_id, commercant=commercant)
-            request.boutique = boutique  # Ajouter la boutique à la requête
+            request.boutique = boutique
             return view_func(request, boutique_id, *args, **kwargs)
         except Commercant.DoesNotExist:
-            return HttpResponseForbidden("Accès non autorisé")
+            # Si pas commerçant, essayer comme collaborateur
+            try:
+                from .models import Collaborateur
+                collaborateur = Collaborateur.objects.get(user=request.user, est_actif=True)
+                boutique = get_object_or_404(Boutique, id=boutique_id, commercant=collaborateur.commercant)
+                request.boutique = boutique
+                request.collaborateur = collaborateur  # Ajouter le collaborateur à la requête
+                return view_func(request, boutique_id, *args, **kwargs)
+            except Collaborateur.DoesNotExist:
+                return HttpResponseForbidden("Accès non autorisé")
     return wrapper
 
 # ===== AUTHENTIFICATION =====
