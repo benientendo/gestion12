@@ -8,6 +8,7 @@ from . import views_collaborateurs
 from . import views_pin_login
 from . import views_auto_assign
 from . import views_modifier_vente
+from . import views_reset_inventaire
 
 app_name = 'inventory'
 
@@ -121,6 +122,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/', views_commercant.detail_inventaire_boutique, name='detail_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/saisir/', views_commercant.saisir_inventaire_boutique, name='saisir_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/auto-assigner/', views_auto_assign.auto_assigner_inventaire, name='auto_assigner_inventaire'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/reinitialiser-mes-articles/', views_reset_inventaire.reinitialiser_mes_articles, name='reinitialiser_mes_articles'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/terminer/', views_commercant.terminer_inventaire_boutique, name='terminer_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/regulariser/', views_commercant.regulariser_inventaire_boutique, name='regulariser_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/', views_commercant.rapports_caisse_boutique, name='commercant_rapports_caisse_boutique'),
