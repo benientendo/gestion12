@@ -2139,15 +2139,11 @@ def verifier_code_barre(request, boutique_id):
         # Vérifier si l'article a des variantes
         variantes_actives = article.variantes.filter(est_actif=True)
         variantes = list(variantes_actives.values(
-            'id', 'nom_variante', 'code_barre', 'quantite_stock', 'type_attribut'
+            'id', 'nom_variante', 'code_barre', 'type_attribut'
         ))
         
-        # ⭐ Si article a variantes, stock = SOMME des stocks variantes
-        if variantes_actives.exists():
-            from django.db.models import Sum
-            stock_effectif = variantes_actives.aggregate(total=Sum('quantite_stock'))['total'] or 0
-        else:
-            stock_effectif = article.quantite_stock
+        # Stock TOUJOURS sur le parent (variants = identifiants uniquement)
+        stock_effectif = article.quantite_stock
         
         return JsonResponse({
             'existe': True,

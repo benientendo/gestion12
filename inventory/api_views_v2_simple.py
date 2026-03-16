@@ -276,8 +276,14 @@ def articles_list_simple(request):
     Supporte 2 modes:
     1. Par boutique_id: /api/v2/simple/articles/?boutique_id=2
     2. Par numéro de série (header): X-Device-Serial ou Device-Serial
+    
+    Synchronisation incrémentale:
+    - ?since=2026-03-14T10:00:00 : Retourne uniquement les articles modifiés depuis cette date
+    - ?version=5 : Retourne uniquement les articles avec version > 5
     """
     boutique_id = request.GET.get('boutique_id')
+    since = request.GET.get('since')  # ✨ NOUVEAU: Sync incrémentale par date
+    version_min = request.GET.get('version')  # ✨ NOUVEAU: Sync incrémentale par version
     
     # Si pas de boutique_id, essayer de récupérer via le numéro de série dans les headers
     if not boutique_id:
@@ -327,19 +333,49 @@ def articles_list_simple(request):
             boutique=boutique,
             est_actif=True,
             est_valide_client=True  # Seuls les articles validés sont disponibles à la vente
-        ).select_related('categorie').order_by('nom')
+        ).select_related('categorie')
+        
+        # ✨ SYNC INCRÉMENTALE: Filtrer par date de modification
+        if since:
+            try:
+                since_date = parse_datetime(since)
+                if since_date:
+                    articles = articles.filter(last_updated__gte=since_date)
+                    logger.info(f"🔄 Sync incrémentale: articles modifiés depuis {since_date}")
+            except Exception as e:
+                logger.warning(f"⚠️ Erreur parsing date 'since': {e}")
+        
+        # ✨ SYNC INCRÉMENTALE: Filtrer par version
+        if version_min:
+            try:
+                version_num = int(version_min)
+                articles = articles.filter(version__gt=version_num)
+                logger.info(f"🔄 Sync incrémentale: articles version > {version_num}")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"⚠️ Erreur parsing version: {e}")
+        
+        articles = articles.order_by('nom')
         
         # Sérialiser les articles
         articles_data = ArticleSerializer(articles, many=True).data
         
-        return Response({
+        # Enrichir la réponse avec métadonnées de sync
+        response_data = {
             'success': True,
             'count': articles.count(),
             'boutique_id': boutique.id,
             'boutique_nom': boutique.nom,
             'taux_dollar': str(boutique.commercant.taux_dollar),
-            'articles': articles_data
-        })
+            'articles': articles_data,
+            'sync_metadata': {
+                'is_incremental': bool(since or version_min),
+                'since': since,
+                'version_min': version_min,
+                'server_time': timezone.now().isoformat()
+            }
+        }
+        
+        return Response(response_data)
         
     except Boutique.DoesNotExist:
         return Response({
@@ -759,10 +795,14 @@ def variantes_list_simple(request):
     
     Paramètres:
     - boutique_id: ID de la boutique (requis ou via header X-Device-Serial)
+    - since: Date ISO pour sync incrémentale (optionnel)
     
-    Exemple: /api/v2/simple/variantes/?boutique_id=2
+    Exemples:
+    - Sync complète: /api/v2/simple/variantes/?boutique_id=2
+    - Sync incrémentale: /api/v2/simple/variantes/?boutique_id=2&since=2026-03-15T10:00:00
     """
     boutique_id = request.GET.get('boutique_id')
+    since = request.GET.get('since')
     
     # Si pas de boutique_id, essayer via le numéro de série
     if not boutique_id:
@@ -793,11 +833,23 @@ def variantes_list_simple(request):
     try:
         boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
         
-        # Récupérer toutes les variantes actives des articles de cette boutique
+        # Récupérer les variantes actives des articles de cette boutique
         variantes = VarianteArticle.objects.filter(
             article_parent__boutique=boutique,
             est_actif=True
         ).select_related('article_parent')
+        
+        # Synchronisation incrémentale si 'since' est fourni
+        is_incremental = False
+        if since:
+            try:
+                since_date = parse_datetime(since)
+                if since_date:
+                    variantes = variantes.filter(last_updated__gte=since_date)
+                    is_incremental = True
+                    logger.info(f"🔄 Sync incrémentale variantes depuis {since}")
+            except Exception as e:
+                logger.warning(f"⚠️ Erreur parsing date 'since': {e}")
         
         variantes_data = []
         for variante in variantes:
@@ -807,20 +859,27 @@ def variantes_list_simple(request):
                 'code_barre': variante.code_barre,
                 'nom_variante': variante.nom_variante,
                 'type_attribut': variante.type_attribut,
-                'quantite_stock': variante.quantite_stock,
+                'quantite_stock': variante.article_parent.quantite_stock,  # Stock du PARENT
                 'est_actif': variante.est_actif,
                 'prix_vente': str(variante.prix_vente),
                 'devise': variante.devise,
-                'nom_complet': variante.nom_complet
+                'nom_complet': variante.nom_complet,
+                'last_updated': variante.last_updated.isoformat() if variante.last_updated else None
             })
         
-        logger.info(f"🏷️ Variantes récupérées pour boutique {boutique_id}: {len(variantes_data)}")
+        logger.info(f"🏷️ Variantes récupérées pour boutique {boutique_id}: {len(variantes_data)} (incrémental: {is_incremental})")
         
         return Response({
             'success': True,
             'boutique_id': boutique.id,
             'count': len(variantes_data),
-            'variantes': variantes_data
+            'variantes': variantes_data,
+            'sync_metadata': {
+                'is_incremental': is_incremental,
+                'since': since,
+                'server_time': timezone.now().isoformat(),
+                'total_variants': len(variantes_data)
+            }
         })
         
     except Exception as e:
@@ -840,8 +899,12 @@ def categories_list_simple(request):
     Supporte 2 modes:
     1. Par boutique_id: /api/v2/simple/categories/?boutique_id=2
     2. Par numéro de série (header): X-Device-Serial ou Device-Serial
+    
+    Synchronisation incrémentale:
+    - ?since=2026-03-14T10:00:00 : Retourne uniquement les catégories modifiées depuis cette date
     """
     boutique_id = request.GET.get('boutique_id')
+    since = request.GET.get('since')  # ✨ NOUVEAU: Sync incrémentale
     
     # Si pas de boutique_id, essayer de récupérer via le numéro de série dans les headers
     if not boutique_id:
@@ -889,7 +952,19 @@ def categories_list_simple(request):
         # Récupérer les catégories de cette boutique
         categories = Categorie.objects.filter(
             boutique=boutique
-        ).order_by('nom')
+        )
+        
+        # ✨ SYNC INCRÉMENTALE: Filtrer par date de modification
+        if since:
+            try:
+                since_date = parse_datetime(since)
+                if since_date:
+                    categories = categories.filter(last_updated__gte=since_date)
+                    logger.info(f"🔄 Sync incrémentale catégories: modifiées depuis {since_date}")
+            except Exception as e:
+                logger.warning(f"⚠️ Erreur parsing date 'since': {e}")
+        
+        categories = categories.order_by('nom')
         
         # Sérialiser les catégories
         categories_data = CategorieSerializer(categories, many=True).data
@@ -899,7 +974,12 @@ def categories_list_simple(request):
             'count': categories.count(),
             'boutique_id': boutique.id,
             'boutique_nom': boutique.nom,
-            'categories': categories_data
+            'categories': categories_data,
+            'sync_metadata': {
+                'is_incremental': bool(since),
+                'since': since,
+                'server_time': timezone.now().isoformat()
+            }
         })
         
     except Boutique.DoesNotExist:
@@ -1078,17 +1158,14 @@ def create_vente_simple(request):
                             article_parent=article,
                             est_actif=True
                         )
-                        logger.info(f"🏷️ Variante trouvée: {variante.nom_complet} (stock: {variante.quantite_stock})")
+                        logger.info(f"🏷️ Variante trouvée: {variante.nom_complet} (stock parent: {article.quantite_stock})")
                     except VarianteArticle.DoesNotExist:
                         logger.warning(f"⚠️ Variante {variante_id} non trouvée pour article {article.nom}, vente sur article parent")
                 
-                # Vérifier le stock disponible (variante ou article parent)
-                if variante:
-                    if variante.quantite_stock < quantite:
-                        raise Exception(f'Stock insuffisant pour {variante.nom_complet}')
-                else:
-                    if article.quantite_stock < quantite:
-                        raise Exception(f'Stock insuffisant pour {article.nom}')
+                # Vérifier le stock disponible (TOUJOURS sur le parent, même si variant)
+                nom_article = variante.nom_complet if variante else article.nom
+                if article.quantite_stock < quantite:
+                    raise Exception(f'Stock insuffisant pour {nom_article}')
                 
                 # Créer la ligne de vente avec support USD
                 devise_ligne = ligne_data.get('devise', devise_vente)
@@ -1142,31 +1219,23 @@ def create_vente_simple(request):
                     motif_reduction=motif_reduction
                 )
                 
-                # Mettre à jour le stock (variante ou article parent)
+                # Mettre à jour le stock (TOUJOURS sur le parent, même si variant scanné)
                 symbole_devise = '$' if devise_ligne == 'USD' else 'FC'
                 prix_affiche = prix_unitaire_usd if devise_ligne == 'USD' else prix_unitaire
+                
+                # Stock TOUJOURS sur le parent (variants = identifiants uniquement)
+                stock_avant = article.quantite_stock
+                article.quantite_stock -= quantite
+                article.save(update_fields=['quantite_stock'])
+                
+                # Log avec info variant si applicable
                 if variante:
-                    stock_avant = variante.quantite_stock
-                    variante.quantite_stock -= quantite
-                    variante.save(update_fields=['quantite_stock'])
-                    logger.info(f"🏷️ Stock variante {variante.nom_complet}: {stock_avant} → {variante.quantite_stock}")
-                    
-                    MouvementStock.objects.create(
-                        article=article,
-                        type_mouvement='VENTE',
-                        quantite=-quantite,
-                        stock_avant=stock_avant,
-                        stock_apres=variante.quantite_stock,
-                        reference_document=vente.numero_facture,
-                        utilisateur=terminal.nom_terminal,
-                        commentaire=f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_affiche} {symbole_devise}"
-                    )
+                    logger.info(f"🏷️ Vente variant {variante.nom_complet}: Stock parent {stock_avant} → {article.quantite_stock}")
+                    commentaire_stock = f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_affiche} {symbole_devise}"
                 else:
-                    stock_avant = article.quantite_stock
-                    article.quantite_stock -= quantite
-                    article.save(update_fields=['quantite_stock'])
-                    
-                    MouvementStock.objects.create(
+                    commentaire_stock = f"Vente #{vente.numero_facture} - Prix: {prix_affiche} {symbole_devise}"
+                
+                MouvementStock.objects.create(
                         article=article,
                         type_mouvement='VENTE',
                         quantite=-quantite,
@@ -1174,7 +1243,7 @@ def create_vente_simple(request):
                         stock_apres=article.quantite_stock,
                         reference_document=vente.numero_facture,
                         utilisateur=terminal.nom_terminal,
-                        commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_affiche} {symbole_devise}"
+                        commentaire=commentaire_stock
                     )
                 
                 # ⭐ Accumuler les montants selon la devise

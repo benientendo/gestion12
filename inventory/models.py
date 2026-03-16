@@ -86,6 +86,7 @@ class Categorie(models.Model):
     description = models.TextField(blank=True)
     boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='categories', null=True, blank=True)
     date_creation = models.DateTimeField(auto_now_add=True)
+    last_updated = models.DateTimeField(auto_now=True, help_text="Dernière modification pour sync incrémentale")
 
     def __str__(self):
         return self.nom
@@ -129,6 +130,9 @@ class Article(models.Model):
     image = models.ImageField(upload_to='articles/', blank=True, null=True)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_mise_a_jour = models.DateTimeField(auto_now=True)
+    
+    last_updated = models.DateTimeField(auto_now=True, help_text="Dernière modification pour sync incrémentale")
+    version = models.IntegerField(default=1, help_text="Version pour sync optimisée")
 
     def __str__(self):
         return f"{self.nom} ({self.code})"
@@ -136,10 +140,19 @@ class Article(models.Model):
     def save(self, *args, **kwargs):
         logger = logging.getLogger(__name__)
         
-        # Tracer la date de suppression quand un article est désactivé
+        # Incrémenter la version à chaque modification (sauf création)
         if self.pk:
             try:
                 old_instance = Article.objects.get(pk=self.pk)
+                # Incrémenter version si modification substantielle
+                if (old_instance.prix_vente != self.prix_vente or 
+                    old_instance.quantite_stock != self.quantite_stock or
+                    old_instance.nom != self.nom or
+                    old_instance.est_actif != self.est_actif):
+                    self.version = old_instance.version + 1
+                    logger.info(f"📍 Article {self.code} modifié - version {old_instance.version} → {self.version}")
+                
+                # Tracer la date de suppression quand un article est désactivé
                 if old_instance.est_actif and not self.est_actif:
                     self.date_suppression = timezone.now()
                     logger.info(f"📍 Article {self.code} désactivé - date_suppression mise à jour")
@@ -191,7 +204,8 @@ class Article(models.Model):
     @property
     def stock_total(self):
         """
-        Stock toujours sur le parent — les variantes sont des identifiants de vente uniquement.
+        Retourne le stock de l'article parent uniquement.
+        Note: Si l'article a des variantes, chaque variante a son propre stock (VarianteArticle.quantite_stock).
         """
         return self.quantite_stock
     
@@ -283,8 +297,18 @@ class VarianteArticle(models.Model):
     date_creation = models.DateTimeField(auto_now_add=True)
     date_mise_a_jour = models.DateTimeField(auto_now=True)
     
+    last_updated = models.DateTimeField(auto_now=True, help_text="Dernière modification pour sync incrémentale")
+    
     # Image spécifique à la variante (optionnel)
     image = models.ImageField(upload_to='variantes/', blank=True, null=True)
+    
+    @property
+    def stock_disponible(self):
+        """
+        Le stock est TOUJOURS sur le parent.
+        Les variantes sont des identifiants uniquement (code-barres différents).
+        """
+        return self.article_parent.quantite_stock
     
     @property
     def prix_vente(self):
