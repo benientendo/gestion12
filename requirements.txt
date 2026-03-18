@@ -19,8 +19,6 @@ channels-redis==4.1.0
 # Redis client
 redis==5.0.1
 
-# Async support
-asgiref==3.7.2
 
 # Celery - Tâches asynchrones
 celery==5.3.6
