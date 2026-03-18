@@ -209,6 +209,7 @@ LOGOUT_REDIRECT_URL = '/login/'
 
 # Sécurité en production
 if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # Scalingo reverse proxy
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
