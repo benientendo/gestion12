@@ -203,14 +203,16 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         """Connexion pour recevoir les notifications"""
         self.boutique_id = self.scope['url_route']['kwargs']['boutique_id']
         self.notification_group_name = f'notifications_{self.boutique_id}'
-        
+
+        # ⚠️ accept() DOIT être appelé avant group_add()
+        await self.accept()
+
         # Rejoindre le groupe de notifications
         await self.channel_layer.group_add(
             self.notification_group_name,
             self.channel_name
         )
-        
-        await self.accept()
+
         logger.info(f"✅ Notifications WebSocket connectées - Boutique {self.boutique_id}")
     
     async def disconnect(self, close_code):
