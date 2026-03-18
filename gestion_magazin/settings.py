@@ -69,6 +69,7 @@ DEEPSEEK_MODEL = 'deepseek-chat'
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',  # Doit être en premier pour WebSocket
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -76,6 +77,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.humanize',
+    'channels',  # WebSocket support
     'inventory',
     'rest_framework',
     'rest_framework.authtoken',
@@ -248,6 +250,45 @@ else:
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10485760  # 10 MB
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 5000
 
+# Django Channels - WebSocket Configuration
+ASGI_APPLICATION = 'gestion_magazin.asgi.application'
+
+# Channel Layers - Redis en production (Scalingo), InMemory en dev
+_REDIS_URL = os.environ.get('REDIS_URL')
+
+if _REDIS_URL:
+    # Production Scalingo: Redis via variable d'environnement
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                "hosts": [_REDIS_URL],
+                "capacity": 1500,
+                "expiry": 10,
+            },
+        },
+    }
+else:
+    # Développement local: InMemoryChannelLayer (sans Redis requis)
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        }
+    }
+
+# Celery Configuration
+CELERY_BROKER_URL = _REDIS_URL or 'redis://127.0.0.1:6379/0'
+CELERY_RESULT_BACKEND = _REDIS_URL or 'redis://127.0.0.1:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Africa/Kinshasa'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes max par tâche
+CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # Avertissement à 25 minutes
+CELERY_WORKER_PREFETCH_MULTIPLIER = 4  # Nombre de tâches à précharger
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Redémarrer worker après 1000 tâches
+
 # Logging pour identifier les requêtes lentes (en dev uniquement)
 if DEBUG:
     LOGGING = {
@@ -261,6 +302,10 @@ if DEBUG:
         'loggers': {
             'django.db.backends': {
                 'level': 'WARNING',  # Mettre DEBUG pour voir toutes les requêtes SQL
+                'handlers': ['console'],
+            },
+            'celery': {
+                'level': 'INFO',
                 'handlers': ['console'],
             },
         },

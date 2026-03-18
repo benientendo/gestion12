@@ -21,8 +21,19 @@ import logging
 
 from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock
 from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
+from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created
 
 logger = logging.getLogger(__name__)
+
+
+class StockInsuffisantError(Exception):
+    """Exception levée quand le stock est insuffisant pour une vente."""
+    def __init__(self, article_id, article_nom, stock_actuel, quantite_demandee):
+        self.article_id = article_id
+        self.article_nom = article_nom
+        self.stock_actuel = stock_actuel
+        self.quantite_demandee = quantite_demandee
+        super().__init__(f"Stock insuffisant pour {article_nom}: dispo={stock_actuel}, demandé={quantite_demandee}")
 
 
 def to_local_iso(dt):
@@ -30,6 +41,30 @@ def to_local_iso(dt):
     if dt is None:
         return None
     return timezone.localtime(dt).isoformat()
+
+
+def recalculer_stock_depuis_journal(article):
+    """
+    Recalcule quantite_stock depuis la somme des MouvementStock.
+    Corrige toute divergence entre le champ stocké et le journal.
+    Retourne (stock_calcule, stock_avant, a_diverge).
+    """
+    stock_journal = MouvementStock.objects.filter(
+        article=article
+    ).aggregate(total=Sum('quantite'))['total'] or 0
+
+    stock_avant = article.quantite_stock
+    a_diverge = stock_journal != stock_avant
+
+    if a_diverge:
+        logger.warning(
+            f"🔧 Divergence stock détectée pour {article.code} — "
+            f"stocké={stock_avant}, journal={stock_journal} → correction"
+        )
+        article.quantite_stock = stock_journal
+        article.save(update_fields=['quantite_stock'])
+
+    return stock_journal, stock_avant, a_diverge
 
 
 @api_view(['GET'])
@@ -605,7 +640,10 @@ def valider_article(request):
             )
         
         logger.info(f"✅ Article {article.code} validé - Quantité ajoutée: {qte_a_ajouter}, Stock: {stock_avant} → {article.quantite_stock}")
-        
+
+        # 🔔 WebSocket: notifier tous les POS que l'article est validé et dispo
+        notify_article_updated(article.boutique.id, article)
+
         return Response({
             'success': True,
             'message': f'Article "{article.nom}" validé avec succès',
@@ -673,7 +711,10 @@ def refuser_article(request):
         article.est_valide_client = True
         article.quantite_envoyee = 0
         article.save()
-        
+
+        # 🔔 WebSocket: notifier tous les POS que l'article est refusé (dispo sans stock ajouté)
+        notify_article_updated(article.boutique.id, article)
+
         return Response({
             'success': True,
             'message': f'Article "{article.nom}" refusé - remis dans le catalogue sans ajout de stock',
@@ -1139,14 +1180,14 @@ def create_vente_simple(request):
                 quantite = ligne_data.get('quantite', 1)
                 
                 # Vérifier que l'article appartient à la boutique
+                # ⭐ select_for_update() : verrouille la ligne pendant la transaction (anti race-condition)
                 try:
-                    article = Article.objects.get(
+                    article = Article.objects.select_for_update().get(
                         id=article_id,
                         boutique=boutique,
                         est_actif=True
                     )
                 except Article.DoesNotExist:
-                    # La transaction sera automatiquement annulée
                     raise Exception(f'Article {article_id} non trouvé dans cette boutique')
                 
                 # 🏷️ Récupérer la variante si spécifiée
@@ -1162,11 +1203,12 @@ def create_vente_simple(request):
                     except VarianteArticle.DoesNotExist:
                         logger.warning(f"⚠️ Variante {variante_id} non trouvée pour article {article.nom}, vente sur article parent")
                 
-                # Vérifier le stock disponible (TOUJOURS sur le parent, même si variant)
+                # Vérifier le stock (avertissement seulement — la vente est toujours enregistrée)
                 nom_article = variante.nom_complet if variante else article.nom
-                if article.quantite_stock < quantite:
-                    raise Exception(f'Stock insuffisant pour {nom_article}')
-                
+                stock_sera_negatif = article.quantite_stock < quantite
+                if stock_sera_negatif:
+                    logger.warning(f"⚠️ Stock insuffisant: {nom_article} dispo={article.quantite_stock} demandé={quantite} → stock négatif accepté")
+
                 # Créer la ligne de vente avec support USD
                 devise_ligne = ligne_data.get('devise', devise_vente)
                 
@@ -1222,7 +1264,16 @@ def create_vente_simple(request):
                 # Mettre à jour le stock (TOUJOURS sur le parent, même si variant scanné)
                 symbole_devise = '$' if devise_ligne == 'USD' else 'FC'
                 prix_affiche = prix_unitaire_usd if devise_ligne == 'USD' else prix_unitaire
-                
+
+                # ⭐ JOURNAL: Dedup — évite double réduction de stock (idempotence)
+                if MouvementStock.objects.filter(
+                    reference_document=vente.numero_facture,
+                    article=article,
+                    type_mouvement='VENTE'
+                ).exists():
+                    logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} — skip")
+                    continue
+
                 # Stock TOUJOURS sur le parent (variants = identifiants uniquement)
                 stock_avant = article.quantite_stock
                 article.quantite_stock -= quantite
@@ -1245,7 +1296,26 @@ def create_vente_simple(request):
                         utilisateur=terminal.nom_terminal,
                         commentaire=commentaire_stock
                     )
-                
+
+                # 🔔 WebSocket: notifier tous les POS du nouveau stock
+                notify_stock_updated(boutique.id, article.id, article.quantite_stock)
+
+                # ⚠️ AlerteStock si le stock est devenu négatif
+                if stock_sera_negatif:
+                    AlerteStock.objects.create(
+                        vente=vente,
+                        boutique=boutique,
+                        terminal=terminal,
+                        article=article,
+                        variante=variante,
+                        quantite_vendue=quantite,
+                        stock_serveur_avant=stock_avant,
+                        stock_serveur_apres=article.quantite_stock,
+                        ecart=stock_avant - quantite,
+                        numero_facture=vente.numero_facture
+                    )
+                    logger.warning(f"🚨 ALERTE STOCK: {nom_article} stock={article.quantite_stock}")
+
                 # ⭐ Accumuler les montants selon la devise
                 if devise_ligne == 'USD':
                     # Pour USD: accumuler en USD
@@ -1289,6 +1359,17 @@ def create_vente_simple(request):
             vente.refresh_from_db()
             logger.info(f"🔍 Vérification après reload: {vente.montant_total} CDF")
         
+        # Retourner le stock réel après vente pour que le POS synchronise son SQLite
+        articles_vendus_ids = {ligne.get('article_id') for ligne in lignes_creees if ligne.get('article_id')}
+        stock_updates = []
+        if articles_vendus_ids:
+            for art in Article.objects.filter(id__in=articles_vendus_ids, boutique=boutique):
+                stock_updates.append({
+                    'article_id': art.id,
+                    'nom': art.nom,
+                    'stock_actuel': art.quantite_stock
+                })
+
         return Response({
             'success': True,
             'vente': {
@@ -1301,10 +1382,33 @@ def create_vente_simple(request):
                 'date_vente': to_local_iso(vente.date_vente),
                 'lignes': lignes_creees
             },
+            'stock_updates': stock_updates,
             'boutique_id': boutique.id,
             'terminal_id': terminal.id
         }, status=status.HTTP_201_CREATED)
-        
+
+    except IntegrityError:
+        # ⭐ JOURNAL: Doublon numero_facture — la vente existe déjà (retry client)
+        numero_facture = request.data.get('numero_facture')
+        vente_existante = Vente.objects.filter(numero_facture=numero_facture).first()
+        if vente_existante:
+            logger.info(f"✅ Vente {numero_facture} déjà enregistrée (doublon idempotent) → 200")
+            return Response({
+                'success': True,
+                'already_exists': True,
+                'message': f'Vente {numero_facture} déjà enregistrée',
+                'vente': {
+                    'id': vente_existante.id,
+                    'numero_facture': vente_existante.numero_facture,
+                    'montant_total': str(vente_existante.montant_total),
+                    'date_vente': to_local_iso(vente_existante.date_vente),
+                }
+            })
+        return Response({
+            'error': 'Erreur de contrainte base de données',
+            'code': 'INTEGRITY_ERROR'
+        }, status=status.HTTP_409_CONFLICT)
+
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
@@ -1899,14 +2003,14 @@ def sync_ventes_simple(request):
                         quantite = ligne_data.get('quantite', 1)
                         
                         # Vérifier que l'article appartient à la boutique
+                        # ⭐ select_for_update() : verrouille la ligne pendant la transaction (anti race-condition)
                         try:
-                            article = Article.objects.get(
+                            article = Article.objects.select_for_update().get(
                                 id=article_id,
                                 boutique=boutique,
                                 est_actif=True
                             )
                         except Article.DoesNotExist:
-                            # Erreur enrichie avec détails pour traçabilité
                             raise ValueError(f'ARTICLE_NOT_FOUND|{article_id}||0|0|Article {article_id} non trouvé dans cette boutique')
                         
                         # 🏷️ Récupérer la variante si spécifiée
@@ -1922,20 +2026,12 @@ def sync_ventes_simple(request):
                             except VarianteArticle.DoesNotExist:
                                 logger.warning(f"⚠️ Variante {variante_id} non trouvée pour article {article.nom}, vente sur article parent")
                         
-                        # ⭐ NOUVEAU: Vérifier le stock mais NE PAS REJETER - créer une alerte à la place
-                        stock_insuffisant = False
-                        stock_avant_vente = 0
-                        if variante:
-                            stock_avant_vente = variante.quantite_stock
-                            if variante.quantite_stock < quantite:
-                                stock_insuffisant = True
-                                logger.warning(f"⚠️ ALERTE STOCK: {variante.nom_complet} - demandé: {quantite}, dispo: {variante.quantite_stock}")
-                        else:
-                            stock_avant_vente = article.quantite_stock
-                            if article.quantite_stock < quantite:
-                                stock_insuffisant = True
-                                logger.warning(f"⚠️ ALERTE STOCK: {article.nom} - demandé: {quantite}, dispo: {article.quantite_stock}")
-                        
+                        # ⭐ Vérifier le stock (avertissement seulement — la vente est toujours enregistrée)
+                        nom_article_vente = variante.nom_complet if variante else article.nom
+                        stock_sera_negatif = article.quantite_stock < quantite
+                        if stock_sera_negatif:
+                            logger.warning(f"⚠️ Stock insuffisant: {nom_article_vente} dispo={article.quantite_stock} demandé={quantite} → stock négatif accepté")
+
                         # Créer la ligne de vente avec support USD
                         prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
                         prix_unitaire_usd = ligne_data.get('prix_unitaire_usd') or article.prix_vente_usd
@@ -1973,42 +2069,52 @@ def sync_ventes_simple(request):
                             motif_reduction=motif_reduction
                         )
                         
-                        # Mettre à jour le stock (variante ou article parent)
+                        # Mettre à jour le stock (TOUJOURS sur le parent, même si variant scanné)
+
+                        # ⭐ JOURNAL: Dedup — évite double réduction de stock (idempotence)
+                        if MouvementStock.objects.filter(
+                            reference_document=vente.numero_facture,
+                            article=article,
+                            type_mouvement='VENTE'
+                        ).exists():
+                            logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} — skip")
+                            lignes_creees.append({
+                                'article_id': article.id,
+                                'article_nom': article.nom,
+                                'article_code': article.code,
+                                'quantite': quantite,
+                                'prix_unitaire': str(prix_unitaire),
+                                'devise': devise_ligne,
+                                'sous_total': str(prix_unitaire * quantite),
+                                'doublon': True
+                            })
+                            continue
+
+                        stock_avant = article.quantite_stock
+                        article.quantite_stock -= quantite
+                        article.save(update_fields=['quantite_stock'])
+
                         if variante:
-                            stock_avant = variante.quantite_stock
-                            variante.quantite_stock -= quantite
-                            variante.save(update_fields=['quantite_stock'])
-                            logger.info(f"🏷️ Stock variante {variante.nom_complet}: {stock_avant} → {variante.quantite_stock}")
-                            
-                            MouvementStock.objects.create(
-                                article=article,
-                                type_mouvement='VENTE',
-                                quantite=-quantite,
-                                stock_avant=stock_avant,
-                                stock_apres=variante.quantite_stock,
-                                reference_document=vente.numero_facture,
-                                utilisateur=terminal.nom_terminal,
-                                commentaire=f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_unitaire} CDF"
-                            )
+                            commentaire_stock = f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_unitaire} CDF"
                         else:
-                            stock_avant = article.quantite_stock
-                            article.quantite_stock -= quantite
-                            article.save(update_fields=['quantite_stock'])
-                            
-                            MouvementStock.objects.create(
-                                article=article,
-                                type_mouvement='VENTE',
-                                quantite=-quantite,
-                                stock_avant=stock_avant,
-                                stock_apres=article.quantite_stock,
-                                reference_document=vente.numero_facture,
-                                utilisateur=terminal.nom_terminal,
-                                commentaire=f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
-                            )
-                        
-                        # ⭐ NOUVEAU: Créer une AlerteStock si stock insuffisant (au lieu de rejeter)
-                        if stock_insuffisant:
-                            stock_apres_vente = variante.quantite_stock if variante else article.quantite_stock
+                            commentaire_stock = f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
+
+                        MouvementStock.objects.create(
+                            article=article,
+                            type_mouvement='VENTE',
+                            quantite=-quantite,
+                            stock_avant=stock_avant,
+                            stock_apres=article.quantite_stock,
+                            reference_document=vente.numero_facture,
+                            utilisateur=terminal.nom_terminal,
+                            commentaire=commentaire_stock
+                        )
+
+                        # 🔔 WebSocket: notifier tous les POS du nouveau stock
+                        notify_stock_updated(boutique.id, article.id, article.quantite_stock)
+
+                        # ⚠️ AlerteStock si le stock est devenu négatif
+                        if stock_sera_negatif:
                             AlerteStock.objects.create(
                                 vente=vente,
                                 boutique=boutique,
@@ -2016,17 +2122,18 @@ def sync_ventes_simple(request):
                                 article=article,
                                 variante=variante,
                                 quantite_vendue=quantite,
-                                stock_serveur_avant=stock_avant_vente,
-                                stock_serveur_apres=stock_apres_vente,
-                                ecart=stock_avant_vente - quantite,
+                                stock_serveur_avant=stock_avant,
+                                stock_serveur_apres=article.quantite_stock,
+                                ecart=stock_avant - quantite,
                                 numero_facture=vente.numero_facture
                             )
-                            logger.warning(f"🚨 ALERTE STOCK CRÉÉE: {variante.nom_complet if variante else article.nom} - Stock: {stock_avant_vente} → {stock_apres_vente}")
+                            logger.warning(f"🚨 ALERTE STOCK: {nom_article_vente} stock={article.quantite_stock}")
                         
                         montant_total += prix_unitaire * quantite
 
                         montant_total_usd = (montant_total_usd or 0) + (prix_unitaire_usd * quantite if prix_unitaire_usd else 0)
                         lignes_creees.append({
+                            'article_id': article.id,
                             'article_nom': article.nom,
                             'article_code': article.code,
                             'quantite': quantite,
@@ -2117,7 +2224,7 @@ def sync_ventes_simple(request):
                 })
                 
             except IntegrityError as ie:
-                # ⭐ Erreur de duplication (race condition ou contrainte unique)
+                # ⭐ Erreur de duplication (contrainte unique)
                 logger.warning(f"⚠️ IntegrityError pour vente {index + 1}: {str(ie)}")
                 
                 # Vérifier si c'est un doublon de numero_facture
@@ -2191,19 +2298,27 @@ def sync_ventes_simple(request):
                 rejected_item['article_nom'] = e.get('article_nom', '')
             if e.get('stock_disponible') is not None:
                 rejected_item['stock_disponible'] = e['stock_disponible']
+            if e.get('stock_actuel') is not None:
+                rejected_item['stock_actuel'] = e['stock_actuel']
             if e.get('stock_demande') is not None:
                 rejected_item['stock_demande'] = e['stock_demande']
             rejected_list.append(rejected_item)
         
-        # ⭐ NOUVEAU: Collecter les mises à jour de stock pour les articles concernés par des rejets
-        stock_updates = []
-        articles_en_erreur = set()
+        # Collecter les mises à jour de stock pour TOUS les articles touchés (acceptés + rejetés)
+        # → Le POS met à jour son SQLite avec le stock réel après chaque sync
+        articles_touches = set()
         for e in ventes_erreurs:
             if e.get('article_id'):
-                articles_en_erreur.add(e['article_id'])
-        
-        if articles_en_erreur:
-            articles_actuels = Article.objects.filter(id__in=articles_en_erreur, boutique=boutique)
+                articles_touches.add(e['article_id'])
+        for v in ventes_creees:
+            for ligne in v.get('lignes', []):
+                article_id_ligne = ligne.get('article_id')
+                if article_id_ligne:
+                    articles_touches.add(article_id_ligne)
+
+        stock_updates = []
+        if articles_touches:
+            articles_actuels = Article.objects.filter(id__in=articles_touches, boutique=boutique)
             for art in articles_actuels:
                 stock_updates.append({
                     'article_id': art.id,

@@ -5,9 +5,26 @@ Django==5.2
 psycopg2-binary==2.9.11
 dj-database-url==2.1.0
 
-# Web Server
+# Web Server (WSGI fallback)
 gunicorn==21.2.0
 whitenoise==6.6.0
+
+# ASGI Server (WebSocket + HTTP/2)
+daphne==4.0.0
+
+# Django Channels - WebSocket
+channels==4.0.0
+channels-redis==4.1.0
+
+# Redis client
+redis==5.0.1
+
+# Async support
+asgiref==3.7.2
+
+# Celery - Tâches asynchrones
+celery==5.3.6
+kombu==5.3.5
 
 # Django REST Framework et JWT
 djangorestframework==3.14.0
