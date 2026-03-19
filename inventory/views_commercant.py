@@ -6372,7 +6372,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
         'all_articles_json': all_articles_json,
         'categories_json': categories_json,
-        'ajax_url': f"/inventory/commercant/boutiques/{boutique.id}/inventaires/{inventaire.id}/saisir-ligne/",
+        'ajax_url': f"/commercant/boutiques/{boutique.id}/inventaires/{inventaire.id}/saisir-ligne/",
     }
     return render(request, 'inventory/commercant/saisir_inventaire_boutique.html', context)
 
