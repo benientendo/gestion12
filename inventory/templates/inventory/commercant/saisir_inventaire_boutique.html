@@ -94,75 +94,89 @@ kbd {
 {% block content %}
 <!-- PANNEAU SAISIE RAPIDE FIXE -->
 <div id="saisieRapidePanel">
-    <div class="row align-items-center g-2 flex-nowrap">
-        <div class="col-auto">
-            <span class="badge fs-6" style="background:linear-gradient(135deg,#667eea,#764ba2)">
-                <i class="fas fa-bolt me-1"></i>Saisie rapide
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+
+        <!-- Badge + Compteurs -->
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge fs-6" style="background:linear-gradient(135deg,#667eea,#764ba2);white-space:nowrap;">
+                <i class="fas fa-bolt me-1"></i>Saisie
             </span>
+            <span class="badge bg-success" id="srNbSaisis">{{ nb_saisis }} saisis</span>
+            <span class="badge bg-warning text-dark" id="srNbRestants">{{ nb_non_saisis }} restants</span>
         </div>
-        <div class="col" style="max-width:360px;position:relative;">
-            <input type="text" id="srSearch" class="form-control"
-                   placeholder="&#128269; Rechercher article (nom ou code)..."
+
+        <!-- Recherche -->
+        <div style="min-width:260px;max-width:340px;flex:1;position:relative;">
+            <input type="text" id="srSearch" class="form-control form-control-sm"
+                   placeholder="&#128269; Article (nom ou code)..."
                    autocomplete="off" spellcheck="false">
             <div id="srDropdown"></div>
         </div>
-        <div class="col-auto" id="srQteWrap" style="display:none;">
-            <div class="d-flex align-items-end gap-2 flex-wrap">
-                <!-- Nom article -->
-                <div style="max-width:160px;">
-                    <small class="text-muted d-block" style="font-size:.68rem;">Article</small>
-                    <span class="badge fw-bold text-truncate d-block" id="srArticleLabel"
-                          style="background:#667eea;font-size:.8rem;max-width:160px;"></span>
-                </div>
-                <!-- Stock système -->
-                <div class="text-center">
-                    <small class="text-muted d-block" style="font-size:.68rem;">Stock système</small>
-                    <span class="fw-bold" id="srStockActuel"
-                          style="font-size:1rem;color:#667eea;">—</span>
-                </div>
-                <!-- Prix de vente -->
-                <div>
-                    <small class="text-muted d-block" style="font-size:.68rem;">Prix de vente</small>
-                    <div class="input-group input-group-sm">
-                        <input type="number" id="srPrixVente" class="form-control text-end"
-                               min="0" step="1" style="max-width:90px;font-weight:700;">
-                        <span class="input-group-text" id="srDevise"
-                              style="font-size:.75rem;min-width:38px;">CDF</span>
-                    </div>
-                </div>
-                <!-- Catégorie -->
-                <div>
-                    <small class="text-muted d-block" style="font-size:.68rem;">Catégorie</small>
-                    <select id="srCategorie" class="form-select form-select-sm"
-                            style="max-width:160px;"></select>
-                </div>
-                <!-- Qté physique -->
-                <div>
-                    <small class="text-muted d-block" style="font-size:.68rem;">Qté physique <kbd style="font-size:.6rem;">Enter</kbd></small>
-                    <input type="number" id="srQte" class="form-control form-control-sm text-center"
-                           min="0" placeholder="?"
-                           style="max-width:75px;font-weight:700;font-size:1.05rem;border:2px solid #28a745;">
-                </div>
-                <!-- Boutons -->
-                <div class="d-flex gap-1">
-                    <button class="btn btn-success btn-sm px-3" id="srSaveBtn" type="button">
-                        <i class="fas fa-check"></i> OK
-                    </button>
-                    <button class="btn btn-outline-secondary btn-sm" id="srCancelBtn" type="button" title="Annuler (Esc)">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
+
+        <!-- Champs article (cachés jusqu'à sélection) -->
+        <div id="srQteWrap" class="align-items-center gap-2 flex-wrap" style="display:none;">
+
+            <!-- Nom + stock -->
+            <div class="d-flex flex-column" style="min-width:130px;max-width:160px;">
+                <span class="badge text-truncate" id="srArticleLabel"
+                      style="background:#667eea;font-size:.8rem;"></span>
+                <small class="text-muted mt-1" style="font-size:.7rem;">
+                    Système : <strong id="srStockActuel" style="color:#667eea;">—</strong>
+                </small>
             </div>
+
+            <!-- Prix vente -->
+            <div class="input-group input-group-sm" style="max-width:130px;">
+                <input type="number" id="srPrixVente" class="form-control text-end"
+                       min="0" step="1" title="Prix de vente" placeholder="Prix">
+                <span class="input-group-text px-1" id="srDevise" style="font-size:.75rem;">CDF</span>
+            </div>
+
+            <!-- Catégorie -->
+            <select id="srCategorie" class="form-select form-select-sm" style="max-width:150px;" title="Catégorie"></select>
+
+            <!-- Qté physique -->
+            <input type="number" id="srQte" class="form-control form-control-sm text-center"
+                   min="0" placeholder="Qté" title="Quantité physique"
+                   style="max-width:72px;font-weight:700;font-size:1.05rem;border:2px solid #28a745;">
+
+            <!-- Boutons -->
+            <button class="btn btn-success btn-sm" id="srSaveBtn" type="button">
+                <i class="fas fa-check"></i>
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" id="srCancelBtn" type="button">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
-        <div class="col-auto d-none d-md-block">
-            <small class="text-muted">
-                <kbd>&uarr;&darr;</kbd> nav &nbsp;<kbd>Enter</kbd> valider &nbsp;<kbd>Esc</kbd> annuler
-            </small>
-        </div>
-        <div class="col-auto ms-auto text-end">
-            <span class="badge bg-success me-1" id="srNbSaisis">{{ nb_saisis }} saisis</span>
-            <span class="badge bg-warning text-dark" id="srNbRestants">{{ nb_non_saisis }} restants</span>
-        </div>
+    </div>
+</div>
+
+<!-- TABLEAU DES SAISIES DE LA SESSION -->
+<div id="srSessionWrap" style="display:none;border-bottom:1px solid #e0e0e0;background:#f8f9ff;">
+    <div class="px-3 py-2 d-flex align-items-center gap-3">
+        <strong class="text-primary" style="font-size:.85rem;">
+            <i class="fas fa-list-check me-1"></i>Saisies de la session
+            (<span id="srSessionCount">0</span>)
+        </strong>
+        <button class="btn btn-outline-danger btn-sm py-0 px-2" id="srClearSession" type="button"
+                style="font-size:.75rem;">Effacer liste</button>
+    </div>
+    <div class="px-3 pb-2" style="overflow-x:auto;">
+        <table class="table table-sm table-hover mb-0" style="font-size:.82rem;min-width:600px;">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:26px;">#</th>
+                    <th>Article</th>
+                    <th class="text-center">Stock syst.</th>
+                    <th class="text-center">Qté saisie</th>
+                    <th class="text-center">Écart</th>
+                    <th class="text-end">Prix vente</th>
+                    <th>Catégorie</th>
+                    <th style="width:26px;"></th>
+                </tr>
+            </thead>
+            <tbody id="srSessionTbody"></tbody>
+        </table>
     </div>
 </div>
 
@@ -968,24 +982,30 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 // SAISIE RAPIDE — PANNEAU FIXE
 // =============================================
 (function() {
-    const ARTICLES  = {{ all_articles_json|safe }};
+    const ARTICLES   = {{ all_articles_json|safe }};
     const CATEGORIES = {{ categories_json|safe }};
     const AJAX_URL   = '{{ ajax_url }}';
     const CSRF       = '{{ csrf_token }}';
 
-    const srSearch     = document.getElementById('srSearch');
-    const srDropdown   = document.getElementById('srDropdown');
-    const srQteWrap    = document.getElementById('srQteWrap');
-    const srQte        = document.getElementById('srQte');
-    const srLabel      = document.getElementById('srArticleLabel');
-    const srStockActuel= document.getElementById('srStockActuel');
-    const srPrixVente  = document.getElementById('srPrixVente');
-    const srDevise     = document.getElementById('srDevise');
-    const srCategorie  = document.getElementById('srCategorie');
-    const srSaveBtn    = document.getElementById('srSaveBtn');
-    const srCancelBtn  = document.getElementById('srCancelBtn');
-    const srNbSaisis   = document.getElementById('srNbSaisis');
-    const srNbRestants = document.getElementById('srNbRestants');
+    const srSearch      = document.getElementById('srSearch');
+    const srDropdown    = document.getElementById('srDropdown');
+    const srQteWrap     = document.getElementById('srQteWrap');
+    const srQte         = document.getElementById('srQte');
+    const srLabel       = document.getElementById('srArticleLabel');
+    const srStockActuel = document.getElementById('srStockActuel');
+    const srPrixVente   = document.getElementById('srPrixVente');
+    const srDevise      = document.getElementById('srDevise');
+    const srCategorie   = document.getElementById('srCategorie');
+    const srSaveBtn     = document.getElementById('srSaveBtn');
+    const srCancelBtn   = document.getElementById('srCancelBtn');
+    const srNbSaisis    = document.getElementById('srNbSaisis');
+    const srNbRestants  = document.getElementById('srNbRestants');
+    const srSessionWrap = document.getElementById('srSessionWrap');
+    const srSessionTbody= document.getElementById('srSessionTbody');
+    const srSessionCount= document.getElementById('srSessionCount');
+    const srClearSession= document.getElementById('srClearSession');
+
+    let sessionEntries = [];  // {nom, stock_theorique, stock_physique, ecart, prix_vente, categorie_nom, ligne_id}
 
     // Peupler le <select> catégorie une seule fois
     CATEGORIES.forEach(function(c) {
@@ -1003,6 +1023,62 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         const a = ARTICLES.find(x => x.ligne_id === ligneId);
         if (a) a.stock_physique = newStock;
     }
+
+    // ---- Tableau session ----
+    function addSessionEntry(data, qte) {
+        // Remplacer si même ligne_id
+        const idx = sessionEntries.findIndex(e => e.ligne_id === data.ligne_id);
+        const entry = {
+            ligne_id: data.ligne_id,
+            nom: data.article_nom,
+            stock_theorique: data.stock_theorique,
+            stock_physique: qte,
+            ecart: data.ecart,
+            prix_vente: data.prix_vente,
+            devise: data.devise || 'CDF',
+            categorie_nom: data.categorie_nom || '',
+        };
+        if (idx >= 0) sessionEntries[idx] = entry;
+        else sessionEntries.unshift(entry);
+        renderSessionTable();
+    }
+
+    function renderSessionTable() {
+        if (!sessionEntries.length) {
+            srSessionWrap.style.display = 'none'; return;
+        }
+        srSessionWrap.style.display = '';
+        srSessionCount.textContent = sessionEntries.length;
+        srSessionTbody.innerHTML = '';
+        sessionEntries.forEach(function(e, i) {
+            const ecartClass = e.ecart > 0 ? 'text-success' : e.ecart < 0 ? 'text-danger' : 'text-secondary';
+            const ecartTxt   = e.ecart > 0 ? '+' + e.ecart : e.ecart;
+            const tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td class="text-muted">' + (i + 1) + '</td>' +
+                '<td class="fw-semibold">' + e.nom + '</td>' +
+                '<td class="text-center text-muted">' + e.stock_theorique + '</td>' +
+                '<td class="text-center fw-bold">' + e.stock_physique + '</td>' +
+                '<td class="text-center fw-bold ' + ecartClass + '">' + ecartTxt + '</td>' +
+                '<td class="text-end">' + e.prix_vente.toLocaleString('fr-FR') + ' ' + e.devise + '</td>' +
+                '<td>' + (e.categorie_nom || '<span class="text-muted">—</span>') + '</td>' +
+                '<td><button class="btn btn-sm py-0 px-1 btn-outline-danger sr-del" data-id="' + e.ligne_id + '" title="Retirer"><i class="fas fa-times" style="font-size:.7rem;"></i></button></td>';
+            srSessionTbody.appendChild(tr);
+        });
+        // Boutons supprimer ligne
+        srSessionTbody.querySelectorAll('.sr-del').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const id = parseInt(this.dataset.id);
+                sessionEntries = sessionEntries.filter(e => e.ligne_id !== id);
+                renderSessionTable();
+            });
+        });
+    }
+
+    srClearSession.addEventListener('click', function() {
+        sessionEntries = [];
+        renderSessionTable();
+    });
 
     function openDropdown(items) {
         srDropdown.innerHTML = '';
@@ -1046,7 +1122,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         // Sélectionner la catégorie courante dans le dropdown
         srCategorie.value = art.categorie_id || '';
 
-        srQteWrap.style.display = '';
+        srQteWrap.style.display = 'flex';
         srQte.focus();
         srQte.select();
     }
@@ -1101,6 +1177,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         .then(function(data) {
             if (data.success) {
                 updateLocalStock(data.ligne_id, data.stock_physique);
+                addSessionEntry(data, qte);
                 const ecartTxt = data.ecart > 0 ? ' <span class="text-success">(+' + data.ecart + ')</span>'
                                : data.ecart < 0 ? ' <span class="text-danger">(' + data.ecart + ')</span>'
                                : ' <span class="text-secondary">(=)</span>';
