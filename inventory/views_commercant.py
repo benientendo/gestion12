@@ -6334,6 +6334,18 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     # Liste des employés uniques pour le filtre
     employes_list = inventaire.lignes.exclude(assigne_a='').exclude(assigne_a__isnull=True).values_list('assigne_a', flat=True).distinct().order_by('assigne_a')
     
+    # Données complètes pour l'autocomplete de la saisie rapide (toutes les lignes, sans filtre)
+    all_articles_json = json.dumps([
+        {
+            'ligne_id': l.id,
+            'nom': l.article.nom,
+            'code': l.article.code,
+            'stock_theorique': l.stock_theorique,
+            'stock_physique': l.stock_physique,
+        }
+        for l in inventaire.lignes.select_related('article').order_by('article__nom')
+    ], ensure_ascii=False)
+
     context = {
         'boutique': boutique,
         'inventaire': inventaire,
@@ -6347,8 +6359,53 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'employes_list': employes_list,
         'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
         'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
+        'all_articles_json': all_articles_json,
+        'ajax_url': f"/inventory/commercant/boutiques/{boutique.id}/inventaires/{inventaire.id}/saisir-ligne/",
     }
     return render(request, 'inventory/commercant/saisir_inventaire_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+@require_POST
+def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
+    """AJAX : sauvegarder une seule ligne d'inventaire (saisie rapide)."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique, statut='EN_COURS')
+
+    try:
+        data = json.loads(request.body)
+        ligne_id = int(data.get('ligne_id'))
+        stock_physique = int(data.get('stock_physique'))
+    except (ValueError, TypeError, KeyError):
+        return JsonResponse({'success': False, 'error': 'Données invalides'}, status=400)
+
+    try:
+        ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
+    except LigneInventaire.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Ligne introuvable'}, status=404)
+
+    ligne.stock_physique = stock_physique
+    ligne.saisi_par = request.user
+    ligne.date_modification = timezone.now()
+    ligne.save()
+    inventaire.calculer_statistiques()
+
+    ecart = stock_physique - (ligne.stock_theorique or 0)
+    nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
+    nb_total = inventaire.lignes.count()
+
+    return JsonResponse({
+        'success': True,
+        'ligne_id': ligne.id,
+        'article_nom': ligne.article.nom,
+        'stock_theorique': ligne.stock_theorique,
+        'stock_physique': stock_physique,
+        'ecart': ecart,
+        'nb_saisis': nb_saisis,
+        'nb_total': nb_total,
+    })
 
 
 @login_required

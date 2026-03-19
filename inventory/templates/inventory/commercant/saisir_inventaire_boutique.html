@@ -36,6 +36,45 @@ kbd {
     font-size: 0.95rem;
 }
 
+/* === PANNEAU SAISIE RAPIDE === */
+#saisieRapidePanel {
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    background: #fff;
+    border-bottom: 3px solid #667eea;
+    padding: 10px 16px;
+    box-shadow: 0 2px 8px rgba(102,126,234,.2);
+}
+#srDropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.15);
+    max-height: 280px;
+    overflow-y: auto;
+    z-index: 9999;
+    display: none;
+}
+.sr-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: .9rem;
+}
+.sr-item:hover, .sr-item.sr-active {
+    background: #f0f4ff;
+}
+.sr-item:last-child { border-bottom: none; }
+.sr-badge-ok  { background:#d4edda; color:#155724; border-radius:4px; padding:1px 6px; font-size:.75rem; }
+.sr-badge-nok { background:#fff3cd; color:#856404; border-radius:4px; padding:1px 6px; font-size:.75rem; }
 /* === IA INVENTAIRE === */
 .ia-box { position: relative; display: inline-block; }
 .btn-ia-inv { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; border: none; font-size: .8rem; padding: 5px 12px; border-radius: 8px; cursor: pointer; transition: all .2s; }
@@ -53,7 +92,53 @@ kbd {
 {% endblock %}
 
 {% block content %}
+<!-- PANNEAU SAISIE RAPIDE FIXE -->
+<div id="saisieRapidePanel">
+    <div class="row align-items-center g-2 flex-nowrap">
+        <div class="col-auto">
+            <span class="badge fs-6" style="background:linear-gradient(135deg,#667eea,#764ba2)">
+                <i class="fas fa-bolt me-1"></i>Saisie rapide
+            </span>
+        </div>
+        <div class="col" style="max-width:360px;position:relative;">
+            <input type="text" id="srSearch" class="form-control"
+                   placeholder="&#128269; Rechercher article (nom ou code)..."
+                   autocomplete="off" spellcheck="false">
+            <div id="srDropdown"></div>
+        </div>
+        <div class="col-auto" id="srQteWrap" style="display:none;">
+            <div class="input-group">
+                <span class="input-group-text bg-success text-white fw-bold" id="srArticleLabel"
+                      style="max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></span>
+                <input type="number" id="srQte" class="form-control text-center"
+                       min="0" placeholder="Qté" style="max-width:80px;font-weight:700;font-size:1.1rem;">
+                <button class="btn btn-success" id="srSaveBtn" type="button">
+                    <i class="fas fa-check"></i> OK
+                </button>
+                <button class="btn btn-outline-secondary" id="srCancelBtn" type="button" title="Annuler (Esc)">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <div class="col-auto d-none d-md-block">
+            <small class="text-muted">
+                <kbd>&uarr;&darr;</kbd> nav &nbsp;<kbd>Enter</kbd> valider &nbsp;<kbd>Esc</kbd> annuler
+            </small>
+        </div>
+        <div class="col-auto ms-auto text-end">
+            <span class="badge bg-success me-1" id="srNbSaisis">{{ nb_saisis }} saisis</span>
+            <span class="badge bg-warning text-dark" id="srNbRestants">{{ nb_non_saisis }} restants</span>
+        </div>
+    </div>
+</div>
+
 <div class="container-fluid py-4">
+    <div class="mb-3">
+        <a href="{% url 'inventory:liste_inventaires_boutique' boutique.id %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i>Retour aux inventaires
+        </a>
+    </div>
+    
     <div class="d-flex justify-content-between align-items-center mb-3">
         <div>
             <h2><i class="fas fa-edit text-primary"></i> Saisie inventaire</h2>
@@ -843,6 +928,204 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     } else {
         searchInput.focus();
     }
+})();
+
+// =============================================
+// SAISIE RAPIDE — PANNEAU FIXE
+// =============================================
+(function() {
+    const ARTICLES = {{ all_articles_json|safe }};
+    const AJAX_URL = '{{ ajax_url }}';
+    const CSRF = '{{ csrf_token }}';
+
+    const srSearch  = document.getElementById('srSearch');
+    const srDropdown = document.getElementById('srDropdown');
+    const srQteWrap = document.getElementById('srQteWrap');
+    const srQte     = document.getElementById('srQte');
+    const srLabel   = document.getElementById('srArticleLabel');
+    const srSaveBtn = document.getElementById('srSaveBtn');
+    const srCancelBtn = document.getElementById('srCancelBtn');
+    const srNbSaisis  = document.getElementById('srNbSaisis');
+    const srNbRestants = document.getElementById('srNbRestants');
+
+    let selectedArticle = null;
+    let activeIdx = -1;
+    let articlesList = [];
+
+    // Met à jour la liste locale après chaque sauvegarde
+    function updateLocalStock(ligneId, newStock) {
+        const a = ARTICLES.find(x => x.ligne_id === ligneId);
+        if (a) a.stock_physique = newStock;
+    }
+
+    function openDropdown(items) {
+        srDropdown.innerHTML = '';
+        activeIdx = -1;
+        articlesList = items;
+        if (!items.length) { srDropdown.style.display = 'none'; return; }
+        items.forEach(function(art, idx) {
+            const div = document.createElement('div');
+            div.className = 'sr-item';
+            const badge = art.stock_physique !== null
+                ? '<span class="sr-badge-ok">&#10003; ' + art.stock_physique + '</span>'
+                : '<span class="sr-badge-nok">&#8212; vide</span>';
+            div.innerHTML = '<span><strong>' + art.nom + '</strong> <small class="text-muted">' + art.code + '</small></span>' + badge;
+            div.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                selectArticle(art);
+            });
+            srDropdown.appendChild(div);
+        });
+        srDropdown.style.display = 'block';
+    }
+
+    function closeDropdown() {
+        srDropdown.style.display = 'none';
+        articlesList = [];
+        activeIdx = -1;
+    }
+
+    function selectArticle(art) {
+        selectedArticle = art;
+        srSearch.value = art.nom;
+        closeDropdown();
+        srLabel.textContent = art.nom;
+        srQte.value = art.stock_physique !== null ? art.stock_physique : '';
+        srQteWrap.style.display = '';
+        srQte.focus();
+        srQte.select();
+    }
+
+    function resetPanel() {
+        selectedArticle = null;
+        srSearch.value = '';
+        srQteWrap.style.display = 'none';
+        srQte.value = '';
+        srLabel.textContent = '';
+        closeDropdown();
+        srSearch.focus();
+    }
+
+    function showToast(msg, type) {
+        const t = document.createElement('div');
+        t.className = 'alert alert-' + type + ' alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-2';
+        t.style.cssText = 'z-index:9999;min-width:280px;text-align:center;';
+        t.innerHTML = msg + '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+        document.body.appendChild(t);
+        setTimeout(function() { t.remove(); }, 3000);
+    }
+
+    function saveArticle() {
+        if (!selectedArticle) return;
+        const qte = parseInt(srQte.value);
+        if (isNaN(qte) || qte < 0) {
+            srQte.classList.add('is-invalid');
+            srQte.focus();
+            return;
+        }
+        srQte.classList.remove('is-invalid');
+        srSaveBtn.disabled = true;
+        srSaveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+        fetch(AJAX_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': CSRF
+            },
+            body: JSON.stringify({ ligne_id: selectedArticle.ligne_id, stock_physique: qte })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                updateLocalStock(data.ligne_id, data.stock_physique);
+                const ecartTxt = data.ecart > 0 ? ' <span class="text-success">(+' + data.ecart + ')</span>'
+                               : data.ecart < 0 ? ' <span class="text-danger">(' + data.ecart + ')</span>'
+                               : ' <span class="text-secondary">(=)</span>';
+                showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + qte + ' pcs' + ecartTxt, 'success');
+
+                // Mettre à jour la ligne dans le tableau si visible
+                const tableInput = document.querySelector('input[name="stock_physique_' + data.ligne_id + '"]');
+                if (tableInput) {
+                    tableInput.value = qte;
+                    tableInput.dispatchEvent(new Event('input'));
+                }
+
+                // Mettre à jour les compteurs
+                srNbSaisis.textContent  = data.nb_saisis + ' saisis';
+                srNbRestants.textContent = (data.nb_total - data.nb_saisis) + ' restants';
+                // Mettre à jour les badges de l'en-tête
+                const hdrSaisis   = document.querySelector('.badge.bg-success.me-2.fs-6');
+                const hdrRestants = document.querySelector('.badge.bg-warning.text-dark.fs-6');
+                if (hdrSaisis)   hdrSaisis.textContent   = '\u2713 ' + data.nb_saisis + ' saisis';
+                if (hdrRestants) hdrRestants.textContent  = '\u23f3 ' + (data.nb_total - data.nb_saisis) + ' restants';
+
+                playBeep();
+            } else {
+                showToast('<i class="fas fa-times-circle me-2"></i>' + (data.error || 'Erreur'), 'danger');
+            }
+        })
+        .catch(function() {
+            showToast('<i class="fas fa-times-circle me-2"></i>Erreur réseau', 'danger');
+        })
+        .finally(function() {
+            srSaveBtn.disabled = false;
+            srSaveBtn.innerHTML = '<i class="fas fa-check"></i> OK';
+            resetPanel();
+        });
+    }
+
+    // === Événements ===
+    srSearch.addEventListener('input', function() {
+        const q = this.value.trim().toLowerCase();
+        if (!q) { closeDropdown(); return; }
+        const results = ARTICLES.filter(function(a) {
+            return a.nom.toLowerCase().includes(q) || a.code.toLowerCase().includes(q);
+        }).slice(0, 12);
+        openDropdown(results);
+    });
+
+    srSearch.addEventListener('keydown', function(e) {
+        if (srDropdown.style.display === 'none') return;
+        const items = srDropdown.querySelectorAll('.sr-item');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIdx = Math.min(activeIdx + 1, items.length - 1);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIdx = Math.max(activeIdx - 1, 0);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (activeIdx >= 0 && articlesList[activeIdx]) {
+                selectArticle(articlesList[activeIdx]);
+            } else if (articlesList.length === 1) {
+                selectArticle(articlesList[0]);
+            }
+            return;
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            resetPanel(); return;
+        }
+        items.forEach(function(it, i) {
+            it.classList.toggle('sr-active', i === activeIdx);
+        });
+        if (items[activeIdx]) items[activeIdx].scrollIntoView({ block: 'nearest' });
+    });
+
+    srSearch.addEventListener('blur', function() {
+        setTimeout(closeDropdown, 150);
+    });
+
+    srQte.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); saveArticle(); }
+        if (e.key === 'Escape') { e.preventDefault(); resetPanel(); }
+    });
+
+    srSaveBtn.addEventListener('click', saveArticle);
+    srCancelBtn.addEventListener('click', resetPanel);
+
+    // Focus initial sur la recherche rapide
+    srSearch.focus();
 })();
 </script>
 {% endblock %}

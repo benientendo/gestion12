@@ -121,6 +121,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/inventaires/nouveau/', views_commercant.nouvel_inventaire_boutique, name='nouvel_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/', views_commercant.detail_inventaire_boutique, name='detail_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/saisir/', views_commercant.saisir_inventaire_boutique, name='saisir_inventaire_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/saisir-ligne/', views_commercant.saisir_ligne_inventaire_ajax, name='saisir_ligne_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/auto-assigner/', views_auto_assign.auto_assigner_inventaire, name='auto_assigner_inventaire'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/reinitialiser-mes-articles/', views_reset_inventaire.reinitialiser_mes_articles, name='reinitialiser_mes_articles'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/terminer/', views_commercant.terminer_inventaire_boutique, name='terminer_inventaire_boutique'),
