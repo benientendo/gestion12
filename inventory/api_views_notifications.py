@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db.models import Q
@@ -24,6 +24,8 @@ class NotificationStockViewSet(viewsets.ReadOnlyModelViewSet):
     - POST /api/v2/notifications/{id}/mark_as_read/ : Marquer comme lue
     - POST /api/v2/notifications/mark_all_as_read/ : Marquer toutes comme lues
     """
+    permission_classes = [AllowAny]
+    authentication_classes = []
     
     serializer_class = NotificationStockSerializer
     

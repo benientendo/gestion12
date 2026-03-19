@@ -193,7 +193,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # REST Framework configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'inventory.authentication.OptionalJWTAuthentication',
     ),
 }
 
