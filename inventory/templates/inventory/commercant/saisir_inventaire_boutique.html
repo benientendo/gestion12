@@ -189,159 +189,92 @@ kbd {
     </div>
 </div>
 
-<div class="container-fluid py-4">
-    <div class="mb-3">
-        <a href="{% url 'inventory:liste_inventaires_boutique' boutique.id %}" class="btn btn-outline-secondary btn-sm">
-            <i class="fas fa-arrow-left me-1"></i>Retour aux inventaires
-        </a>
-    </div>
-    
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h2><i class="fas fa-edit text-primary"></i> Saisie inventaire</h2>
-            <p class="mb-0 text-muted">{{ inventaire.reference }} - {{ boutique.nom }}</p>
+<div class="container-fluid py-3">
+
+    <!-- EN-TÊTE -->
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-3">
+            <a href="{% url 'inventory:liste_inventaires_boutique' boutique.id %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <div>
+                <h5 class="mb-0 fw-bold"><i class="fas fa-edit text-primary me-2"></i>Saisie inventaire</h5>
+                <small class="text-muted">{{ inventaire.reference }} — {{ boutique.nom }}</small>
+            </div>
         </div>
-        <div>
-            <span class="badge bg-success me-2 fs-6">✓ {{ nb_saisis }} saisis</span>
-            <span class="badge bg-warning text-dark fs-6">⏳ {{ nb_non_saisis }} restants</span>
+        <div class="d-flex align-items-center gap-3">
+            <div style="min-width:200px;">
+                <div class="d-flex justify-content-between mb-1">
+                    <small class="text-muted">Progression</small>
+                    <small class="fw-bold text-primary">{{ nb_saisis }} / {{ inventaire.lignes.count }}</small>
+                </div>
+                <div class="progress" style="height:8px;border-radius:4px;">
+                    <div class="progress-bar bg-success" style="width:{% widthratio nb_saisis inventaire.lignes.count|default:1 100 %}%;border-radius:4px;"></div>
+                </div>
+            </div>
+            <a href="{% url 'inventory:detail_inventaire_boutique' boutique.id inventaire.id %}" class="btn btn-sm btn-outline-info">
+                <i class="fas fa-chart-bar me-1"></i>Détail
+            </a>
         </div>
     </div>
 
-    <!-- Statistiques professionnelles -->
-    <div class="row mb-3">
-        <div class="col-md-3">
-            <div class="card border-primary">
-                <div class="card-body p-2 text-center">
-                    <small class="text-muted d-block">Progression</small>
-                    <h5 class="mb-0 text-primary">
-                        {% widthratio nb_saisis 1 inventaire.lignes.count|default:1 %}%
-                    </h5>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card border-info">
-                <div class="card-body p-2 text-center">
-                    <small class="text-muted d-block">Articles totaux</small>
-                    <h5 class="mb-0 text-info">{{ inventaire.lignes.count }}</h5>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card border-success">
-                <div class="card-body p-2">
-                    <small class="text-muted d-block">⚡ Raccourcis clavier</small>
-                    <small class="text-success fw-bold">
-                        <kbd>Enter</kbd> = Suivant | 
-                        <kbd>Shift+Enter</kbd> = Commentaire
-                    </small>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card border-warning">
-                <div class="card-body p-2">
-                    <small class="text-muted d-block">👥 Lien collaborateurs</small>
-                    <div class="input-group input-group-sm">
-                        <input type="text" 
-                               class="form-control" 
-                               id="pinLoginUrl" 
-                               value="http://{{ request.get_host }}/login/pin/" 
-                               readonly 
-                               style="font-size: 0.75rem;">
-                        <button class="btn btn-warning" 
-                                type="button" 
-                                onclick="copyPinUrl()" 
-                                title="Copier le lien">
-                            <i class="fas fa-copy"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- FILTRES + ACTIONS -->
+    <div class="card mb-3 shadow-sm">
+        <div class="card-body py-2 px-3">
 
-    <div class="card mb-4">
-        <div class="card-body py-2">
-            <form method="get" class="row g-2 align-items-center">
-                <div class="col-auto">
-                    <div class="btn-group" role="group">
-                        <a href="?filtre=non_saisis" class="btn btn-sm {% if filtre == 'non_saisis' %}btn-primary{% else %}btn-outline-primary{% endif %}">
-                            Non saisis ({{ nb_non_saisis }})
-                        </a>
-                        <a href="?filtre=saisis" class="btn btn-sm {% if filtre == 'saisis' %}btn-primary{% else %}btn-outline-primary{% endif %}">
-                            Saisis ({{ nb_saisis }})
-                        </a>
-                        <a href="?filtre=ecarts" class="btn btn-sm {% if filtre == 'ecarts' %}btn-danger{% else %}btn-outline-danger{% endif %}">
-                            Écarts
-                        </a>
-                        <a href="?filtre=tous" class="btn btn-sm {% if filtre == 'tous' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
-                            Tous
-                        </a>
-                    </div>
+            <!-- Ligne 1 : Filtres état + recherche -->
+            <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <div class="btn-group btn-group-sm">
+                    <a href="?filtre=non_saisis" class="btn {% if filtre == 'non_saisis' %}btn-primary{% else %}btn-outline-primary{% endif %}">Non saisis ({{ nb_non_saisis }})</a>
+                    <a href="?filtre=saisis"     class="btn {% if filtre == 'saisis'     %}btn-success{% else %}btn-outline-success{% endif %}">Saisis ({{ nb_saisis }})</a>
+                    <a href="?filtre=ecarts"     class="btn {% if filtre == 'ecarts'     %}btn-danger{% else %}btn-outline-danger{% endif %}">Écarts</a>
+                    <a href="?filtre=tous"       class="btn {% if filtre == 'tous'       %}btn-secondary{% else %}btn-outline-secondary{% endif %}">Tous</a>
                 </div>
-                <div class="col-auto">
-                    <select name="categorie" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="">Toutes catégories</option>
-                        {% for cat in categories %}
-                        <option value="{{ cat.id }}" {% if categorie_id == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.nom }}</option>
-                        {% endfor %}
-                    </select>
+                <div class="vr"></div>
+                <select name="categorie" class="form-select form-select-sm" style="max-width:160px;" onchange="this.form.submit()">
+                    <option value="">Toutes catégories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.id }}" {% if categorie_id == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.nom }}</option>
+                    {% endfor %}
+                </select>
+                <select name="assigne_a" class="form-select form-select-sm" style="max-width:150px;" onchange="this.form.submit()">
+                    <option value="">Tous employés</option>
+                    {% for employe in employes_list %}
+                    <option value="{{ employe }}" {% if assigne_a_filtre == employe %}selected{% endif %}>{{ employe }}</option>
+                    {% endfor %}
+                    <option value="NON_ASSIGNE" {% if assigne_a_filtre == 'NON_ASSIGNE' %}selected{% endif %}>Non assignés</option>
+                </select>
+                <div class="input-group input-group-sm" style="max-width:220px;">
+                    <input type="text" name="q" id="searchInventaire" class="form-control" placeholder="🔍 Rechercher un article..." value="{{ recherche }}" autocomplete="off">
+                    <button type="submit" class="btn btn-outline-primary"><i class="fas fa-search"></i></button>
                 </div>
-                <div class="col-auto">
-                    <select name="assigne_a" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="">👥 Tous les employés</option>
-                        {% for employe in employes_list %}
-                        <option value="{{ employe }}" {% if assigne_a_filtre == employe %}selected{% endif %}>{{ employe }}</option>
-                        {% endfor %}
-                        <option value="NON_ASSIGNE" {% if assigne_a_filtre == 'NON_ASSIGNE' %}selected{% endif %}>⚠️ Non assignés</option>
-                    </select>
-                </div>
-                <div class="col-auto">
-                    <input type="text" name="q" id="searchInventaire" class="form-control form-control-sm" placeholder="Rechercher un article..." value="{{ recherche }}" autocomplete="off">
-                </div>
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-sm btn-outline-primary"><i class="fas fa-search"></i></button>
-                </div>
-                <div class="col-auto" id="searchCount" style="display:none;">
-                    <span class="badge bg-info" id="searchCountBadge">0 trouvé(s)</span>
-                </div>
-                <div class="col-auto">
-                    <button type="button" id="cartonModeBtn" class="btn btn-sm btn-secondary" onclick="toggleCartonMode()" title="Saisir en cartons + pièces">
-                        <i class="fas fa-box me-1"></i>Mode Carton
-                    </button>
-                </div>
-                <div class="col-auto">
-                    <button type="button" id="scannerModeBtn" class="btn btn-sm btn-warning" onclick="toggleScannerMode()" title="Activer le mode scanner">
-                        <i class="fas fa-barcode me-1"></i>Scanner
-                    </button>
-                </div>
-                <div class="col-auto">
-                    <form method="post" action="{% url 'inventory:auto_assigner_inventaire' boutique.id inventaire.id %}" style="display:inline;" onsubmit="return confirm('Assigner automatiquement les articles non assignés aux collaborateurs actifs ?');">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-info" title="Répartir automatiquement les articles entre les collaborateurs">
-                            <i class="fas fa-magic me-1"></i>Auto-assigner
-                        </button>
-                    </form>
-                </div>
-                <div class="col-auto">
-                    <form method="post" action="{% url 'inventory:reinitialiser_mes_articles' boutique.id inventaire.id %}" style="display:inline;" onsubmit="return confirm('⚠️ ATTENTION : Voulez-vous vraiment effacer TOUS vos stocks saisis ?\n\nCette action est irréversible et réinitialisera uniquement VOS articles comptés.');">
-                        {% csrf_token %}
-                        <button type="submit" class="btn btn-sm btn-warning" title="Effacer tous mes stocks saisis pour recommencer">
-                            <i class="fas fa-undo me-1"></i>Réinitialiser mes articles
-                        </button>
-                    </form>
-                </div>
-                <div class="col-auto ia-box">
-                    <button type="button" class="btn-ia-inv" onclick="toggleIaMenu()">
-                        <i class="fas fa-magic me-1"></i>IA
-                    </button>
+                <span id="searchCount" style="display:none;"><span class="badge bg-info" id="searchCountBadge">0</span></span>
+            </form>
+
+            <!-- Ligne 2 : Actions -->
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <button type="button" id="cartonModeBtn" class="btn btn-sm btn-outline-secondary" onclick="toggleCartonMode()">
+                    <i class="fas fa-box me-1"></i>Mode Carton
+                </button>
+                <button type="button" id="scannerModeBtn" class="btn btn-sm btn-outline-warning" onclick="toggleScannerMode()">
+                    <i class="fas fa-barcode me-1"></i>Scanner
+                </button>
+                <form method="post" action="{% url 'inventory:auto_assigner_inventaire' boutique.id inventaire.id %}" style="display:inline;" onsubmit="return confirm('Assigner automatiquement les articles non assignés ?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-info"><i class="fas fa-magic me-1"></i>Auto-assigner</button>
+                </form>
+                <form method="post" action="{% url 'inventory:reinitialiser_mes_articles' boutique.id inventaire.id %}" style="display:inline;" onsubmit="return confirm('⚠️ Effacer TOUS vos stocks saisis ?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-warning"><i class="fas fa-undo me-1"></i>Réinitialiser</button>
+                </form>
+                <div class="ia-box">
+                    <button type="button" class="btn-ia-inv" onclick="toggleIaMenu()"><i class="fas fa-robot me-1"></i>IA</button>
                     <div class="ia-menu" id="iaMenu">
                         <div class="ia-menu-header"><i class="fas fa-robot me-1"></i> Assistant inventaire</div>
                         <div class="ia-menu-item" onclick="iaAction('copier_stock')">
                             <span class="ia-icon"><i class="fas fa-copy"></i></span>
                             <span class="ia-title">Copier stock système</span>
-                            <div class="ia-desc">Remplir tous les champs vides avec le stock théorique (0 écart)</div>
+                            <div class="ia-desc">Remplir tous les champs vides avec le stock théorique</div>
                         </div>
                         <div class="ia-menu-item" onclick="iaAction('vider_tout')">
                             <span class="ia-icon"><i class="fas fa-eraser"></i></span>
@@ -360,7 +293,14 @@ kbd {
                         </div>
                     </div>
                 </div>
-            </form>
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <small class="text-muted">Lien collaborateurs :</small>
+                    <div class="input-group input-group-sm" style="max-width:200px;">
+                        <input type="text" class="form-control" id="pinLoginUrl" value="http://{{ request.get_host }}/login/pin/" readonly style="font-size:.75rem;">
+                        <button class="btn btn-outline-secondary" type="button" onclick="copyPinUrl()"><i class="fas fa-copy"></i></button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -477,20 +417,13 @@ kbd {
                 </div>
             </div>
             {% if lignes %}
-            <div class="card-footer">
-                <div class="d-flex justify-content-between">
-                    <a href="{% url 'inventory:detail_inventaire_boutique' boutique.id inventaire.id %}" class="btn btn-secondary">
-                        <i class="fas fa-arrow-left"></i> Retour
-                    </a>
-                    <div>
-                        <button type="submit" name="continuer" class="btn btn-outline-primary me-2">
-                            <i class="fas fa-save"></i> Enregistrer et continuer
-                        </button>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-check"></i> Enregistrer
-                        </button>
-                    </div>
-                </div>
+            <div class="card-footer d-flex justify-content-end gap-2">
+                <button type="submit" name="continuer" class="btn btn-outline-primary btn-sm">
+                    <i class="fas fa-save me-1"></i>Enregistrer et continuer
+                </button>
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="fas fa-check me-1"></i>Enregistrer
+                </button>
             </div>
             {% endif %}
         </div>
