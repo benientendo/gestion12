@@ -265,6 +265,32 @@ def notify_stock_alert(boutique_id, article_id, article_nom, stock_actuel, seuil
         logger.error(f"❌ Erreur envoi WebSocket stock_alert: {e}")
 
 
+def notify_dashboard_stats(boutique_id, stats):
+    """
+    Pousser les statistiques du dashboard en temps réel vers le navigateur du gérant
+    
+    Args:
+        boutique_id: ID de la boutique
+        stats: dict avec ca_jour, ca_jour_usd, ca_mois, ca_mois_usd, nb_ventes_jour, nb_ventes_mois
+    """
+    try:
+        channel_layer = get_channel_layer()
+        notification_group_name = f'notifications_{boutique_id}'
+
+        async_to_sync(channel_layer.group_send)(
+            notification_group_name,
+            {
+                'type': 'dashboard_stats_updated',
+                'stats': stats,
+            }
+        )
+
+        logger.info(f"🔔 WebSocket: Stats dashboard boutique {boutique_id} → ca_jour={stats.get('ca_jour')} CDF")
+
+    except Exception as e:
+        logger.error(f"❌ Erreur envoi WebSocket dashboard_stats_updated: {e}")
+
+
 def notify_vente_rejected(boutique_id, vente_uid, raison):
     """
     Notifier qu'une vente a été rejetée

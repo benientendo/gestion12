@@ -21,7 +21,7 @@ import logging
 
 from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock
 from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
-from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created
+from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created, notify_dashboard_stats
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,36 @@ def to_local_iso(dt):
     if dt is None:
         return None
     return timezone.localtime(dt).isoformat()
+
+
+def _compute_dashboard_stats(boutique):
+    """Calcule les stats recette du jour/mois pour le push WebSocket dashboard."""
+    from .models import RapportCaisse
+    today = timezone.now().date()
+    premier_jour_mois = today.replace(day=1)
+
+    ventes_jour = Vente.objects.filter(boutique=boutique, date_vente__date=today, paye=True, est_annulee=False)
+    ca_jour_brut = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
+    ca_jour_usd = ventes_jour.filter(devise='USD').aggregate(total=Sum('montant_total_usd'))['total'] or 0
+    depenses_jour = RapportCaisse.objects.filter(
+        boutique=boutique, date_rapport__date=today, depense_appliquee=True
+    ).aggregate(total=Sum('depense'))['total'] or 0
+
+    ventes_mois = Vente.objects.filter(boutique=boutique, date_vente__date__gte=premier_jour_mois, paye=True, est_annulee=False)
+    ca_mois_brut = ventes_mois.aggregate(total=Sum('montant_total'))['total'] or 0
+    ca_mois_usd = ventes_mois.filter(devise='USD').aggregate(total=Sum('montant_total_usd'))['total'] or 0
+    depenses_mois = RapportCaisse.objects.filter(
+        boutique=boutique, date_rapport__date__gte=premier_jour_mois, date_rapport__date__lte=today, depense_appliquee=True
+    ).aggregate(total=Sum('depense'))['total'] or 0
+
+    return {
+        'ca_jour': float(ca_jour_brut - depenses_jour),
+        'ca_jour_usd': float(ca_jour_usd),
+        'ca_mois': float(ca_mois_brut - depenses_mois),
+        'ca_mois_usd': float(ca_mois_usd),
+        'nb_ventes_jour': ventes_jour.count(),
+        'nb_ventes_mois': ventes_mois.count(),
+    }
 
 
 def recalculer_stock_depuis_journal(article):
@@ -1370,6 +1400,12 @@ def create_vente_simple(request):
                     'stock_actuel': art.quantite_stock
                 })
 
+        # Push stats temps réel vers le dashboard du gérant
+        try:
+            notify_dashboard_stats(boutique.id, _compute_dashboard_stats(boutique))
+        except Exception as ws_err:
+            logger.warning(f"⚠️ Push dashboard stats ignoré: {ws_err}")
+
         return Response({
             'success': True,
             'vente': {
@@ -2327,7 +2363,14 @@ def sync_ventes_simple(request):
                     'stock_actuel': art.quantite_stock,
                     'prix_actuel': str(art.prix_vente)
                 })
-        
+
+        # Push stats temps réel vers le dashboard du gérant
+        if ventes_creees:
+            try:
+                notify_dashboard_stats(boutique.id, _compute_dashboard_stats(boutique))
+            except Exception as ws_err:
+                logger.warning(f"⚠️ Push dashboard stats (batch) ignoré: {ws_err}")
+
         return Response({
             'success': True,
             'message': f'{len(ventes_creees)} vente(s) synchronisée(s) avec succès',

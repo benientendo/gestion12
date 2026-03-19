@@ -215,7 +215,7 @@
                         <p class="mb-0">Catégories</p>
                     </div>
                     <div class="col-md-3">
-                        <h2><i class="fas fa-shopping-cart me-2"></i>{{ ventes_recentes.count }}</h2>
+                        <h2><i class="fas fa-shopping-cart me-2"></i><span id="stat-nb-ventes-jour">{{ ventes_recentes.count }}</span></h2>
                         <p class="mb-0">Ventes Récentes</p>
                     </div>
                     <div class="col-md-3">
@@ -233,10 +233,8 @@
                         <a href="{% url 'inventory:rapport_ca_quotidien' boutique.id %}" class="text-decoration-none js-boutique-metric-link">
                             <div class="card bg-success text-white h-100 card-hover-ca">
                                 <div class="card-body">
-                                    <h3><i class="fas fa-calendar-day me-2"></i><span class="sensitive-amount">{{ ca_jour|format_cdf:0 }} CDF</span></h3>
-                                    {% if ca_aujourd_hui_usd %}
-                                    <h4 class="mb-1"><i class="fas fa-dollar-sign me-1"></i><span class="sensitive-amount">{{ ca_aujourd_hui_usd|floatformat:2 }} USD</span></h4>
-                                    {% endif %}
+                                    <h3><i class="fas fa-calendar-day me-2"></i><span class="sensitive-amount" id="stat-ca-jour-cdf">{{ ca_jour|format_cdf:0 }} CDF</span></h3>
+                                    <h4 class="mb-1" id="stat-ca-jour-usd-wrap" {% if not ca_aujourd_hui_usd %}style="display:none"{% endif %}><i class="fas fa-dollar-sign me-1"></i><span class="sensitive-amount" id="stat-ca-jour-usd">{{ ca_aujourd_hui_usd|floatformat:2 }} USD</span></h4>
                                     <p class="mb-0">Recette du jour (net) <i class="fas fa-external-link-alt fa-xs"></i></p>
                                     {% if depenses_appliquees_ca_jour %}
                                     <small class="d-block mt-1">
@@ -252,10 +250,8 @@
                         <a href="{% url 'inventory:rapport_ca_mensuel' boutique.id %}" class="text-decoration-none js-boutique-metric-link">
                             <div class="card bg-warning text-white h-100 card-hover-ca">
                                 <div class="card-body">
-                                    <h3><i class="fas fa-coins me-2"></i><span class="sensitive-amount">{{ ca_mois|format_cdf:0 }} CDF</span></h3>
-                                    {% if ca_mois_usd %}
-                                    <h4 class="mb-1"><i class="fas fa-dollar-sign me-1"></i><span class="sensitive-amount">{{ ca_mois_usd|floatformat:2 }} USD</span></h4>
-                                    {% endif %}
+                                    <h3><i class="fas fa-coins me-2"></i><span class="sensitive-amount" id="stat-ca-mois-cdf">{{ ca_mois|format_cdf:0 }} CDF</span></h3>
+                                    <h4 class="mb-1" id="stat-ca-mois-usd-wrap" {% if not ca_mois_usd %}style="display:none"{% endif %}><i class="fas fa-dollar-sign me-1"></i><span class="sensitive-amount" id="stat-ca-mois-usd">{{ ca_mois_usd|floatformat:2 }} USD</span></h4>
                                     <p class="mb-0">Recette du mois (net) de {{ "now"|date:"F Y" }} <i class="fas fa-external-link-alt fa-xs"></i></p>
                                     {% if depenses_appliquees_ca_mois %}
                                     <small class="d-block mt-1">
@@ -621,11 +617,92 @@
             });
         });
         
-        // Actualisation automatique toutes les 60 secondes
-        setInterval(function() {
-            // Ici on pourrait ajouter un appel AJAX pour actualiser les données
-            console.log('Actualisation des données du dashboard...');
-        }, 60000);
+        // WebSocket temps réel — stats recette du jour/mois
+        (function() {
+            const boutiqueId = {{ boutique.id }};
+            const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            const wsUrl = `${wsScheme}://${window.location.host}/ws/notifications/${boutiqueId}/`;
+            let ws = null;
+            let reconnectTimer = null;
+
+            function formatCDF(val) {
+                return Math.round(val).toLocaleString('fr-FR') + ' CDF';
+            }
+            function formatUSD(val) {
+                return parseFloat(val).toFixed(2) + ' USD';
+            }
+
+            function applyStats(stats) {
+                const cj = document.getElementById('stat-ca-jour-cdf');
+                const cjUsd = document.getElementById('stat-ca-jour-usd');
+                const cjUsdWrap = document.getElementById('stat-ca-jour-usd-wrap');
+                const cm = document.getElementById('stat-ca-mois-cdf');
+                const cmUsd = document.getElementById('stat-ca-mois-usd');
+                const cmUsdWrap = document.getElementById('stat-ca-mois-usd-wrap');
+                const nv = document.getElementById('stat-nb-ventes-jour');
+
+                if (cj) cj.textContent = formatCDF(stats.ca_jour);
+                if (cm) cm.textContent = formatCDF(stats.ca_mois);
+                if (nv) nv.textContent = stats.nb_ventes_jour;
+
+                if (cjUsd && cjUsdWrap) {
+                    if (stats.ca_jour_usd > 0) {
+                        cjUsd.textContent = formatUSD(stats.ca_jour_usd);
+                        cjUsdWrap.style.display = '';
+                    } else {
+                        cjUsdWrap.style.display = 'none';
+                    }
+                }
+                if (cmUsd && cmUsdWrap) {
+                    if (stats.ca_mois_usd > 0) {
+                        cmUsd.textContent = formatUSD(stats.ca_mois_usd);
+                        cmUsdWrap.style.display = '';
+                    } else {
+                        cmUsdWrap.style.display = 'none';
+                    }
+                }
+
+                // Flash visuel bref sur les cartes mises à jour
+                ['stat-ca-jour-cdf', 'stat-ca-mois-cdf'].forEach(function(id) {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.style.transition = 'opacity 0.2s';
+                        el.style.opacity = '0.3';
+                        setTimeout(function() { el.style.opacity = '1'; }, 250);
+                    }
+                });
+            }
+
+            function connect() {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = function() {
+                    console.log('Dashboard WS connecté');
+                    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+                };
+
+                ws.onmessage = function(e) {
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (data.type === 'dashboard_stats_updated' && data.stats) {
+                            applyStats(data.stats);
+                        }
+                    } catch(err) { console.warn('WS parse error', err); }
+                };
+
+                ws.onclose = function() {
+                    console.log('Dashboard WS déconnecté — reconnexion dans 5s');
+                    reconnectTimer = setTimeout(connect, 5000);
+                };
+
+                ws.onerror = function(err) {
+                    console.warn('Dashboard WS erreur', err);
+                    ws.close();
+                };
+            }
+
+            connect();
+        })();
     });
 </script>
 {% endblock %}

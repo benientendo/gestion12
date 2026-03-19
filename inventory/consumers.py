@@ -254,6 +254,14 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             'raison': event['raison'],
             'timestamp': self.get_timestamp()
         }))
+
+    async def dashboard_stats_updated(self, event):
+        """Mise à jour des statistiques du dashboard gérant en temps réel"""
+        await self.send(text_data=json.dumps({
+            'type': 'dashboard_stats_updated',
+            'stats': event['stats'],
+            'timestamp': self.get_timestamp()
+        }))
     
     def get_timestamp(self):
         from django.utils import timezone
