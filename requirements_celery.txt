@@ -1,0 +1,11 @@
+# Celery - Distributed task queue
+celery==5.3.6
+
+# Redis backend (déjà installé avec WebSocket)
+redis==5.0.1
+
+# Flower - Monitoring dashboard
+flower==2.0.1
+
+# Message serialization
+kombu==5.3.5

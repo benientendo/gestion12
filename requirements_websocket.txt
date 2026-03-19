@@ -1,0 +1,10 @@
+# Django Channels - WebSocket support
+channels==4.0.0
+channels-redis==4.1.0
+daphne==4.0.0
+
+# Redis client
+redis==5.0.1
+
+# Async support
+asgiref==3.7.2

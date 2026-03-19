@@ -6250,6 +6250,12 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                 except (LigneInventaire.DoesNotExist, ValueError, InvalidOperation):
                     pass
         
+        # Nom d'affichage du collaborateur connecté
+        if hasattr(request.user, 'profil_collaborateur'):
+            user_nom_batch = request.user.profil_collaborateur.nom_complet
+        else:
+            user_nom_batch = request.user.get_full_name() or request.user.username
+
         # Traiter les stocks et autres données
         for key, value in request.POST.items():
             if key.startswith('stock_physique_'):
@@ -6261,27 +6267,15 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                         commentaire_key = f'commentaire_{ligne_id}'
                         if commentaire_key in request.POST:
                             ligne.commentaire = request.POST[commentaire_key]
-                        # Sauvegarder l'assignation
-                        assigne_key = f'assigne_{ligne_id}'
-                        if assigne_key in request.POST:
-                            ligne.assigne_a = request.POST[assigne_key].strip()
-                        
+
                         # Traçabilité : enregistrer qui a saisi et quand
                         ligne.saisi_par = request.user
+                        ligne.assigne_a = user_nom_batch
                         ligne.date_modification = timezone.now()
-                        
+
                         ligne.save()
                         lignes_mises_a_jour += 1
                 except (LigneInventaire.DoesNotExist, ValueError):
-                    pass
-            # Sauvegarder les assignations même sans stock physique
-            elif key.startswith('assigne_'):
-                ligne_id = key.replace('assigne_', '')
-                try:
-                    ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
-                    ligne.assigne_a = value.strip()
-                    ligne.save()
-                except LigneInventaire.DoesNotExist:
                     pass
         
         msg_parts = []
@@ -6322,17 +6316,29 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
             Q(article__code__icontains=recherche)
         )
     
-    # Filtre par employé assigné
+    # Filtre par collaborateur (assigne_a auto-rempli au moment de la saisie)
     if assigne_a_filtre:
-        if assigne_a_filtre == 'NON_ASSIGNE':
+        if assigne_a_filtre == 'NON_SAISI':
             lignes = lignes.filter(Q(assigne_a='') | Q(assigne_a__isnull=True))
         else:
             lignes = lignes.filter(assigne_a=assigne_a_filtre)
-    
+
     categories = Categorie.objects.filter(boutique=boutique)
-    
-    # Liste des employés uniques pour le filtre
-    employes_list = inventaire.lignes.exclude(assigne_a='').exclude(assigne_a__isnull=True).values_list('assigne_a', flat=True).distinct().order_by('assigne_a')
+
+    # Liste des collaborateurs uniques ayant effectué des saisies
+    employes_list = (
+        inventaire.lignes
+        .filter(stock_physique__isnull=False)
+        .exclude(assigne_a='').exclude(assigne_a__isnull=True)
+        .values_list('assigne_a', flat=True)
+        .distinct().order_by('assigne_a')
+    )
+
+    # Nom d'affichage de l'utilisateur connecté
+    if hasattr(request.user, 'profil_collaborateur'):
+        current_user_nom = request.user.profil_collaborateur.nom_complet
+    else:
+        current_user_nom = request.user.get_full_name() or request.user.username
     
     # Données complètes pour l'autocomplete de la saisie rapide (toutes les lignes, sans filtre)
     all_articles_json = json.dumps([
@@ -6368,6 +6374,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'recherche': recherche,
         'assigne_a_filtre': assigne_a_filtre,
         'employes_list': employes_list,
+        'current_user_nom': current_user_nom,
         'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
         'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
         'all_articles_json': all_articles_json,
@@ -6400,8 +6407,15 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
     except LigneInventaire.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Ligne introuvable'}, status=404)
 
+    # Nom d'affichage du collaborateur connecté
+    if hasattr(request.user, 'profil_collaborateur'):
+        user_nom_ajax = request.user.profil_collaborateur.nom_complet
+    else:
+        user_nom_ajax = request.user.get_full_name() or request.user.username
+
     ligne.stock_physique = stock_physique
     ligne.saisi_par = request.user
+    ligne.assigne_a = user_nom_ajax
     ligne.date_modification = timezone.now()
     ligne.save()
 
@@ -6450,6 +6464,7 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         'ecart': ecart,
         'nb_saisis': nb_saisis,
         'nb_total': nb_total,
+        'saisi_par_nom': user_nom_ajax,
     })
 
 

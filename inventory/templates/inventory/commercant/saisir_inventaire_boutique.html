@@ -162,11 +162,12 @@ kbd {
                 style="font-size:.75rem;">Effacer liste</button>
     </div>
     <div class="px-3 pb-2" style="overflow-x:auto;">
-        <table class="table table-sm table-hover mb-0" style="font-size:.82rem;min-width:600px;">
+        <table class="table table-sm table-hover mb-0" style="font-size:.82rem;min-width:700px;">
             <thead class="table-light">
                 <tr>
                     <th style="width:26px;">#</th>
                     <th>Article</th>
+                    <th>Collaborateur</th>
                     <th class="text-center">Stock syst.</th>
                     <th class="text-center">Qté saisie</th>
                     <th class="text-center">Écart</th>
@@ -178,8 +179,8 @@ kbd {
             <tbody id="srSessionTbody"></tbody>
             <tfoot class="table-secondary fw-bold">
                 <tr>
-                    <td colspan="3" class="text-end">Total valeur stock saisi&nbsp;:</td>
-                    <td colspan="2"></td>
+                    <td colspan="5" class="text-end small">Total valeur stock saisi&nbsp;:</td>
+                    <td></td>
                     <td class="text-end" id="srTotalCdf" style="color:#155724;"></td>
                     <td id="srTotalUsdWrap" style="display:none;font-size:.75rem;color:#856404;"></td>
                     <td></td>
@@ -237,12 +238,12 @@ kbd {
                     <option value="{{ cat.id }}" {% if categorie_id == cat.id|stringformat:"s" %}selected{% endif %}>{{ cat.nom }}</option>
                     {% endfor %}
                 </select>
-                <select name="assigne_a" class="form-select form-select-sm" style="max-width:150px;" onchange="this.form.submit()">
-                    <option value="">Tous employés</option>
+                <select name="assigne_a" class="form-select form-select-sm" style="max-width:160px;" onchange="this.form.submit()">
+                    <option value="">Tous collaborateurs</option>
                     {% for employe in employes_list %}
                     <option value="{{ employe }}" {% if assigne_a_filtre == employe %}selected{% endif %}>{{ employe }}</option>
                     {% endfor %}
-                    <option value="NON_ASSIGNE" {% if assigne_a_filtre == 'NON_ASSIGNE' %}selected{% endif %}>Non assignés</option>
+                    <option value="NON_SAISI" {% if assigne_a_filtre == 'NON_SAISI' %}selected{% endif %}>Non saisi</option>
                 </select>
                 <div class="input-group input-group-sm" style="max-width:220px;">
                     <input type="text" name="q" id="searchInventaire" class="form-control" placeholder="🔍 Rechercher un article..." value="{{ recherche }}" autocomplete="off">
@@ -313,7 +314,7 @@ kbd {
                         <thead class="table-light">
                             <tr>
                                 <th style="width: 18%">Article</th>
-                                <th class="text-center" style="width: 10%">👤 Assigné à</th>
+                                <th class="text-center" style="width: 10%">👤 Collaborateur</th>
                                 <th class="text-end" style="width: 8%">P.A. (FC)</th>
                                 <th class="text-end" style="width: 8%">P.V. (FC)</th>
                                 <th class="text-center" style="width: 8%">Stock système</th>
@@ -331,11 +332,13 @@ kbd {
                                     <br><small class="text-muted">{{ ligne.article.code }}</small>
                                 </td>
                                 <td class="text-center align-middle">
-                                    <input type="text" name="assigne_{{ ligne.id }}" 
-                                           class="form-control form-control-sm text-center assigne-input"
-                                           value="{{ ligne.assigne_a }}" 
-                                           placeholder="Nom employé"
-                                           style="font-size: 0.85rem;">
+                                    {% if ligne.stock_physique is not None and ligne.assigne_a %}
+                                        <span class="badge bg-info text-dark" style="font-size:.8rem;">{{ ligne.assigne_a }}</span>
+                                    {% elif ligne.assigne_a %}
+                                        <span class="badge bg-light text-muted border" style="font-size:.8rem;" title="Assigné pour saisie">{{ ligne.assigne_a }}</span>
+                                    {% else %}
+                                        <span class="text-muted" style="font-size:.8rem;">—</span>
+                                    {% endif %}
                                 </td>
                                 <td class="text-end align-middle">
                                     <span class="text-primary fw-bold">{{ ligne.article.prix_achat|floatformat:0 }}</span>
@@ -924,10 +927,11 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 // SAISIE RAPIDE — PANNEAU FIXE
 // =============================================
 (function() {
-    const ARTICLES   = {{ all_articles_json|safe }};
-    const CATEGORIES = {{ categories_json|safe }};
-    const AJAX_URL   = '{{ ajax_url }}';
-    const CSRF       = '{{ csrf_token }}';
+    const ARTICLES        = {{ all_articles_json|safe }};
+    const CATEGORIES      = {{ categories_json|safe }};
+    const AJAX_URL        = '{{ ajax_url }}';
+    const CSRF            = '{{ csrf_token }}';
+    const CURRENT_USER_NOM = '{{ current_user_nom|escapejs }}';
 
     const srSearch      = document.getElementById('srSearch');
     const srDropdown    = document.getElementById('srDropdown');
@@ -947,7 +951,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     const srSessionCount= document.getElementById('srSessionCount');
     const srClearSession= document.getElementById('srClearSession');
 
-    let sessionEntries = [];  // {nom, stock_theorique, stock_physique, ecart, prix_vente, categorie_nom, ligne_id}
+    let sessionEntries = [];  // {nom, collaborateur, stock_theorique, stock_physique, ecart, prix_vente, devise, categorie_nom, ligne_id}
 
     // Peupler le <select> catégorie une seule fois
     CATEGORIES.forEach(function(c) {
@@ -973,6 +977,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         const entry = {
             ligne_id: data.ligne_id,
             nom: data.article_nom,
+            collaborateur: data.saisi_par_nom || CURRENT_USER_NOM,
             stock_theorique: data.stock_theorique,
             stock_physique: qte,
             ecart: data.ecart,
@@ -1006,14 +1011,17 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             if (e.devise === 'USD') totalUsd += valeur;
             else                   totalCdf += valeur;
 
+            const collabBadge = '<span class="badge bg-info text-dark" style="font-size:.78rem;">' + (e.collaborateur || CURRENT_USER_NOM) + '</span>';
+
             const tr = document.createElement('tr');
             tr.innerHTML =
                 '<td class="text-muted">' + (i + 1) + '</td>' +
                 '<td class="fw-semibold">' + e.nom + '</td>' +
+                '<td>' + collabBadge + '</td>' +
                 '<td class="text-center text-muted">' + e.stock_theorique + '</td>' +
                 '<td class="text-center fw-bold">' + e.stock_physique + '</td>' +
                 '<td class="text-center fw-bold ' + ecartClass + '">' + ecartTxt + '</td>' +
-                '<td class="text-end">' + e.prix_vente.toLocaleString('fr-FR') + ' ' + e.devise + '</td>' +
+                '<td class="text-end">' + e.prix_vente.toLocaleString('fr-FR') + ' ' + e.devise + '</td>' +
                 '<td>' + (e.categorie_nom || '<span class="text-muted">—</span>') + '</td>' +
                 '<td><button class="btn btn-sm py-0 px-1 btn-outline-danger sr-del" data-id="' + e.ligne_id + '" title="Retirer"><i class="fas fa-times" style="font-size:.7rem;"></i></button></td>';
             srSessionTbody.appendChild(tr);
