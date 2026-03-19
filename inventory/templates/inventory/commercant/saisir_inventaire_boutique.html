@@ -176,6 +176,15 @@ kbd {
                 </tr>
             </thead>
             <tbody id="srSessionTbody"></tbody>
+            <tfoot class="table-secondary fw-bold">
+                <tr>
+                    <td colspan="3" class="text-end">Total valeur stock saisi&nbsp;:</td>
+                    <td colspan="2"></td>
+                    <td class="text-end" id="srTotalCdf" style="color:#155724;"></td>
+                    <td id="srTotalUsdWrap" style="display:none;font-size:.75rem;color:#856404;"></td>
+                    <td></td>
+                </tr>
+            </tfoot>
         </table>
     </div>
 </div>
@@ -1043,6 +1052,10 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         renderSessionTable();
     }
 
+    function fmtCdf(val) {
+        return Math.round(val).toLocaleString('fr-FR') + ' FC';
+    }
+
     function renderSessionTable() {
         if (!sessionEntries.length) {
             srSessionWrap.style.display = 'none'; return;
@@ -1050,9 +1063,16 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         srSessionWrap.style.display = '';
         srSessionCount.textContent = sessionEntries.length;
         srSessionTbody.innerHTML = '';
+
+        let totalCdf = 0, totalUsd = 0;
+
         sessionEntries.forEach(function(e, i) {
             const ecartClass = e.ecart > 0 ? 'text-success' : e.ecart < 0 ? 'text-danger' : 'text-secondary';
             const ecartTxt   = e.ecart > 0 ? '+' + e.ecart : e.ecart;
+            const valeur     = e.stock_physique * e.prix_vente;
+            if (e.devise === 'USD') totalUsd += valeur;
+            else                   totalCdf += valeur;
+
             const tr = document.createElement('tr');
             tr.innerHTML =
                 '<td class="text-muted">' + (i + 1) + '</td>' +
@@ -1060,11 +1080,22 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 '<td class="text-center text-muted">' + e.stock_theorique + '</td>' +
                 '<td class="text-center fw-bold">' + e.stock_physique + '</td>' +
                 '<td class="text-center fw-bold ' + ecartClass + '">' + ecartTxt + '</td>' +
-                '<td class="text-end">' + e.prix_vente.toLocaleString('fr-FR') + ' ' + e.devise + '</td>' +
+                '<td class="text-end">' + e.prix_vente.toLocaleString('fr-FR') + ' ' + e.devise + '</td>' +
                 '<td>' + (e.categorie_nom || '<span class="text-muted">—</span>') + '</td>' +
                 '<td><button class="btn btn-sm py-0 px-1 btn-outline-danger sr-del" data-id="' + e.ligne_id + '" title="Retirer"><i class="fas fa-times" style="font-size:.7rem;"></i></button></td>';
             srSessionTbody.appendChild(tr);
         });
+
+        // Totaux
+        document.getElementById('srTotalCdf').textContent = fmtCdf(totalCdf);
+        const usdWrap = document.getElementById('srTotalUsdWrap');
+        if (totalUsd > 0) {
+            usdWrap.textContent = '+ ' + totalUsd.toLocaleString('fr-FR', {minimumFractionDigits:2}) + ' USD';
+            usdWrap.style.display = '';
+        } else {
+            usdWrap.style.display = 'none';
+        }
+
         // Boutons supprimer ligne
         srSessionTbody.querySelectorAll('.sr-del').forEach(function(btn) {
             btn.addEventListener('click', function() {
