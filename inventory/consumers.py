@@ -204,16 +204,28 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         self.boutique_id = self.scope['url_route']['kwargs']['boutique_id']
         self.notification_group_name = f'notifications_{self.boutique_id}'
 
-        # ⚠️ accept() DOIT être appelé avant group_add()
+        # Rejoindre le groupe de notifications avant d'accepter (même pattern que BoutiqueConsumer)
+        try:
+            await self.channel_layer.group_add(
+                self.notification_group_name,
+                self.channel_name
+            )
+        except Exception as e:
+            logger.error(f"Erreur group_add NotificationConsumer: {type(e).__name__}: {e}")
+            await self.close()
+            return
+
         await self.accept()
 
-        # Rejoindre le groupe de notifications
-        await self.channel_layer.group_add(
-            self.notification_group_name,
-            self.channel_name
-        )
+        # Envoyer confirmation (évite timeout proxy Scalingo/HAProxy)
+        await self.send(text_data=json.dumps({
+            'type': 'connection_established',
+            'boutique_id': self.boutique_id,
+            'message': 'Notifications WebSocket actives',
+            'timestamp': self.get_timestamp()
+        }))
 
-        logger.info(f"✅ Notifications WebSocket connectées - Boutique {self.boutique_id}")
+        logger.info(f"Notifications WebSocket connectees - Boutique {self.boutique_id}")
     
     async def disconnect(self, close_code):
         """Déconnexion des notifications"""
