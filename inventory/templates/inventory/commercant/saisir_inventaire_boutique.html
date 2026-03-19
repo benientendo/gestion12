@@ -107,17 +107,51 @@ kbd {
             <div id="srDropdown"></div>
         </div>
         <div class="col-auto" id="srQteWrap" style="display:none;">
-            <div class="input-group">
-                <span class="input-group-text bg-success text-white fw-bold" id="srArticleLabel"
-                      style="max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;"></span>
-                <input type="number" id="srQte" class="form-control text-center"
-                       min="0" placeholder="Qté" style="max-width:80px;font-weight:700;font-size:1.1rem;">
-                <button class="btn btn-success" id="srSaveBtn" type="button">
-                    <i class="fas fa-check"></i> OK
-                </button>
-                <button class="btn btn-outline-secondary" id="srCancelBtn" type="button" title="Annuler (Esc)">
-                    <i class="fas fa-times"></i>
-                </button>
+            <div class="d-flex align-items-end gap-2 flex-wrap">
+                <!-- Nom article -->
+                <div style="max-width:160px;">
+                    <small class="text-muted d-block" style="font-size:.68rem;">Article</small>
+                    <span class="badge fw-bold text-truncate d-block" id="srArticleLabel"
+                          style="background:#667eea;font-size:.8rem;max-width:160px;"></span>
+                </div>
+                <!-- Stock système -->
+                <div class="text-center">
+                    <small class="text-muted d-block" style="font-size:.68rem;">Stock système</small>
+                    <span class="fw-bold" id="srStockActuel"
+                          style="font-size:1rem;color:#667eea;">—</span>
+                </div>
+                <!-- Prix de vente -->
+                <div>
+                    <small class="text-muted d-block" style="font-size:.68rem;">Prix de vente</small>
+                    <div class="input-group input-group-sm">
+                        <input type="number" id="srPrixVente" class="form-control text-end"
+                               min="0" step="1" style="max-width:90px;font-weight:700;">
+                        <span class="input-group-text" id="srDevise"
+                              style="font-size:.75rem;min-width:38px;">CDF</span>
+                    </div>
+                </div>
+                <!-- Catégorie -->
+                <div>
+                    <small class="text-muted d-block" style="font-size:.68rem;">Catégorie</small>
+                    <select id="srCategorie" class="form-select form-select-sm"
+                            style="max-width:160px;"></select>
+                </div>
+                <!-- Qté physique -->
+                <div>
+                    <small class="text-muted d-block" style="font-size:.68rem;">Qté physique <kbd style="font-size:.6rem;">Enter</kbd></small>
+                    <input type="number" id="srQte" class="form-control form-control-sm text-center"
+                           min="0" placeholder="?"
+                           style="max-width:75px;font-weight:700;font-size:1.05rem;border:2px solid #28a745;">
+                </div>
+                <!-- Boutons -->
+                <div class="d-flex gap-1">
+                    <button class="btn btn-success btn-sm px-3" id="srSaveBtn" type="button">
+                        <i class="fas fa-check"></i> OK
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" id="srCancelBtn" type="button" title="Annuler (Esc)">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
             </div>
         </div>
         <div class="col-auto d-none d-md-block">
@@ -934,25 +968,37 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 // SAISIE RAPIDE — PANNEAU FIXE
 // =============================================
 (function() {
-    const ARTICLES = {{ all_articles_json|safe }};
-    const AJAX_URL = '{{ ajax_url }}';
-    const CSRF = '{{ csrf_token }}';
+    const ARTICLES  = {{ all_articles_json|safe }};
+    const CATEGORIES = {{ categories_json|safe }};
+    const AJAX_URL   = '{{ ajax_url }}';
+    const CSRF       = '{{ csrf_token }}';
 
-    const srSearch  = document.getElementById('srSearch');
-    const srDropdown = document.getElementById('srDropdown');
-    const srQteWrap = document.getElementById('srQteWrap');
-    const srQte     = document.getElementById('srQte');
-    const srLabel   = document.getElementById('srArticleLabel');
-    const srSaveBtn = document.getElementById('srSaveBtn');
-    const srCancelBtn = document.getElementById('srCancelBtn');
-    const srNbSaisis  = document.getElementById('srNbSaisis');
+    const srSearch     = document.getElementById('srSearch');
+    const srDropdown   = document.getElementById('srDropdown');
+    const srQteWrap    = document.getElementById('srQteWrap');
+    const srQte        = document.getElementById('srQte');
+    const srLabel      = document.getElementById('srArticleLabel');
+    const srStockActuel= document.getElementById('srStockActuel');
+    const srPrixVente  = document.getElementById('srPrixVente');
+    const srDevise     = document.getElementById('srDevise');
+    const srCategorie  = document.getElementById('srCategorie');
+    const srSaveBtn    = document.getElementById('srSaveBtn');
+    const srCancelBtn  = document.getElementById('srCancelBtn');
+    const srNbSaisis   = document.getElementById('srNbSaisis');
     const srNbRestants = document.getElementById('srNbRestants');
+
+    // Peupler le <select> catégorie une seule fois
+    CATEGORIES.forEach(function(c) {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.nom;
+        srCategorie.appendChild(opt);
+    });
 
     let selectedArticle = null;
     let activeIdx = -1;
     let articlesList = [];
 
-    // Met à jour la liste locale après chaque sauvegarde
     function updateLocalStock(ligneId, newStock) {
         const a = ARTICLES.find(x => x.ligne_id === ligneId);
         if (a) a.stock_physique = newStock;
@@ -989,8 +1035,17 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         selectedArticle = art;
         srSearch.value = art.nom;
         closeDropdown();
-        srLabel.textContent = art.nom;
-        srQte.value = art.stock_physique !== null ? art.stock_physique : '';
+
+        // Remplir les champs
+        srLabel.textContent    = art.nom;
+        srStockActuel.textContent = art.quantite_stock + ' pcs';
+        srPrixVente.value      = art.prix_vente;
+        srDevise.textContent   = art.devise || 'CDF';
+        srQte.value            = art.stock_physique !== null ? art.stock_physique : '';
+
+        // Sélectionner la catégorie courante dans le dropdown
+        srCategorie.value = art.categorie_id || '';
+
         srQteWrap.style.display = '';
         srQte.focus();
         srQte.select();
@@ -1001,7 +1056,9 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         srSearch.value = '';
         srQteWrap.style.display = 'none';
         srQte.value = '';
+        srPrixVente.value = '';
         srLabel.textContent = '';
+        srStockActuel.textContent = '—';
         closeDropdown();
         srSearch.focus();
     }
@@ -1033,7 +1090,12 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': CSRF
             },
-            body: JSON.stringify({ ligne_id: selectedArticle.ligne_id, stock_physique: qte })
+            body: JSON.stringify({
+                ligne_id:     selectedArticle.ligne_id,
+                stock_physique: qte,
+                prix_vente:   parseFloat(srPrixVente.value) || null,
+                categorie_id: srCategorie.value ? parseInt(srCategorie.value) : null,
+            })
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
@@ -1119,6 +1181,15 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     srQte.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') { e.preventDefault(); saveArticle(); }
         if (e.key === 'Escape') { e.preventDefault(); resetPanel(); }
+    });
+
+    // Tab depuis prix → catégorie (navigation naturelle)
+    srPrixVente.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { e.preventDefault(); resetPanel(); }
+    });
+    srCategorie.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { e.preventDefault(); resetPanel(); }
+        if (e.key === 'Enter') { e.preventDefault(); srQte.focus(); srQte.select(); }
     });
 
     srSaveBtn.addEventListener('click', saveArticle);

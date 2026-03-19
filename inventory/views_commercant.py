@@ -6338,12 +6338,23 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     all_articles_json = json.dumps([
         {
             'ligne_id': l.id,
+            'article_id': l.article.id,
             'nom': l.article.nom,
             'code': l.article.code,
             'stock_theorique': l.stock_theorique,
             'stock_physique': l.stock_physique,
+            'quantite_stock': l.article.quantite_stock,
+            'prix_vente': float(l.article.prix_vente),
+            'devise': l.article.devise,
+            'categorie_id': l.article.categorie_id,
+            'categorie_nom': l.article.categorie.nom if l.article.categorie else '',
         }
-        for l in inventaire.lignes.select_related('article').order_by('article__nom')
+        for l in inventaire.lignes.select_related('article', 'article__categorie').order_by('article__nom')
+    ], ensure_ascii=False)
+
+    categories_json = json.dumps([
+        {'id': c.id, 'nom': c.nom}
+        for c in Categorie.objects.filter(boutique=boutique).order_by('nom')
     ], ensure_ascii=False)
 
     context = {
@@ -6360,6 +6371,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
         'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
         'all_articles_json': all_articles_json,
+        'categories_json': categories_json,
         'ajax_url': f"/inventory/commercant/boutiques/{boutique.id}/inventaires/{inventaire.id}/saisir-ligne/",
     }
     return render(request, 'inventory/commercant/saisir_inventaire_boutique.html', context)
@@ -6382,7 +6394,9 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         return JsonResponse({'success': False, 'error': 'Données invalides'}, status=400)
 
     try:
-        ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
+        ligne = LigneInventaire.objects.select_related('article', 'article__categorie').get(
+            id=ligne_id, inventaire=inventaire
+        )
     except LigneInventaire.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Ligne introuvable'}, status=404)
 
@@ -6390,6 +6404,34 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
     ligne.saisi_par = request.user
     ligne.date_modification = timezone.now()
     ligne.save()
+
+    article_fields_updated = []
+
+    # Mise à jour prix de vente
+    nouveau_prix = data.get('prix_vente')
+    if nouveau_prix is not None:
+        try:
+            nouveau_prix = Decimal(str(nouveau_prix))
+            if nouveau_prix > 0 and nouveau_prix != ligne.article.prix_vente:
+                ligne.article.prix_vente = nouveau_prix
+                article_fields_updated.append('prix_vente')
+        except Exception:
+            pass
+
+    # Mise à jour catégorie
+    nouvelle_cat_id = data.get('categorie_id')
+    if nouvelle_cat_id is not None:
+        try:
+            nouvelle_cat = Categorie.objects.get(id=int(nouvelle_cat_id), boutique=boutique)
+            if ligne.article.categorie_id != nouvelle_cat.id:
+                ligne.article.categorie = nouvelle_cat
+                article_fields_updated.append('categorie')
+        except Categorie.DoesNotExist:
+            pass
+
+    if article_fields_updated:
+        ligne.article.save(update_fields=article_fields_updated)
+
     inventaire.calculer_statistiques()
 
     ecart = stock_physique - (ligne.stock_theorique or 0)
@@ -6400,8 +6442,11 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         'success': True,
         'ligne_id': ligne.id,
         'article_nom': ligne.article.nom,
+        'article_id': ligne.article.id,
         'stock_theorique': ligne.stock_theorique,
         'stock_physique': stock_physique,
+        'prix_vente': float(ligne.article.prix_vente),
+        'categorie_nom': ligne.article.categorie.nom if ligne.article.categorie else '',
         'ecart': ecart,
         'nb_saisis': nb_saisis,
         'nb_total': nb_total,
