@@ -6363,6 +6363,8 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         for c in Categorie.objects.filter(boutique=boutique).order_by('nom')
     ], ensure_ascii=False)
 
+    is_collaborateur = hasattr(request.user, 'profil_collaborateur')
+
     context = {
         'boutique': boutique,
         'inventaire': inventaire,
@@ -6375,6 +6377,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'assigne_a_filtre': assigne_a_filtre,
         'employes_list': employes_list,
         'current_user_nom': current_user_nom,
+        'is_collaborateur': is_collaborateur,
         'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
         'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
         'all_articles_json': all_articles_json,

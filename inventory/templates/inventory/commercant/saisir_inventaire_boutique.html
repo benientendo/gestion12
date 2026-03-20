@@ -213,12 +213,15 @@ kbd {
                     <div class="progress-bar bg-success" style="width:{% widthratio nb_saisis inventaire.lignes.count|default:1 100 %}%;border-radius:4px;"></div>
                 </div>
             </div>
+            {% if not is_collaborateur %}
             <a href="{% url 'inventory:detail_inventaire_boutique' boutique.id inventaire.id %}" class="btn btn-sm btn-outline-info">
                 <i class="fas fa-chart-bar me-1"></i>Détail
             </a>
+            {% endif %}
         </div>
     </div>
 
+    {% if not is_collaborateur %}
     <!-- FILTRES + ACTIONS -->
     <div class="card mb-3 shadow-sm">
         <div class="card-body py-2 px-3">
@@ -254,16 +257,9 @@ kbd {
 
             <!-- Ligne 2 : Actions -->
             <div class="d-flex flex-wrap align-items-center gap-2">
-                <button type="button" id="cartonModeBtn" class="btn btn-sm btn-outline-secondary" onclick="toggleCartonMode()">
-                    <i class="fas fa-box me-1"></i>Mode Carton
-                </button>
                 <button type="button" id="scannerModeBtn" class="btn btn-sm btn-outline-warning" onclick="toggleScannerMode()">
                     <i class="fas fa-barcode me-1"></i>Scanner
                 </button>
-                <form method="post" action="{% url 'inventory:auto_assigner_inventaire' boutique.id inventaire.id %}" style="display:inline;" onsubmit="return confirm('Assigner automatiquement les articles non assignés ?');">
-                    {% csrf_token %}
-                    <button type="submit" class="btn btn-sm btn-outline-info"><i class="fas fa-magic me-1"></i>Auto-assigner</button>
-                </form>
                 <form method="post" action="{% url 'inventory:reinitialiser_mes_articles' boutique.id inventaire.id %}" style="display:inline;" onsubmit="return confirm('⚠️ Effacer TOUS vos stocks saisis ?');">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-sm btn-outline-warning"><i class="fas fa-undo me-1"></i>Réinitialiser</button>
@@ -304,7 +300,9 @@ kbd {
             </div>
         </div>
     </div>
+    {% endif %}
 
+    {% if not is_collaborateur %}
     <form method="post">
         {% csrf_token %}
         <div class="card shadow-sm">
@@ -435,6 +433,15 @@ kbd {
     {% if total_lignes > 50 %}
     <div class="alert alert-info mt-3">
         <i class="fas fa-info-circle"></i> Affichage limité à 50 articles. Utilisez les filtres.
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="alert alert-primary d-flex align-items-center gap-3 mt-2" style="border-left:4px solid #0d6efd;">
+        <i class="fas fa-info-circle fa-lg"></i>
+        <div>
+            <strong>Mode saisie collaborateur</strong> — Utilisez le panneau en haut pour enregistrer vos comptages.
+            <br><small class="text-muted">Le tableau complet de l'inventaire est réservé au responsable.</small>
+        </div>
     </div>
     {% endif %}
 </div>
