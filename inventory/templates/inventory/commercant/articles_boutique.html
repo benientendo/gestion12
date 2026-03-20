@@ -2443,7 +2443,11 @@ document.addEventListener('DOMContentLoaded', function() {
             })
             .then(response => response.json())
             .then(data => {
-                const matches = data.articles || [];
+                let matches = data.articles || [];
+                // Appliquer le filtre catégorie sur les résultats AJAX
+                if (categorieFilter) {
+                    matches = matches.filter(a => (a.categorie || '').toLowerCase().includes(categorieFilter));
+                }
                 isShowingSearchResults = true;
                 
                 if (matches.length === 0) {

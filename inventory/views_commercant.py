@@ -611,14 +611,16 @@ def articles_search_ajax(request, boutique_id):
     
     boutique = request.boutique
     search = request.GET.get('q', '').strip()
+    categorie_id = request.GET.get('categorie_id', '').strip()
     
     if len(search) < 2:
         return JsonResponse({'articles': [], 'count': 0})
     
     # 1. Chercher dans les articles directement
-    articles = boutique.articles.filter(
-        est_actif=True
-    ).filter(
+    qs = boutique.articles.filter(est_actif=True)
+    if categorie_id:
+        qs = qs.filter(categorie_id=categorie_id)
+    articles = qs.filter(
         Q(nom__icontains=search) |
         Q(code__icontains=search) |
         Q(description__icontains=search)
@@ -626,11 +628,14 @@ def articles_search_ajax(request, boutique_id):
     
     # 2. ⭐ Chercher aussi dans les codes-barres des variantes
     # Récupérer les articles parents des variantes correspondantes
-    articles_from_variantes = boutique.articles.filter(
+    variantes_qs = boutique.articles.filter(
         est_actif=True,
         variantes__code_barre__icontains=search,
         variantes__est_actif=True
-    ).select_related('categorie').distinct()
+    )
+    if categorie_id:
+        variantes_qs = variantes_qs.filter(categorie_id=categorie_id)
+    articles_from_variantes = variantes_qs.select_related('categorie').distinct()
     
     # Combiner et dédupliquer
     all_article_ids = set(art.id for art in articles) | set(art.id for art in articles_from_variantes)
