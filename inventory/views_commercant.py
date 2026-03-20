@@ -6560,18 +6560,14 @@ def tableau_bord_inventaire(request, boutique_id, inventaire_id):
     nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
 
     # Regrouper les saisies par collaborateur
-    from django.db.models import Count as DCount, Sum as DSum, Max as DMax
-    from django.db.models.functions import Coalesce
-    from django.db.models import FloatField
-
     collab_stats = (
         inventaire.lignes
         .filter(stock_physique__isnull=False)
         .exclude(assigne_a='').exclude(assigne_a__isnull=True)
         .values('assigne_a')
         .annotate(
-            nb_saisis=DCount('id'),
-            derniere_saisie=DMax('date_modification'),
+            nb_saisis=Count('id'),
+            derniere_saisie=Max('date_modification'),
         )
         .order_by('-nb_saisis')
     )
