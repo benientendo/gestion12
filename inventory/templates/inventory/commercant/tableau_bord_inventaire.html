@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Tableau de bord — {{ inventaire.reference }}{% endblock %}
+
+{% block extra_head %}
+<style>
+.stat-card { border-radius:12px; border:none; box-shadow:0 2px 12px rgba(0,0,0,.08); }
+.collab-row { transition: background .15s; }
+.collab-row:hover { background:#f8f9ff; }
+.progress-thick { height:14px; border-radius:8px; }
+.badge-ecart { font-size:.75rem; }
+.last-seen { font-size:.78rem; color:#6c757d; }
+.refresh-dot { width:10px;height:10px;border-radius:50%;background:#28a745;display:inline-block;animation:pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- EN-TÊTE -->
+    <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-3">
+            <a href="{% url 'inventory:saisir_inventaire_boutique' boutique.id inventaire.id %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <div>
+                <h5 class="mb-0 fw-bold">
+                    <i class="fas fa-chart-line text-primary me-2"></i>Tableau de bord inventaire
+                </h5>
+                <small class="text-muted">{{ inventaire.reference }} — {{ boutique.nom }}</small>
+            </div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <span class="refresh-dot"></span>
+            <small class="text-muted">Actualisation auto <strong id="countdown">30</strong>s</small>
+            <button class="btn btn-sm btn-outline-primary" onclick="location.reload()">
+                <i class="fas fa-sync-alt me-1"></i>Rafraîchir
+            </button>
+            <a href="{% url 'inventory:detail_inventaire_boutique' boutique.id inventaire.id %}" class="btn btn-sm btn-outline-info">
+                <i class="fas fa-chart-bar me-1"></i>Détail
+            </a>
+        </div>
+    </div>
+
+    <!-- PROGRESSION GLOBALE -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card stat-card p-3 text-center">
+                <div class="fs-2 fw-bold text-primary">{{ nb_total }}</div>
+                <small class="text-muted">Articles total</small>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card stat-card p-3 text-center">
+                <div class="fs-2 fw-bold text-success">{{ nb_saisis }}</div>
+                <small class="text-muted">Saisis</small>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card stat-card p-3 text-center">
+                <div class="fs-2 fw-bold text-warning">{{ nb_non_saisis }}</div>
+                <small class="text-muted">Restants</small>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card stat-card p-3 text-center">
+                <div class="fs-2 fw-bold text-info">{{ pct }}%</div>
+                <small class="text-muted">Progression</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="progress progress-thick mb-4">
+        <div class="progress-bar bg-success" style="width:{{ pct }}%;border-radius:8px;" role="progressbar">
+            {{ pct }}%
+        </div>
+    </div>
+
+    <!-- TABLEAU PAR COLLABORATEUR -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header py-2 d-flex align-items-center gap-2">
+            <i class="fas fa-users text-primary"></i>
+            <strong>Avancement par collaborateur</strong>
+            <span class="badge bg-secondary ms-auto">{{ collab_list|length }} actif(s)</span>
+        </div>
+        <div class="card-body p-0">
+            {% if collab_list %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Collaborateur</th>
+                            <th class="text-center">Articles saisis</th>
+                            <th>Progression</th>
+                            <th class="text-center">Écarts</th>
+                            <th class="text-end">Valeur CDF</th>
+                            <th class="text-end">Valeur USD</th>
+                            <th class="text-center">Dernière saisie</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in collab_list %}
+                        {% with pct_c=c.nb_saisis|floatformat:0 %}
+                        <tr class="collab-row">
+                            <td class="align-middle">
+                                <span class="badge bg-info text-dark fs-6">
+                                    <i class="fas fa-user me-1"></i>{{ c.nom }}
+                                </span>
+                            </td>
+                            <td class="text-center align-middle fw-bold">{{ c.nb_saisis }}</td>
+                            <td class="align-middle" style="min-width:140px;">
+                                {% widthratio c.nb_saisis nb_total 100 as pct_collab %}
+                                <div class="progress" style="height:8px;border-radius:4px;">
+                                    <div class="progress-bar bg-success"
+                                         style="width:{{ pct_collab }}%;border-radius:4px;"></div>
+                                </div>
+                                <small class="text-muted">{{ pct_collab }}% du total</small>
+                            </td>
+                            <td class="text-center align-middle">
+                                {% if c.nb_ecarts > 0 %}
+                                    <span class="badge bg-warning text-dark badge-ecart">⚠ {{ c.nb_ecarts }}</span>
+                                {% else %}
+                                    <span class="badge bg-success badge-ecart">✓ 0</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end align-middle">
+                                {% if c.valeur_cdf > 0 %}
+                                    <strong>{{ c.valeur_cdf|floatformat:0 }}</strong> <small class="text-muted">FC</small>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-end align-middle">
+                                {% if c.valeur_usd > 0 %}
+                                    <strong>{{ c.valeur_usd|floatformat:2 }}</strong> <small class="text-muted">$</small>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-center align-middle last-seen">
+                                {% if c.derniere_saisie %}
+                                    {{ c.derniere_saisie|date:"H:i" }}<br>
+                                    <span class="text-muted">{{ c.derniere_saisie|date:"d/m" }}</span>
+                                {% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% endwith %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4 text-muted">
+                <i class="fas fa-hourglass-start fa-2x mb-2"></i><br>
+                Aucun collaborateur n'a encore effectué de saisie.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ARTICLES NON SAISIS -->
+    {% if non_saisis %}
+    <div class="card shadow-sm">
+        <div class="card-header py-2 d-flex align-items-center gap-2">
+            <i class="fas fa-clock text-warning"></i>
+            <strong>Articles en attente de saisie</strong>
+            <span class="badge bg-warning text-dark ms-auto">{{ nb_non_saisis_total }}</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0" style="font-size:.85rem;">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Article</th>
+                            <th class="text-center">Stock système</th>
+                            <th>Catégorie</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for l in non_saisis %}
+                        <tr>
+                            <td class="fw-semibold">{{ l.article.nom }}</td>
+                            <td class="text-center text-muted">{{ l.stock_theorique|default:"—" }}</td>
+                            <td class="text-muted">{{ l.article.categorie.nom|default:"—" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if nb_non_saisis_total > 20 %}
+            <div class="text-center py-2 text-muted" style="font-size:.82rem;">
+                … et {{ nb_non_saisis_total|add:"-20" }} autre(s) article(s)
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+<script>
+// Compte à rebours + auto-refresh
+let seconds = 30;
+const el = document.getElementById('countdown');
+setInterval(function() {
+    seconds--;
+    if (el) el.textContent = seconds;
+    if (seconds <= 0) location.reload();
+}, 1000);
+</script>
+{% endblock %}

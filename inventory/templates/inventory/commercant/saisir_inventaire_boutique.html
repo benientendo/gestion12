@@ -4,6 +4,7 @@
 {% block title %}Saisie inventaire - {{ inventaire.reference }}{% endblock %}
 
 {% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <style>
 /* === PROFESSIONAL INVENTORY STYLING === */
 .stock-input {
@@ -160,6 +161,8 @@ kbd {
         </strong>
         <button class="btn btn-outline-danger btn-sm py-0 px-2" id="srClearSession" type="button"
                 style="font-size:.75rem;">Effacer liste</button>
+        <button class="btn btn-outline-primary btn-sm py-0 px-2" id="srPrintBtn" type="button"
+                style="font-size:.75rem;"><i class="fas fa-print me-1"></i>Rapport session</button>
     </div>
     <div class="px-3 pb-2" style="overflow-x:auto;">
         <table class="table table-sm table-hover mb-0" style="font-size:.82rem;min-width:700px;">
@@ -214,9 +217,15 @@ kbd {
                 </div>
             </div>
             {% if not is_collaborateur %}
+            <a href="{% url 'inventory:tableau_bord_inventaire' boutique.id inventaire.id %}" class="btn btn-sm btn-outline-success" title="Tableau de bord temps réel">
+                <i class="fas fa-tachometer-alt me-1"></i>Dashboard
+            </a>
             <a href="{% url 'inventory:detail_inventaire_boutique' boutique.id inventaire.id %}" class="btn btn-sm btn-outline-info">
                 <i class="fas fa-chart-bar me-1"></i>Détail
             </a>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="openQrModal()" title="QR Code d'accès rapide">
+                <i class="fas fa-qrcode"></i>
+            </button>
             {% endif %}
         </div>
     </div>
@@ -444,6 +453,33 @@ kbd {
         </div>
     </div>
     {% endif %}
+</div>
+
+<!-- Modal : QR Code d'accès rapide (Feature 2) -->
+<div class="modal fade" id="qrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header py-2">
+                <h6 class="modal-title fw-bold mb-0">
+                    <i class="fas fa-qrcode text-primary me-2"></i>QR Code d'accès rapide
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center py-3">
+                <p class="text-muted mb-3" style="font-size:.85rem;">
+                    Partagez ce QR code avec vos collaborateurs pour qu'ils accèdent directement à cette saisie d'inventaire.
+                </p>
+                <div id="qrCodeContainer" class="d-inline-block p-3 border rounded bg-white"></div>
+                <div class="mt-3">
+                    <small class="text-muted d-block mb-1">URL directe :</small>
+                    <code style="font-size:.75rem;word-break:break-all;" id="qrUrlText"></code>
+                </div>
+            </div>
+            <div class="modal-footer py-2 border-0 justify-content-center">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Modal : article déjà saisi par un autre collaborateur -->
@@ -966,8 +1002,12 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     const ARTICLES        = {{ all_articles_json|safe }};
     const CATEGORIES      = {{ categories_json|safe }};
     const AJAX_URL        = '{{ ajax_url }}';
+    const LOCK_URL        = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/lock-ligne/';
+    const UNLOCK_URL      = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/unlock-ligne/';
+    const LOCKS_URL       = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/locks/';
     const CSRF            = '{{ csrf_token }}';
     const CURRENT_USER_NOM = '{{ current_user_nom|escapejs }}';
+    let activeLocks = {};  // { ligne_id: nom_collaborateur }
 
     const srSearch      = document.getElementById('srSearch');
     const srDropdown    = document.getElementById('srDropdown');
@@ -1005,6 +1045,36 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         const a = ARTICLES.find(x => x.ligne_id === ligneId);
         if (a) { a.stock_physique = newStock; a.assigne_a = CURRENT_USER_NOM; }
     }
+
+    // === Feature 1 : Verrouillage ===
+    function postJson(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json','X-CSRFToken': CSRF},
+            body: JSON.stringify(body)
+        }).then(r => r.json());
+    }
+
+    function lockArticle(ligneId) {
+        postJson(LOCK_URL, {ligne_id: ligneId}).then(function(d) {
+            if (d.locked_by_other) {
+                showToast('<i class="fas fa-lock me-2"></i><strong>' + d.nom + '</strong> est en train de saisir cet article.', 'warning');
+            }
+        }).catch(function() {});
+    }
+
+    function unlockArticle(ligneId) {
+        if (!ligneId) return;
+        postJson(UNLOCK_URL, {ligne_id: ligneId}).catch(function() {});
+    }
+
+    function fetchLocks() {
+        fetch(LOCKS_URL).then(r => r.json()).then(function(d) {
+            activeLocks = d.locks || {};
+        }).catch(function() {});
+    }
+    fetchLocks();
+    setInterval(fetchLocks, 30000);
 
     // ---- Tableau session ----
     function addSessionEntry(data, qte) {
@@ -1099,7 +1169,12 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             const badge = art.stock_physique !== null
                 ? '<span class="sr-badge-ok">&#10003; ' + art.stock_physique + '</span>'
                 : '<span class="sr-badge-nok">&#8212; vide</span>';
-            div.innerHTML = '<span><strong>' + art.nom + '</strong> <small class="text-muted">' + art.code + '</small></span>' + badge;
+            const lockNom = activeLocks[String(art.ligne_id)];
+            const lockBadge = lockNom
+                ? ' <span style="font-size:.72rem;background:#fff3cd;color:#856404;border-radius:4px;padding:1px 5px;">&#128274; ' + lockNom + '</span>'
+                : '';
+            div.innerHTML = '<span><strong>' + art.nom + '</strong> <small class="text-muted">' + art.code + '</small>' + lockBadge + '</span>' + badge;
+            if (lockNom) div.style.opacity = '0.65';
             div.addEventListener('mousedown', function(e) {
                 e.preventDefault();
                 selectArticle(art);
@@ -1119,6 +1194,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         selectedArticle = art;
         srSearch.value = art.nom;
         closeDropdown();
+        lockArticle(art.ligne_id);
 
         // Remplir les champs
         srLabel.textContent    = art.nom;
@@ -1165,6 +1241,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     }
 
     function resetPanel() {
+        if (selectedArticle) unlockArticle(selectedArticle.ligne_id);
         selectedArticle = null;
         srSearch.value = '';
         srQteWrap.style.display = 'none';
@@ -1213,6 +1290,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.success) {
+                unlockArticle(data.ligne_id);
                 updateLocalStock(data.ligne_id, data.stock_physique);
                 addSessionEntry(data, qte);
                 const ecartTxt = data.ecart > 0 ? ' <span class="text-success">(+' + data.ecart + ')</span>'
@@ -1309,8 +1387,77 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     srSaveBtn.addEventListener('click', saveArticle);
     srCancelBtn.addEventListener('click', resetPanel);
 
+    // Libérer verrou si l'utilisateur quitte la page
+    window.addEventListener('beforeunload', function() {
+        if (selectedArticle) unlockArticle(selectedArticle.ligne_id);
+    });
+
+    // === Feature 4 : Rapport de session (impression) ===
+    document.getElementById('srPrintBtn').addEventListener('click', function() {
+        if (!sessionEntries.length) {
+            showToast('Aucune saisie dans la session.', 'warning');
+            return;
+        }
+        let rows = '';
+        let totalCdf = 0, totalUsd = 0;
+        sessionEntries.forEach(function(e, i) {
+            const valeur = e.stock_physique * e.prix_vente;
+            if (e.devise === 'USD') totalUsd += valeur; else totalCdf += valeur;
+            const ecartTxt = e.ecart > 0 ? '+' + e.ecart : e.ecart;
+            const ecartCol = e.ecart > 0 ? 'color:green' : e.ecart < 0 ? 'color:red' : 'color:grey';
+            rows += '<tr><td>' + (i+1) + '</td><td><strong>' + e.nom + '</strong></td>'
+                + '<td>' + e.collaborateur + '</td>'
+                + '<td style="text-align:center">' + e.stock_theorique + '</td>'
+                + '<td style="text-align:center;font-weight:bold">' + e.stock_physique + '</td>'
+                + '<td style="text-align:center;' + ecartCol + ';font-weight:bold">' + ecartTxt + '</td>'
+                + '<td style="text-align:right">' + e.prix_vente.toLocaleString('fr-FR') + ' ' + e.devise + '</td>'
+                + '<td>' + (e.categorie_nom || '—') + '</td></tr>';
+        });
+        const now = new Date().toLocaleString('fr-FR');
+        const html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+            + '<title>Rapport session — ' + now + '</title>'
+            + '<style>body{font-family:Arial,sans-serif;font-size:12px;padding:20px;}'
+            + 'h2{color:#333;}table{width:100%;border-collapse:collapse;margin-top:12px;}'
+            + 'th,td{border:1px solid #ccc;padding:5px 8px;}th{background:#f0f4ff;}'
+            + '.total{font-weight:bold;font-size:13px;margin-top:10px;}'
+            + '@media print{button{display:none;}}'
+            + '</style></head><body>'
+            + '<h2>&#128203; Rapport de saisie — Session du ' + now + '</h2>'
+            + '<p><strong>Collaborateur :</strong> ' + CURRENT_USER_NOM + '</p>'
+            + '<p><strong>Articles saisis :</strong> ' + sessionEntries.length + '</p>'
+            + '<table><thead><tr><th>#</th><th>Article</th><th>Collaborateur</th>'
+            + '<th>Stock syst.</th><th>Qté saisie</th><th>Écart</th><th>Prix vente</th><th>Catégorie</th></tr></thead>'
+            + '<tbody>' + rows + '</tbody></table>'
+            + '<div class="total">Total CDF : ' + totalCdf.toLocaleString('fr-FR') + ' FC'
+            + (totalUsd > 0 ? ' &nbsp;|&nbsp; Total USD : ' + totalUsd.toLocaleString('fr-FR', {minimumFractionDigits:2}) + ' $' : '')
+            + '</div><br><button onclick="window.print()">&#128424; Imprimer</button>'
+            + '</body></html>';
+        const w = window.open('', '_blank', 'width=900,height=700');
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+    });
+
     // Focus initial sur la recherche rapide
     srSearch.focus();
 })();
+
+// === Feature 2 : QR Code modal (global) ===
+function openQrModal() {
+    const url = window.location.origin + window.location.pathname;
+    document.getElementById('qrUrlText').textContent = url;
+    const container = document.getElementById('qrCodeContainer');
+    container.innerHTML = '';
+    new QRCode(container, {
+        text: url,
+        width: 200,
+        height: 200,
+        colorDark: '#1a1a2e',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.H
+    });
+    const modal = new bootstrap.Modal(document.getElementById('qrModal'));
+    modal.show();
+}
 </script>
 {% endblock %}

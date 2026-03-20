@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.views.decorators.http import require_POST
+from django.core.cache import cache
 from decimal import Decimal
 from datetime import datetime, timedelta
 import json
@@ -6470,6 +6471,156 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         'nb_total': nb_total,
         'saisi_par_nom': user_nom_ajax,
     })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FEATURE 1 : VERROUILLAGE D'ARTICLES EN COURS DE SAISIE (cache Django)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _user_nom(user):
+    if hasattr(user, 'profil_collaborateur'):
+        return user.profil_collaborateur.nom_complet
+    return user.get_full_name() or user.username
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+@require_POST
+def lock_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
+    """Verrouille une ligne pour la session de l'utilisateur courant."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+    try:
+        data = json.loads(request.body)
+        ligne_id = int(data.get('ligne_id'))
+    except (ValueError, TypeError, KeyError):
+        return JsonResponse({'error': 'Données invalides'}, status=400)
+
+    cache_key = f'inv_lock_{inventaire_id}_{ligne_id}'
+    existing = cache.get(cache_key)
+
+    if existing and existing['user_id'] != request.user.id:
+        return JsonResponse({'locked_by_other': True, 'nom': existing['nom']})
+
+    cache.set(cache_key, {'nom': _user_nom(request.user), 'user_id': request.user.id}, 300)
+    return JsonResponse({'locked_by_other': False})
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+@require_POST
+def unlock_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
+    """Libère le verrou de la ligne pour l'utilisateur courant."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+    try:
+        data = json.loads(request.body)
+        ligne_id = int(data.get('ligne_id'))
+    except (ValueError, TypeError, KeyError):
+        return JsonResponse({'error': 'Données invalides'}, status=400)
+
+    cache_key = f'inv_lock_{inventaire_id}_{ligne_id}'
+    existing = cache.get(cache_key)
+    if existing and existing['user_id'] == request.user.id:
+        cache.delete(cache_key)
+    return JsonResponse({'ok': True})
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def get_locks_inventaire_ajax(request, boutique_id, inventaire_id):
+    """Retourne tous les verrous actifs pour cet inventaire."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+    ligne_ids = list(inventaire.lignes.values_list('id', flat=True))
+    locks = {}
+    for lid in ligne_ids:
+        lock = cache.get(f'inv_lock_{inventaire_id}_{lid}')
+        if lock and lock['user_id'] != request.user.id:
+            locks[str(lid)] = lock['nom']
+    return JsonResponse({'locks': locks})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FEATURE 5 : TABLEAU DE BORD RESPONSABLE EN TEMPS RÉEL
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@commercant_required
+@boutique_access_required
+def tableau_bord_inventaire(request, boutique_id, inventaire_id):
+    """Tableau de bord temps réel de l'avancement par collaborateur."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+
+    nb_total = inventaire.lignes.count()
+    nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
+
+    # Regrouper les saisies par collaborateur
+    from django.db.models import Count as DCount, Sum as DSum, Max as DMax
+    from django.db.models.functions import Coalesce
+    from django.db.models import FloatField
+
+    collab_stats = (
+        inventaire.lignes
+        .filter(stock_physique__isnull=False)
+        .exclude(assigne_a='').exclude(assigne_a__isnull=True)
+        .values('assigne_a')
+        .annotate(
+            nb_saisis=DCount('id'),
+            derniere_saisie=DMax('date_modification'),
+        )
+        .order_by('-nb_saisis')
+    )
+
+    # Valeur totale saisie par collaborateur (en CDF)
+    collab_list = []
+    for cs in collab_stats:
+        lignes_collab = inventaire.lignes.filter(
+            assigne_a=cs['assigne_a'],
+            stock_physique__isnull=False
+        ).select_related('article')
+        valeur_cdf = sum(
+            (l.stock_physique or 0) * float(l.article.prix_vente)
+            for l in lignes_collab
+            if l.article.devise != 'USD'
+        )
+        valeur_usd = sum(
+            (l.stock_physique or 0) * float(l.article.prix_vente)
+            for l in lignes_collab
+            if l.article.devise == 'USD'
+        )
+        nb_ecarts = lignes_collab.filter(
+            stock_physique__isnull=False
+        ).exclude(stock_physique=F('stock_theorique')).count()
+
+        collab_list.append({
+            'nom': cs['assigne_a'],
+            'nb_saisis': cs['nb_saisis'],
+            'derniere_saisie': cs['derniere_saisie'],
+            'valeur_cdf': valeur_cdf,
+            'valeur_usd': valeur_usd,
+            'nb_ecarts': nb_ecarts,
+        })
+
+    # Articles non encore saisis
+    non_saisis = inventaire.lignes.filter(stock_physique__isnull=True).select_related('article')
+
+    context = {
+        'boutique': boutique,
+        'inventaire': inventaire,
+        'nb_total': nb_total,
+        'nb_saisis': nb_saisis,
+        'nb_non_saisis': nb_total - nb_saisis,
+        'pct': round(nb_saisis / nb_total * 100) if nb_total else 0,
+        'collab_list': collab_list,
+        'non_saisis': non_saisis[:20],
+        'nb_non_saisis_total': nb_total - nb_saisis,
+    }
+    return render(request, 'inventory/commercant/tableau_bord_inventaire.html', context)
 
 
 @login_required
