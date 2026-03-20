@@ -91,7 +91,7 @@
                     <select class="form-select form-select-sm" id="filterCategorie">
                         <option value="">Toutes catégories</option>
                         {% for cat in categories %}
-                        <option value="{{ cat.nom }}">{{ cat.nom }}</option>
+                        <option value="{{ cat.id }}" {% if categorie_id == cat.id %}selected{% endif %}>{{ cat.nom }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -2527,16 +2527,29 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Événements pour la recherche en temps réel
     searchInput.addEventListener('input', filterArticles);
-    filterCategorie.addEventListener('change', filterArticles);
+    filterCategorie.addEventListener('change', function() {
+        const catId = this.value;
+        const url = new URL(window.location.href);
+        url.searchParams.delete('page');
+        if (catId) {
+            url.searchParams.set('categorie', catId);
+        } else {
+            url.searchParams.delete('categorie');
+        }
+        window.location.href = url.toString();
+    });
     filterStock.addEventListener('change', filterArticles);
     
     // Bouton de réinitialisation
     btnResetFilters.addEventListener('click', function() {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('categorie');
+        url.searchParams.delete('stock');
+        url.searchParams.delete('search');
+        url.searchParams.delete('page');
         searchInput.value = '';
-        filterCategorie.value = '';
         filterStock.value = '';
-        filterArticles();
-        searchInput.focus();
+        window.location.href = url.toString();
     });
     
     // Effet visuel sur le champ de recherche
