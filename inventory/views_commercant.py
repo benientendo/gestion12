@@ -6349,6 +6349,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
             'code': l.article.code,
             'stock_theorique': l.stock_theorique,
             'stock_physique': l.stock_physique,
+            'assigne_a': l.assigne_a or '',
             'quantite_stock': l.article.quantite_stock,
             'prix_vente': float(l.article.prix_vente),
             'devise': l.article.devise,

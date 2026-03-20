@@ -446,6 +446,32 @@ kbd {
     {% endif %}
 </div>
 
+<!-- Modal : article déjà saisi par un autre collaborateur -->
+<div class="modal fade" id="confirmResaisieModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header py-2 bg-warning-subtle">
+                <h6 class="modal-title fw-bold mb-0">
+                    <i class="fas fa-exclamation-triangle text-warning me-2"></i>Article déjà saisi
+                </h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3 text-center">
+                <p class="mb-1" id="confirmResaisieMsg" style="font-size:.9rem;"></p>
+                <small class="text-muted">Voulez-vous modifier cette saisie ?</small>
+            </div>
+            <div class="modal-footer py-2 d-flex gap-2 justify-content-center border-0">
+                <button type="button" class="btn btn-success btn-sm px-4" id="confirmResaisieOui">
+                    <i class="fas fa-check me-1"></i>Oui, modifier
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm px-4" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Annuler
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 // =============================================
 // IA INVENTAIRE - FONCTIONS
@@ -977,7 +1003,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 
     function updateLocalStock(ligneId, newStock) {
         const a = ARTICLES.find(x => x.ligne_id === ligneId);
-        if (a) a.stock_physique = newStock;
+        if (a) { a.stock_physique = newStock; a.assigne_a = CURRENT_USER_NOM; }
     }
 
     // ---- Tableau session ----
@@ -1089,7 +1115,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         activeIdx = -1;
     }
 
-    function selectArticle(art) {
+    function doSelectArticle(art) {
         selectedArticle = art;
         srSearch.value = art.nom;
         closeDropdown();
@@ -1107,6 +1133,35 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         srQteWrap.style.display = 'flex';
         srQte.focus();
         srQte.select();
+    }
+
+    function selectArticle(art) {
+        closeDropdown();
+        // Si déjà saisi par quelqu'un d'autre, demander confirmation
+        const dejaParAutre = art.stock_physique !== null
+            && art.assigne_a
+            && art.assigne_a !== CURRENT_USER_NOM;
+
+        if (dejaParAutre) {
+            const msg = document.getElementById('confirmResaisieMsg');
+            msg.innerHTML = '<strong>' + art.nom + '</strong><br>'
+                + '<span class="badge bg-info text-dark mt-1">' + art.assigne_a + '</span>'
+                + ' a déjà saisi <strong>' + art.stock_physique + '</strong> pcs.';
+
+            const modal = new bootstrap.Modal(document.getElementById('confirmResaisieModal'));
+            const ouiBtn = document.getElementById('confirmResaisieOui');
+            // Cloner le bouton pour enlever les vieux listeners
+            const ouiClone = ouiBtn.cloneNode(true);
+            ouiBtn.parentNode.replaceChild(ouiClone, ouiBtn);
+            ouiClone.addEventListener('click', function() {
+                modal.hide();
+                doSelectArticle(art);
+            });
+            srSearch.value = art.nom;
+            modal.show();
+        } else {
+            doSelectArticle(art);
+        }
     }
 
     function resetPanel() {
