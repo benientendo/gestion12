@@ -13,6 +13,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
+from datetime import timedelta
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime, parse_date
 from django.db.models import Sum, Q
@@ -82,6 +83,21 @@ def validate_boutique_access(request, boutique_id):
         
     except Boutique.DoesNotExist:
         raise ValidationError("Boutique non trouvée ou inactive")
+
+
+def _sanitize_date_vente(date_vente):
+    """
+    Bonne pratique : si la date client est dans le futur (> 5 min),
+    on la remplace par l'heure serveur pour corriger les erreurs d'horloge.
+    """
+    server_now = timezone.now()
+    if date_vente > server_now + timedelta(minutes=5):
+        logger.warning(
+            f"[create_vente] Date future détectée ({date_vente.isoformat()}), "
+            f"remplacée par l'heure serveur ({server_now.isoformat()})"
+        )
+        return server_now
+    return date_vente
 
 
 # ===== AUTHENTIFICATION MAUI =====
@@ -194,6 +210,9 @@ def maui_auth_v2(request):
                 }
             }
         }
+        
+        # Heure serveur : permet au client MAUI de détecter les décalages d'horloge
+        response_data['server_time'] = timezone.now().isoformat()
         
         logger.info(f"Authentification réussie - Terminal: {numero_serie}, Boutique: {boutique.nom} (ID: {boutique.id})")
         
@@ -479,11 +498,11 @@ def create_vente_v2(request):
             if date_vente is None:
                 date_vente = timezone.now()
             elif timezone.is_naive(date_vente):
-                # Interpréter la date naïve comme étant dans le timezone de Django (Europe/Paris)
                 date_vente = timezone.make_aware(date_vente)
             else:
-                # Si la date est déjà aware, s'assurer qu'elle est dans le bon timezone
                 date_vente = date_vente.astimezone(timezone.get_current_timezone())
+            # Bonne pratique : bloquer les dates futures (horloge client incorrecte)
+            date_vente = _sanitize_date_vente(date_vente)
         else:
             date_vente = timezone.now()
         

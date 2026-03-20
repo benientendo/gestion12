@@ -3535,7 +3535,7 @@ def ventes_boutique(request, boutique_id):
     
     # Regrouper les ventes par période
     from collections import OrderedDict
-    maintenant = datetime.now()
+    maintenant = timezone.localtime(timezone.now())
     aujourd_hui = maintenant.date()
     
     ventes_groupees = OrderedDict()
@@ -3549,7 +3549,7 @@ def ventes_boutique(request, boutique_id):
     
     for vente in ventes:
         # Déterminer la période
-        date_vente = vente.date_vente.date()
+        date_vente = timezone.localtime(vente.date_vente).date()
         
         if date_vente == aujourd_hui:
             periode = "Aujourd'hui"
@@ -3557,7 +3557,7 @@ def ventes_boutique(request, boutique_id):
             periode = "Hier"
         elif date_vente > aujourd_hui - timedelta(days=7):
             periode = "Cette semaine"
-        elif vente.date_vente.year == aujourd_hui.year and vente.date_vente.month == aujourd_hui.month:
+        elif date_vente.year == aujourd_hui.year and date_vente.month == aujourd_hui.month:
             periode = "Ce mois"
         else:
             mois_precedent = aujourd_hui.replace(day=1) - timedelta(days=1)

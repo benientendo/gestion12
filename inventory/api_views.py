@@ -23,6 +23,24 @@ from .serializers import (
 )
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
+logger = logging.getLogger(__name__)
+
+
+def _sanitize_date_vente(date_vente):
+    """
+    Bonne pratique : si la date client est dans le futur (> 5 min),
+    on la remplace par l'heure serveur pour corriger les erreurs d'horloge.
+    """
+    server_now = timezone.now()
+    if date_vente > server_now + timedelta(minutes=5):
+        logger.warning(
+            f"[sync] Date future détectée ({date_vente.isoformat()}), "
+            f"remplacée par l'heure serveur ({server_now.isoformat()})"
+        )
+        return server_now
+    return date_vente
+
+
 # Fonction d'assistance pour récupérer un article
 def get_article_by_id(article_id):
     """Récupère un article par son ID ou retourne une erreur 404"""
@@ -463,6 +481,8 @@ def sync_ventes_batch(request):
                     date_vente = timezone.make_aware(date_vente)
             if not date_vente:
                 date_vente = timezone.now()
+            else:
+                date_vente = _sanitize_date_vente(date_vente)
 
             total_raw = (vente_data or {}).get('total')
             if total_raw is None:
