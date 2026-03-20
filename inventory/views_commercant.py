@@ -3499,13 +3499,39 @@ def ventes_boutique(request, boutique_id):
             terminal_selected = 'TOUS'
     else:
         terminal_selected = 'TOUS'
-    
-    # Statistiques
-    from django.db.models import Sum, Count
+
+    # Filtre par catégorie d'article
+    categorie_id = request.GET.get('categorie_id', '').strip()
+    categorie_selected = ''
+    if categorie_id:
+        try:
+            categorie_id_int = int(categorie_id)
+            ventes = ventes.filter(lignes__article__categorie_id=categorie_id_int).distinct()
+            categorie_selected = categorie_id_int
+        except (TypeError, ValueError):
+            pass
+
+    # Catégories disponibles pour le filtre
+    categories = boutique.categories.all().order_by('nom')
+
+    # Statistiques globales
     stats = ventes.aggregate(
         total_ventes=Count('id'),
         chiffre_affaires=Sum('montant_total')
     )
+
+    # Statistiques par catégorie (nb ventes distinctes + montant des lignes)
+    stats_par_categorie = LigneVente.objects.filter(
+        vente__in=ventes,
+        vente__est_annulee=False,
+    ).values(
+        cat_nom=F('article__categorie__nom'),
+        cat_id=F('article__categorie_id'),
+    ).annotate(
+        nb_ventes=Count('vente', distinct=True),
+        montant=Sum('sous_total'),
+        nb_lignes=Count('id'),
+    ).order_by('-montant')
     
     # Regrouper les ventes par période
     from collections import OrderedDict
@@ -3567,6 +3593,9 @@ def ventes_boutique(request, boutique_id):
         'terminaux': terminaux,
         'terminal_selected': terminal_selected,
         'periode_selected': periode,
+        'categories': categories,
+        'categorie_selected': categorie_selected,
+        'stats_par_categorie': stats_par_categorie,
     }
     
     return render(request, 'inventory/commercant/ventes_boutique.html', context)
