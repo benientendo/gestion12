@@ -5,7 +5,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
-from django.db.models import Q, Sum, Count, F, Avg, Max, Min, Prefetch
+from django.db.models import Q, Sum, Count, F, Avg, Max, Min, Prefetch, ExpressionWrapper, DecimalField as OrmDecimalField
 from django.db import transaction
 from django.utils import timezone
 from django.core.paginator import Paginator
@@ -3529,7 +3529,7 @@ def ventes_boutique(request, boutique_id):
         cat_id=F('article__categorie_id'),
     ).annotate(
         nb_ventes=Count('vente', distinct=True),
-        montant=Sum('sous_total'),
+        montant=Sum(ExpressionWrapper(F('quantite') * F('prix_unitaire'), output_field=OrmDecimalField(max_digits=15, decimal_places=2))),
         nb_lignes=Count('id'),
     ).order_by('-montant')
     
