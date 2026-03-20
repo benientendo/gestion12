@@ -512,8 +512,9 @@ function iaAction(action) {
 
 // Fermer menu si clic ailleurs
 document.addEventListener('click', function(e) {
-    if (!e.target.closest('.ia-box')) {
-        document.getElementById('iaMenu').classList.remove('visible');
+    const iaMenu = document.getElementById('iaMenu');
+    if (iaMenu && !e.target.closest('.ia-box')) {
+        iaMenu.classList.remove('visible');
     }
 });
 
@@ -659,6 +660,7 @@ function toggleScannerMode() {
     scannerMode = !scannerMode;
     const btn = document.getElementById('scannerModeBtn');
     const searchInput = document.getElementById('searchInventaire');
+    if (!btn || !searchInput) return;
     
     if (scannerMode) {
         btn.classList.remove('btn-warning');
@@ -687,7 +689,8 @@ function toggleScannerMode() {
 }
 
 // Écouter les scans de codes-barres
-document.getElementById('searchInventaire').addEventListener('input', function(e) {
+const _scanInput = document.getElementById('searchInventaire');
+if (_scanInput) _scanInput.addEventListener('input', function(e) {
     if (!scannerMode) return;
     
     clearTimeout(scanTimeout);
