@@ -236,6 +236,19 @@ def dashboard_commercant(request):
             ca_cdf = 0
             ca_usd = 0
 
+        # Valeur stock de cette boutique (prix_vente, identique au dashboard PDV)
+        try:
+            arts = boutique.articles.filter(est_actif=True, quantite_stock__gt=0)
+            boutique.stock_cdf = arts.filter(devise='CDF').aggregate(
+                total=Sum(F('quantite_stock') * F('prix_vente'))
+            )['total'] or 0
+            boutique.stock_usd = arts.filter(devise='USD').aggregate(
+                total=Sum(F('quantite_stock') * F('prix_vente'))
+            )['total'] or 0
+        except Exception:
+            boutique.stock_cdf = 0
+            boutique.stock_usd = 0
+
         # Annoter l'objet boutique pour l'utiliser directement dans le template
         boutique.ca_30j_cdf = ca_cdf
         boutique.ca_30j_usd = ca_usd
@@ -289,16 +302,19 @@ def dashboard_commercant(request):
     ca_30j_usd = ventes_30j_usd.aggregate(total=Sum('montant_total'))['total'] or 0
 
     # Valeur stock PDV — CDF et USD séparés, jamais mélangés
+    # Utilise prix_vente (identique au dashboard PDV par boutique)
+    # Les articles transférés depuis dépôt ont prix_achat=0, donc prix_vente est la référence correcte
     stock_pdv_base = Article.objects.filter(
         boutique__commercant=commercant,
         boutique__est_depot=False,
         est_actif=True,
+        quantite_stock__gt=0,
     )
     valeur_pdv_cdf = stock_pdv_base.filter(devise='CDF').aggregate(
-        total=Sum(F('quantite_stock') * F('prix_achat'))
+        total=Sum(F('quantite_stock') * F('prix_vente'))
     )['total'] or 0
     valeur_pdv_usd = stock_pdv_base.filter(devise='USD').aggregate(
-        total=Sum(F('quantite_stock') * F('prix_achat'))
+        total=Sum(F('quantite_stock') * F('prix_vente'))
     )['total'] or 0
 
     # Valeur stock Dépôts — CDF et USD séparés
