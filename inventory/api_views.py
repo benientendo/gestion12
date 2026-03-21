@@ -566,14 +566,26 @@ def sync_ventes_batch(request):
                 if expected_total != total:
                     raise ValueError('TOTAL_INCOHERENT')
 
+                devise_vente = (vente_data or {}).get('devise', 'CDF')
+                montant_usd_raw = (vente_data or {}).get('montant_total_usd')
+                montant_usd = None
+                if montant_usd_raw is not None:
+                    try:
+                        montant_usd = Decimal(str(montant_usd_raw).replace(',', '.'))
+                    except (InvalidOperation, ValueError, TypeError):
+                        montant_usd = None
+
                 vente, created = Vente.objects.get_or_create(
                     numero_facture=vente_uid,
                     defaults={
                         'date_vente': date_vente,
                         'montant_total': total,
+                        'montant_total_usd': montant_usd,
+                        'devise': devise_vente,
                         'mode_paiement': (vente_data or {}).get('mode_paiement', 'CASH'),
                         'paye': (vente_data or {}).get('paye', True),
                         'client_maui': terminal,
+                        'boutique': terminal.boutique,
                         'adresse_ip_client': request.META.get('REMOTE_ADDR'),
                         'version_app_maui': getattr(terminal, 'version_app_maui', ''),
                     }

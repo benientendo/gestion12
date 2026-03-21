@@ -309,7 +309,7 @@ def dashboard_commercant(request):
     # 💰 NÉGOCIATIONS - Statistiques des prix négociés ce mois
     from .models import LigneVente
     lignes_negociees_mois = LigneVente.objects.filter(
-        vente__boutique__in=boutiques,
+        Q(vente__boutique__in=boutiques) | Q(vente__client_maui__boutique__in=boutiques),
         vente__date_vente__gte=debut_mois,
         est_negocie=True
     ).aggregate(
@@ -948,8 +948,11 @@ def supprimer_boutique(request, boutique_id):
     
     total_articles = Article.objects.filter(boutique=boutique).count()
     total_categories = Categorie.objects.filter(boutique=boutique).count()
-    total_ventes = Vente.objects.filter(boutique=boutique).count()
-    chiffre_affaires = Vente.objects.filter(boutique=boutique).aggregate(
+    ventes_boutique_qs = Vente.objects.filter(
+        Q(boutique=boutique) | Q(client_maui__boutique=boutique)
+    ).distinct()
+    total_ventes = ventes_boutique_qs.count()
+    chiffre_affaires = ventes_boutique_qs.aggregate(
         total=Sum('montant_total')
     )['total'] or 0
 
