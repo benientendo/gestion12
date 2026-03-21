@@ -246,18 +246,22 @@
                                 <div class="small-stat-label">Recette jour</div>
                             </div>
                             <div class="w-100"></div>
-                            <div class="col-4 mt-1">
+                            <div class="col-3 mt-1">
                                 <div class="small-stat-number small-stat-number-success sensitive-amount">{{ chiffre_affaires_30j|floatformat:0|intcomma }} CDF</div>
                                 <div class="small-stat-number sensitive-amount" style="font-size:0.8rem; color: #28a745;">$ {{ chiffre_affaires_30j_usd|floatformat:2|default:"0.00" }}</div>
                                 <div class="small-stat-label">Recette 30j</div>
                             </div>
-                            <div class="col-4 mt-1">
-                                <div class="small-stat-number small-stat-number-info sensitive-amount">{{ valeur_marchandise|floatformat:2|intcomma }} CDF</div>
-                                <div class="small-stat-label">Valeur stock (CDF)</div>
+                            <div class="col-3 mt-1">
+                                <div class="small-stat-number small-stat-number-info sensitive-amount">{{ valeur_marchandise|floatformat:0|intcomma }} CDF</div>
+                                <div class="small-stat-label">Stock PDV</div>
                             </div>
-                            <div class="col-4 mt-1">
-                                <div class="small-stat-number small-stat-number-danger sensitive-amount">{{ depenses_totales|floatformat:2|intcomma }} CDF</div>
-                                <div class="small-stat-label">Dépenses mois en cours</div>
+                            <div class="col-3 mt-1">
+                                <div class="small-stat-number sensitive-amount" style="color: #74c0fc;">{{ valeur_stock_depots|floatformat:0|intcomma }} CDF</div>
+                                <div class="small-stat-label">Stock Dépôts</div>
+                            </div>
+                            <div class="col-3 mt-1">
+                                <div class="small-stat-number small-stat-number-danger sensitive-amount">{{ depenses_totales|floatformat:0|intcomma }} CDF</div>
+                                <div class="small-stat-label">Dépenses mois</div>
                             </div>
                             <!-- 💰 Négociations (toujours visible) -->
                             <div class="w-100 mt-2"></div>

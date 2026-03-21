@@ -299,6 +299,21 @@ def dashboard_commercant(request):
     ).aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
     valeur_marchandise = valeur_cdf_pdv + (Decimal(str(valeur_usd_pdv)) * taux)
 
+    # Valeur totale du stock des dépôts (séparée des PDV)
+    valeur_cdf_depots = Article.objects.filter(
+        boutique__commercant=commercant,
+        boutique__est_depot=True,
+        est_actif=True,
+        devise='CDF',
+    ).aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
+    valeur_usd_depots = Article.objects.filter(
+        boutique__commercant=commercant,
+        boutique__est_depot=True,
+        est_actif=True,
+        devise='USD',
+    ).aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
+    valeur_stock_depots = valeur_cdf_depots + (Decimal(str(valeur_usd_depots)) * taux)
+
     # Dépenses totales de toutes les boutiques (rapports de caisse en CDF) sur le mois en cours
     depenses_qs = RapportCaisse.objects.filter(
         boutique__in=boutiques,
@@ -341,6 +356,7 @@ def dashboard_commercant(request):
         'nb_ventes_jour_cdf': ventes_jour_cdf.count(),
         'nb_ventes_jour_usd': ventes_jour_usd.count(),
         'valeur_marchandise': valeur_marchandise,
+        'valeur_stock_depots': valeur_stock_depots,
         'depenses_totales': depenses_totales,
         'boutiques_avec_clients': boutiques_toutes.filter(clients__isnull=False).distinct().count(),
         'stats_boutiques': stats_boutiques,
