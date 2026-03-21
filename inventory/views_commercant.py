@@ -282,14 +282,21 @@ def dashboard_commercant(request):
     ventes_30j_usd = ventes_30j.filter(devise='USD')
     ca_30j_usd = ventes_30j_usd.aggregate(total=Sum('montant_total_usd'))['total'] or 0
 
-    # Valeur totale de la marchandise (stock) en CDF
-    articles_commercant = Article.objects.filter(
+    # Valeur totale de la marchandise (stock) — points de vente uniquement, hors dépôts
+    taux = commercant.taux_dollar or Decimal('1')
+    valeur_cdf_pdv = Article.objects.filter(
         boutique__commercant=commercant,
-        est_actif=True
-    )
-    valeur_marchandise = articles_commercant.aggregate(
-        total=Sum(F('quantite_stock') * F('prix_achat'))
-    )['total'] or 0
+        boutique__est_depot=False,
+        est_actif=True,
+        devise='CDF',
+    ).aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
+    valeur_usd_pdv = Article.objects.filter(
+        boutique__commercant=commercant,
+        boutique__est_depot=False,
+        est_actif=True,
+        devise='USD',
+    ).aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
+    valeur_marchandise = valeur_cdf_pdv + (Decimal(str(valeur_usd_pdv)) * taux)
 
     # Dépenses totales de toutes les boutiques (rapports de caisse en CDF) sur le mois en cours
     depenses_qs = RapportCaisse.objects.filter(
@@ -428,20 +435,22 @@ def detail_boutique(request, boutique_id):
     # Statistiques des 30 derniers jours
     date_debut = timezone.now() - timedelta(days=30)
     
-    # Récupérer les ventes via les clients MAUI de la boutique (exclure les ventes annulées)
+    # Récupérer les ventes — via FK boutique directe OU via client_maui (exclure annulées)
     try:
         ventes_recentes = Vente.objects.filter(
-            client_maui__boutique=boutique,
+            Q(boutique=boutique) | Q(client_maui__boutique=boutique),
             date_vente__gte=date_debut,
             paye=True,
             est_annulee=False
-        )
+        ).distinct()
     except (ValueError, TypeError):
-        # Relations pas encore mises à jour après migration
         ventes_recentes = Vente.objects.none()
-    
+
     nb_ventes = ventes_recentes.count()
-    ca_total = ventes_recentes.aggregate(total=Sum('montant_total'))['total'] or 0
+    # CA CDF uniquement (cohérent avec global dashboard)
+    ca_cdf_30j = ventes_recentes.filter(devise='CDF').aggregate(total=Sum('montant_total'))['total'] or 0
+    ca_usd_30j = ventes_recentes.filter(devise='USD').aggregate(total=Sum('montant_total_usd'))['total'] or 0
+    ca_total = ca_cdf_30j
     
     # Articles les plus vendus
     from django.db.models import Sum as DbSum
@@ -494,6 +503,7 @@ def detail_boutique(request, boutique_id):
         'boutique': boutique,
         'nb_ventes': nb_ventes,
         'ca_total': ca_total,
+        'ca_usd_30j': ca_usd_30j,
         'articles_populaires': articles_populaires,
         'terminaux': terminaux,
         'articles_stock_bas': articles_stock_bas,
@@ -501,7 +511,8 @@ def detail_boutique(request, boutique_id):
         'total_articles': total_articles,
         'total_categories': total_categories,
         'total_ventes': total_ventes,
-        'chiffre_affaires': chiffre_affaires,
+        'chiffre_affaires': ca_cdf_30j,
+        'chiffre_affaires_usd': ca_usd_30j,
         'ventes_recentes': ventes_recentes_display,
         'nb_ventes_refusees_jour': nb_ventes_refusees_jour,
         'total_potentiel_refusees': total_potentiel_refusees
@@ -796,12 +807,11 @@ def api_stats_boutique(request, boutique_id):
         aujourd_hui = timezone.now().date()
         try:
             ventes_aujourd_hui = Vente.objects.filter(
-                boutique=boutique,
+                Q(boutique=boutique) | Q(client_maui__boutique=boutique),
                 date_vente__date=aujourd_hui,
                 paye=True
-            )
+            ).distinct()
         except (ValueError, TypeError):
-            # Relations pas encore mises à jour après migration
             ventes_aujourd_hui = Vente.objects.none()
         
         nb_ventes = ventes_aujourd_hui.count()

@@ -171,6 +171,9 @@
                     <div class="mb-3">
                         <strong>Chiffre d'affaires :</strong><br>
                         <span class="fs-5 fw-bold text-success">{{ chiffre_affaires|floatformat:0|intcomma }} FC</span>
+                        {% if chiffre_affaires_usd %}
+                        <br><span class="fs-6 text-warning">+ $ {{ chiffre_affaires_usd|floatformat:2 }}</span>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
                         <strong>Articles en stock bas :</strong><br>
