@@ -252,11 +252,13 @@
                                 <div class="small-stat-label">Recette 30j</div>
                             </div>
                             <div class="col-3 mt-1">
-                                <div class="small-stat-number small-stat-number-info sensitive-amount">{{ valeur_marchandise|floatformat:0|intcomma }} CDF</div>
+                                <div class="small-stat-number small-stat-number-info sensitive-amount">{{ valeur_pdv_cdf|floatformat:0|intcomma }} FC</div>
+                                {% if valeur_pdv_usd %}<div class="small-stat-number sensitive-amount" style="font-size:0.8rem; color:#4dabf7;">$ {{ valeur_pdv_usd|floatformat:2 }}</div>{% endif %}
                                 <div class="small-stat-label">Stock PDV</div>
                             </div>
                             <div class="col-3 mt-1">
-                                <div class="small-stat-number sensitive-amount" style="color: #74c0fc;">{{ valeur_stock_depots|floatformat:0|intcomma }} CDF</div>
+                                <div class="small-stat-number sensitive-amount" style="color: #74c0fc;">{{ valeur_depots_cdf|floatformat:0|intcomma }} FC</div>
+                                {% if valeur_depots_usd %}<div class="small-stat-number sensitive-amount" style="font-size:0.8rem; color:#4dabf7;">$ {{ valeur_depots_usd|floatformat:2 }}</div>{% endif %}
                                 <div class="small-stat-label">Stock Dépôts</div>
                             </div>
                             <div class="col-3 mt-1">
@@ -545,22 +547,21 @@
                 <!-- Statut footer -->
                 <div class="card-footer bg-transparent">
                     <div class="row text-center">
-                        <div class="col-4">
+                        <div class="col-3">
                             <small class="text-muted">Articles</small><br>
                             <strong>{{ boutique.articles.count|default:0 }}</strong>
                         </div>
-                        <div class="col-4">
+                        <div class="col-3">
                             <small class="text-muted">Terminaux</small><br>
                             <strong>{{ boutique.clients.count|default:0 }}</strong>
                         </div>
-                        <div class="col-4">
-                            {% if boutique.est_active %}
-                                <small class="text-success">Active</small><br>
-                                <i class="fas fa-check-circle text-success"></i>
-                            {% else %}
-                                <small class="text-danger">Inactive</small><br>
-                                <i class="fas fa-times-circle text-danger"></i>
-                            {% endif %}
+                        <div class="col-3">
+                            <small class="text-muted">CA 30j FC</small><br>
+                            <strong class="text-success sensitive-amount" style="font-size:0.75rem;">{{ boutique.ca_30j_cdf|floatformat:0|intcomma }}</strong>
+                        </div>
+                        <div class="col-3">
+                            <small class="text-muted">CA 30j $</small><br>
+                            <strong class="text-warning sensitive-amount" style="font-size:0.75rem;">{{ boutique.ca_30j_usd|floatformat:2 }}</strong>
                         </div>
                     </div>
                 </div>

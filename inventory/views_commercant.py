@@ -218,42 +218,47 @@ def dashboard_commercant(request):
     # Calculs par boutique
     stats_boutiques = []
     total_ventes = 0
-    total_ca = 0
-    
+
     for boutique in boutiques:
-        # Récupérer les ventes via les clients MAUI de la boutique (exclure les ventes annulées)
         try:
             ventes_boutique = Vente.objects.filter(
-                client_maui__boutique=boutique,
+                Q(boutique=boutique) | Q(client_maui__boutique=boutique),
                 date_vente__gte=date_debut,
                 paye=True,
                 est_annulee=False
-            )
+            ).distinct()
             nb_ventes = ventes_boutique.count()
-            ca_boutique = ventes_boutique.aggregate(total=Sum('montant_total'))['total'] or 0
+            # CDF et USD séparés — ne jamais mélanger
+            ca_cdf = ventes_boutique.filter(devise='CDF').aggregate(total=Sum('montant_total'))['total'] or 0
+            ca_usd = ventes_boutique.filter(devise='USD').aggregate(total=Sum('montant_total'))['total'] or 0
         except (ValueError, TypeError):
-            # Relations pas encore mises à jour après migration
             nb_ventes = 0
-            ca_boutique = 0
-        
+            ca_cdf = 0
+            ca_usd = 0
+
+        # Annoter l'objet boutique pour l'utiliser directement dans le template
+        boutique.ca_30j_cdf = ca_cdf
+        boutique.ca_30j_usd = ca_usd
+        boutique.nb_ventes_30j = nb_ventes
+
         stats_boutiques.append({
             'boutique': boutique,
             'nb_ventes': nb_ventes,
-            'chiffre_affaires': ca_boutique,
+            'ca_cdf': ca_cdf,
+            'ca_usd': ca_usd,
             'nb_articles': boutique.articles.count(),
-            'nb_terminaux': boutique.clients.count()  # Utiliser clients au lieu de terminaux
+            'nb_terminaux': boutique.clients.count(),
         })
-        
+
         total_ventes += nb_ventes
-        total_ca += ca_boutique
     
     # Recette du jour - Séparation CDF et USD
     ventes_jour = Vente.objects.filter(
-        client_maui__boutique__in=boutiques,
+        Q(boutique__in=boutiques) | Q(client_maui__boutique__in=boutiques),
         date_vente__date=aujourd_hui,
         paye=True,
         est_annulee=False
-    )
+    ).distinct()
     
     # Recette CDF du jour (ventes en CDF uniquement)
     ventes_jour_cdf = ventes_jour.filter(devise='CDF')
@@ -269,11 +274,11 @@ def dashboard_commercant(request):
     
     # Recette 30 jours - Séparation CDF et USD
     ventes_30j = Vente.objects.filter(
-        client_maui__boutique__in=boutiques,
+        Q(boutique__in=boutiques) | Q(client_maui__boutique__in=boutiques),
         date_vente__gte=date_debut,
         paye=True,
         est_annulee=False
-    )
+    ).distinct()
     
     # Recette CDF 30 jours
     ventes_30j_cdf = ventes_30j.filter(devise='CDF')
@@ -283,36 +288,31 @@ def dashboard_commercant(request):
     ventes_30j_usd = ventes_30j.filter(devise='USD')
     ca_30j_usd = ventes_30j_usd.aggregate(total=Sum('montant_total'))['total'] or 0
 
-    # Valeur totale de la marchandise (stock) — points de vente uniquement, hors dépôts
-    taux = commercant.taux_dollar or Decimal('1')
-    valeur_cdf_pdv = Article.objects.filter(
+    # Valeur stock PDV — CDF et USD séparés, jamais mélangés
+    stock_pdv_base = Article.objects.filter(
         boutique__commercant=commercant,
         boutique__est_depot=False,
         est_actif=True,
-        devise='CDF',
-    ).aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
-    valeur_usd_pdv = Article.objects.filter(
-        boutique__commercant=commercant,
-        boutique__est_depot=False,
-        est_actif=True,
-        devise='USD',
-    ).aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
-    valeur_marchandise = valeur_cdf_pdv + (Decimal(str(valeur_usd_pdv)) * taux)
+    )
+    valeur_pdv_cdf = stock_pdv_base.filter(devise='CDF').aggregate(
+        total=Sum(F('quantite_stock') * F('prix_achat'))
+    )['total'] or 0
+    valeur_pdv_usd = stock_pdv_base.filter(devise='USD').aggregate(
+        total=Sum(F('quantite_stock') * F('prix_achat'))
+    )['total'] or 0
 
-    # Valeur totale du stock des dépôts (séparée des PDV)
-    valeur_cdf_depots = Article.objects.filter(
+    # Valeur stock Dépôts — CDF et USD séparés
+    stock_depots_base = Article.objects.filter(
         boutique__commercant=commercant,
         boutique__est_depot=True,
         est_actif=True,
-        devise='CDF',
-    ).aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
-    valeur_usd_depots = Article.objects.filter(
-        boutique__commercant=commercant,
-        boutique__est_depot=True,
-        est_actif=True,
-        devise='USD',
-    ).aggregate(total=Sum(F('quantite_stock') * F('prix_achat')))['total'] or 0
-    valeur_stock_depots = valeur_cdf_depots + (Decimal(str(valeur_usd_depots)) * taux)
+    )
+    valeur_depots_cdf = stock_depots_base.filter(devise='CDF').aggregate(
+        total=Sum(F('quantite_stock') * F('prix_achat'))
+    )['total'] or 0
+    valeur_depots_usd = stock_depots_base.filter(devise='USD').aggregate(
+        total=Sum(F('quantite_stock') * F('prix_achat'))
+    )['total'] or 0
 
     # Dépenses totales de toutes les boutiques (rapports de caisse en CDF) sur le mois en cours
     depenses_qs = RapportCaisse.objects.filter(
@@ -348,15 +348,16 @@ def dashboard_commercant(request):
         'depots': depots_list,  # Ajouter la liste des dépôts
         'total_boutiques': total_boutiques,
         'total_ventes': total_ventes,
-        'total_ca': total_ca,
         'chiffre_affaires_30j': ca_30j_cdf,  # CDF 30 jours
         'chiffre_affaires_30j_usd': ca_30j_usd,  # USD 30 jours
         'recette_jour': ca_jour_cdf,  # CDF du jour
         'recette_jour_usd': ca_jour_usd,  # USD du jour
         'nb_ventes_jour_cdf': ventes_jour_cdf.count(),
         'nb_ventes_jour_usd': ventes_jour_usd.count(),
-        'valeur_marchandise': valeur_marchandise,
-        'valeur_stock_depots': valeur_stock_depots,
+        'valeur_pdv_cdf': valeur_pdv_cdf,
+        'valeur_pdv_usd': valeur_pdv_usd,
+        'valeur_depots_cdf': valeur_depots_cdf,
+        'valeur_depots_usd': valeur_depots_usd,
         'depenses_totales': depenses_totales,
         'boutiques_avec_clients': boutiques_toutes.filter(clients__isnull=False).distinct().count(),
         'stats_boutiques': stats_boutiques,
