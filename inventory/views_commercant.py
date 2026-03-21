@@ -7430,6 +7430,8 @@ def suivi_articles_recents(request, depot_id):
     return render(request, 'inventory/commercant/suivi_articles_recents.html', context)
 
 
+@login_required
+@commercant_required
 @boutique_access_required
 @require_POST
 def maj_quantite_attribuee_boutique(request, boutique_id, article_id):
