@@ -7428,3 +7428,20 @@ def suivi_articles_recents(request, depot_id):
     }
     
     return render(request, 'inventory/commercant/suivi_articles_recents.html', context)
+
+
+@login_required
+@require_POST
+def maj_quantite_attribuee_boutique(request, boutique_id, article_id):
+    """Met à jour la quantité attribuée d'un article (AJAX)."""
+    boutique = get_object_or_404(Boutique, id=boutique_id, commercant__user=request.user)
+    article = get_object_or_404(Article, id=article_id, boutique=boutique)
+    try:
+        data = json.loads(request.body)
+        valeur = int(data.get('quantite_attribuee', 0))
+        if valeur < 0:
+            return JsonResponse({'success': False, 'error': 'La valeur doit être ≥ 0'}, status=400)
+        Article.objects.filter(pk=article.pk).update(quantite_attribuee=valeur)
+        return JsonResponse({'success': True, 'quantite_attribuee': valeur})
+    except (ValueError, TypeError, json.JSONDecodeError) as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)

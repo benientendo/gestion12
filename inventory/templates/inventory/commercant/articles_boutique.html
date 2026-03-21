@@ -134,6 +134,7 @@
                         <th class="col-total">Total Vente</th>
                         <th class="col-stock">Stock</th>
                         <th class="col-exp">Expiration</th>
+                        <th class="col-qteatt" title="Référence quantité attribuée">Réf. Qté att.</th>
                         <th class="col-actions">Actions</th>
                     </tr>
                 </thead>
@@ -220,6 +221,20 @@
                             {% else %}
                             <span class="text-muted">-</span>
                             {% endif %}
+                        </td>
+                        <td class="col-qteatt">
+                            <div class="input-group input-group-sm" style="min-width:100px;">
+                                <input type="number" min="0" class="form-control form-control-sm qte-att-input"
+                                       value="{{ article.quantite_attribuee }}"
+                                       data-article-id="{{ article.id }}"
+                                       data-url="{% url 'inventory:maj_quantite_attribuee_boutique' boutique.id article.id %}"
+                                       style="max-width:60px;">
+                                <button class="btn btn-outline-secondary btn-sm btn-save-qte" type="button"
+                                        data-article-id="{{ article.id }}"
+                                        title="Enregistrer">
+                                    <i class="fas fa-save"></i>
+                                </button>
+                            </div>
                         </td>
                         <td class="col-actions">
                             <div class="btn-group btn-group-sm">
@@ -3390,5 +3405,56 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+
+// ===== Réf. Qté att. — sauvegarde AJAX par ligne =====
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-save-qte');
+    if (!btn) return;
+    const articleId = btn.dataset.articleId;
+    const input = document.querySelector(`.qte-att-input[data-article-id="${articleId}"]`);
+    if (!input) return;
+    const valeur = parseInt(input.value, 10);
+    if (isNaN(valeur) || valeur < 0) {
+        input.classList.add('is-invalid');
+        return;
+    }
+    input.classList.remove('is-invalid');
+    const url = input.dataset.url;
+    const icon = btn.querySelector('i');
+    icon.className = 'fas fa-spinner fa-spin';
+    btn.disabled = true;
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]') ? document.querySelector('[name=csrfmiddlewaretoken]').value : getCookie('csrftoken'),
+        },
+        body: JSON.stringify({quantite_attribuee: valeur})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            icon.className = 'fas fa-check text-success';
+            setTimeout(() => { icon.className = 'fas fa-save'; }, 1500);
+        } else {
+            icon.className = 'fas fa-times text-danger';
+            setTimeout(() => { icon.className = 'fas fa-save'; }, 1500);
+            alert('Erreur : ' + (data.error || 'inconnue'));
+        }
+    })
+    .catch(() => { icon.className = 'fas fa-save'; alert('Erreur réseau'); })
+    .finally(() => { btn.disabled = false; });
+});
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        for (const cookie of document.cookie.split(';')) {
+            const c = cookie.trim();
+            if (c.startsWith(name + '=')) { cookieValue = decodeURIComponent(c.slice(name.length + 1)); break; }
+        }
+    }
+    return cookieValue;
+}
 </script>
 {% endblock %}
