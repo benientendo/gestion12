@@ -946,8 +946,20 @@ def supprimer_boutique(request, boutique_id):
         messages.success(request, f"Boutique '{nom_boutique}' supprimée avec succès!")
         return redirect('inventory:commercant_boutiques')
     
+    total_articles = Article.objects.filter(boutique=boutique).count()
+    total_categories = Categorie.objects.filter(boutique=boutique).count()
+    total_ventes = Vente.objects.filter(boutique=boutique).count()
+    chiffre_affaires = Vente.objects.filter(boutique=boutique).aggregate(
+        total=Sum('total')
+    )['total'] or 0
+
     context = {
-        'boutique': boutique
+        'boutique': boutique,
+        'commercant': request.user.profil_commercant,
+        'total_articles': total_articles,
+        'total_categories': total_categories,
+        'total_ventes': total_ventes,
+        'chiffre_affaires': chiffre_affaires,
     }
     
     return render(request, 'inventory/commercant/supprimer_boutique.html', context)
