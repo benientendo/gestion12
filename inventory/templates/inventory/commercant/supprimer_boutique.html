@@ -195,7 +195,7 @@
         
         // Confirmation finale
         form.addEventListener('submit', function(e) {
-            const boutique = '{{ boutique.nom }}';
+            const boutique = '{{ boutique.nom|escapejs }}';
             const articles = {{ total_articles }};
             const ventes = {{ total_ventes }};
             

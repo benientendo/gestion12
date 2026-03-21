@@ -15,6 +15,7 @@ class ArticleSerializer(serializers.ModelSerializer):
         write_only=True
     )
     categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
+    categorie_backend_id = serializers.IntegerField(source='categorie.id', read_only=True, default=None)
     qr_code_url = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
     full_details = serializers.SerializerMethodField()
@@ -27,7 +28,7 @@ class ArticleSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'code', 'nom', 'description', 'devise', 'prix_vente', 'prix_achat',
             'prix_vente_usd', 'prix_achat_usd',
-            'categorie_id', 'categorie_nom', 'quantite_stock', 'qr_code_url', 'image_url',
+            'categorie_id', 'categorie_nom', 'categorie_backend_id', 'quantite_stock', 'qr_code_url', 'image_url',
             'full_details', 'has_variantes',
             'est_valide_client', 'quantite_envoyee', 'date_envoi', 'date_validation'
         ]

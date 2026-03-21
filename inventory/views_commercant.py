@@ -2886,7 +2886,7 @@ def sync_variantes_entre_boutiques(request, boutique_id):
                 for var_src in art_src.variantes.filter(est_actif=True):
                     if VarianteArticle.objects.filter(
                         code_barre=var_src.code_barre,
-                        article_parent__boutique=boutique_dest
+                        article_parent__boutique=boutique
                     ).exists():
                         continue  # Variante déjà existante dans cette boutique
                     
@@ -4301,7 +4301,22 @@ def importer_articles_vers_depot(request, depot_id):
                                 reference_document=f"IMPORT-{depot.id}-{article_depot.id}",
                                 utilisateur=request.user.username
                             )
-                        
+
+                        # Copier les variantes actives (stock = 0)
+                        for var_src in article_source.variantes.filter(est_actif=True):
+                            if not VarianteArticle.objects.filter(
+                                code_barre=var_src.code_barre,
+                                article_parent__boutique=depot
+                            ).exists():
+                                VarianteArticle.objects.create(
+                                    article_parent=article_depot,
+                                    code_barre=var_src.code_barre,
+                                    nom_variante=var_src.nom_variante,
+                                    type_attribut=var_src.type_attribut,
+                                    quantite_stock=0,
+                                    est_actif=True
+                                )
+
                         articles_importes += 1
                         
                     except Article.DoesNotExist:
