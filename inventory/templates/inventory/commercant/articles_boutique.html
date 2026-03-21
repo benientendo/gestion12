@@ -3419,7 +3419,7 @@ document.addEventListener('click', function(e) {
         return;
     }
     input.classList.remove('is-invalid');
-    const url = `/inventory/commercant/boutiques/${BOUTIQUE_ID}/articles/${articleId}/qte-attribuee/`;
+    const url = `/commercant/boutiques/${BOUTIQUE_ID}/articles/${articleId}/qte-attribuee/`;
     const icon = btn.querySelector('i');
     icon.className = 'fas fa-spinner fa-spin';
     btn.disabled = true;
