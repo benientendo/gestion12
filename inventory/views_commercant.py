@@ -260,8 +260,9 @@ def dashboard_commercant(request):
     ca_jour_cdf = ventes_jour_cdf.aggregate(total=Sum('montant_total'))['total'] or 0
     
     # Recette USD du jour (ventes en USD uniquement)
+    # Pour les ventes USD, montant_total contient le montant en $ (montant_total_usd peut être NULL)
     ventes_jour_usd = ventes_jour.filter(devise='USD')
-    ca_jour_usd = ventes_jour_usd.aggregate(total=Sum('montant_total_usd'))['total'] or 0
+    ca_jour_usd = ventes_jour_usd.aggregate(total=Sum('montant_total'))['total'] or 0
     
     # Total jour (pour compatibilité, on garde le CDF)
     ca_jour = ca_jour_cdf
@@ -280,7 +281,7 @@ def dashboard_commercant(request):
     
     # Recette USD 30 jours
     ventes_30j_usd = ventes_30j.filter(devise='USD')
-    ca_30j_usd = ventes_30j_usd.aggregate(total=Sum('montant_total_usd'))['total'] or 0
+    ca_30j_usd = ventes_30j_usd.aggregate(total=Sum('montant_total'))['total'] or 0
 
     # Valeur totale de la marchandise (stock) — points de vente uniquement, hors dépôts
     taux = commercant.taux_dollar or Decimal('1')
@@ -877,8 +878,9 @@ def api_ca_jour_boutique(request, boutique_id):
     nb_cdf = int(agg_cdf['nb'] or 0)
 
     # Agrégats USD
+    # Pour les ventes USD, montant_total contient le montant en $ (montant_total_usd peut être NULL)
     agg_usd = ventes_qs.filter(devise='USD').aggregate(
-        total=Sum('montant_total_usd'),
+        total=Sum('montant_total'),
         nb=Count('id'),
     )
     ca_usd = float(agg_usd['total'] or 0)

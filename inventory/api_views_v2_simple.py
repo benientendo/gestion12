@@ -49,16 +49,17 @@ def _compute_dashboard_stats(boutique):
     today = timezone.now().date()
     premier_jour_mois = today.replace(day=1)
 
-    ventes_jour = Vente.objects.filter(boutique=boutique, date_vente__date=today, paye=True, est_annulee=False)
-    ca_jour_brut = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
-    ca_jour_usd = ventes_jour.filter(devise='USD').aggregate(total=Sum('montant_total_usd'))['total'] or 0
+    ventes_base = Q(paye=True, est_annulee=False) & (Q(boutique=boutique) | Q(client_maui__boutique=boutique))
+    ventes_jour = Vente.objects.filter(ventes_base, date_vente__date=today).distinct()
+    ca_jour_brut = ventes_jour.filter(devise='CDF').aggregate(total=Sum('montant_total'))['total'] or 0
+    ca_jour_usd = ventes_jour.filter(devise='USD').aggregate(total=Sum('montant_total'))['total'] or 0
     depenses_jour = RapportCaisse.objects.filter(
         boutique=boutique, date_rapport__date=today, depense_appliquee=True
     ).aggregate(total=Sum('depense'))['total'] or 0
 
-    ventes_mois = Vente.objects.filter(boutique=boutique, date_vente__date__gte=premier_jour_mois, paye=True, est_annulee=False)
-    ca_mois_brut = ventes_mois.aggregate(total=Sum('montant_total'))['total'] or 0
-    ca_mois_usd = ventes_mois.filter(devise='USD').aggregate(total=Sum('montant_total_usd'))['total'] or 0
+    ventes_mois = Vente.objects.filter(ventes_base, date_vente__date__gte=premier_jour_mois).distinct()
+    ca_mois_brut = ventes_mois.filter(devise='CDF').aggregate(total=Sum('montant_total'))['total'] or 0
+    ca_mois_usd = ventes_mois.filter(devise='USD').aggregate(total=Sum('montant_total'))['total'] or 0
     depenses_mois = RapportCaisse.objects.filter(
         boutique=boutique, date_rapport__date__gte=premier_jour_mois, date_rapport__date__lte=today, depense_appliquee=True
     ).aggregate(total=Sum('depense'))['total'] or 0

@@ -511,9 +511,11 @@ def create_vente_v2(request):
             numero_facture=vente_data.get('numero_facture'),
             date_vente=date_vente,
             montant_total=0,  # Sera calculé avec les lignes
+            devise=vente_data.get('devise', 'CDF'),
             mode_paiement=vente_data.get('mode_paiement', 'CASH'),
             paye=vente_data.get('paye', True),
             client_maui=terminal,
+            boutique=terminal.boutique,
             adresse_ip_client=request.META.get('REMOTE_ADDR'),
             version_app_maui=terminal.version_app_maui
         )
