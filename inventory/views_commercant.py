@@ -950,7 +950,7 @@ def supprimer_boutique(request, boutique_id):
     total_categories = Categorie.objects.filter(boutique=boutique).count()
     total_ventes = Vente.objects.filter(boutique=boutique).count()
     chiffre_affaires = Vente.objects.filter(boutique=boutique).aggregate(
-        total=Sum('total')
+        total=Sum('montant_total')
     )['total'] or 0
 
     context = {
