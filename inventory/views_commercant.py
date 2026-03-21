@@ -7430,11 +7430,11 @@ def suivi_articles_recents(request, depot_id):
     return render(request, 'inventory/commercant/suivi_articles_recents.html', context)
 
 
-@login_required
+@boutique_access_required
 @require_POST
 def maj_quantite_attribuee_boutique(request, boutique_id, article_id):
     """Met à jour la quantité attribuée d'un article (AJAX)."""
-    boutique = get_object_or_404(Boutique, id=boutique_id, commercant__user=request.user)
+    boutique = request.boutique
     article = get_object_or_404(Article, id=article_id, boutique=boutique)
     try:
         data = json.loads(request.body)
