@@ -227,7 +227,6 @@
                                 <input type="number" min="0" class="form-control form-control-sm qte-att-input"
                                        value="{{ article.quantite_attribuee }}"
                                        data-article-id="{{ article.id }}"
-                                       data-url="{% url 'inventory:maj_quantite_attribuee_boutique' boutique.id article.id %}"
                                        style="max-width:60px;">
                                 <button class="btn btn-outline-secondary btn-sm btn-save-qte" type="button"
                                         data-article-id="{{ article.id }}"
@@ -3407,6 +3406,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // ===== Réf. Qté att. — sauvegarde AJAX par ligne =====
+const BOUTIQUE_ID = {{ boutique.id }};
 document.addEventListener('click', function(e) {
     const btn = e.target.closest('.btn-save-qte');
     if (!btn) return;
@@ -3419,7 +3419,7 @@ document.addEventListener('click', function(e) {
         return;
     }
     input.classList.remove('is-invalid');
-    const url = input.dataset.url;
+    const url = `/inventory/commercant/boutiques/${BOUTIQUE_ID}/articles/${articleId}/qte-attribuee/`;
     const icon = btn.querySelector('i');
     icon.className = 'fas fa-spinner fa-spin';
     btn.disabled = true;
