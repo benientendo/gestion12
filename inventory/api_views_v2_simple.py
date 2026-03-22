@@ -567,7 +567,10 @@ def valider_article(request):
     
     # Accepter snake_case ET camelCase
     article_id = data.get('article_id') or data.get('articleId')
-    quantite_validee = data.get('quantite_validee') or data.get('quantiteValidee')
+    # ⚠️ FIX: ne pas utiliser 'or' car 0 est falsy en Python → utiliser is not None
+    _qv_snake = data.get('quantite_validee')
+    _qv_camel = data.get('quantiteValidee')
+    quantite_validee = _qv_snake if _qv_snake is not None else _qv_camel
     raw_boutique_id = data.get('boutique_id') or data.get('boutiqueId')
     
     # Normaliser boutique_id
@@ -607,7 +610,7 @@ def valider_article(request):
             'code': 'MISSING_ARTICLE_ID'
         }, status=status.HTTP_400_BAD_REQUEST)
     
-    if quantite_validee is None:
+    if quantite_validee is None:  # 0 est une valeur valide (pré-enregistrement sans stock)
         return Response({
             'error': 'quantite_validee requise',
             'code': 'MISSING_QUANTITE'
