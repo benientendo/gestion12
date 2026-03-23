@@ -149,7 +149,7 @@
             {% if depot.est_depot %}
             <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left"></i> Retour</a>
             {% else %}
-            <a href="{% url 'inventory:detail_boutique' depot.id %}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left"></i> Retour</a>
+            <a href="{% url 'inventory:commercant_detail_boutique' depot.id %}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left"></i> Retour</a>
             {% endif %}
         </div>
     </div>
@@ -325,7 +325,7 @@
                         <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-outline-secondary btn-sm" style="font-size:.72rem;">Annuler</a>
                         {% else %}
                         <a href="{% url 'inventory:liste_toutes_factures_commercant' %}" class="btn btn-outline-info btn-sm" style="font-size:.72rem;"><i class="fas fa-file-invoice me-1"></i>Mes factures</a>
-                        <a href="{% url 'inventory:detail_boutique' depot.id %}" class="btn btn-outline-secondary btn-sm" style="font-size:.72rem;">Annuler</a>
+                        <a href="{% url 'inventory:commercant_detail_boutique' depot.id %}" class="btn btn-outline-secondary btn-sm" style="font-size:.72rem;">Annuler</a>
                         {% endif %}
                     </div>
                 </div>
