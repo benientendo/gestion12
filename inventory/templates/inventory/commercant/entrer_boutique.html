@@ -192,6 +192,18 @@
                     </div>
                 </div>
 
+                <!-- Ventes à Crédit / Acompte -->
+                <div class="col-md-6 mb-4">
+                    <div class="card module-card h-100 text-center p-4" onclick="window.location.href='{% url 'inventory:liste_ventes_credit' boutique.id %}'"
+                         style="border-left:4px solid #ffc107 !important;">
+                        <div class="card-body">
+                            <i class="fas fa-hand-holding-usd module-icon text-warning"></i>
+                            <h4>Ventes à Crédit</h4>
+                            <p class="text-muted">Paiement par acomptes — retrait différé</p>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Rapports -->
                 <div class="col-md-6 mb-4">
                     <div class="card module-card h-100 text-center p-4" onclick="window.location.href='{% url 'inventory:rapport_ca_quotidien' boutique.id %}'">

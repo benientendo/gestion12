@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reçu {{ paiement.reference_recu }}</title>
+<style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Segoe UI', Arial, sans-serif; background:#f0f2f5; display:flex; justify-content:center; padding:20px; }
+    .receipt-wrap { background:#fff; width:340px; border-radius:12px; box-shadow:0 4px 24px rgba(0,0,0,.12); overflow:hidden; }
+
+    .receipt-header { background:linear-gradient(135deg,#1e3c72,#2a5298); color:#fff; padding:20px; text-align:center; }
+    .receipt-header .shop-name { font-size:1.3rem; font-weight:700; letter-spacing:.05em; }
+    .receipt-header .shop-sub  { font-size:.8rem; opacity:.8; margin-top:2px; }
+    .receipt-header .doc-type  { margin-top:12px; font-size:.7rem; text-transform:uppercase; letter-spacing:.12em; opacity:.75; }
+    .receipt-header .doc-ref   { font-size:1.1rem; font-weight:700; font-family:monospace; margin-top:3px; }
+
+    .receipt-body { padding:18px; }
+    .section-title { font-size:.68rem; text-transform:uppercase; letter-spacing:.1em; color:#adb5bd; border-bottom:1px dashed #dee2e6; padding-bottom:4px; margin-bottom:10px; margin-top:16px; }
+    .section-title:first-child { margin-top:0; }
+
+    .info-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; font-size:.86rem; }
+    .info-row .key { color:#6c757d; }
+    .info-row .val { font-weight:600; text-align:right; max-width:58%; word-break:break-word; }
+
+    .amount-box { background:linear-gradient(135deg,#28a745,#20c997); border-radius:10px; padding:14px; margin:16px 0; text-align:center; color:#fff; }
+    .amount-box .label { font-size:.75rem; text-transform:uppercase; letter-spacing:.1em; opacity:.85; }
+    .amount-box .amount { font-size:2rem; font-weight:800; margin-top:4px; }
+    .amount-box .currency { font-size:.9rem; opacity:.85; }
+
+    .balance-row { display:flex; justify-content:space-between; background:#f8f9fa; border-radius:8px; padding:10px 14px; margin-bottom:8px; font-size:.88rem; }
+    .balance-row .key { color:#6c757d; }
+    .balance-row .val-ok   { font-weight:700; color:#28a745; }
+    .balance-row .val-warn { font-weight:700; color:#dc3545; }
+
+    .retrait-badge { text-align:center; padding:10px; border-radius:8px; margin-top:12px; font-size:.85rem; font-weight:600; }
+    .retrait-ok   { background:#d4edda; color:#155724; }
+    .retrait-nok  { background:#fff3cd; color:#856404; }
+    .retrait-done { background:#cce5ff; color:#004085; }
+
+    .divider { border:none; border-top:1px dashed #dee2e6; margin:14px 0; }
+
+    .receipt-footer { background:#f8f9fa; padding:14px 18px; text-align:center; font-size:.75rem; color:#adb5bd; border-top:1px solid #e9ecef; }
+    .receipt-footer strong { color:#6c757d; display:block; margin-bottom:2px; }
+
+    .btn-print { display:block; width:100%; padding:12px; background:#1e3c72; color:#fff; border:none; border-radius:0; font-size:.9rem; font-weight:600; cursor:pointer; letter-spacing:.05em; }
+    .btn-print:hover { background:#2a5298; }
+    .btn-back  { display:block; width:100%; padding:10px; background:#f8f9fa; color:#6c757d; border:none; border-radius:0; border-top:1px solid #dee2e6; font-size:.82rem; cursor:pointer; }
+
+    @media print {
+        body { background:#fff; padding:0; }
+        .receipt-wrap { box-shadow:none; border-radius:0; width:100%; }
+        .btn-print, .btn-back { display:none; }
+    }
+</style>
+</head>
+<body>
+<div class="receipt-wrap">
+
+    <!-- En-tête boutique -->
+    <div class="receipt-header">
+        <div class="shop-name">{{ boutique.nom }}</div>
+        {% if boutique.adresse %}<div class="shop-sub">{{ boutique.adresse }}</div>{% endif %}
+        {% if boutique.telephone %}<div class="shop-sub">Tél : {{ boutique.telephone }}</div>{% endif %}
+        <div class="doc-type">Reçu de paiement — Acompte</div>
+        <div class="doc-ref">{{ paiement.reference_recu }}</div>
+    </div>
+
+    <div class="receipt-body">
+
+        <!-- Date & heure -->
+        <div class="section-title">Date</div>
+        <div class="info-row">
+            <span class="key">Date / Heure</span>
+            <span class="val">{{ paiement.date_paiement|date:"d/m/Y à H:i" }}</span>
+        </div>
+        {% if paiement.recu_par %}
+        <div class="info-row">
+            <span class="key">Reçu par</span>
+            <span class="val">{{ paiement.recu_par }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Client -->
+        <div class="section-title">Client</div>
+        <div class="info-row">
+            <span class="key">Nom</span>
+            <span class="val">{{ client.nom_complet }}</span>
+        </div>
+        {% if client.telephone %}
+        <div class="info-row">
+            <span class="key">Téléphone</span>
+            <span class="val">{{ client.telephone }}</span>
+        </div>
+        {% endif %}
+
+        <!-- Article -->
+        <div class="section-title">Article concerné</div>
+        <div class="info-row">
+            <span class="key">Désignation</span>
+            <span class="val">{{ vente.article_nom }}</span>
+        </div>
+        <div class="info-row">
+            <span class="key">Prix total</span>
+            <span class="val">{{ vente.prix_total|floatformat:0 }} FC</span>
+        </div>
+        <div class="info-row">
+            <span class="key">Référence vente</span>
+            <span class="val"><code>{{ vente.reference }}</code></span>
+        </div>
+
+        <!-- Montant payé ce jour -->
+        <div class="amount-box">
+            <div class="label">Montant de cet acompte</div>
+            <div class="amount">{{ paiement.montant|floatformat:0 }} <span class="currency">FC</span></div>
+        </div>
+
+        <!-- Bilan financier -->
+        <div class="section-title">Bilan du compte</div>
+        <div class="balance-row">
+            <span class="key">Total payé à ce jour</span>
+            <span class="val-ok">{{ vente.montant_paye|floatformat:0 }} FC</span>
+        </div>
+        <div class="balance-row">
+            <span class="key">Solde restant</span>
+            <span class="val-warn">{{ vente.montant_restant|floatformat:0 }} FC</span>
+        </div>
+        <div class="balance-row">
+            <span class="key">Progression</span>
+            <span class="val-ok">{{ vente.pourcentage_paye }}%</span>
+        </div>
+
+        <!-- Statut retrait -->
+        {% if vente.article_recupere %}
+        <div class="retrait-badge retrait-done">
+            <i>✔</i> Article déjà récupéré le {{ vente.date_retrait|date:"d/m/Y" }}
+        </div>
+        {% elif vente.peut_recuperer %}
+        <div class="retrait-badge retrait-ok">
+            ✔ Retrait autorisé — {{ vente.seuil_retrait|floatformat:0 }} FC atteint
+        </div>
+        {% else %}
+        <div class="retrait-badge retrait-nok">
+            ⏳ Retrait possible à partir de {{ vente.seuil_retrait|floatformat:0 }} FC
+        </div>
+        {% endif %}
+
+        {% if paiement.notes %}
+        <hr class="divider">
+        <div class="info-row">
+            <span class="key">Notes</span>
+            <span class="val" style="font-style:italic;">{{ paiement.notes }}</span>
+        </div>
+        {% endif %}
+
+    </div>
+
+    <!-- Pied de page -->
+    <div class="receipt-footer">
+        <strong>Merci pour votre confiance</strong>
+        Conservez ce reçu comme preuve de paiement.
+    </div>
+
+    <!-- Boutons action (masqués à l'impression) -->
+    <button class="btn-print" onclick="window.print()">🖨 Imprimer ce reçu</button>
+    <button class="btn-back" onclick="window.history.back()">← Retour</button>
+
+</div>
+</body>
+</html>

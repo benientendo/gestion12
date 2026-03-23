@@ -1744,3 +1744,112 @@ class AlerteStock(models.Model):
         verbose_name = "Alerte stock"
         verbose_name_plural = "Alertes stock"
         ordering = ['-date_creation']
+
+
+# ===== SYSTÈME PAIEMENT PAR ACOMPTE (LAYAWAY) =====
+
+class ClientAcompte(models.Model):
+    """Acheteur enregistré pour le système de paiement par acompte."""
+    boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='clients_credit')
+    nom = models.CharField(max_length=100)
+    prenom = models.CharField(max_length=100, blank=True)
+    telephone = models.CharField(max_length=25, blank=True)
+    adresse = models.TextField(blank=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def nom_complet(self):
+        return f"{self.nom} {self.prenom}".strip()
+
+    def __str__(self):
+        return self.nom_complet
+
+    class Meta:
+        ordering = ['nom', 'prenom']
+        verbose_name = "Client Acompte"
+        verbose_name_plural = "Clients Acompte"
+        indexes = [
+            models.Index(fields=['boutique'], name='idx_clientacompte_boutique'),
+        ]
+
+
+class VenteAcompte(models.Model):
+    """Vente à crédit : le client paie par acomptes avant de récupérer l'article."""
+    STATUT_CHOICES = [
+        ('EN_COURS', 'En cours'),
+        ('SOLDE', 'Soldé'),
+        ('ANNULE', 'Annulé'),
+    ]
+
+    reference = models.CharField(max_length=25, unique=True, editable=False)
+    boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='ventes_acompte')
+    client = models.ForeignKey(ClientAcompte, on_delete=models.PROTECT, related_name='ventes')
+    article = models.ForeignKey('Article', on_delete=models.SET_NULL, null=True, blank=True, related_name='ventes_acompte')
+    article_nom = models.CharField(max_length=200, help_text="Nom snapshot de l'article")
+    prix_total = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(1)])
+    seuil_retrait = models.DecimalField(
+        max_digits=15, decimal_places=2,
+        help_text="Montant minimum à payer pour autoriser le retrait de l'article"
+    )
+    montant_paye = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_COURS')
+    article_recupere = models.BooleanField(default=False)
+    date_retrait = models.DateTimeField(null=True, blank=True)
+    commentaire = models.TextField(blank=True)
+    created_by = models.CharField(max_length=150, blank=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_mise_a_jour = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if not self.reference:
+            self.reference = f"CR-{timezone.now().strftime('%y%m%d')}-{uuid.uuid4().hex[:5].upper()}"
+        super().save(*args, **kwargs)
+
+    @property
+    def montant_restant(self):
+        from decimal import Decimal as D
+        return max(self.prix_total - self.montant_paye, D('0'))
+
+    @property
+    def peut_recuperer(self):
+        return self.montant_paye >= self.seuil_retrait and not self.article_recupere
+
+    @property
+    def pourcentage_paye(self):
+        if self.prix_total > 0:
+            return min(int((self.montant_paye / self.prix_total) * 100), 100)
+        return 0
+
+    def __str__(self):
+        return f"{self.reference} – {self.client} – {self.article_nom}"
+
+    class Meta:
+        ordering = ['-date_creation']
+        verbose_name = "Vente Acompte"
+        verbose_name_plural = "Ventes Acompte"
+        indexes = [
+            models.Index(fields=['boutique', 'statut'], name='idx_venteacompte_statut'),
+        ]
+
+
+class PaiementAcompte(models.Model):
+    """Acompte versé sur une vente à crédit."""
+    vente = models.ForeignKey(VenteAcompte, on_delete=models.CASCADE, related_name='paiements')
+    reference_recu = models.CharField(max_length=25, unique=True, editable=False)
+    montant = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(1)])
+    date_paiement = models.DateTimeField(auto_now_add=True)
+    recu_par = models.CharField(max_length=150, blank=True)
+    notes = models.TextField(blank=True)
+
+    def save(self, *args, **kwargs):
+        if not self.reference_recu:
+            self.reference_recu = f"PAY-{timezone.now().strftime('%y%m%d%H%M')}-{uuid.uuid4().hex[:3].upper()}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.reference_recu} — {self.montant} FC"
+
+    class Meta:
+        ordering = ['-date_paiement']
+        verbose_name = "Paiement Acompte"
+        verbose_name_plural = "Paiements Acompte"

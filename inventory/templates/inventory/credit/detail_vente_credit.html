@@ -1,0 +1,306 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}{{ vente.reference }} — Crédit{% endblock %}
+
+{% block extra_css %}
+<style>
+    .info-block { background:#f8f9fa; border-radius:10px; padding:16px; }
+    .info-block .lbl { font-size:.75rem; text-transform:uppercase; color:#6c757d; letter-spacing:.05em; }
+    .info-block .val { font-size:1rem; font-weight:600; }
+    .progress-big { height:22px; border-radius:12px; }
+    .timeline-item { border-left:3px solid #dee2e6; padding-left:16px; margin-left:10px; padding-bottom:12px; position:relative; }
+    .timeline-item:last-child { border-left-color:transparent; }
+    .timeline-dot { width:14px; height:14px; border-radius:50%; background:#28a745; position:absolute; left:-8.5px; top:3px; }
+    .badge-en-cours { background:#ffc107; color:#000; }
+    .badge-solde    { background:#28a745; color:#fff; }
+    .badge-annule   { background:#6c757d; color:#fff; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width:900px;">
+
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:liste_ventes_credit' boutique.id %}">Ventes à Crédit</a></li>
+            <li class="breadcrumb-item active">{{ vente.reference }}</li>
+        </ol>
+    </nav>
+
+    <!-- En-tête statut -->
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div>
+            <h4 class="mb-0">
+                <code>{{ vente.reference }}</code>
+                <span class="badge badge-{{ vente.statut|lower }} ms-2">{{ vente.get_statut_display }}</span>
+                {% if vente.article_recupere %}
+                <span class="badge bg-success ms-1"><i class="fas fa-check"></i> Article récupéré</span>
+                {% endif %}
+            </h4>
+            <small class="text-muted">Créé le {{ vente.date_creation|date:"d/m/Y à H:i" }} par {{ vente.created_by }}</small>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            {% if vente.statut == 'EN_COURS' %}
+            <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#modalPaiement">
+                <i class="fas fa-plus"></i> Acompte
+            </button>
+            {% if vente.peut_recuperer %}
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalRetrait">
+                <i class="fas fa-box-open"></i> Remettre l'article
+            </button>
+            {% endif %}
+            <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalAnnuler">
+                <i class="fas fa-ban"></i> Annuler
+            </button>
+            {% endif %}
+            <a href="{% url 'inventory:liste_ventes_credit' boutique.id %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i> Retour
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <!-- Colonne gauche : infos client + article -->
+        <div class="col-md-5">
+
+            <!-- Client -->
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-header bg-primary text-white py-2">
+                    <i class="fas fa-user"></i> Client
+                </div>
+                <div class="card-body">
+                    <div class="info-block">
+                        <div class="lbl">Nom complet</div>
+                        <div class="val">{{ vente.client.nom_complet }}</div>
+                    </div>
+                    {% if vente.client.telephone %}
+                    <div class="info-block mt-2">
+                        <div class="lbl">Téléphone</div>
+                        <div class="val"><a href="tel:{{ vente.client.telephone }}">{{ vente.client.telephone }}</a></div>
+                    </div>
+                    {% endif %}
+                    {% if vente.client.adresse %}
+                    <div class="info-block mt-2">
+                        <div class="lbl">Adresse</div>
+                        <div class="val">{{ vente.client.adresse }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Article -->
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-header bg-warning text-dark py-2">
+                    <i class="fas fa-box"></i> Article
+                </div>
+                <div class="card-body">
+                    <div class="info-block">
+                        <div class="lbl">Désignation</div>
+                        <div class="val">{{ vente.article_nom }}</div>
+                    </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <div class="info-block">
+                                <div class="lbl">Prix total</div>
+                                <div class="val text-dark">{{ vente.prix_total|floatformat:0 }} FC</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="info-block">
+                                <div class="lbl">Seuil retrait</div>
+                                <div class="val text-warning">{{ vente.seuil_retrait|floatformat:0 }} FC</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% if vente.commentaire %}
+                    <div class="info-block mt-2">
+                        <div class="lbl">Commentaire</div>
+                        <div class="val" style="font-size:.88rem;">{{ vente.commentaire }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Statut retrait -->
+            {% if vente.peut_recuperer and not vente.article_recupere %}
+            <div class="alert alert-warning d-flex align-items-center gap-2">
+                <i class="fas fa-unlock fa-lg"></i>
+                <div><strong>Retrait autorisé !</strong><br>
+                Le client a atteint le seuil de paiement. L'article peut être remis.</div>
+            </div>
+            {% elif vente.article_recupere %}
+            <div class="alert alert-success d-flex align-items-center gap-2">
+                <i class="fas fa-check-circle fa-lg"></i>
+                <div><strong>Article remis</strong><br>
+                {{ vente.date_retrait|date:"d/m/Y à H:i" }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Colonne droite : progression + historique -->
+        <div class="col-md-7">
+
+            <!-- Progression financière -->
+            <div class="card border-0 shadow-sm mb-3">
+                <div class="card-header py-2"><i class="fas fa-chart-line"></i> Progression du paiement</div>
+                <div class="card-body">
+                    <div class="row g-3 mb-3 text-center">
+                        <div class="col-4">
+                            <div class="text-muted small">Total</div>
+                            <div class="fw-bold">{{ vente.prix_total|floatformat:0 }} FC</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-success small">Payé</div>
+                            <div class="fw-bold text-success">{{ vente.montant_paye|floatformat:0 }} FC</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="text-danger small">Reste</div>
+                            <div class="fw-bold text-danger">{{ vente.montant_restant|floatformat:0 }} FC</div>
+                        </div>
+                    </div>
+                    <div class="progress progress-big mb-1">
+                        <div class="progress-bar bg-success" style="width:{{ vente.pourcentage_paye }}%">
+                            {{ vente.pourcentage_paye }}%
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <small class="text-muted">0%</small>
+                        <small class="text-warning fw-bold">Seuil retrait : {{ vente.seuil_retrait|floatformat:0 }} FC</small>
+                        <small class="text-muted">100%</small>
+                    </div>
+                    <!-- Marqueur seuil -->
+                    {% if vente.prix_total %}
+                    <div class="position-relative" style="height:6px; margin-top:4px;">
+                        <div style="position:absolute; left:calc({{ vente.seuil_retrait|floatformat:0 }} / {{ vente.prix_total|floatformat:0 }} * 100%); width:2px; height:12px; background:#ffc107; top:-3px;"></div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Historique des paiements -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-history"></i> Historique des acomptes</span>
+                    <span class="badge bg-secondary">{{ paiements.count }}</span>
+                </div>
+                <div class="card-body">
+                    {% if paiements %}
+                    <div class="mt-1">
+                        {% for p in paiements %}
+                        <div class="timeline-item">
+                            <div class="timeline-dot"></div>
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong class="text-success">+{{ p.montant|floatformat:0 }} FC</strong>
+                                    <br>
+                                    <small class="text-muted">
+                                        <code>{{ p.reference_recu }}</code> —
+                                        {{ p.date_paiement|date:"d/m/Y à H:i" }}
+                                        {% if p.recu_par %} — par {{ p.recu_par }}{% endif %}
+                                    </small>
+                                    {% if p.notes %}<br><small class="text-muted fst-italic">{{ p.notes }}</small>{% endif %}
+                                </div>
+                                <a href="{% url 'inventory:recu_paiement' boutique.id p.id %}" class="btn btn-outline-secondary btn-sm ms-2" target="_blank" title="Imprimer le reçu">
+                                    <i class="fas fa-print"></i>
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="fas fa-inbox fa-2x mb-2 d-block opacity-25"></i>
+                        Aucun paiement enregistré
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- ===== MODAL : Enregistrer un acompte ===== -->
+<div class="modal fade" id="modalPaiement" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'inventory:enregistrer_paiement' boutique.id vente.id %}">
+                {% csrf_token %}
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="fas fa-money-bill-wave"></i> Enregistrer un acompte</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info py-2 mb-3">
+                        Solde restant : <strong>{{ vente.montant_restant|floatformat:0 }} FC</strong>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Montant (FC) <span class="text-danger">*</span></label>
+                        <input type="number" name="montant" class="form-control" min="1" max="{{ vente.montant_restant|floatformat:0 }}" placeholder="0" required autofocus>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label fw-bold">Notes (optionnel)</label>
+                        <textarea name="notes" class="form-control" rows="2" placeholder="Remarques…"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Enregistrer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MODAL : Confirmer retrait ===== -->
+<div class="modal fade" id="modalRetrait" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'inventory:marquer_retrait' boutique.id vente.id %}">
+                {% csrf_token %}
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="fas fa-box-open"></i> Confirmer la remise</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Confirmer que <strong>{{ vente.client.nom_complet }}</strong> a récupéré l'article :</p>
+                    <div class="alert alert-primary py-2"><strong>{{ vente.article_nom }}</strong></div>
+                    <p class="text-muted small mb-0">Payé : {{ vente.montant_paye|floatformat:0 }} FC / {{ vente.prix_total|floatformat:0 }} FC</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-check"></i> Confirmer</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MODAL : Annuler la vente ===== -->
+<div class="modal fade" id="modalAnnuler" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'inventory:annuler_vente_credit' boutique.id vente.id %}">
+                {% csrf_token %}
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="fas fa-ban"></i> Annuler la vente</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Êtes-vous sûr de vouloir annuler <strong>{{ vente.reference }}</strong> ?<br>
+                        <small>L'historique des paiements sera conservé.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Non</button>
+                    <button type="submit" class="btn btn-danger"><i class="fas fa-ban"></i> Oui, annuler</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

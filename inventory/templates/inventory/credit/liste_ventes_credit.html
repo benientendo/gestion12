@@ -1,0 +1,289 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Ventes à Crédit — {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card { border-radius:12px; padding:16px 20px; color:#fff; }
+    .stat-card .stat-val { font-size:1.6rem; font-weight:700; }
+    .stat-card .stat-lbl { font-size:.8rem; opacity:.85; }
+    .bg-credit-blue   { background:linear-gradient(135deg,#1e3c72,#2a5298); }
+    .bg-credit-green  { background:linear-gradient(135deg,#134e5e,#71b280); }
+    .bg-credit-orange { background:linear-gradient(135deg,#c94b4b,#4b134f); }
+    .bg-credit-teal   { background:linear-gradient(135deg,#0f2027,#203a43,#2c5364); }
+
+    .badge-en-cours { background:#ffc107; color:#000; }
+    .badge-solde    { background:#28a745; color:#fff; }
+    .badge-annule   { background:#6c757d; color:#fff; }
+
+    .progress-bar-credit { height:8px; border-radius:4px; background:#dee2e6; }
+    .progress-bar-credit .fill { height:100%; border-radius:4px; background:#28a745; transition:width .3s; }
+
+    .table-credit th { font-size:.78rem; text-transform:uppercase; letter-spacing:.05em; color:#6c757d; border-top:none; }
+    .table-credit td { vertical-align:middle; font-size:.88rem; }
+    .recupere-check { color:#28a745; font-size:1.1rem; }
+    .can-pick { background:#d4edda; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+
+    <!-- En-tête -->
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div>
+            <h4 class="mb-0"><i class="fas fa-hand-holding-usd text-warning"></i> Ventes à Crédit</h4>
+            <small class="text-muted">{{ boutique.nom }}</small>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#modalCreer">
+                <i class="fas fa-plus"></i> Nouvelle vente
+            </button>
+            <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i> Retour
+            </a>
+        </div>
+    </div>
+
+    <!-- Cartes stats -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="stat-card bg-credit-blue">
+                <div class="stat-val">{{ nb_clients }}</div>
+                <div class="stat-lbl"><i class="fas fa-users"></i> Clients enregistrés</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card bg-credit-orange">
+                <div class="stat-val">{{ nb_en_cours }}</div>
+                <div class="stat-lbl"><i class="fas fa-clock"></i> Ventes en cours</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card bg-credit-green">
+                <div class="stat-val">{{ total_encaisse|floatformat:0 }} FC</div>
+                <div class="stat-lbl"><i class="fas fa-check-circle"></i> Total encaissé</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card bg-credit-teal">
+                <div class="stat-val">{{ total_du|floatformat:0 }} FC</div>
+                <div class="stat-lbl"><i class="fas fa-exclamation-circle"></i> Reste à percevoir</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtres -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body py-2">
+            <form method="get" class="d-flex gap-2 flex-wrap align-items-center">
+                <input type="text" name="q" value="{{ search }}" class="form-control form-control-sm" style="max-width:220px;" placeholder="Nom, article, référence…">
+                <select name="statut" class="form-select form-select-sm" style="max-width:150px;" onchange="this.form.submit()">
+                    <option value="">Tous statuts</option>
+                    <option value="EN_COURS" {% if statut_filter == 'EN_COURS' %}selected{% endif %}>En cours</option>
+                    <option value="SOLDE"    {% if statut_filter == 'SOLDE'    %}selected{% endif %}>Soldé</option>
+                    <option value="ANNULE"   {% if statut_filter == 'ANNULE'   %}selected{% endif %}>Annulé</option>
+                </select>
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-search"></i></button>
+                {% if search or statut_filter %}
+                <a href="{% url 'inventory:liste_ventes_credit' boutique.id %}" class="btn btn-outline-secondary btn-sm">
+                    <i class="fas fa-times"></i> Effacer
+                </a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <!-- Tableau -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-credit mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Référence</th>
+                            <th>Client</th>
+                            <th>Article</th>
+                            <th>Prix total</th>
+                            <th>Payé</th>
+                            <th>Reste</th>
+                            <th>Progression</th>
+                            <th>Statut</th>
+                            <th>Récupéré</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for v in ventes %}
+                        <tr {% if v.peut_recuperer %}class="can-pick"{% endif %}>
+                            <td><code>{{ v.reference }}</code></td>
+                            <td>
+                                <strong>{{ v.client.nom_complet }}</strong>
+                                {% if v.client.telephone %}<br><small class="text-muted">{{ v.client.telephone }}</small>{% endif %}
+                            </td>
+                            <td>{{ v.article_nom }}</td>
+                            <td class="fw-bold">{{ v.prix_total|floatformat:0 }} FC</td>
+                            <td class="text-success">{{ v.montant_paye|floatformat:0 }} FC</td>
+                            <td class="text-danger">{{ v.montant_restant|floatformat:0 }} FC</td>
+                            <td style="min-width:100px;">
+                                <div class="progress-bar-credit">
+                                    <div class="fill" style="width:{{ v.pourcentage_paye }}%;"></div>
+                                </div>
+                                <small class="text-muted">{{ v.pourcentage_paye }}%</small>
+                            </td>
+                            <td>
+                                <span class="badge badge-{{ v.statut|lower }}">{{ v.get_statut_display }}</span>
+                            </td>
+                            <td class="text-center">
+                                {% if v.article_recupere %}
+                                    <i class="fas fa-check-circle recupere-check" title="{{ v.date_retrait|date:'d/m/Y H:i' }}"></i>
+                                {% elif v.peut_recuperer %}
+                                    <span class="badge bg-warning text-dark"><i class="fas fa-unlock"></i> Autorisé</span>
+                                {% else %}
+                                    <i class="fas fa-lock text-muted"></i>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{% url 'inventory:detail_vente_credit' boutique.id v.id %}" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="10" class="text-center py-5 text-muted">
+                                <i class="fas fa-hand-holding-usd fa-3x mb-3 d-block opacity-25"></i>
+                                Aucune vente à crédit{% if search %} pour "{{ search }}"{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MODAL : Nouvelle vente à crédit ===== -->
+<div class="modal fade" id="modalCreer" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="post" action="{% url 'inventory:creer_vente_credit' boutique.id %}">
+                {% csrf_token %}
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="fas fa-plus-circle"></i> Nouvelle Vente à Crédit</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <!-- Colonne Client -->
+                        <div class="col-md-6">
+                            <div class="card h-100 border-primary">
+                                <div class="card-header bg-primary text-white py-2">
+                                    <i class="fas fa-user"></i> Informations client
+                                </div>
+                                <div class="card-body">
+                                    <!-- Sélectionner client existant -->
+                                    <div class="mb-2">
+                                        <label class="form-label small fw-bold">Client existant</label>
+                                        <select name="client_id" id="clientSelect" class="form-select form-select-sm" onchange="toggleClientForm(this.value)">
+                                            <option value="">— Nouveau client —</option>
+                                            {% for c in clients %}
+                                            <option value="{{ c.id }}">{{ c.nom_complet }}{% if c.telephone %} ({{ c.telephone }}){% endif %}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div id="newClientFields">
+                                        <div class="mb-2">
+                                            <label class="form-label small">Nom <span class="text-danger">*</span></label>
+                                            <input type="text" name="nom" class="form-control form-control-sm" placeholder="Nom">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label small">Prénom</label>
+                                            <input type="text" name="prenom" class="form-control form-control-sm" placeholder="Prénom">
+                                        </div>
+                                        <div class="mb-2">
+                                            <label class="form-label small">Téléphone</label>
+                                            <input type="text" name="telephone" class="form-control form-control-sm" placeholder="+243...">
+                                        </div>
+                                        <div class="mb-0">
+                                            <label class="form-label small">Adresse</label>
+                                            <input type="text" name="adresse" class="form-control form-control-sm" placeholder="Adresse (optionnel)">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Colonne Article & Prix -->
+                        <div class="col-md-6">
+                            <div class="card h-100 border-warning">
+                                <div class="card-header bg-warning text-dark py-2">
+                                    <i class="fas fa-box"></i> Article & Prix
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-2">
+                                        <label class="form-label small fw-bold">Article du stock</label>
+                                        <select name="article_id" id="articleSelect" class="form-select form-select-sm" onchange="fillArticleNom(this)">
+                                            <option value="">— Saisir manuellement —</option>
+                                            {% for a in articles_dispo %}
+                                            <option value="{{ a.id }}" data-nom="{{ a.nom }}" data-prix="{{ a.prix_vente|floatformat:0 }}">{{ a.nom }} — {{ a.prix_vente|floatformat:0 }} FC</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small">Nom de l'article <span class="text-danger">*</span></label>
+                                        <input type="text" name="article_nom" id="articleNomInput" class="form-control form-control-sm" placeholder="Nom de l'article" required>
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small">Prix total (FC) <span class="text-danger">*</span></label>
+                                        <input type="number" name="prix_total" id="prixTotalInput" class="form-control form-control-sm" min="1" placeholder="0" required onchange="updateSeuil()">
+                                    </div>
+                                    <div class="mb-2">
+                                        <label class="form-label small">% minimum pour retrait <span class="text-danger">*</span></label>
+                                        <div class="input-group input-group-sm">
+                                            <input type="number" name="seuil_pct" id="seuilPctInput" class="form-control" min="1" max="100" value="50" onchange="updateSeuil()">
+                                            <span class="input-group-text">%</span>
+                                        </div>
+                                        <small class="text-muted">Seuil retrait : <strong id="seuilDisplay">—</strong> FC</small>
+                                    </div>
+                                    <div class="mb-0">
+                                        <label class="form-label small">Commentaire</label>
+                                        <textarea name="commentaire" class="form-control form-control-sm" rows="2" placeholder="Notes..."></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Annuler</button>
+                    <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-save"></i> Créer la vente</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleClientForm(val) {
+    document.getElementById('newClientFields').style.display = val ? 'none' : 'block';
+}
+function fillArticleNom(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    if (opt.value) {
+        document.getElementById('articleNomInput').value = opt.dataset.nom || '';
+        document.getElementById('prixTotalInput').value  = opt.dataset.prix || '';
+        updateSeuil();
+    }
+}
+function updateSeuil() {
+    const prix = parseFloat(document.getElementById('prixTotalInput').value) || 0;
+    const pct  = parseFloat(document.getElementById('seuilPctInput').value)  || 50;
+    const seuil = Math.round(prix * pct / 100);
+    document.getElementById('seuilDisplay').textContent = seuil.toLocaleString();
+}
+</script>
+{% endblock %}

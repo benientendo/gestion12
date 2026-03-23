@@ -9,6 +9,7 @@ from . import views_pin_login
 from . import views_auto_assign
 from . import views_modifier_vente
 from . import views_reset_inventaire
+from . import views_credit
 
 app_name = 'inventory'
 
@@ -226,4 +227,19 @@ urlpatterns = [
     path('commercant/collaborateurs/ajouter/', views_collaborateurs.ajouter_collaborateur, name='ajouter_collaborateur'),
     path('commercant/collaborateurs/<int:collaborateur_id>/supprimer/', views_collaborateurs.supprimer_collaborateur, name='supprimer_collaborateur'),
     path('commercant/collaborateurs/<int:collaborateur_id>/toggle-statut/', views_collaborateurs.toggle_collaborateur_statut, name='toggle_collaborateur_statut'),
+
+    # ===== PAIEMENT PAR ACOMPTE (CRÉDIT) =====
+    path('commercant/boutiques/<int:boutique_id>/credit/', views_credit.liste_ventes_credit, name='liste_ventes_credit'),
+    path('commercant/boutiques/<int:boutique_id>/credit/creer/', views_credit.creer_vente_credit, name='creer_vente_credit'),
+    path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/', views_credit.detail_vente_credit, name='detail_vente_credit'),
+    path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/paiement/', views_credit.enregistrer_paiement, name='enregistrer_paiement'),
+    path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/retrait/', views_credit.marquer_retrait, name='marquer_retrait'),
+    path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/annuler/', views_credit.annuler_vente_credit, name='annuler_vente_credit'),
+    path('commercant/boutiques/<int:boutique_id>/credit/recu/<int:paiement_id>/', views_credit.recu_paiement, name='recu_paiement'),
+
+    # API Android / MAUI
+    path('api/credit/boutique/<int:boutique_id>/ventes/', views_credit.api_credit_ventes, name='api_credit_ventes'),
+    path('api/credit/boutique/<int:boutique_id>/clients/', views_credit.api_credit_clients, name='api_credit_clients'),
+    path('api/credit/vente/<int:vente_id>/', views_credit.api_credit_detail_vente, name='api_credit_detail_vente'),
+    path('api/credit/vente/<int:vente_id>/paiement/', views_credit.api_credit_enregistrer_paiement, name='api_credit_enregistrer_paiement'),
 ]
