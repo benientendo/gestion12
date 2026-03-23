@@ -73,6 +73,21 @@
         transform: translateY(-50%);
         color: #6c757d;
     }
+    .prix-row { margin-top:5px; font-size:.78rem; display:flex; align-items:center; flex-wrap:wrap; gap:4px; }
+    .pv-edit-input {
+        width:82px; display:inline-block; padding:2px 5px; font-size:.78rem;
+        border:1px solid #28a745; border-radius:4px; text-align:right;
+        background:#f8fff8; color:#155724;
+    }
+    .pv-edit-input:disabled { background:transparent; border:1px dashed #ccc; color:#6c757d; }
+    .qty-section {
+        margin-top:8px; padding:8px 10px; background:#f8f9fa;
+        border-radius:8px; border-left:3px solid #28a745; font-size:.85rem;
+    }
+    .carton-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:4px; }
+    .carton-row input.form-control { width:65px; text-align:center; font-size:.82rem; }
+    .total-pcs-display { font-weight:700; color:#28a745; }
+    .btn-type { font-size:.75rem; padding:3px 10px; }
     
     /* Responsive Mobile */
     @media (max-width: 576px) {
@@ -184,36 +199,98 @@
                         <!-- Liste des articles -->
                         <div id="articlesList">
                             {% for article in articles %}
-                            <div class="article-select-card" data-article-id="{{ article.id }}" 
-                                 data-article-name="{{ article.nom|lower }}">
-                                <div class="row align-items-center">
-                                    <div class="col-auto">
-                                        <input type="checkbox" class="article-checkbox" 
-                                               name="articles_selectionnes" value="{{ article.id }}"
-                                               id="article_{{ article.id }}">
-                                    </div>
-                                    <div class="col">
-                                        <label for="article_{{ article.id }}" class="mb-0 fw-bold" style="cursor: pointer;">
-                                            {{ article.nom }}
-                                        </label>
-                                        <br>
+                            <div class="article-select-card"
+                                 data-article-id="{{ article.id }}"
+                                 data-article-name="{{ article.nom|lower }}"
+                                 data-stock="{{ article.quantite_stock }}">
+                                <div class="d-flex align-items-start gap-2">
+                                    <input type="checkbox" class="article-checkbox mt-1"
+                                           name="articles_selectionnes" value="{{ article.id }}"
+                                           id="article_{{ article.id }}">
+                                    <div class="flex-grow-1">
+                                        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                                            <label for="article_{{ article.id }}" class="mb-0 fw-bold" style="cursor:pointer;">
+                                                {{ article.nom }}
+                                            </label>
+                                            <span class="stock-badge {% if article.quantite_stock <= depot.alerte_stock_bas %}stock-bas{% else %}stock-ok{% endif %}">
+                                                {{ article.quantite_stock }} en stock
+                                            </span>
+                                        </div>
                                         <small class="text-muted">
-                                            <code>{{ article.code }}</code>
-                                            {% if article.categorie %} • {{ article.categorie.nom }}{% endif %}
+                                            <code>{{ article.code }}</code>{% if article.categorie %} &bull; {{ article.categorie.nom }}{% endif %}
                                         </small>
-                                    </div>
-                                    <div class="col-auto text-center">
-                                        <span class="stock-badge {% if article.quantite_stock <= depot.alerte_stock_bas %}stock-bas{% else %}stock-ok{% endif %}">
-                                            {{ article.quantite_stock }} en stock
-                                        </span>
-                                    </div>
-                                    <div class="col-auto">
-                                        <div class="input-group input-group-sm">
-                                            <span class="input-group-text">Qté</span>
-                                            <input type="number" class="form-control quantite-input" 
-                                                   name="quantite_{{ article.id }}" 
-                                                   min="1" max="{{ article.quantite_stock }}" 
-                                                   value="1" disabled>
+                                        <!-- Prix achat / vente -->
+                                        <div class="prix-row">
+                                            <span class="text-muted">P.Achat&nbsp;: <strong>{{ article.prix_achat|floatformat:0 }} FC</strong></span>
+                                            <span class="ms-2">P.Vente&nbsp;:
+                                                <input type="number" class="pv-edit-input"
+                                                       name="prix_vente_{{ article.id }}"
+                                                       value="{{ article.prix_vente|floatformat:0 }}"
+                                                       min="0" step="1" disabled
+                                                       onclick="event.stopPropagation()">
+                                                <span class="text-success fw-bold">FC</span>
+                                            </span>
+                                        </div>
+                                        <!-- Section quantité (affichée quand sélectionné) -->
+                                        <div class="qty-section" style="display:none;">
+                                            <!-- Toggle Pièces / Carton -->
+                                            <div class="mb-2">
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <input type="radio" class="btn-check"
+                                                           name="type_quantite_{{ article.id }}"
+                                                           id="type_piece_{{ article.id }}"
+                                                           value="UNITE" checked>
+                                                    <label class="btn btn-outline-primary btn-type"
+                                                           for="type_piece_{{ article.id }}"
+                                                           onclick="event.stopPropagation()">
+                                                        <i class="fas fa-cube"></i> Pièces
+                                                    </label>
+                                                    <input type="radio" class="btn-check"
+                                                           name="type_quantite_{{ article.id }}"
+                                                           id="type_carton_{{ article.id }}"
+                                                           value="CARTON">
+                                                    <label class="btn btn-outline-warning btn-type"
+                                                           for="type_carton_{{ article.id }}"
+                                                           onclick="event.stopPropagation()">
+                                                        <i class="fas fa-box"></i> Carton
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <!-- Mode Pièces -->
+                                            <div class="pieces-section">
+                                                <div class="input-group input-group-sm" style="max-width:175px;">
+                                                    <span class="input-group-text">Qté</span>
+                                                    <input type="number" class="form-control pieces-qty-input"
+                                                           min="1" max="{{ article.quantite_stock }}" value="1"
+                                                           onclick="event.stopPropagation()">
+                                                    <span class="input-group-text text-muted" style="font-size:.7rem;">/ {{ article.quantite_stock }}</span>
+                                                </div>
+                                            </div>
+                                            <!-- Mode Carton -->
+                                            <div class="carton-section" style="display:none;">
+                                                <div class="carton-row">
+                                                    <div class="input-group input-group-sm" style="width:115px;">
+                                                        <span class="input-group-text"><i class="fas fa-box fa-xs"></i></span>
+                                                        <input type="number" class="form-control nb-cartons-input"
+                                                               min="1" value="1" placeholder="Ctn"
+                                                               onclick="event.stopPropagation()">
+                                                    </div>
+                                                    <span class="fw-bold">&times;</span>
+                                                    <div class="input-group input-group-sm" style="width:115px;">
+                                                        <span class="input-group-text">pcs</span>
+                                                        <input type="number" class="form-control pcs-par-carton-input"
+                                                               min="1" value="1" placeholder="pcs/ctn"
+                                                               onclick="event.stopPropagation()">
+                                                    </div>
+                                                    <span class="fw-bold">=</span>
+                                                    <span class="total-pcs-display">1 pcs</span>
+                                                </div>
+                                                <small class="text-muted">Max : {{ article.quantite_stock }} pcs</small>
+                                            </div>
+                                            <!-- Inputs cachés -->
+                                            <input type="hidden" class="quantite-input" name="quantite_{{ article.id }}" value="1">
+                                            <input type="hidden" class="nb-cartons-hidden" name="nb_cartons_{{ article.id }}" value="0">
+                                            <input type="hidden" class="pcs-carton-hidden" name="pcs_par_carton_{{ article.id }}" value="1">
                                         </div>
                                     </div>
                                 </div>
@@ -289,95 +366,113 @@ document.addEventListener('DOMContentLoaded', function() {
     const totalQuantityEl = document.getElementById('totalQuantity');
     const btnSubmit = document.getElementById('btnSubmit');
     const searchInput = document.getElementById('searchArticle');
-    
-    // Fonction pour mettre à jour le résumé
+
     function updateSummary() {
-        let selectedCount = 0;
-        let totalQuantity = 0;
-        
+        let cnt = 0, total = 0;
         checkboxes.forEach(cb => {
             if (cb.checked) {
-                selectedCount++;
-                const articleId = cb.value;
-                const qtyInput = document.querySelector(`input[name="quantite_${articleId}"]`);
-                totalQuantity += parseInt(qtyInput.value) || 0;
+                cnt++;
+                const card = cb.closest('.article-select-card');
+                total += parseInt(card.querySelector('.quantite-input').value) || 0;
             }
         });
-        
-        selectedCountEl.textContent = selectedCount;
-        totalQuantityEl.textContent = totalQuantity;
-        btnSubmit.disabled = selectedCount === 0;
+        selectedCountEl.textContent = cnt;
+        totalQuantityEl.textContent = total;
+        btnSubmit.disabled = cnt === 0;
     }
-    
-    // Gérer la sélection des articles
+
+    function updateCartonTotal(card) {
+        const nb  = parseInt(card.querySelector('.nb-cartons-input').value)  || 0;
+        const pcs = parseInt(card.querySelector('.pcs-par-carton-input').value) || 1;
+        const tot = nb * pcs;
+        card.querySelector('.total-pcs-display').textContent = tot + ' pcs';
+        card.querySelector('.quantite-input').value    = tot;
+        card.querySelector('.nb-cartons-hidden').value = nb;
+        card.querySelector('.pcs-carton-hidden').value = pcs;
+        updateSummary();
+    }
+
+    function onTypeChange(card) {
+        const isCarton = card.querySelector('input[value="CARTON"]').checked;
+        card.querySelector('.pieces-section').style.display = isCarton ? 'none'  : 'block';
+        card.querySelector('.carton-section').style.display = isCarton ? 'block' : 'none';
+        if (isCarton) {
+            updateCartonTotal(card);
+        } else {
+            const qty = parseInt(card.querySelector('.pieces-qty-input').value) || 1;
+            card.querySelector('.quantite-input').value    = qty;
+            card.querySelector('.nb-cartons-hidden').value = 0;
+            updateSummary();
+        }
+    }
+
+    // Sélection checkbox
     checkboxes.forEach(cb => {
         cb.addEventListener('change', function() {
-            const card = this.closest('.article-select-card');
-            const qtyInput = card.querySelector('.quantite-input');
-            
+            const card     = this.closest('.article-select-card');
+            const qtySection = card.querySelector('.qty-section');
+            const pvInput  = card.querySelector('.pv-edit-input');
             if (this.checked) {
                 card.classList.add('selected');
-                qtyInput.disabled = false;
+                qtySection.style.display = 'block';
+                pvInput.disabled = false;
             } else {
                 card.classList.remove('selected');
-                qtyInput.disabled = true;
+                qtySection.style.display = 'none';
+                pvInput.disabled = true;
             }
-            
             updateSummary();
         });
     });
-    
-    // Gérer les changements de quantité
-    document.querySelectorAll('.quantite-input').forEach(input => {
-        input.addEventListener('change', updateSummary);
-        input.addEventListener('input', updateSummary);
+
+    // Setup interactions par carte
+    document.querySelectorAll('.article-select-card').forEach(card => {
+        // Type toggle
+        card.querySelectorAll('input[name^="type_quantite_"]').forEach(r => {
+            r.addEventListener('change', () => onTypeChange(card));
+        });
+        // Pièces qty
+        const pInput = card.querySelector('.pieces-qty-input');
+        if (pInput) pInput.addEventListener('input', () => {
+            card.querySelector('.quantite-input').value = parseInt(pInput.value) || 0;
+            updateSummary();
+        });
+        // Carton inputs
+        const nbCtn  = card.querySelector('.nb-cartons-input');
+        const pcsCtn = card.querySelector('.pcs-par-carton-input');
+        if (nbCtn)  nbCtn.addEventListener('input',  () => updateCartonTotal(card));
+        if (pcsCtn) pcsCtn.addEventListener('input', () => updateCartonTotal(card));
     });
-    
+
     // Tout sélectionner
     document.getElementById('selectAll').addEventListener('click', function() {
         document.querySelectorAll('.article-select-card:not([style*="display: none"]) .article-checkbox').forEach(cb => {
-            cb.checked = true;
-            const card = cb.closest('.article-select-card');
-            card.classList.add('selected');
-            card.querySelector('.quantite-input').disabled = false;
+            if (!cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
         });
-        updateSummary();
     });
-    
+
     // Tout désélectionner
     document.getElementById('deselectAll').addEventListener('click', function() {
         checkboxes.forEach(cb => {
-            cb.checked = false;
-            const card = cb.closest('.article-select-card');
-            card.classList.remove('selected');
-            card.querySelector('.quantite-input').disabled = true;
+            if (cb.checked) { cb.checked = false; cb.dispatchEvent(new Event('change')); }
         });
-        updateSummary();
     });
-    
-    // Recherche d'articles
+
+    // Recherche
     searchInput.addEventListener('input', function() {
-        const searchTerm = this.value.toLowerCase();
-        
+        const term = this.value.toLowerCase();
         document.querySelectorAll('.article-select-card').forEach(card => {
-            const articleName = card.dataset.articleName;
-            if (articleName.includes(searchTerm)) {
-                card.style.display = 'block';
-            } else {
-                card.style.display = 'none';
-            }
+            card.style.display = card.dataset.articleName.includes(term) ? 'block' : 'none';
         });
     });
-    
-    // Clic sur la carte pour cocher/décocher
+
+    // Clic sur la carte
     document.querySelectorAll('.article-select-card').forEach(card => {
         card.addEventListener('click', function(e) {
-            // Ne pas déclencher si on clique sur l'input ou le checkbox
-            if (e.target.tagName === 'INPUT') return;
-            
-            const checkbox = this.querySelector('.article-checkbox');
-            checkbox.checked = !checkbox.checked;
-            checkbox.dispatchEvent(new Event('change'));
+            if (e.target.closest('.qty-section') || e.target.tagName === 'INPUT' || e.target.tagName === 'LABEL') return;
+            const cb = this.querySelector('.article-checkbox');
+            cb.checked = !cb.checked;
+            cb.dispatchEvent(new Event('change'));
         });
     });
 });

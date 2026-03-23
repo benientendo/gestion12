@@ -4690,11 +4690,19 @@ def transfert_multiple(request, depot_id):
         try:
             with transaction.atomic():
                 for article_id in articles_selectionnes:
-                    quantite_key = f'quantite_{article_id}'
-                    quantite = int(request.POST.get(quantite_key, 0))
+                    # Calcul quantité : pièces ou carton
+                    type_qte = request.POST.get(f'type_quantite_{article_id}', 'UNITE')
+                    if type_qte == 'CARTON':
+                        nb_cartons = int(request.POST.get(f'nb_cartons_{article_id}', 0) or 0)
+                        pcs_par_carton = int(request.POST.get(f'pcs_par_carton_{article_id}', 1) or 1)
+                        quantite = nb_cartons * pcs_par_carton
+                    else:
+                        quantite = int(request.POST.get(f'quantite_{article_id}', 0) or 0)
                     
                     if quantite <= 0:
                         continue
+                    
+                    prix_vente_str = request.POST.get(f'prix_vente_{article_id}', '').strip()
                     
                     try:
                         article = Article.objects.get(id=article_id, boutique=depot)
@@ -4717,6 +4725,18 @@ def transfert_multiple(request, depot_id):
                         # Validation directe - mise à jour des stocks
                         transfert.valider_transfert(request.user.username)
                         transferts_crees.append(transfert)
+                        
+                        # Mettre à jour le prix de vente dans la boutique destination
+                        if prix_vente_str:
+                            try:
+                                nouveau_pv = Decimal(prix_vente_str)
+                                if nouveau_pv >= 0:
+                                    Article.objects.filter(
+                                        code=article.code,
+                                        boutique=boutique_dest
+                                    ).update(prix_vente=nouveau_pv)
+                            except Exception:
+                                pass
                         
                     except Article.DoesNotExist:
                         erreurs.append(f"Article ID {article_id} introuvable")
