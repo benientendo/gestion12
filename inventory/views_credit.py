@@ -276,6 +276,83 @@ def recu_paiement(request, boutique_id, paiement_id):
 # ===== API ANDROID / MAUI =====
 
 @login_required
+def api_credit_creer_vente(request, boutique_id):
+    """POST : créer une vente à crédit depuis l'app Android."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+    boutique = get_object_or_404(Boutique, id=boutique_id, commercant=request.user.profil_commercant)
+
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'error': 'Corps JSON invalide'}, status=400)
+
+    # ── Client ──────────────────────────────────────────────────────────
+    client_id = body.get('client_id')
+    if client_id:
+        client = get_object_or_404(ClientAcompte, id=client_id, boutique=boutique)
+    else:
+        nom = (body.get('nom') or '').strip()
+        if not nom:
+            return JsonResponse({'error': 'Le nom du client est obligatoire'}, status=400)
+        client = ClientAcompte.objects.create(
+            boutique=boutique,
+            nom=nom,
+            prenom=(body.get('prenom') or '').strip(),
+            telephone=(body.get('telephone') or '').strip(),
+            adresse=(body.get('adresse') or '').strip(),
+        )
+
+    # ── Article + montants ───────────────────────────────────────────────
+    article_nom = (body.get('article_nom') or '').strip()
+    if not article_nom:
+        return JsonResponse({'error': "Le nom de l'article est obligatoire"}, status=400)
+
+    try:
+        prix_total    = Decimal(str(body.get('prix_total', 0)))
+        seuil_retrait = Decimal(str(body.get('seuil_retrait', 0)))
+        acompte       = Decimal(str(body.get('acompte_initial', 0) or 0))
+    except (InvalidOperation, TypeError, ValueError):
+        return JsonResponse({'error': 'Montants invalides'}, status=400)
+
+    if prix_total <= 0:
+        return JsonResponse({'error': 'Le prix total doit être positif'}, status=400)
+    if seuil_retrait <= 0 or seuil_retrait > prix_total:
+        return JsonResponse({'error': 'Seuil de retrait invalide'}, status=400)
+    if acompte < 0 or acompte > prix_total:
+        return JsonResponse({'error': 'Acompte initial invalide'}, status=400)
+
+    with transaction.atomic():
+        vente = VenteAcompte.objects.create(
+            boutique=boutique,
+            client=client,
+            article_nom=article_nom,
+            prix_total=prix_total,
+            seuil_retrait=seuil_retrait,
+            montant_paye=Decimal('0'),
+        )
+        if acompte > 0:
+            PaiementAcompte.objects.create(
+                vente=vente, montant=acompte,
+                recu_par=request.user.username,
+                notes=(body.get('commentaire') or '').strip(),
+            )
+            vente.montant_paye = acompte
+            if vente.montant_paye >= vente.prix_total:
+                vente.statut = 'SOLDE'
+            vente.save()
+
+    return JsonResponse({
+        'success':    True,
+        'vente_id':   vente.id,
+        'reference':  vente.reference,
+        'client_nom': client.nom_complet,
+        'statut':     vente.statut,
+    }, status=201)
+
+
+@login_required
 def api_credit_ventes(request, boutique_id):
     """GET : liste des ventes crédit pour l'app Android."""
     boutique = get_object_or_404(Boutique, id=boutique_id, commercant=request.user.profil_commercant)
