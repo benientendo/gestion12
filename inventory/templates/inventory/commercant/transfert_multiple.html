@@ -406,16 +406,49 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Liste des cartes visibles (non cachées)
+    function visibleCards() {
+        return [...document.querySelectorAll('.article-select-card')].filter(c => c.style.display !== 'none');
+    }
+
+    // Focuser le champ qty d'une carte
+    function focusQty(card) {
+        const pInput = card.querySelector('.pieces-qty-input');
+        if (pInput) { pInput.focus(); pInput.select(); }
+    }
+
+    // Activer une carte (cocher + afficher section)
+    function activerCarte(card) {
+        const cb = card.querySelector('.article-checkbox');
+        if (cb.checked) return;
+        cb.checked = true;
+        cb.dispatchEvent(new Event('change'));
+    }
+
+    // Passer à la prochaine carte visible
+    function allerAuSuivant(card) {
+        const cards = visibleCards();
+        const idx   = cards.indexOf(card);
+        if (idx >= 0 && idx < cards.length - 1) {
+            const next = cards[idx + 1];
+            activerCarte(next);
+            focusQty(next);
+            next.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
     // Sélection checkbox
     checkboxes.forEach(cb => {
         cb.addEventListener('change', function() {
-            const card     = this.closest('.article-select-card');
+            const card       = this.closest('.article-select-card');
             const qtySection = card.querySelector('.qty-section');
-            const pvInput  = card.querySelector('.pv-edit-input');
+            const pvInput    = card.querySelector('.pv-edit-input');
             if (this.checked) {
                 card.classList.add('selected');
                 qtySection.style.display = 'block';
                 pvInput.disabled = false;
+                // Auto-focus sur le champ quantité
+                setTimeout(() => focusQty(card), 50);
             } else {
                 card.classList.remove('selected');
                 qtySection.style.display = 'none';
@@ -433,15 +466,33 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         // Pièces qty
         const pInput = card.querySelector('.pieces-qty-input');
-        if (pInput) pInput.addEventListener('input', () => {
-            card.querySelector('.quantite-input').value = parseInt(pInput.value) || 0;
-            updateSummary();
-        });
+        if (pInput) {
+            // Saisie directe → auto-coche l'article
+            pInput.addEventListener('focus', () => activerCarte(card));
+            pInput.addEventListener('input', () => {
+                card.querySelector('.quantite-input').value = parseInt(pInput.value) || 0;
+                updateSummary();
+            });
+            // Entrée → passer à l'article suivant
+            pInput.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); allerAuSuivant(card); }
+            });
+        }
         // Carton inputs
         const nbCtn  = card.querySelector('.nb-cartons-input');
         const pcsCtn = card.querySelector('.pcs-par-carton-input');
-        if (nbCtn)  nbCtn.addEventListener('input',  () => updateCartonTotal(card));
-        if (pcsCtn) pcsCtn.addEventListener('input', () => updateCartonTotal(card));
+        if (nbCtn) {
+            nbCtn.addEventListener('input', () => updateCartonTotal(card));
+            nbCtn.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); pcsCtn && pcsCtn.focus(); }
+            });
+        }
+        if (pcsCtn) {
+            pcsCtn.addEventListener('input', () => updateCartonTotal(card));
+            pcsCtn.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); allerAuSuivant(card); }
+            });
+        }
     });
 
     // Tout sélectionner
