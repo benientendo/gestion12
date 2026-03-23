@@ -149,7 +149,7 @@
             {% if depot.est_depot %}
             <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left"></i> Retour</a>
             {% else %}
-            <a href="{% url 'inventory:commercant_detail_boutique' depot.id %}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left"></i> Retour</a>
+            <a href="{% url 'inventory:commercant_detail_boutique' depot.id %}" onclick="if(document.referrer){history.back();return false;}" class="btn btn-light btn-sm"><i class="fas fa-arrow-left"></i> Retour</a>
             {% endif %}
         </div>
     </div>
