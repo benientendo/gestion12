@@ -77,8 +77,8 @@
             </div>
             <div class="col-md-3">
                 <div class="info-item">
-                    <div class="info-label">Montant Total</div>
-                    <div class="info-value">{{ facture.montant_total|format_number }} {{ facture.devise }}</div>
+                    <div class="info-label">Montant Total{% if facture.devise == 'USD' %} <small style="opacity:.7;font-weight:400;">(facture originale $)</small>{% endif %}</div>
+                    <div class="info-value">{{ facture.montant_total|format_number }} FC</div>
                 </div>
             </div>
         </div>
@@ -120,8 +120,8 @@
                             <td class="text-center"><strong id="qte-{{ ligne.id }}">{{ ligne.quantite_unites }}</strong></td>
                             <td class="text-end" id="pa-{{ ligne.id }}">{{ ligne.prix_achat_unitaire|floatformat:2 }}</td>
                             <td class="text-end" id="pv-{{ ligne.id }}">{{ ligne.prix_vente_unitaire|floatformat:2 }}</td>
-                            <td class="text-end" id="total-{{ ligne.id }}">{{ ligne.prix_achat_total|format_number }} {{ facture.devise }}</td>
-                            <td class="text-end text-success"><strong id="benef-{{ ligne.id }}">{{ ligne.benefice_total|format_number }} {{ facture.devise }}</strong></td>
+                            <td class="text-end" id="total-{{ ligne.id }}">{{ ligne.prix_achat_total|format_number }} FC</td>
+                            <td class="text-end text-success"><strong id="benef-{{ ligne.id }}">{{ ligne.benefice_total|format_number }} FC</strong></td>
                             <td class="text-end {% if ligne.benefice_pourcentage >= 0 %}text-success{% else %}text-danger{% endif %}" id="pct-{{ ligne.id }}">{{ ligne.benefice_pourcentage|floatformat:1 }}%</td>
                             <td class="text-center">
                                 <button class="btn btn-sm btn-outline-primary" onclick="ouvrirModal({{ ligne.id }}, '{{ ligne.article.nom|escapejs }}', {{ ligne.quantite_unites }}, {{ ligne.prix_achat_unitaire }}, {{ ligne.prix_vente_unitaire }})">
@@ -135,8 +135,8 @@
                         <tr class="table-primary">
                             <td colspan="2"><strong>TOTAL ({{ lignes|length }} articles)</strong></td>
                             <td colspan="2"></td>
-                            <td class="text-end" id="total-facture"><strong>{{ total_achat|format_number }} {{ facture.devise }}</strong></td>
-                            <td class="text-end text-success" id="total-benefice"><strong>{{ total_benefice|format_number }} {{ facture.devise }}</strong></td>
+                            <td class="text-end" id="total-facture"><strong>{{ total_achat|format_number }} FC</strong></td>
+                            <td class="text-end text-success" id="total-benefice"><strong>{{ total_benefice|format_number }} FC</strong></td>
                             <td class="text-end text-success" id="total-pct"><strong>{{ pourcentage_global|floatformat:1 }}%</strong></td>
                             <td></td>
                         </tr>
