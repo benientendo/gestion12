@@ -249,7 +249,7 @@
                             <input type="number" class="form-control form-control-sm art-field" id="art_pcs_sup" min="0" value="0" oninput="calculerSaisie()">
                         </div>
                         <div class="col-2 mb-1x field-arrows">
-                            <label class="form-label">Catégorie</label>
+                            <label class="form-label">Catégorie *</label>
                             <input type="text" class="form-control form-control-sm art-field" id="art_categorie" list="datalistCategories" placeholder="Tapez pour rechercher" autocomplete="off" oninput="onSaisieCategorieInput()">
                             <input type="hidden" id="art_categorie_id" value="">
                             <input type="hidden" id="art_categorie_nom" value="">
@@ -927,6 +927,16 @@ function ajouterArticle() {
     try {
         var nom = getEl('art_nom').value.trim();
         if (!nom) { alert('Saisissez le nom de l\'article'); getEl('art_nom').focus(); return; }
+
+        var categorieId = getEl('art_categorie_id').value;
+        var categorieNom = getEl('art_categorie_nom').value.trim();
+        if (!categorieId && !categorieNom) {
+            alert('La catégorie est obligatoire');
+            getEl('art_categorie').focus();
+            getEl('art_categorie').style.borderColor = '#dc3545';
+            return;
+        }
+        getEl('art_categorie').style.borderColor = '';
 
         // Fonction pour récupérer la valeur du hint si le champ est vide/0
         function getValeurOuHint(fieldId, hintId, defaultVal) {
