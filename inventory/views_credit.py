@@ -5,6 +5,7 @@ from django.db import transaction
 from django.db.models import Sum, Q
 from django.utils import timezone
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from decimal import Decimal, InvalidOperation
 import json
 
@@ -304,6 +305,7 @@ def recu_paiement(request, boutique_id, paiement_id):
 
 # ===== API ANDROID / MAUI =====
 
+@csrf_exempt
 def api_credit_creer_vente(request, boutique_id):
     """POST : créer une vente à crédit depuis l'app Android."""
     if request.method != 'POST':
@@ -446,6 +448,7 @@ def api_credit_detail_vente(request, vente_id):
     })
 
 
+@csrf_exempt
 def api_credit_enregistrer_paiement(request, vente_id):
     """POST : enregistrer un acompte depuis Android."""
     if request.method != 'POST':
