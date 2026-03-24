@@ -896,11 +896,11 @@ def api_ca_jour_boutique(request, boutique_id):
     aujourd_hui = timezone.now().date()
 
     ventes_qs = Vente.objects.filter(
-        client_maui__boutique=boutique,
+        Q(boutique=boutique) | Q(client_maui__boutique=boutique),
         date_vente__date=aujourd_hui,
         paye=True,
         est_annulee=False,
-    )
+    ).distinct()
 
     # Agrégats CDF
     agg_cdf = ventes_qs.filter(devise='CDF').aggregate(
