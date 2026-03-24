@@ -8,8 +8,37 @@ from django.http import JsonResponse
 from decimal import Decimal, InvalidOperation
 import json
 
-from .models import Boutique, Article, ClientAcompte, VenteAcompte, PaiementAcompte
+from .models import Boutique, Article, ClientAcompte, VenteAcompte, PaiementAcompte, Client
 from .decorators import commercant_required
+
+
+def _boutique_from_serial(request, boutique_id):
+    """Authentifie un terminal MAUI via X-Device-Serial et retourne (boutique, error_response)."""
+    serial = request.META.get('HTTP_X_DEVICE_SERIAL', '').strip()
+    if not serial:
+        return None, JsonResponse({'error': 'Header X-Device-Serial manquant'}, status=403)
+    try:
+        client = Client.objects.select_related('boutique').get(numero_serie=serial, est_actif=True)
+    except Client.DoesNotExist:
+        return None, JsonResponse({'error': 'Terminal non autorisé'}, status=403)
+    if not client.boutique or client.boutique.id != boutique_id:
+        return None, JsonResponse({'error': 'Boutique non autorisée pour ce terminal'}, status=403)
+    return client.boutique, None
+
+
+def _boutique_from_serial_for_vente(request, vente_id):
+    """Authentifie un terminal MAUI et retourne (vente, boutique, error_response)."""
+    serial = request.META.get('HTTP_X_DEVICE_SERIAL', '').strip()
+    if not serial:
+        return None, None, JsonResponse({'error': 'Header X-Device-Serial manquant'}, status=403)
+    try:
+        client = Client.objects.select_related('boutique').get(numero_serie=serial, est_actif=True)
+    except Client.DoesNotExist:
+        return None, None, JsonResponse({'error': 'Terminal non autorisé'}, status=403)
+    if not client.boutique:
+        return None, None, JsonResponse({'error': 'Aucune boutique associée à ce terminal'}, status=403)
+    vente = get_object_or_404(VenteAcompte, id=vente_id, boutique=client.boutique)
+    return vente, client.boutique, None
 
 
 def _boutique_commercant(request, boutique_id):
@@ -275,13 +304,14 @@ def recu_paiement(request, boutique_id, paiement_id):
 
 # ===== API ANDROID / MAUI =====
 
-@login_required
 def api_credit_creer_vente(request, boutique_id):
     """POST : créer une vente à crédit depuis l'app Android."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 
-    boutique = get_object_or_404(Boutique, id=boutique_id, commercant=request.user.profil_commercant)
+    boutique, err = _boutique_from_serial(request, boutique_id)
+    if err:
+        return err
 
     try:
         body = json.loads(request.body)
@@ -335,7 +365,7 @@ def api_credit_creer_vente(request, boutique_id):
         if acompte > 0:
             PaiementAcompte.objects.create(
                 vente=vente, montant=acompte,
-                recu_par=request.user.username,
+                recu_par=request.META.get('HTTP_X_DEVICE_SERIAL', 'MAUI'),
                 notes=(body.get('commentaire') or '').strip(),
             )
             vente.montant_paye = acompte
@@ -352,10 +382,11 @@ def api_credit_creer_vente(request, boutique_id):
     }, status=201)
 
 
-@login_required
 def api_credit_ventes(request, boutique_id):
     """GET : liste des ventes crédit pour l'app Android."""
-    boutique = get_object_or_404(Boutique, id=boutique_id, commercant=request.user.profil_commercant)
+    boutique, err = _boutique_from_serial(request, boutique_id)
+    if err:
+        return err
     statut   = request.GET.get('statut', '')
 
     ventes = VenteAcompte.objects.filter(boutique=boutique).select_related('client')
@@ -383,10 +414,11 @@ def api_credit_ventes(request, boutique_id):
     return JsonResponse({'ventes': data, 'count': len(data)})
 
 
-@login_required
 def api_credit_detail_vente(request, vente_id):
     """GET : détail d'une vente + historique paiements."""
-    vente = get_object_or_404(VenteAcompte, id=vente_id, boutique__commercant=request.user.profil_commercant)
+    vente, _, err = _boutique_from_serial_for_vente(request, vente_id)
+    if err:
+        return err
     paiements = [{
         'id':              p.id,
         'reference_recu':  p.reference_recu,
@@ -414,13 +446,14 @@ def api_credit_detail_vente(request, vente_id):
     })
 
 
-@login_required
 def api_credit_enregistrer_paiement(request, vente_id):
     """POST : enregistrer un acompte depuis Android."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
 
-    vente = get_object_or_404(VenteAcompte, id=vente_id, boutique__commercant=request.user.profil_commercant)
+    vente, _, err = _boutique_from_serial_for_vente(request, vente_id)
+    if err:
+        return err
 
     try:
         body    = json.loads(request.body)
@@ -439,7 +472,7 @@ def api_credit_enregistrer_paiement(request, vente_id):
     with transaction.atomic():
         paiement = PaiementAcompte.objects.create(
             vente=vente, montant=montant,
-            recu_par=request.user.username, notes=notes,
+            recu_par=request.META.get('HTTP_X_DEVICE_SERIAL', 'MAUI'), notes=notes,
         )
         vente.montant_paye += montant
         if vente.montant_paye >= vente.prix_total:
@@ -457,10 +490,11 @@ def api_credit_enregistrer_paiement(request, vente_id):
     })
 
 
-@login_required
 def api_credit_clients(request, boutique_id):
     """GET : liste des clients crédit pour l'app Android."""
-    boutique = get_object_or_404(Boutique, id=boutique_id, commercant=request.user.profil_commercant)
+    boutique, err = _boutique_from_serial(request, boutique_id)
+    if err:
+        return err
     clients  = ClientAcompte.objects.filter(boutique=boutique)
 
     data = [{
