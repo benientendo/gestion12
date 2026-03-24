@@ -20,9 +20,18 @@ class Command(BaseCommand):
         if options['all']:
             ventes = Vente.objects.all()
         elif options['factures']:
-            ventes = Vente.objects.filter(numero_facture__in=options['factures'])
+            from django.db.models import Q
+            # Essai exact puis partial (icontains)
+            q = Q()
+            for ref in options['factures']:
+                q |= Q(numero_facture=ref) | Q(numero_facture__icontains=ref)
+            ventes = Vente.objects.filter(q)
             if not ventes.exists():
                 self.stderr.write(f"Aucune vente trouvée pour: {options['factures']}")
+                # Afficher quelques factures récentes pour debug
+                recentes = Vente.objects.order_by('-date_vente')[:5]
+                for v in recentes:
+                    self.stdout.write(f"  Récente: {v.numero_facture} | {v.montant_total} FC | {v.date_vente}")
                 return
         else:
             self.stderr.write("Utilisez --factures ou --all")
