@@ -1299,37 +1299,58 @@ def create_vente_simple(request):
                 symbole_devise = '$' if devise_ligne == 'USD' else 'FC'
                 prix_affiche = prix_unitaire_usd if devise_ligne == 'USD' else prix_unitaire
 
+                # ⭐ Accumuler les montants selon la devise (TOUJOURS, avant le dedup stock)
+                if devise_ligne == 'USD':
+                    montant_total_usd += (prix_unitaire_usd or 0) * quantite
+                    montant_total += prix_unitaire * quantite
+                else:
+                    montant_total += prix_unitaire * quantite
+                    if prix_unitaire_usd:
+                        montant_total_usd += prix_unitaire_usd * quantite
+
+                # Sous-total selon la devise de la ligne
+                sous_total = (prix_unitaire_usd * quantite) if devise_ligne == 'USD' else (prix_unitaire * quantite)
+                lignes_creees.append({
+                    'article_nom': article.nom,
+                    'quantite': quantite,
+                    'prix_unitaire': str(prix_unitaire),
+                    'prix_unitaire_usd': str(prix_unitaire_usd) if prix_unitaire_usd else None,
+                    'devise': devise_ligne,
+                    'sous_total': str(sous_total)
+                })
+
                 # ⭐ JOURNAL: Dedup — évite double réduction de stock (idempotence)
+                # NOTE: montant_total est déjà accumulé ci-dessus, on ne saute que le stock
                 if MouvementStock.objects.filter(
                     reference_document=vente.numero_facture,
                     article=article,
                     type_mouvement='VENTE'
                 ).exists():
-                    logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} — skip")
+                    logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} — skip stock only")
                     continue
 
                 # Stock TOUJOURS sur le parent (variants = identifiants uniquement)
                 stock_avant = article.quantite_stock
                 article.quantite_stock -= quantite
                 article.save(update_fields=['quantite_stock'])
-                
+
                 # Log avec info variant si applicable
                 if variante:
                     logger.info(f"🏷️ Vente variant {variante.nom_complet}: Stock parent {stock_avant} → {article.quantite_stock}")
                     commentaire_stock = f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_affiche} {symbole_devise}"
                 else:
                     commentaire_stock = f"Vente #{vente.numero_facture} - Prix: {prix_affiche} {symbole_devise}"
-                
+
                 MouvementStock.objects.create(
-                        article=article,
-                        type_mouvement='VENTE',
-                        quantite=-quantite,
-                        stock_avant=stock_avant,
-                        stock_apres=article.quantite_stock,
-                        reference_document=vente.numero_facture,
-                        utilisateur=terminal.nom_terminal,
-                        commentaire=commentaire_stock
-                    )
+                    article=article,
+                    type_mouvement='VENTE',
+                    quantite=-quantite,
+                    stock_avant=stock_avant,
+                    stock_apres=article.quantite_stock,
+                    reference_document=vente.numero_facture,
+                    utilisateur=terminal.nom_terminal,
+                    commentaire=commentaire_stock
+                )
 
                 # 🔔 WebSocket: notifier tous les POS du nouveau stock
                 notify_stock_updated(boutique.id, article.id, article.quantite_stock)
@@ -1349,28 +1370,6 @@ def create_vente_simple(request):
                         numero_facture=vente.numero_facture
                     )
                     logger.warning(f"🚨 ALERTE STOCK: {nom_article} stock={article.quantite_stock}")
-
-                # ⭐ Accumuler les montants selon la devise
-                if devise_ligne == 'USD':
-                    # Pour USD: accumuler en USD
-                    montant_total_usd += (prix_unitaire_usd or 0) * quantite
-                    montant_total += prix_unitaire * quantite  # CDF si fourni
-                else:
-                    # Pour CDF: accumuler en CDF
-                    montant_total += prix_unitaire * quantite
-                    if prix_unitaire_usd:
-                        montant_total_usd += prix_unitaire_usd * quantite
-                
-                # Sous-total selon la devise de la ligne
-                sous_total = (prix_unitaire_usd * quantite) if devise_ligne == 'USD' else (prix_unitaire * quantite)
-                lignes_creees.append({
-                    'article_nom': article.nom,
-                    'quantite': quantite,
-                    'prix_unitaire': str(prix_unitaire),
-                    'prix_unitaire_usd': str(prix_unitaire_usd) if prix_unitaire_usd else None,
-                    'devise': devise_ligne,
-                    'sous_total': str(sous_total)
-                })
             
             # Mettre à jour le montant total de la vente
             logger.info(f"💰 Montant total calculé: {montant_total} CDF / {montant_total_usd} USD (devise: {devise_vente})")
@@ -2108,26 +2107,29 @@ def sync_ventes_simple(request):
                             est_negocie=est_negocie,
                             motif_reduction=motif_reduction
                         )
-                        
-                        # Mettre à jour le stock (TOUJOURS sur le parent, même si variant scanné)
+
+                        # ⭐ Accumuler les montants (TOUJOURS, avant le dedup stock)
+                        montant_total += prix_unitaire * quantite
+                        montant_total_usd = (montant_total_usd or 0) + (prix_unitaire_usd * quantite if prix_unitaire_usd else 0)
+                        lignes_creees.append({
+                            'article_id': article.id,
+                            'article_nom': article.nom,
+                            'article_code': article.code,
+                            'quantite': quantite,
+                            'prix_unitaire': str(prix_unitaire),
+                            'prix_unitaire_usd': str(prix_unitaire_usd) if prix_unitaire_usd else None,
+                            'devise': devise_ligne,
+                            'sous_total': str(prix_unitaire * quantite)
+                        })
 
                         # ⭐ JOURNAL: Dedup — évite double réduction de stock (idempotence)
+                        # NOTE: montant_total est déjà accumulé ci-dessus, on ne saute que le stock
                         if MouvementStock.objects.filter(
                             reference_document=vente.numero_facture,
                             article=article,
                             type_mouvement='VENTE'
                         ).exists():
-                            logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} — skip")
-                            lignes_creees.append({
-                                'article_id': article.id,
-                                'article_nom': article.nom,
-                                'article_code': article.code,
-                                'quantite': quantite,
-                                'prix_unitaire': str(prix_unitaire),
-                                'devise': devise_ligne,
-                                'sous_total': str(prix_unitaire * quantite),
-                                'doublon': True
-                            })
+                            logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} — skip stock only")
                             continue
 
                         stock_avant = article.quantite_stock
@@ -2168,20 +2170,6 @@ def sync_ventes_simple(request):
                                 numero_facture=vente.numero_facture
                             )
                             logger.warning(f"🚨 ALERTE STOCK: {nom_article_vente} stock={article.quantite_stock}")
-                        
-                        montant_total += prix_unitaire * quantite
-
-                        montant_total_usd = (montant_total_usd or 0) + (prix_unitaire_usd * quantite if prix_unitaire_usd else 0)
-                        lignes_creees.append({
-                            'article_id': article.id,
-                            'article_nom': article.nom,
-                            'article_code': article.code,
-                            'quantite': quantite,
-                            'prix_unitaire': str(prix_unitaire),
-                            'prix_unitaire_usd': str(prix_unitaire_usd) if prix_unitaire_usd else None,
-                            'devise': devise_ligne,
-                            'sous_total': str(prix_unitaire * quantite)
-                        })
                     
                     # Mettre à jour le montant total de la vente
                     logger.info(f"💰 SYNC - Montant total calculé: {montant_total} CDF / {montant_total_usd} USD")
