@@ -1610,7 +1610,6 @@ def statistiques_boutique_simple(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        from datetime import datetime, timedelta
         from django.db.models import Sum, Count
         
         boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
@@ -1618,35 +1617,35 @@ def statistiques_boutique_simple(request):
         # Statistiques générales
         total_articles = Article.objects.filter(boutique=boutique, est_actif=True).count()
         total_categories = Categorie.objects.filter(boutique=boutique).count()
-        
-        # Ventes du jour
-        aujourd_hui = datetime.now().date()
-        ventes_jour = Vente.objects.filter(
-            boutique=boutique,
-            date_vente__date=aujourd_hui
-        ).aggregate(
-            nombre=Count('id'),
-            ca=Sum('montant_total')
-        )
-        
-        # Ventes du mois
+
+        # ⭐ Recette jour/mois via _compute_dashboard_stats :
+        #    - filtre paye=True, est_annulee=False
+        #    - inclut boutique ET client_maui__boutique (ventes MAUI)
+        #    - timezone-aware
+        #    - déduit les dépenses du RapportCaisse
+        dashboard = _compute_dashboard_stats(boutique)
+
+        # Nombre de ventes jour/mois (paye=True, non annulées, boutique + MAUI)
+        aujourd_hui = timezone.now().date()
         debut_mois = aujourd_hui.replace(day=1)
-        ventes_mois = Vente.objects.filter(
-            boutique=boutique,
-            date_vente__date__gte=debut_mois
-        ).aggregate(
-            nombre=Count('id'),
-            ca=Sum('montant_total')
+        ventes_base = Q(paye=True, est_annulee=False) & (
+            Q(boutique=boutique) | Q(client_maui__boutique=boutique)
         )
-        
+        nb_ventes_jour = Vente.objects.filter(
+            ventes_base, date_vente__date=aujourd_hui
+        ).distinct().count()
+        nb_ventes_mois = Vente.objects.filter(
+            ventes_base, date_vente__date__gte=debut_mois
+        ).distinct().count()
+
         # Articles en stock bas
         articles_stock_bas = Article.objects.filter(
             boutique=boutique,
             est_actif=True,
             quantite_stock__lte=boutique.alerte_stock_bas
         ).count()
-        
-        # 💰 NÉGOCIATIONS - Statistiques des prix négociés
+
+        # 💰 NÉGOCIATIONS
         lignes_negociees_jour = LigneVente.objects.filter(
             vente__boutique=boutique,
             vente__date_vente__date=aujourd_hui,
@@ -1655,7 +1654,6 @@ def statistiques_boutique_simple(request):
             nombre=Count('id'),
             total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
         )
-        
         lignes_negociees_mois = LigneVente.objects.filter(
             vente__boutique=boutique,
             vente__date_vente__date__gte=debut_mois,
@@ -1664,7 +1662,7 @@ def statistiques_boutique_simple(request):
             nombre=Count('id'),
             total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
         )
-        
+
         return Response({
             'success': True,
             'boutique': {
@@ -1682,12 +1680,14 @@ def statistiques_boutique_simple(request):
                     'total': total_categories
                 },
                 'ventes_jour': {
-                    'nombre': ventes_jour['nombre'] or 0,
-                    'chiffre_affaires': str(ventes_jour['ca'] or 0)
+                    'nombre': nb_ventes_jour,
+                    'chiffre_affaires': str(dashboard['ca_jour']),
+                    'chiffre_affaires_usd': str(dashboard['ca_jour_usd'])
                 },
                 'ventes_mois': {
-                    'nombre': ventes_mois['nombre'] or 0,
-                    'chiffre_affaires': str(ventes_mois['ca'] or 0)
+                    'nombre': nb_ventes_mois,
+                    'chiffre_affaires': str(dashboard['ca_mois']),
+                    'chiffre_affaires_usd': str(dashboard['ca_mois_usd'])
                 },
                 'negociations_jour': {
                     'nombre': lignes_negociees_jour['nombre'] or 0,
