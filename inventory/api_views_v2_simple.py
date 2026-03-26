@@ -1311,6 +1311,7 @@ def create_vente_simple(request):
                 # Sous-total selon la devise de la ligne
                 sous_total = (prix_unitaire_usd * quantite) if devise_ligne == 'USD' else (prix_unitaire * quantite)
                 lignes_creees.append({
+                    'article_id': article.id,
                     'article_nom': article.nom,
                     'quantite': quantite,
                     'prix_unitaire': str(prix_unitaire),
@@ -1321,12 +1322,17 @@ def create_vente_simple(request):
 
                 # ⭐ JOURNAL: Dedup — évite double réduction de stock (idempotence)
                 # NOTE: montant_total est déjà accumulé ci-dessus, on ne saute que le stock
-                if MouvementStock.objects.filter(
-                    reference_document=vente.numero_facture,
-                    article=article,
-                    type_mouvement='VENTE'
-                ).exists():
-                    logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} — skip stock only")
+                # ⭐ FIX: Inclure commentaire variante pour distinguer 2 variantes du même parent
+                commentaire_stock_prefix = f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante}" if variante else f"Vente #{vente.numero_facture} - Prix:"
+                dedup_filter = {
+                    'reference_document': vente.numero_facture,
+                    'article': article,
+                    'type_mouvement': 'VENTE',
+                }
+                if variante:
+                    dedup_filter['commentaire__contains'] = f"Variante: {variante.nom_variante}"
+                if MouvementStock.objects.filter(**dedup_filter).exists():
+                    logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} (variante: {variante.nom_variante if variante else 'N/A'}) — skip stock only")
                     continue
 
                 # Stock TOUJOURS sur le parent (variants = identifiants uniquement)
@@ -1923,7 +1929,7 @@ def sync_ventes_simple(request):
                         'quantite': item.get('Quantite') or item.get('quantite'),
                         'prix_unitaire': item.get('PrixUnitaire') or item.get('prix_unitaire'),
                         'prix_unitaire_usd': item.get('PrixUnitaireUsd') or item.get('prix_unitaire_usd'),
-                        'devise': item.get('Devise') or item.get('devise', 'CDF')
+                        'devise': item.get('Devise') or item.get('devise') or vente_convertie.get('devise', 'CDF')
                     }
                     lignes_converties.append(ligne_convertie)
                 vente_convertie['lignes'] = lignes_converties
@@ -2061,7 +2067,7 @@ def sync_ventes_simple(request):
                                     article_parent=article,
                                     est_actif=True
                                 )
-                                logger.info(f"🏷️ Variante trouvée: {variante.nom_complet} (stock: {variante.quantite_stock})")
+                                logger.info(f"🏷️ Variante trouvée: {variante.nom_complet} (stock parent: {article.quantite_stock})")
                             except VarianteArticle.DoesNotExist:
                                 logger.warning(f"⚠️ Variante {variante_id} non trouvée pour article {article.nom}, vente sur article parent")
                         
@@ -2124,12 +2130,16 @@ def sync_ventes_simple(request):
 
                         # ⭐ JOURNAL: Dedup — évite double réduction de stock (idempotence)
                         # NOTE: montant_total est déjà accumulé ci-dessus, on ne saute que le stock
-                        if MouvementStock.objects.filter(
-                            reference_document=vente.numero_facture,
-                            article=article,
-                            type_mouvement='VENTE'
-                        ).exists():
-                            logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} — skip stock only")
+                        # ⭐ FIX: Inclure commentaire variante pour distinguer 2 variantes du même parent
+                        dedup_filter = {
+                            'reference_document': vente.numero_facture,
+                            'article': article,
+                            'type_mouvement': 'VENTE',
+                        }
+                        if variante:
+                            dedup_filter['commentaire__contains'] = f"Variante: {variante.nom_variante}"
+                        if MouvementStock.objects.filter(**dedup_filter).exists():
+                            logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} (variante: {variante.nom_variante if variante else 'N/A'}) — skip stock only")
                             continue
 
                         stock_avant = article.quantite_stock
