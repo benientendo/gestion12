@@ -18,6 +18,7 @@ from django.db import transaction, IntegrityError  # ⭐ Pour les transactions a
 from django.conf import settings
 import json
 import logging
+from decimal import Decimal, InvalidOperation
 
 from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock
 from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
@@ -1924,11 +1925,11 @@ def sync_ventes_simple(request):
                 lignes_converties = []
                 for item in vente_convertie.get('lignes', []):
                     ligne_convertie = {
-                        'article_id': item.get('ArticleId') or item.get('article_id'),
-                        'variante_id': item.get('VarianteId') or item.get('variante_id'),
-                        'quantite': item.get('Quantite') or item.get('quantite'),
-                        'prix_unitaire': item.get('PrixUnitaire') or item.get('prix_unitaire'),
-                        'prix_unitaire_usd': item.get('PrixUnitaireUsd') or item.get('prix_unitaire_usd'),
+                        'article_id': item.get('ArticleId') if item.get('ArticleId') is not None else item.get('article_id'),
+                        'variante_id': item.get('VarianteId') if item.get('VarianteId') is not None else item.get('variante_id'),
+                        'quantite': item.get('Quantite') if item.get('Quantite') is not None else item.get('quantite'),
+                        'prix_unitaire': item.get('PrixUnitaire') if item.get('PrixUnitaire') is not None else item.get('prix_unitaire'),
+                        'prix_unitaire_usd': item.get('PrixUnitaireUsd') if item.get('PrixUnitaireUsd') is not None else item.get('prix_unitaire_usd'),
                         'devise': item.get('Devise') or item.get('devise') or vente_convertie.get('devise', 'CDF')
                     }
                     lignes_converties.append(ligne_convertie)
@@ -2182,7 +2183,26 @@ def sync_ventes_simple(request):
                             logger.warning(f"🚨 ALERTE STOCK: {nom_article_vente} stock={article.quantite_stock}")
                     
                     # Mettre à jour le montant total de la vente
-                    logger.info(f"💰 SYNC - Montant total calculé: {montant_total} CDF / {montant_total_usd} USD")
+                    # ⭐ FIX CAUSE 3: Comparer le total recalculé avec le Total envoyé par MAUI
+                    montant_maui = vente_data.get('montant_total')
+                    try:
+                        montant_maui = Decimal(str(montant_maui)) if montant_maui else None
+                    except Exception:
+                        montant_maui = None
+                    
+                    if montant_maui and montant_maui > 0:
+                        ecart = abs(montant_total - montant_maui)
+                        if ecart > 1:  # Tolérance de 1 unité pour les arrondis
+                            logger.warning(
+                                f"⚠️ ÉCART MONTANT: Vente {numero_facture} — "
+                                f"MAUI={montant_maui} vs Recalculé={montant_total} (écart={ecart}) "
+                                f"→ On utilise le Total MAUI (correct au moment de la vente)"
+                            )
+                            montant_total = montant_maui
+                        else:
+                            logger.info(f"💰 SYNC - Montants cohérents: MAUI={montant_maui}, Recalculé={montant_total}")
+                    
+                    logger.info(f"💰 SYNC - Montant total final: {montant_total} {devise_vente} / USD: {montant_total_usd}")
                     vente.montant_total = montant_total
                     if devise_vente == 'USD' and montant_total_usd:
                         vente.montant_total_usd = montant_total_usd
