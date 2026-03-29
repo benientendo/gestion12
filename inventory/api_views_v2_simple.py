@@ -1189,12 +1189,22 @@ def create_vente_simple(request):
                 logger.warning(f"⚠️ Aucune date fournie pour vente {numero_facture} → fallback timezone.now()")
                 date_vente = timezone.now()
             
-            # Log si la vente est d'un jour différent (sync retardée = scénario offline multi-jours)
+            # ⭐ AUTO-CORRECTION HORLOGE: Si date_vente est dans le futur (>30min),
+            # c'est un décalage d'horloge de l'appareil → corriger avec l'heure serveur.
             now_check = timezone.now()
-            if date_vente.date() != now_check.date():
+            ecart_minutes = (date_vente - now_check).total_seconds() / 60
+            
+            if ecart_minutes > 30:
+                logger.warning(
+                    f"⏰ HORLOGE DÉCALÉE: Vente {numero_facture} datée {date_vente.strftime('%d/%m/%Y %H:%M')} "
+                    f"mais serveur={now_check.strftime('%d/%m/%Y %H:%M')} (décalage +{ecart_minutes:.0f}min) "
+                    f"→ AUTO-CORRECTION à {now_check.strftime('%H:%M')}")
+                date_vente = now_check
+            elif date_vente.date() != now_check.date() and ecart_minutes < -60:
                 jours_ecart = (now_check.date() - date_vente.date()).days
-                logger.info(f"📅 SYNC RETARDÉE: Vente {numero_facture} datée du {date_vente.strftime('%d/%m/%Y %H:%M')} "
-                            f"(synchro {jours_ecart} jour(s) après) — date de vente conservée")
+                logger.info(
+                    f"📅 SYNC RETARDÉE: Vente {numero_facture} datée du {date_vente.strftime('%d/%m/%Y %H:%M')} "
+                    f"(synchro {jours_ecart} jour(s) après) — date de vente conservée")
             
             # Déterminer la devise de la vente
             devise_vente = vente_data.get('devise', 'CDF')
@@ -2034,12 +2044,25 @@ def sync_ventes_simple(request):
                         logger.warning(f"⚠️ Aucune date fournie pour vente {numero_facture} → fallback timezone.now()")
                         date_vente = timezone.now()
                     
-                    # Log si la vente est d'un jour différent (sync retardée = scénario offline multi-jours)
+                    # ⭐ AUTO-CORRECTION HORLOGE: Si date_vente est dans le futur (>30min),
+                    # c'est un décalage d'horloge de l'appareil → corriger avec l'heure serveur.
+                    # Si date_vente est dans le passé, c'est une sync retardée légitime → conserver.
                     now = timezone.now()
-                    if date_vente.date() != now.date():
+                    ecart_minutes = (date_vente - now).total_seconds() / 60
+                    
+                    if ecart_minutes > 30:
+                        # Date dans le futur = horloge appareil en avance
+                        logger.warning(
+                            f"⏰ HORLOGE DÉCALÉE: Vente {numero_facture} datée {date_vente.strftime('%d/%m/%Y %H:%M')} "
+                            f"mais serveur={now.strftime('%d/%m/%Y %H:%M')} (décalage +{ecart_minutes:.0f}min) "
+                            f"→ AUTO-CORRECTION à {now.strftime('%H:%M')}")
+                        date_vente = now
+                    elif date_vente.date() != now.date() and ecart_minutes < -60:
+                        # Date dans le passé (>1h) = sync retardée légitime
                         jours_ecart = (now.date() - date_vente.date()).days
-                        logger.info(f"📅 SYNC RETARDÉE: Vente {numero_facture} datée du {date_vente.strftime('%d/%m/%Y %H:%M')} "
-                                    f"(synchro {jours_ecart} jour(s) après) — date de vente conservée")
+                        logger.info(
+                            f"📅 SYNC RETARDÉE: Vente {numero_facture} datée du {date_vente.strftime('%d/%m/%Y %H:%M')} "
+                            f"(synchro {jours_ecart} jour(s) après) — date de vente conservée")
                     
                     # Déterminer la devise de la vente
                     devise_vente = vente_data.get('devise', 'CDF')
