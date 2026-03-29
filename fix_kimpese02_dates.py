@@ -10,7 +10,7 @@ Usage:
 """
 import os, sys, django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'GestionMagazin.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'gestion_magazin.settings')
 django.setup()
 
 from django.utils import timezone
