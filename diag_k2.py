@@ -22,10 +22,11 @@ now = timezone.now()
 print(f"=== Heure serveur: {now.strftime('%d/%m/%Y %H:%M:%S')} ===\n")
 
 # 🔒 FORCER LE BON TERMINAL
-try:
-    k2 = Client.objects.get(id=62)
-except Client.DoesNotExist:
-    print("❌ Terminal ID=62 introuvable")
+# 🔒 FORCER PAR NUMERO DE SERIE (LE PLUS FIABLE)
+k2 = Client.objects.filter(numero_serie="DESKTOP-QRU50NU").first()
+
+if not k2:
+    print("❌ Terminal QRU50NU introuvable")
     sys.exit(1)
 
 print(f"=== KIMPESE 02: ID={k2.id} | {k2.nom_terminal} | serie={k2.numero_serie} ===")
