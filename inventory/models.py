@@ -378,6 +378,9 @@ class Vente(models.Model):
     adresse_ip_client = models.GenericIPAddressField(null=True, blank=True, help_text="Adresse IP du client MAUI")
     version_app_maui = models.CharField(max_length=50, blank=True, help_text="Version de l'app MAUI utilisée")
     
+    # ⭐ Horodatage Django (heure serveur au moment de la réception/sync)
+    created_at = models.DateTimeField(auto_now_add=True, null=True, help_text="Date réception par Django (heure serveur)")
+    
     # ⭐ ANNULATION DE VENTE
     est_annulee = models.BooleanField(default=False, help_text="La vente a-t-elle été annulée?")
     date_annulation = models.DateTimeField(null=True, blank=True, help_text="Date et heure de l'annulation")
