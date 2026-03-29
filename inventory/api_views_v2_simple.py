@@ -1172,19 +1172,29 @@ def create_vente_simple(request):
         # ⭐ TRANSACTION ATOMIQUE : Tout ou rien
         with transaction.atomic():
             # ⭐ CRÉER LA VENTE AVEC ISOLATION PAR BOUTIQUE
+            # La date utilisée est celle de la VENTE (envoyée par MAUI), PAS la date de synchronisation.
             date_str = vente_data.get('date_vente') or vente_data.get('date')
             if date_str:
                 date_vente = parse_datetime(date_str)
                 if date_vente is None:
+                    logger.warning(f"⚠️ Date invalide reçue: '{date_str}' → fallback timezone.now()")
                     date_vente = timezone.now()
                 elif timezone.is_naive(date_vente):
-                    # Interpréter la date naïve comme étant dans le timezone de Django (Europe/Paris)
+                    # Interpréter la date naïve comme étant dans le timezone de Django (Africa/Kinshasa)
                     date_vente = timezone.make_aware(date_vente)
                 else:
                     # Si la date est déjà aware, s'assurer qu'elle est dans le bon timezone
                     date_vente = date_vente.astimezone(timezone.get_current_timezone())
             else:
+                logger.warning(f"⚠️ Aucune date fournie pour vente {numero_facture} → fallback timezone.now()")
                 date_vente = timezone.now()
+            
+            # Log si la vente est d'un jour différent (sync retardée = scénario offline multi-jours)
+            now_check = timezone.now()
+            if date_vente.date() != now_check.date():
+                jours_ecart = (now_check.date() - date_vente.date()).days
+                logger.info(f"📅 SYNC RETARDÉE: Vente {numero_facture} datée du {date_vente.strftime('%d/%m/%Y %H:%M')} "
+                            f"(synchro {jours_ecart} jour(s) après) — date de vente conservée")
             
             # Déterminer la devise de la vente
             devise_vente = vente_data.get('devise', 'CDF')
@@ -2006,19 +2016,30 @@ def sync_ventes_simple(request):
                         continue
                     
                     # ⭐ CRÉER LA VENTE AVEC ISOLATION STRICTE
+                    # La date utilisée est celle de la VENTE (envoyée par MAUI), PAS la date de synchronisation.
+                    # Cela permet de synchroniser des ventes faites J-1 ou J-2 avec la bonne date.
                     date_str = vente_data.get('date_vente') or vente_data.get('date')
                     if date_str:
                         date_vente = parse_datetime(date_str)
                         if date_vente is None:
+                            logger.warning(f"⚠️ Date invalide reçue: '{date_str}' → fallback timezone.now()")
                             date_vente = timezone.now()
                         elif timezone.is_naive(date_vente):
-                            # Interpréter la date naïve comme étant dans le timezone de Django (Europe/Paris)
+                            # Interpréter la date naïve comme étant dans le timezone de Django (Africa/Kinshasa)
                             date_vente = timezone.make_aware(date_vente)
                         else:
                             # Si la date est déjà aware, s'assurer qu'elle est dans le bon timezone
                             date_vente = date_vente.astimezone(timezone.get_current_timezone())
                     else:
+                        logger.warning(f"⚠️ Aucune date fournie pour vente {numero_facture} → fallback timezone.now()")
                         date_vente = timezone.now()
+                    
+                    # Log si la vente est d'un jour différent (sync retardée = scénario offline multi-jours)
+                    now = timezone.now()
+                    if date_vente.date() != now.date():
+                        jours_ecart = (now.date() - date_vente.date()).days
+                        logger.info(f"📅 SYNC RETARDÉE: Vente {numero_facture} datée du {date_vente.strftime('%d/%m/%Y %H:%M')} "
+                                    f"(synchro {jours_ecart} jour(s) après) — date de vente conservée")
                     
                     # Déterminer la devise de la vente
                     devise_vente = vente_data.get('devise', 'CDF')
