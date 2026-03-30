@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+  #!/usr/bin/env python
 """
 Script de diagnostic et correction des dates décalées pour Kimpese 02.
 L'horloge de l'appareil Kimpese 02 était décalée de ~7-8h en avance,

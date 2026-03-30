@@ -195,6 +195,9 @@ def maui_auth_v2(request):
                     'commercant': commercant.nom_entreprise if commercant else '',
                     'type_commerce': boutique.type_commerce,
                     'ville': boutique.ville,
+                    'adresse': boutique.adresse,
+                    'quartier': boutique.quartier,
+                    'telephone': boutique.telephone,
                     'devise': boutique.devise,
                     # Nouveau bloc détaillé pour entête de facture MAUI
                     'commercant_details': {
