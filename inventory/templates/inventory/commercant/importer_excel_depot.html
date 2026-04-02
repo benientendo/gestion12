@@ -61,6 +61,54 @@
         font-weight: bold;
         color: #155724;
     }
+    /* Onglets modèle */
+    .model-tabs {
+        display: flex;
+        gap: 0;
+        margin-bottom: 20px;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 2px solid #11998e;
+    }
+    .model-tab {
+        flex: 1;
+        padding: 12px 20px;
+        text-align: center;
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+        background: #fff;
+        color: #555;
+        border: none;
+        outline: none;
+    }
+    .model-tab:hover {
+        background: #e8f5e9;
+    }
+    .model-tab.active {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+    }
+    .model-tab i {
+        margin-right: 6px;
+    }
+    .model-panel {
+        display: none;
+    }
+    .model-panel.active {
+        display: block;
+    }
+    .badge-avance {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        margin-left: 6px;
+        vertical-align: middle;
+    }
 </style>
 {% endblock %}
 
@@ -89,8 +137,19 @@
                     <h5 class="mb-0"><i class="fas fa-upload"></i> Téléverser le fichier Excel</h5>
                 </div>
                 <div class="card-body">
+                    <!-- Onglets de sélection du modèle -->
+                    <div class="model-tabs">
+                        <button type="button" class="model-tab active" onclick="selectModel('simple')">
+                            <i class="fas fa-file-alt"></i>Modèle Simple
+                        </button>
+                        <button type="button" class="model-tab" onclick="selectModel('avance')">
+                            <i class="fas fa-file-invoice"></i>Modèle Avancé <span class="badge-avance">Facture</span>
+                        </button>
+                    </div>
+
                     <form method="post" enctype="multipart/form-data" id="importForm">
                         {% csrf_token %}
+                        <input type="hidden" name="model_type" id="model_type" value="simple">
                         
                         <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fichier_excel').click()">
                             <i class="fas fa-cloud-upload-alt"></i>
@@ -118,77 +177,126 @@
         </div>
         
         <div class="col-lg-4">
-            <!-- Instructions -->
-            <div class="card shadow-sm mb-4">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0"><i class="fas fa-info-circle"></i> Format du fichier</h5>
-                </div>
-                <div class="card-body">
-                    <div class="format-info">
-                        <strong><i class="fas fa-columns me-1"></i> Colonnes attendues:</strong>
-                        <ul class="mb-0 mt-2">
-                            <li><strong>Code</strong> - Code article (optionnel, généré auto)</li>
-                            <li><strong>Nom</strong> - Nom de l'article <span class="badge bg-danger">Obligatoire</span></li>
-                            <li><strong>Prix Achat</strong> - Prix d'achat</li>
-                            <li><strong>Prix Vente</strong> - Prix de vente</li>
-                            <li><strong>Stock</strong> - Quantité en stock</li>
-                            <li><strong>Devise</strong> - CDF ou USD (optionnel)</li>
-                        </ul>
+            <!-- Instructions SIMPLE -->
+            <div id="panel_simple" class="model-panel active">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="fas fa-info-circle"></i> Format Simple</h5>
                     </div>
-                    
-                    <div class="alert alert-warning">
-                        <i class="fas fa-exclamation-triangle me-1"></i>
-                        <strong>Important:</strong>
-                        <ul class="mb-0 small">
-                            <li>La première ligne doit contenir les en-têtes</li>
-                            <li>Si un code existe déjà, le stock sera ajouté</li>
-                            <li>Devise par défaut: CDF</li>
-                        </ul>
+                    <div class="card-body">
+                        <div class="format-info">
+                            <strong><i class="fas fa-columns me-1"></i> Colonnes attendues:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li><strong>Code</strong> - Code article (optionnel, généré auto)</li>
+                                <li><strong>Nom</strong> - Nom de l'article <span class="badge bg-danger">Obligatoire</span></li>
+                                <li><strong>Prix Achat</strong> - Prix d'achat</li>
+                                <li><strong>Prix Vente</strong> - Prix de vente</li>
+                                <li><strong>Stock</strong> - Quantité en stock</li>
+                                <li><strong>Devise</strong> - CDF ou USD (optionnel)</li>
+                            </ul>
+                        </div>
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                            <strong>Important:</strong>
+                            <ul class="mb-0 small">
+                                <li>La première ligne doit contenir les en-têtes</li>
+                                <li>Si un code existe déjà, le stock sera ajouté</li>
+                                <li>Devise par défaut: CDF</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="card shadow-sm">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="fas fa-table"></i> Exemple Simple</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered exemple-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Code</th>
+                                        <th>Nom</th>
+                                        <th>Prix Achat</th>
+                                        <th>Prix Vente</th>
+                                        <th>Stock</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>ART001</td><td>Savon</td><td>500</td><td>800</td><td>100</td></tr>
+                                    <tr><td>ART002</td><td>Lait</td><td>1500</td><td>2000</td><td>50</td></tr>
+                                    <tr><td>ART003</td><td>Riz 5kg</td><td>8000</td><td>10000</td><td>30</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
-            
-            <!-- Exemple -->
-            <div class="card shadow-sm">
-                <div class="card-header bg-secondary text-white">
-                    <h5 class="mb-0"><i class="fas fa-table"></i> Exemple de fichier</h5>
+
+            <!-- Instructions AVANCÉ -->
+            <div id="panel_avance" class="model-panel">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header text-white" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">
+                        <h5 class="mb-0"><i class="fas fa-file-invoice"></i> Format Avancé (Articles détaillés)</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="format-info" style="border-left-color:#764ba2;">
+                            <strong><i class="fas fa-columns me-1"></i> Colonnes attendues:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li><strong>Fournisseur</strong> - Nom du fournisseur (optionnel)</li>
+                                <li><strong>Nom de l'article</strong> - Nom de l'article <span class="badge bg-danger">Obligatoire</span></li>
+                                <li><strong>Catégorie</strong> - Catégorie de l'article</li>
+                                <li><strong>P.achat/u</strong> - Prix d'achat unitaire (FC)</li>
+                                <li><strong>Prix_ventes</strong> - Prix de vente (FC)</li>
+                                <li><strong>Pièces/carton</strong> - Nombre de pièces par carton</li>
+                            </ul>
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="fas fa-magic me-1"></i>
+                            <strong>Ce modèle crée automatiquement:</strong>
+                            <ul class="mb-0 small">
+                                <li>Les <strong>articles</strong> avec leurs prix (achat et vente)</li>
+                                <li>Les <strong>catégories</strong> si elles n'existent pas</li>
+                                <li>Les infos <strong>fournisseur</strong> et <strong>pièces/carton</strong> en description</li>
+                                <li><strong>Aucun stock</strong> n'est ajouté (quantité = 0)</li>
+                            </ul>
+                        </div>
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                            <strong>Important:</strong>
+                            <ul class="mb-0 small">
+                                <li>La première ligne doit contenir les en-têtes</li>
+                                <li>Les prix sont en <strong>Francs Congolais (FC)</strong></li>
+                                <li>Si un article existe déjà, ses prix seront mis à jour</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered exemple-table mb-0">
-                            <thead>
-                                <tr>
-                                    <th>Code</th>
-                                    <th>Nom</th>
-                                    <th>Prix Achat</th>
-                                    <th>Prix Vente</th>
-                                    <th>Stock</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>ART001</td>
-                                    <td>Savon</td>
-                                    <td>500</td>
-                                    <td>800</td>
-                                    <td>100</td>
-                                </tr>
-                                <tr>
-                                    <td>ART002</td>
-                                    <td>Lait</td>
-                                    <td>1500</td>
-                                    <td>2000</td>
-                                    <td>50</td>
-                                </tr>
-                                <tr>
-                                    <td>ART003</td>
-                                    <td>Riz 5kg</td>
-                                    <td>8000</td>
-                                    <td>10000</td>
-                                    <td>30</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                <div class="card shadow-sm">
+                    <div class="card-header text-white" style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">
+                        <h5 class="mb-0"><i class="fas fa-table"></i> Exemple Avancé</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered exemple-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">Fournisseur</th>
+                                        <th style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">Nom de l'article</th>
+                                        <th style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">Catégorie</th>
+                                        <th style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">P.achat/u</th>
+                                        <th style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">Prix_ventes</th>
+                                        <th style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">Pièces/carton</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td>Brassimba</td><td>Bière Primus</td><td>Boissons</td><td>1200</td><td>1500</td><td>24</td></tr>
+                                    <tr><td>Brassimba</td><td>Bière Turbo</td><td>Boissons</td><td>1000</td><td>1300</td><td>24</td></tr>
+                                    <tr><td>Marsavco</td><td>Savon Klin</td><td>Hygiène</td><td>500</td><td>800</td><td>48</td></tr>
+                                    <tr><td>Marsavco</td><td>Omo Sachet</td><td>Hygiène</td><td>300</td><td>500</td><td>60</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -262,6 +370,28 @@ function handleFileSelect(input) {
     }
 }
 
+// Sélection du modèle
+function selectModel(model) {
+    document.getElementById('model_type').value = model;
+    // Onglets
+    var tabs = document.querySelectorAll('.model-tab');
+    tabs.forEach(function(t) { t.classList.remove('active'); });
+    if (model === 'simple') {
+        tabs[0].classList.add('active');
+    } else {
+        tabs[1].classList.add('active');
+    }
+    // Panneaux
+    document.getElementById('panel_simple').classList.toggle('active', model === 'simple');
+    document.getElementById('panel_avance').classList.toggle('active', model === 'avance');
+    // Texte du bouton
+    if (model === 'avance') {
+        submitBtn.innerHTML = '<i class="fas fa-file-invoice me-2"></i>Importer les articles (avancé)';
+    } else {
+        submitBtn.innerHTML = '<i class="fas fa-upload me-2"></i>Importer les articles';
+    }
+}
+
 // Validation du formulaire
 document.getElementById('importForm').addEventListener('submit', function(e) {
     if (!fileInput.files || fileInput.files.length === 0) {
@@ -271,7 +401,12 @@ document.getElementById('importForm').addEventListener('submit', function(e) {
     }
     
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Import en cours...';
+    var model = document.getElementById('model_type').value;
+    if (model === 'avance') {
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Import des articles en cours...';
+    } else {
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Import en cours...';
+    }
 });
 </script>
 {% endblock %}

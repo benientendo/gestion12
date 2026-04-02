@@ -4418,6 +4418,7 @@ def importer_excel_depot(request, depot_id):
     
     if request.method == 'POST':
         fichier_excel = request.FILES.get('fichier_excel')
+        model_type = request.POST.get('model_type', 'simple')
         
         if not fichier_excel:
             messages.error(request, "Veuillez sélectionner un fichier Excel")
@@ -4436,9 +4437,179 @@ def importer_excel_depot(request, depot_id):
             wb = openpyxl.load_workbook(BytesIO(fichier_excel.read()))
             ws = wb.active
             
-            # Récupérer les en-têtes (première ligne)
-            headers = [cell.value.lower().strip() if cell.value else '' for cell in ws[1]]
+            # Récupérer les en-têtes (première ligne) - normaliser unicode + strip
+            import unicodedata
+            def normalize_header(val):
+                if not val:
+                    return ''
+                val = str(val).lower().strip()
+                # Supprimer BOM et caractères invisibles
+                val = val.replace('\ufeff', '').replace('\u200b', '')
+                # Normaliser les accents unicode (NFC)
+                val = unicodedata.normalize('NFC', val)
+                # Supprimer espaces multiples
+                val = ' '.join(val.split())
+                return val
+            headers = [normalize_header(cell.value) for cell in ws[1]]
             
+            # ============================================================
+            # MODÈLE AVANCÉ (Import articles uniquement, sans stock)
+            # ============================================================
+            if model_type == 'avance':
+                # Colonnes attendues pour le modèle avancé
+                col_avance = {
+                    'fournisseur': None,
+                    'nom': None,
+                    'categorie': None,
+                    'prix_achat': None,
+                    'prix_vente': None,
+                    'pieces_carton': None,
+                }
+                
+                variantes_avance = {
+                    'fournisseur': ['fournisseur', 'supplier', 'fourn', 'nom fournisseur', 'nom_fournisseur', 'nom'],
+                    'nom': ['nom de l\'article', 'nom_article', 'nom article', 'article', 'produit', 'designation', 'désignation', 'libelle', 'libellé'],
+                    'categorie': ['catégorie', 'categorie', 'category', 'cat', 'famille'],
+                    'prix_achat': ['p.achat/u', 'p.achat', 'prix_achat', 'prix achat', 'prix d\'achat', 'pa', 'pa/u', 'prix achat/u', 'achat', 'cout', 'coût', 'prix_achat/u', 'prix'],
+                    'prix_vente': ['prix_ventes', 'prix_vente', 'prix vente', 'prix de vente', 'pv', 'vente', 'prix ventes'],
+                    'pieces_carton': ['pièces/carton', 'pieces/carton', 'pcs/carton', 'pièces_carton', 'pieces_carton', 'pcs_carton', 'pcs/crt', 'pieces par carton', 'pièces par carton', 'piece', 'pièce', 'pieces', 'pièces'],
+                }
+                
+                for i, header in enumerate(headers):
+                    if not header:
+                        continue
+                    for col_name, variants in variantes_avance.items():
+                        if col_avance[col_name] is not None:
+                            continue
+                        if header in variants or any(v in header for v in variants):
+                            col_avance[col_name] = i
+                            break
+                
+                # Afficher les en-têtes détectés dans les messages d'erreur
+                headers_detectes = [h for h in headers if h]
+                headers_str = ', '.join(headers_detectes) if headers_detectes else '(aucun)'
+                
+                # Vérifier colonne obligatoire: nom de l'article
+                if col_avance['nom'] is None:
+                    messages.error(request, f"Colonne 'Nom de l'article' (ou 'Produit') non trouvée. En-têtes détectés: {headers_str}")
+                    return redirect('inventory:importer_excel_depot', depot_id=depot.id)
+                
+                articles_importes = 0
+                articles_mis_a_jour = 0
+                erreurs = []
+                
+                with transaction.atomic():
+                    for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                        try:
+                            nom_article = str(row[col_avance['nom']]).strip() if col_avance['nom'] is not None and row[col_avance['nom']] else None
+                            if not nom_article:
+                                continue
+                            
+                            # Fournisseur (optionnel, stocké dans description)
+                            fournisseur_nom = ''
+                            if col_avance['fournisseur'] is not None and row[col_avance['fournisseur']]:
+                                fournisseur_nom = str(row[col_avance['fournisseur']]).strip()
+                            
+                            # Catégorie
+                            categorie = None
+                            if col_avance['categorie'] is not None and row[col_avance['categorie']]:
+                                categorie_nom = str(row[col_avance['categorie']]).strip()
+                                if categorie_nom:
+                                    categorie, _ = Categorie.objects.get_or_create(
+                                        nom__iexact=categorie_nom,
+                                        boutique=depot,
+                                        defaults={'nom': categorie_nom}
+                                    )
+                            
+                            # Prix d'achat
+                            prix_achat = Decimal('0')
+                            if col_avance['prix_achat'] is not None and row[col_avance['prix_achat']]:
+                                try:
+                                    prix_achat = Decimal(str(row[col_avance['prix_achat']]).replace(',', '.').replace(' ', ''))
+                                except:
+                                    prix_achat = Decimal('0')
+                            
+                            # Prix de vente
+                            prix_vente = Decimal('0')
+                            if col_avance['prix_vente'] is not None and row[col_avance['prix_vente']]:
+                                try:
+                                    prix_vente = Decimal(str(row[col_avance['prix_vente']]).replace(',', '.').replace(' ', ''))
+                                except:
+                                    prix_vente = Decimal('0')
+                            
+                            # Pièces par carton
+                            pieces_carton = 0
+                            if col_avance['pieces_carton'] is not None and row[col_avance['pieces_carton']]:
+                                try:
+                                    pieces_carton = int(float(str(row[col_avance['pieces_carton']]).replace(',', '.').replace(' ', '')))
+                                except:
+                                    pieces_carton = 0
+                            
+                            # Description avec fournisseur et pièces/carton
+                            desc_parts = []
+                            if fournisseur_nom:
+                                desc_parts.append(f"Fournisseur: {fournisseur_nom}")
+                            if pieces_carton > 0:
+                                desc_parts.append(f"Pièces/carton: {pieces_carton}")
+                            description = ' | '.join(desc_parts)
+                            
+                            # Chercher l'article existant par nom dans le dépôt
+                            article = Article.objects.filter(
+                                nom__iexact=nom_article,
+                                boutique=depot,
+                                est_actif=True
+                            ).first()
+                            
+                            if article:
+                                # Mettre à jour les prix si fournis
+                                if prix_achat > 0:
+                                    article.prix_achat = prix_achat
+                                if prix_vente > 0:
+                                    article.prix_vente = prix_vente
+                                if categorie and not article.categorie:
+                                    article.categorie = categorie
+                                if description:
+                                    article.description = description
+                                article.save()
+                                articles_mis_a_jour += 1
+                            else:
+                                # Créer un nouvel article (stock = 0)
+                                code = f"ART-{uuid.uuid4().hex[:8].upper()}"
+                                Article.objects.create(
+                                    code=code,
+                                    nom=nom_article,
+                                    description=description,
+                                    devise='CDF',
+                                    prix_achat=prix_achat,
+                                    prix_vente=prix_vente,
+                                    boutique=depot,
+                                    quantite_stock=0,
+                                    categorie=categorie,
+                                    est_actif=True
+                                )
+                                articles_importes += 1
+                            
+                        except Exception as e:
+                            erreurs.append(f"Ligne {row_num}: {str(e)}")
+                
+                # Messages de résultat
+                if articles_importes > 0:
+                    messages.success(request, f"{articles_importes} nouvel(aux) article(s) créé(s)")
+                if articles_mis_a_jour > 0:
+                    messages.success(request, f"{articles_mis_a_jour} article(s) mis à jour")
+                if not articles_importes and not articles_mis_a_jour:
+                    messages.warning(request, "Aucun article importé. Vérifiez le format du fichier.")
+                
+                for erreur in erreurs[:10]:
+                    messages.warning(request, erreur)
+                if len(erreurs) > 10:
+                    messages.warning(request, f"... et {len(erreurs) - 10} autres erreurs")
+                
+                return redirect('inventory:detail_depot', depot_id=depot.id)
+            
+            # ============================================================
+            # MODÈLE SIMPLE (existant)
+            # ============================================================
             # Mapper les colonnes attendues
             colonnes = {
                 'code': None,
