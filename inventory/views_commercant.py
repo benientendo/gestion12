@@ -4498,99 +4498,120 @@ def importer_excel_depot(request, depot_id):
                 articles_mis_a_jour = 0
                 erreurs = []
                 
+                # --- BATCH: Pré-charger les données existantes (2 requêtes) ---
+                existing_categories = {c.nom.lower(): c for c in Categorie.objects.filter(boutique=depot)}
+                existing_articles = {a.nom.lower(): a for a in Article.objects.filter(boutique=depot, est_actif=True)}
+                
+                # --- Lire toutes les lignes Excel en mémoire ---
+                parsed_rows = []
+                categories_a_creer = {}  # nom_lower -> nom_original
+                
+                for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+                    try:
+                        nom_article = str(row[col_avance['nom']]).strip() if col_avance['nom'] is not None and row[col_avance['nom']] else None
+                        if not nom_article:
+                            continue
+                        
+                        fournisseur_nom = ''
+                        if col_avance['fournisseur'] is not None and row[col_avance['fournisseur']]:
+                            fournisseur_nom = str(row[col_avance['fournisseur']]).strip()
+                        
+                        categorie_nom = ''
+                        if col_avance['categorie'] is not None and row[col_avance['categorie']]:
+                            categorie_nom = str(row[col_avance['categorie']]).strip()
+                        
+                        prix_achat = Decimal('0')
+                        if col_avance['prix_achat'] is not None and row[col_avance['prix_achat']]:
+                            try:
+                                prix_achat = Decimal(str(row[col_avance['prix_achat']]).replace(',', '.').replace(' ', ''))
+                            except:
+                                prix_achat = Decimal('0')
+                        
+                        prix_vente = Decimal('0')
+                        if col_avance['prix_vente'] is not None and row[col_avance['prix_vente']]:
+                            try:
+                                prix_vente = Decimal(str(row[col_avance['prix_vente']]).replace(',', '.').replace(' ', ''))
+                            except:
+                                prix_vente = Decimal('0')
+                        
+                        pieces_carton = 0
+                        if col_avance['pieces_carton'] is not None and row[col_avance['pieces_carton']]:
+                            try:
+                                pieces_carton = int(float(str(row[col_avance['pieces_carton']]).replace(',', '.').replace(' ', '')))
+                            except:
+                                pieces_carton = 0
+                        
+                        desc_parts = []
+                        if fournisseur_nom:
+                            desc_parts.append(f"Fournisseur: {fournisseur_nom}")
+                        if pieces_carton > 0:
+                            desc_parts.append(f"Pièces/carton: {pieces_carton}")
+                        
+                        # Collecter les catégories à créer
+                        if categorie_nom and categorie_nom.lower() not in existing_categories:
+                            categories_a_creer[categorie_nom.lower()] = categorie_nom
+                        
+                        parsed_rows.append({
+                            'row_num': row_num,
+                            'nom': nom_article,
+                            'categorie_nom': categorie_nom,
+                            'prix_achat': prix_achat,
+                            'prix_vente': prix_vente,
+                            'description': ' | '.join(desc_parts),
+                        })
+                    except Exception as e:
+                        erreurs.append(f"Ligne {row_num}: {str(e)}")
+                
+                # --- BATCH: Créer les catégories manquantes (1 requête) ---
+                if categories_a_creer:
+                    new_cats = [Categorie(nom=nom, boutique=depot) for nom in categories_a_creer.values()]
+                    Categorie.objects.bulk_create(new_cats, ignore_conflicts=True)
+                    existing_categories = {c.nom.lower(): c for c in Categorie.objects.filter(boutique=depot)}
+                
+                # --- Séparer articles nouveaux / existants ---
+                articles_to_create = []
+                articles_to_update = []
+                
+                for data in parsed_rows:
+                    nom_lower = data['nom'].lower()
+                    categorie = existing_categories.get(data['categorie_nom'].lower()) if data['categorie_nom'] else None
+                    
+                    if nom_lower in existing_articles:
+                        article = existing_articles[nom_lower]
+                        if data['prix_achat'] > 0:
+                            article.prix_achat = data['prix_achat']
+                        if data['prix_vente'] > 0:
+                            article.prix_vente = data['prix_vente']
+                        if categorie and not article.categorie:
+                            article.categorie = categorie
+                        if data['description']:
+                            article.description = data['description']
+                        articles_to_update.append(article)
+                        articles_mis_a_jour += 1
+                    else:
+                        code = f"ART-{uuid.uuid4().hex[:8].upper()}"
+                        new_art = Article(
+                            code=code,
+                            nom=data['nom'],
+                            description=data['description'],
+                            devise='CDF',
+                            prix_achat=data['prix_achat'],
+                            prix_vente=data['prix_vente'],
+                            boutique=depot,
+                            quantite_stock=0,
+                            categorie=categorie,
+                            est_actif=True
+                        )
+                        articles_to_create.append(new_art)
+                        existing_articles[nom_lower] = new_art  # éviter doublons
+                        articles_importes += 1
+                
+                # --- BATCH: Écriture en DB (2 requêtes) ---
                 with transaction.atomic():
-                    for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-                        try:
-                            nom_article = str(row[col_avance['nom']]).strip() if col_avance['nom'] is not None and row[col_avance['nom']] else None
-                            if not nom_article:
-                                continue
-                            
-                            # Fournisseur (optionnel, stocké dans description)
-                            fournisseur_nom = ''
-                            if col_avance['fournisseur'] is not None and row[col_avance['fournisseur']]:
-                                fournisseur_nom = str(row[col_avance['fournisseur']]).strip()
-                            
-                            # Catégorie
-                            categorie = None
-                            if col_avance['categorie'] is not None and row[col_avance['categorie']]:
-                                categorie_nom = str(row[col_avance['categorie']]).strip()
-                                if categorie_nom:
-                                    categorie, _ = Categorie.objects.get_or_create(
-                                        nom__iexact=categorie_nom,
-                                        boutique=depot,
-                                        defaults={'nom': categorie_nom}
-                                    )
-                            
-                            # Prix d'achat
-                            prix_achat = Decimal('0')
-                            if col_avance['prix_achat'] is not None and row[col_avance['prix_achat']]:
-                                try:
-                                    prix_achat = Decimal(str(row[col_avance['prix_achat']]).replace(',', '.').replace(' ', ''))
-                                except:
-                                    prix_achat = Decimal('0')
-                            
-                            # Prix de vente
-                            prix_vente = Decimal('0')
-                            if col_avance['prix_vente'] is not None and row[col_avance['prix_vente']]:
-                                try:
-                                    prix_vente = Decimal(str(row[col_avance['prix_vente']]).replace(',', '.').replace(' ', ''))
-                                except:
-                                    prix_vente = Decimal('0')
-                            
-                            # Pièces par carton
-                            pieces_carton = 0
-                            if col_avance['pieces_carton'] is not None and row[col_avance['pieces_carton']]:
-                                try:
-                                    pieces_carton = int(float(str(row[col_avance['pieces_carton']]).replace(',', '.').replace(' ', '')))
-                                except:
-                                    pieces_carton = 0
-                            
-                            # Description avec fournisseur et pièces/carton
-                            desc_parts = []
-                            if fournisseur_nom:
-                                desc_parts.append(f"Fournisseur: {fournisseur_nom}")
-                            if pieces_carton > 0:
-                                desc_parts.append(f"Pièces/carton: {pieces_carton}")
-                            description = ' | '.join(desc_parts)
-                            
-                            # Chercher l'article existant par nom dans le dépôt
-                            article = Article.objects.filter(
-                                nom__iexact=nom_article,
-                                boutique=depot,
-                                est_actif=True
-                            ).first()
-                            
-                            if article:
-                                # Mettre à jour les prix si fournis
-                                if prix_achat > 0:
-                                    article.prix_achat = prix_achat
-                                if prix_vente > 0:
-                                    article.prix_vente = prix_vente
-                                if categorie and not article.categorie:
-                                    article.categorie = categorie
-                                if description:
-                                    article.description = description
-                                article.save()
-                                articles_mis_a_jour += 1
-                            else:
-                                # Créer un nouvel article (stock = 0)
-                                code = f"ART-{uuid.uuid4().hex[:8].upper()}"
-                                Article.objects.create(
-                                    code=code,
-                                    nom=nom_article,
-                                    description=description,
-                                    devise='CDF',
-                                    prix_achat=prix_achat,
-                                    prix_vente=prix_vente,
-                                    boutique=depot,
-                                    quantite_stock=0,
-                                    categorie=categorie,
-                                    est_actif=True
-                                )
-                                articles_importes += 1
-                            
-                        except Exception as e:
-                            erreurs.append(f"Ligne {row_num}: {str(e)}")
+                    if articles_to_create:
+                        Article.objects.bulk_create(articles_to_create, batch_size=200)
+                    if articles_to_update:
+                        Article.objects.bulk_update(articles_to_update, ['prix_achat', 'prix_vente', 'categorie', 'description'], batch_size=200)
                 
                 # Messages de résultat
                 if articles_importes > 0:
@@ -4646,17 +4667,22 @@ def importer_excel_depot(request, depot_id):
             articles_mis_a_jour = 0
             erreurs = []
             
-            # Parcourir les lignes (à partir de la 2ème)
+            import random
+            import string
+            
+            # --- BATCH: Pré-charger les articles existants (1 requête) ---
+            existing_by_code = {a.code.lower(): a for a in Article.objects.filter(boutique=depot) if a.code}
+            
+            # --- Lire toutes les lignes Excel en mémoire ---
+            parsed_rows = []
             for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
                 try:
-                    # Extraire les valeurs
                     code = str(row[colonnes['code']]).strip() if colonnes['code'] is not None and row[colonnes['code']] else None
                     nom = str(row[colonnes['nom']]).strip() if colonnes['nom'] is not None and row[colonnes['nom']] else None
                     
                     if not nom:
-                        continue  # Ignorer les lignes sans nom
+                        continue
                     
-                    # Prix d'achat
                     prix_achat = 0
                     if colonnes['prix_achat'] is not None and row[colonnes['prix_achat']]:
                         try:
@@ -4664,7 +4690,6 @@ def importer_excel_depot(request, depot_id):
                         except:
                             prix_achat = 0
                     
-                    # Prix de vente
                     prix_vente = 0
                     if colonnes['prix_vente'] is not None and row[colonnes['prix_vente']]:
                         try:
@@ -4672,7 +4697,6 @@ def importer_excel_depot(request, depot_id):
                         except:
                             prix_vente = 0
                     
-                    # Stock
                     stock = 0
                     if colonnes['stock'] is not None and row[colonnes['stock']]:
                         try:
@@ -4680,72 +4704,75 @@ def importer_excel_depot(request, depot_id):
                         except:
                             stock = 0
                     
-                    # Devise (par défaut CDF)
                     devise = 'CDF'
                     if colonnes['devise'] is not None and row[colonnes['devise']]:
                         devise_val = str(row[colonnes['devise']]).upper().strip()
                         if devise_val in ['USD', '$', 'DOLLAR', 'DOLLARS']:
                             devise = 'USD'
                     
-                    # Générer un code si non fourni
                     if not code:
-                        import random
-                        import string
                         code = 'ART-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
                     
-                    # Vérifier si l'article existe déjà dans le dépôt (par code)
-                    article_existant = Article.objects.filter(code=code, boutique=depot).first()
-                    
-                    if article_existant:
-                        # Mettre à jour le stock existant
-                        stock_avant = article_existant.quantite_stock
-                        article_existant.quantite_stock += stock
-                        article_existant.prix_achat = prix_achat if prix_achat > 0 else article_existant.prix_achat
-                        article_existant.prix_vente = prix_vente if prix_vente > 0 else article_existant.prix_vente
-                        article_existant.save()
-                        
-                        if stock > 0:
-                            MouvementStock.objects.create(
-                                article=article_existant,
-                                type_mouvement='ENTREE',
-                                quantite=stock,
-                                stock_avant=stock_avant,
-                                stock_apres=article_existant.quantite_stock,
-                                commentaire="Import Excel - Mise à jour stock",
-                                reference_document=f"IMPORT-EXCEL-{depot.id}",
-                                utilisateur=request.user.username
-                            )
-                        
-                        articles_mis_a_jour += 1
-                    else:
-                        # Créer un nouvel article
-                        article = Article.objects.create(
-                            code=code,
-                            nom=nom,
-                            devise=devise,
-                            prix_achat=prix_achat,
-                            prix_vente=prix_vente,
-                            boutique=depot,
-                            quantite_stock=stock,
-                            est_actif=True
-                        )
-                        
-                        if stock > 0:
-                            MouvementStock.objects.create(
-                                article=article,
-                                type_mouvement='ENTREE',
-                                quantite=stock,
-                                stock_avant=0,
-                                stock_apres=stock,
+                    parsed_rows.append({
+                        'code': code, 'nom': nom, 'prix_achat': prix_achat,
+                        'prix_vente': prix_vente, 'stock': stock, 'devise': devise,
+                    })
+                except Exception as e:
+                    erreurs.append(f"Ligne {row_num}: {str(e)}")
+            
+            # --- Séparer articles nouveaux / existants ---
+            articles_to_create = []
+            articles_to_update = []
+            mouvements_to_create = []
+            
+            for data in parsed_rows:
+                code_lower = data['code'].lower()
+                if code_lower in existing_by_code:
+                    article = existing_by_code[code_lower]
+                    stock_avant = article.quantite_stock
+                    article.quantite_stock += data['stock']
+                    if data['prix_achat'] > 0:
+                        article.prix_achat = data['prix_achat']
+                    if data['prix_vente'] > 0:
+                        article.prix_vente = data['prix_vente']
+                    articles_to_update.append(article)
+                    if data['stock'] > 0:
+                        mouvements_to_create.append(MouvementStock(
+                            article=article, type_mouvement='ENTREE',
+                            quantite=data['stock'], stock_avant=stock_avant,
+                            stock_apres=article.quantite_stock,
+                            commentaire="Import Excel - Mise à jour stock",
+                            reference_document=f"IMPORT-EXCEL-{depot.id}",
+                            utilisateur=request.user.username
+                        ))
+                    articles_mis_a_jour += 1
+                else:
+                    new_art = Article(
+                        code=data['code'], nom=data['nom'], devise=data['devise'],
+                        prix_achat=data['prix_achat'], prix_vente=data['prix_vente'],
+                        boutique=depot, quantite_stock=data['stock'], est_actif=True
+                    )
+                    articles_to_create.append((new_art, data['stock']))
+                    existing_by_code[code_lower] = new_art  # éviter doublons
+                    articles_importes += 1
+            
+            # --- BATCH: Écriture en DB ---
+            with transaction.atomic():
+                if articles_to_update:
+                    Article.objects.bulk_update(articles_to_update, ['quantite_stock', 'prix_achat', 'prix_vente'], batch_size=200)
+                if articles_to_create:
+                    created_arts = Article.objects.bulk_create([a for a, _ in articles_to_create], batch_size=200)
+                    for art, (_, stock_val) in zip(created_arts, articles_to_create):
+                        if stock_val > 0:
+                            mouvements_to_create.append(MouvementStock(
+                                article=art, type_mouvement='ENTREE',
+                                quantite=stock_val, stock_avant=0, stock_apres=stock_val,
                                 commentaire="Import Excel - Nouvel article",
                                 reference_document=f"IMPORT-EXCEL-{depot.id}",
                                 utilisateur=request.user.username
-                            )
-                        
-                        articles_importes += 1
-                        
-                except Exception as e:
-                    erreurs.append(f"Ligne {row_num}: {str(e)}")
+                            ))
+                if mouvements_to_create:
+                    MouvementStock.objects.bulk_create(mouvements_to_create, batch_size=200)
             
             # Messages de résultat
             if articles_importes > 0:
