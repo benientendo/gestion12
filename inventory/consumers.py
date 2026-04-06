@@ -41,10 +41,15 @@ class BoutiqueConsumer(AsyncWebsocketConsumer):
             return
         
         # Rejoindre le groupe de la boutique (isolation stricte)
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
+        try:
+            await self.channel_layer.group_add(
+                self.room_group_name,
+                self.channel_name
+            )
+        except Exception as e:
+            logger.error(f"❌ Erreur group_add BoutiqueConsumer (Redis indispo?): {type(e).__name__}: {e}")
+            await self.close()
+            return
         
         # Accepter la connexion
         await self.accept()
@@ -61,11 +66,13 @@ class BoutiqueConsumer(AsyncWebsocketConsumer):
     
     async def disconnect(self, close_code):
         """Déconnexion d'un POS"""
-        # Quitter le groupe de la boutique
-        await self.channel_layer.group_discard(
-            self.room_group_name,
-            self.channel_name
-        )
+        try:
+            await self.channel_layer.group_discard(
+                self.room_group_name,
+                self.channel_name
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur group_discard BoutiqueConsumer: {type(e).__name__}: {e}")
         
         logger.info(f"🔌 WebSocket déconnecté - Boutique {self.boutique_id}, Code {close_code}")
     

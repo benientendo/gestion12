@@ -269,6 +269,8 @@ if _REDIS_URL:
                 "hosts": [_REDIS_URL],
                 "capacity": 1500,
                 "expiry": 10,
+                "socket_connect_timeout": 5,
+                "socket_timeout": 5,
             },
         },
     }
