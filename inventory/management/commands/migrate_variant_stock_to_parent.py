@@ -27,6 +27,15 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        try:
+            self._run(options)
+        except Exception as e:
+            self.stderr.write(self.style.ERROR(
+                f"\n❌ Erreur inattendue dans migrate_variant_stock_to_parent : {type(e).__name__}: {e}\n"
+                f"La commande est ignorée pour ne pas bloquer le déploiement.\n"
+            ))
+
+    def _run(self, options):
         execute = options['execute']
 
         if not execute:
@@ -50,47 +59,49 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             for article in articles_avec_variantes:
-                variantes_actives = article.variantes.filter(est_actif=True)
-                somme_variantes = sum(v.quantite_stock for v in variantes_actives)
-                stock_parent_actuel = article.quantite_stock
+                try:
+                    variantes_actives = article.variantes.filter(est_actif=True)
+                    somme_variantes = sum(v.quantite_stock for v in variantes_actives)
+                    stock_parent_actuel = article.quantite_stock
 
-                # Vérifier si des variantes ont encore du stock non nul
-                variantes_non_nulles = [v for v in variantes_actives if v.quantite_stock != 0]
+                    variantes_non_nulles = [v for v in variantes_actives if v.quantite_stock != 0]
 
-                if not variantes_non_nulles:
-                    statut = "DÉJÀ OK (variants=0)"
-                    nb_deja_ok += 1
-                else:
-                    statut = (
-                        f"MIGRATION : variants=[{', '.join(f'{v.nom_variante}={v.quantite_stock}' for v in variantes_non_nulles)}]"
-                        f" → remis à 0 | parent conservé={stock_parent_actuel}"
-                    )
-                    nb_migres += 1
-
-                    if execute:
-                        # Remettre tous les stocks des variantes à 0
-                        for v in variantes_non_nulles:
-                            v.quantite_stock = 0
-                            v.save(update_fields=['quantite_stock'])
-
-                        # Mouvement de stock pour traçabilité
-                        MouvementStock.objects.create(
-                            article=article,
-                            type_mouvement='CORRECTION',
-                            quantite=0,
-                            stock_avant=stock_parent_actuel,
-                            stock_apres=stock_parent_actuel,
-                            reference_document='MIGRATION-VAR-PARENT',
-                            commentaire=(
-                                f"Migration variants→parent: stocks variants remis à 0. "
-                                f"Parent conservé={stock_parent_actuel}. "
-                                f"Variants zeroed: {', '.join(f'{v.nom_variante}={v.quantite_stock}' for v in variantes_actives)}"
-                            )
+                    if not variantes_non_nulles:
+                        statut = "DÉJÀ OK (variants=0)"
+                        nb_deja_ok += 1
+                    else:
+                        statut = (
+                            f"MIGRATION : variants=[{', '.join(f'{v.nom_variante}={v.quantite_stock}' for v in variantes_non_nulles)}]"
+                            f" → remis à 0 | parent conservé={stock_parent_actuel}"
                         )
+                        nb_migres += 1
 
-                self.stdout.write(
-                    f"  [{article.boutique_id}] {article.nom:<35} | {statut}"
-                )
+                        if execute:
+                            for v in variantes_non_nulles:
+                                v.quantite_stock = 0
+                                v.save(update_fields=['quantite_stock'])
+
+                            MouvementStock.objects.create(
+                                article=article,
+                                type_mouvement='CORRECTION',
+                                quantite=0,
+                                stock_avant=stock_parent_actuel,
+                                stock_apres=stock_parent_actuel,
+                                reference_document='MIGRATION-VAR-PARENT',
+                                commentaire=(
+                                    f"Migration variants→parent: stocks variants remis à 0. "
+                                    f"Parent conservé={stock_parent_actuel}. "
+                                    f"Variants zeroed: {', '.join(f'{v.nom_variante}={v.quantite_stock}' for v in variantes_actives)}"
+                                )
+                            )
+
+                    self.stdout.write(
+                        f"  [{article.boutique_id}] {article.nom:<35} | {statut}"
+                    )
+                except Exception as e:
+                    self.stderr.write(self.style.WARNING(
+                        f"  ⚠️  [{article.boutique_id}] {article.nom} — ignoré ({type(e).__name__}: {e})"
+                    ))
 
             if not execute:
                 transaction.set_rollback(True)
