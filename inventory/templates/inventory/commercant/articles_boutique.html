@@ -51,9 +51,6 @@
                     <a href="{% url 'inventory:historique_mouvements_stock' boutique.id %}" class="btn btn-outline-info btn-sm d-none d-sm-inline-flex" title="Historique des mouvements de stock">
                         <i class="fas fa-history"></i> <span class="d-none d-md-inline">Historique</span>
                     </a>
-                    <a href="{% url 'inventory:generer_pdf_qr_codes' boutique.id %}" class="btn btn-outline-primary btn-sm d-none d-sm-inline-flex" target="_blank">
-                        <i class="fas fa-qrcode"></i> <span class="d-none d-md-inline">PDF</span>
-                    </a>
                 </div>
             </div>
         </div>
@@ -399,16 +396,6 @@
                                     {{ article.stock_total }} unités
                                     {% if article.a_variantes %}
                                     <span class="badge bg-info ms-1"><i class="fas fa-tags"></i> {{ article.nb_variantes }} variante(s)</span>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            <tr>
-                                <th>QR Code:</th>
-                                <td>
-                                    {% if article.qr_code %}
-                                    <img src="{{ article.qr_code.url }}" alt="QR Code" style="width: 100px; height: 100px;">
-                                    {% else %}
-                                    <span class="text-muted">Non généré</span>
                                     {% endif %}
                                 </td>
                             </tr>

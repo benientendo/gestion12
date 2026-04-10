@@ -22,8 +22,6 @@ from reportlab.lib.units import cm
 from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 import json
-import qrcode
-from PIL import Image
 import io
 
 # ... (rest of the code remains the same)
@@ -32,55 +30,6 @@ from django.core.files.base import ContentFile
 
 # ===== DÉCORATEURS ET UTILITAIRES =====
 
-def generer_qr_code_article(article):
-    """Génère un code QR pour un article et l'enregistre"""
-    try:
-        # Créer les données du QR code avec toutes les informations de l'article
-        qr_data = {
-            'id': article.id,
-            'code': article.code,
-            'nom': article.nom,
-            'prix_vente': float(article.prix_vente),
-            'boutique_id': article.boutique.id if article.boutique else None,
-            'boutique_nom': article.boutique.nom if article.boutique else None
-        }
-        
-        # Convertir en JSON pour le QR code
-        qr_content = json.dumps(qr_data, ensure_ascii=False)
-        
-        # Créer le QR code
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=10,
-            border=4,
-        )
-        qr.add_data(qr_content)
-        qr.make(fit=True)
-        
-        # Créer l'image
-        img = qr.make_image(fill_color="black", back_color="white")
-        
-        # Sauvegarder dans un buffer
-        buffer = io.BytesIO()
-        img.save(buffer, format='PNG')
-        buffer.seek(0)
-        
-        # Créer le nom du fichier
-        filename = f"qr_{article.code}_{article.id}.png"
-        
-        # Sauvegarder dans le champ qr_code de l'article
-        article.qr_code.save(
-            filename,
-            ContentFile(buffer.read()),
-            save=True
-        )
-        
-        return True
-        
-    except Exception as e:
-        print(f"Erreur lors de la génération du QR code pour l'article {article.id}: {str(e)}")
-        return False
 
 def commercant_required(view_func):
     """Décorateur pour vérifier que l'utilisateur est un commerçant ou un collaborateur actif"""
@@ -2536,12 +2485,6 @@ def ajouter_article_boutique(request, boutique_id):
                             except Exception as e:
                                 print(f"Erreur création variante: {e}")
                 
-                # Générer le code QR automatiquement
-                try:
-                    generer_qr_code_article(article)
-                except Exception as e:
-                    print(f"Erreur génération QR: {e}")
-                
                 msg = f'Article "{article.nom}" ajouté avec succès'
                 if variantes_creees > 0:
                     msg += f' avec {variantes_creees} variante(s)'
@@ -2624,16 +2567,10 @@ def ajouter_article_boutique(request, boutique_id):
                         except Exception as e:
                             print(f"Erreur création variante: {e}")
             
-            # Générer le code QR automatiquement
-            try:
-                generer_qr_code_article(article)
-                msg = f'Article "{article.nom}" ajouté avec succès à {boutique.nom}.'
-                if variantes_creees > 0:
-                    msg += f' {variantes_creees} variante(s) créée(s).'
-                messages.success(request, msg)
-            except Exception as e:
-                messages.warning(request, f'Article "{article.nom}" ajouté, mais erreur lors de la génération du code QR: {str(e)}')
-            
+            msg = f'Article "{article.nom}" ajouté avec succès à {boutique.nom}.'
+            if variantes_creees > 0:
+                msg += f' {variantes_creees} variante(s) créée(s).'
+            messages.success(request, msg)
             return redirect('inventory:entrer_boutique', boutique_id=boutique.id)
         else:
             for field, errors in form.errors.items():
@@ -2677,13 +2614,7 @@ def modifier_article_boutique(request, boutique_id, article_id):
             article.code = ancien_code
             article.save()
             
-            # Régénérer le code QR si le code a changé
-            try:
-                generer_qr_code_article(article)
-                messages.success(request, f'Article "{article.nom}" modifié avec succès.')
-            except Exception as e:
-                messages.warning(request, f'Article modifié, mais erreur lors de la génération du code QR: {str(e)}')
-            
+            messages.success(request, f'Article "{article.nom}" modifié avec succès.')
             return redirect('inventory:commercant_articles_boutique', boutique_id=boutique.id)
         else:
             for field, errors in form.errors.items():
@@ -3292,12 +3223,6 @@ def modifier_prix_article(request, boutique_id, article_id):
             article.prix_vente = nouveau_prix
             article.save()
             
-            # Régénérer le QR code avec le nouveau prix
-            try:
-                generer_qr_code_article(article)
-            except Exception:
-                pass  # Ne pas bloquer si le QR code échoue
-            
             return JsonResponse({
                 'success': True,
                 'message': f'Prix modifié: {ancien_prix} → {nouveau_prix} CDF',
@@ -3312,130 +3237,6 @@ def modifier_prix_article(request, boutique_id, article_id):
     
     return JsonResponse({'success': False, 'message': 'Méthode non autorisée'})
 
-@login_required
-@commercant_required
-@boutique_access_required
-def generer_pdf_qr_codes(request, boutique_id):
-    """Générer un PDF avec tous les codes QR des articles d'une boutique"""
-    from django.http import HttpResponse
-    from reportlab.pdfgen import canvas
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as ReportLabImage
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.lib.units import cm
-    import os
-    
-    boutique = request.boutique
-    
-    # Récupérer tous les articles actifs de la boutique avec QR code
-    articles = boutique.articles.filter(est_actif=True, qr_code__isnull=False).exclude(qr_code='')
-    
-    if not articles.exists():
-        messages.warning(request, "Aucun article avec code QR trouvé dans cette boutique.")
-        return redirect('inventory:entrer_boutique', boutique_id=boutique.id)
-    
-    # Créer le buffer pour le PDF
-    buffer = io.BytesIO()
-    
-    # Créer le document PDF
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
-    styles = getSampleStyleSheet()
-    story = []
-    
-    # Titre
-    title = Paragraph(f"Codes QR - {boutique.nom}", styles['Title'])
-    story.append(title)
-    story.append(Spacer(1, 20))
-    
-    # Informations boutique
-    info_text = f"""
-    <b>Boutique:</b> {boutique.nom}<br/>
-    <b>Type:</b> {boutique.get_type_commerce_display()}<br/>
-    <b>Adresse:</b> {boutique.adresse}, {boutique.ville}<br/>
-    <b>Date de génération:</b> {datetime.now().strftime('%d/%m/%Y à %H:%M')}<br/>
-    <b>Nombre d'articles:</b> {articles.count()}<br/>
-    """
-    info = Paragraph(info_text, styles['Normal'])
-    story.append(info)
-    story.append(Spacer(1, 30))
-    
-    # Créer une grille de QR codes (3 colonnes)
-    qr_data = []
-    current_row = []
-    
-    for i, article in enumerate(articles):
-        try:
-            # Vérifier que le fichier QR code existe
-            if article.qr_code and os.path.exists(article.qr_code.path):
-                # Créer une cellule avec QR code + informations
-                cell_content = [
-                    ReportLabImage(article.qr_code.path, width=4*cm, height=4*cm),
-                    Paragraph(f"<b>{article.nom}</b>", styles['Normal']),
-                    Paragraph(f"Code: {article.code}", styles['Normal']),
-                    Paragraph(f"Prix: {article.prix_vente} CDF", styles['Normal'])
-                ]
-                current_row.append(cell_content)
-            else:
-                # Si pas de QR code, générer un nouveau
-                if generer_qr_code_article(article):
-                    cell_content = [
-                        ReportLabImage(article.qr_code.path, width=4*cm, height=4*cm),
-                        Paragraph(f"<b>{article.nom}</b>", styles['Normal']),
-                        Paragraph(f"Code: {article.code}", styles['Normal']),
-                        Paragraph(f"Prix: {article.prix_vente} CDF", styles['Normal'])
-                    ]
-                    current_row.append(cell_content)
-                else:
-                    # QR code manquant
-                    cell_content = [
-                        Paragraph("QR Code<br/>non disponible", styles['Normal']),
-                        Paragraph(f"<b>{article.nom}</b>", styles['Normal']),
-                        Paragraph(f"Code: {article.code}", styles['Normal']),
-                        Paragraph(f"Prix: {article.prix_vente} CDF", styles['Normal'])
-                    ]
-                    current_row.append(cell_content)
-            
-            # Ajouter la ligne quand on a 3 colonnes ou à la fin
-            if len(current_row) == 3 or i == len(articles) - 1:
-                # Compléter la ligne si nécessaire
-                while len(current_row) < 3:
-                    empty_cell = [
-                        Paragraph("", styles['Normal']),
-                        Paragraph("", styles['Normal']),
-                        Paragraph("", styles['Normal']),
-                        Paragraph("", styles['Normal'])
-                    ]
-                    current_row.append(empty_cell)
-                qr_data.append(current_row)
-                current_row = []
-                
-        except Exception as e:
-            print(f"Erreur avec l'article {article.id}: {str(e)}")
-            continue
-    
-    # Créer le tableau avec les QR codes
-    if qr_data:
-        table = Table(qr_data, colWidths=[6*cm, 6*cm, 6*cm])
-        table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('TOPPADDING', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-        ]))
-        story.append(table)
-    
-    # Construire le PDF
-    doc.build(story)
-    
-    # Préparer la réponse
-    buffer.seek(0)
-    response = HttpResponse(buffer, content_type='application/pdf')
-    response['Content-Disposition'] = f'attachment; filename="QR_Codes_{boutique.nom}_{datetime.now().strftime("%Y%m%d")}.pdf"'
-    
-    return response
 
 @login_required
 @commercant_required

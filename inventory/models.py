@@ -4,7 +4,6 @@ from django.core.exceptions import ValidationError
 from django.contrib.auth.models import User
 from django.utils import timezone
 import re
-import qrcode
 from io import BytesIO
 from django.core.files import File
 import json
@@ -163,39 +162,8 @@ class Article(models.Model):
             except Article.DoesNotExist:
                 pass
         
-        # Determine if this save call is specifically for updating the qr_code field
-        updating_qr_code_field_only = False
-        update_fields = kwargs.get('update_fields')
-        if update_fields and isinstance(update_fields, (list, tuple)) and 'qr_code' in update_fields and len(update_fields) == 1:
-            updating_qr_code_field_only = True
-
         # Call the original save method
         super(Article, self).save(*args, **kwargs)
-
-        # Generate and save QR code only if needed
-        if self.pk and not self.qr_code and not updating_qr_code_field_only:
-            qr = qrcode.QRCode(
-                version=1,
-                error_correction=qrcode.constants.ERROR_CORRECT_L,
-                box_size=10,
-                border=4,
-            )
-            qr_data = {
-                'id': self.id,
-                'code': self.code,
-                'nom': self.nom,
-                'prix': str(self.prix_vente),
-                'categorie': self.categorie.nom if self.categorie else ''
-            }
-            qr.add_data(json.dumps(qr_data))
-            qr.make(fit=True)
-            img = qr.make_image(fill_color="black", back_color="white")
-            buffer = BytesIO()
-            img.save(buffer, format='PNG')
-            buffer.seek(0)
-            filename = f'qr_code_{self.code}.png'
-            self.qr_code.save(filename, File(buffer), save=False)
-            super(Article, self).save(update_fields=['qr_code'])
     
     @property
     def a_variantes(self):

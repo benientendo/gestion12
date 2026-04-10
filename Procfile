@@ -1,3 +1,3 @@
-web: daphne gestion_magazin.asgi:application --port $PORT --bind 0.0.0.0 -v1
+web: daphne gestion_magazin.asgi:application --port $PORT --bind 0.0.0.0 -v1 --application-close-timeout 30
 worker: celery -A gestion_magazin worker --loglevel=info --concurrency=2
 release: python manage.py migrate --noinput && python manage.py collectstatic --noinput

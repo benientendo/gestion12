@@ -147,16 +147,16 @@ def maui_auth_v2(request):
                 'code': 'BOUTIQUE_INACTIVE'
             }, status=status.HTTP_403_FORBIDDEN)
         
-        # Mettre à jour les informations de connexion
-        terminal.derniere_connexion = timezone.now()
-        terminal.derniere_activite = timezone.now()
-        terminal.version_app_maui = version_app
-        if hasattr(request, 'META'):
-            terminal.derniere_adresse_ip = request.META.get('REMOTE_ADDR')
-        terminal.save(update_fields=[
-            'derniere_connexion', 'derniere_activite', 
-            'version_app_maui', 'derniere_adresse_ip'
-        ])
+        # Mettre à jour les informations de connexion (update direct = pas de signaux Django)
+        now = timezone.now()
+        ip_addr = request.META.get('REMOTE_ADDR') if hasattr(request, 'META') else None
+        Client.objects.filter(pk=terminal.pk).update(
+            derniere_connexion=now,
+            derniere_activite=now,
+            version_app_maui=version_app,
+            derniere_adresse_ip=ip_addr
+        )
+        terminal.derniere_connexion = now
         
         # Créer le token JWT pour le compte propriétaire
         user = terminal.compte_proprietaire
