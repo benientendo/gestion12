@@ -222,6 +222,14 @@ if not DEBUG:
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
+    # Origines CSRF autorisées en production (lire depuis variable d'env ou ALLOWED_HOSTS)
+    _csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+    if _csrf_origins_env:
+        CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins_env.split(',')]
+    else:
+        CSRF_TRUSTED_ORIGINS = [
+            f"https://{host}" for host in ALLOWED_HOSTS if host not in ('localhost', '127.0.0.1', '')
+        ]
 
 # ============================================
 # OPTIMISATION PERFORMANCE
