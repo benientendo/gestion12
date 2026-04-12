@@ -20,8 +20,9 @@ import json
 import logging
 from decimal import Decimal, InvalidOperation
 
+from django.db.models import Prefetch
 from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock
-from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
+from .serializers import ArticleSerializer, ArticleAvecVariantesSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created, notify_dashboard_stats
 
 logger = logging.getLogger(__name__)
@@ -304,11 +305,14 @@ def articles_by_serial_simple(request, numero_serie):
         # Récupérer les articles de cette boutique
         articles = Article.objects.filter(
             boutique=boutique,
-            est_actif=True
-        ).select_related('categorie').order_by('nom')
+            est_actif=True,
+            est_valide_client=True
+        ).select_related('categorie').prefetch_related(
+            Prefetch('variantes', queryset=VarianteArticle.objects.filter(est_actif=True))
+        ).order_by('nom')
         
-        # Sérialiser les articles
-        articles_data = ArticleSerializer(articles, many=True).data
+        # Sérialiser les articles avec variantes (code-barres inclus pour le scan)
+        articles_data = ArticleAvecVariantesSerializer(articles, many=True, context={'request': request}).data
         
         logger.info(f"✅ Articles récupérés pour terminal {numero_serie}: {articles.count()} articles")
         
@@ -400,7 +404,9 @@ def articles_list_simple(request):
             boutique=boutique,
             est_actif=True,
             est_valide_client=True  # Seuls les articles validés sont disponibles à la vente
-        ).select_related('categorie')
+        ).select_related('categorie').prefetch_related(
+            Prefetch('variantes', queryset=VarianteArticle.objects.filter(est_actif=True))
+        )
         
         # ✨ SYNC INCRÉMENTALE: Filtrer par date de modification
         if since:
@@ -423,8 +429,8 @@ def articles_list_simple(request):
         
         articles = articles.order_by('nom')
         
-        # Sérialiser les articles
-        articles_data = ArticleSerializer(articles, many=True).data
+        # Sérialiser les articles avec variantes (code-barres inclus pour le scan)
+        articles_data = ArticleAvecVariantesSerializer(articles, many=True, context={'request': request}).data
         
         # Enrichir la réponse avec métadonnées de sync
         response_data = {

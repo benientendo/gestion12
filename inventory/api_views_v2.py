@@ -283,7 +283,17 @@ def articles_list_v2(request):
         actifs_seulement = request.GET.get('actifs_seulement', 'true').lower() == 'true'
         if actifs_seulement:
             articles = articles.filter(est_actif=True)
-        
+
+        # Filtre onglet réception : articles en attente de validation
+        en_attente = request.GET.get('en_attente', 'false').lower() == 'true'
+        if en_attente:
+            articles = articles.filter(est_valide_client=False)
+
+        # Filtre catalogue : uniquement les articles validés
+        valides_seulement = request.GET.get('valides_seulement', 'false').lower() == 'true'
+        if valides_seulement:
+            articles = articles.filter(est_valide_client=True)
+
         # Sérialiser et retourner (prefetch variantes actives pour éviter N+1 queries)
         articles = articles.select_related('categorie').prefetch_related(
             Prefetch('variantes', queryset=VarianteArticle.objects.filter(est_actif=True))
@@ -315,6 +325,147 @@ def articles_list_v2(request):
             'error': 'Erreur interne du serveur',
             'code': 'INTERNAL_ERROR'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def valider_article_v2(request, article_id):
+    """
+    Valide la réception d'un article depuis l'onglet réception MAUI.
+    Passe est_valide_client=True → l'article devient visible dans le catalogue.
+
+    Paramètres (body JSON):
+    - boutique_id: ID de la boutique (obligatoire)
+    - quantite_recue: Quantité physiquement reçue (optionnel, met à jour le stock)
+    """
+    boutique_id = request.data.get('boutique_id')
+    if not boutique_id:
+        return Response({'error': 'boutique_id requis', 'code': 'MISSING_BOUTIQUE_ID'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    try:
+        boutique = validate_boutique_access(request, boutique_id)
+        article = get_object_or_404(Article, id=article_id, boutique=boutique, est_actif=True)
+
+        quantite_recue = request.data.get('quantite_recue')
+        update_fields = ['est_valide_client', 'date_validation']
+
+        article.est_valide_client = True
+        article.date_validation = timezone.now()
+
+        if quantite_recue is not None:
+            try:
+                qte = int(quantite_recue)
+                if qte >= 0:
+                    ancienne_qte = article.quantite_stock
+                    article.quantite_stock = qte
+                    update_fields.append('quantite_stock')
+                    if qte != ancienne_qte:
+                        MouvementStock.objects.create(
+                            article=article,
+                            type_mouvement='AJUSTEMENT',
+                            quantite=qte - ancienne_qte,
+                            commentaire=f"Validation réception MAUI - Boutique: {boutique.nom}"
+                        )
+            except (ValueError, TypeError):
+                pass
+
+        article.save(update_fields=update_fields)
+
+        logger.info(f"Article validé - {article.nom} (ID:{article.id}) - Boutique: {boutique.nom}")
+        return Response({
+            'success': True,
+            'article_id': article.id,
+            'article_nom': article.nom,
+            'est_valide_client': True,
+            'quantite_stock': article.quantite_stock,
+        }, status=status.HTTP_200_OK)
+
+    except ValidationError as e:
+        return Response({'error': str(e), 'code': 'ACCESS_DENIED'}, status=status.HTTP_403_FORBIDDEN)
+    except Exception as e:
+        logger.error(f"Erreur validation article {article_id}: {str(e)}")
+        return Response({'error': 'Erreur interne', 'code': 'INTERNAL_ERROR'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def valider_reception_bulk_v2(request):
+    """
+    Valide la réception de plusieurs articles en une seule requête.
+
+    Body JSON:
+    {
+        "boutique_id": 5,
+        "articles": [
+            {"article_id": 12, "quantite_recue": 50},
+            {"article_id": 15, "quantite_recue": 20},
+            {"article_id": 18}   // sans quantité = garde le stock actuel
+        ]
+    }
+    """
+    boutique_id = request.data.get('boutique_id')
+    articles_data = request.data.get('articles', [])
+
+    if not boutique_id:
+        return Response({'error': 'boutique_id requis', 'code': 'MISSING_BOUTIQUE_ID'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if not articles_data:
+        return Response({'error': 'Liste articles vide', 'code': 'MISSING_ARTICLES'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    try:
+        boutique = validate_boutique_access(request, boutique_id)
+        now = timezone.now()
+        valides = []
+        erreurs = []
+
+        for item in articles_data:
+            art_id = item.get('article_id')
+            if not art_id:
+                continue
+            try:
+                article = Article.objects.get(id=art_id, boutique=boutique, est_actif=True)
+                update_fields = ['est_valide_client', 'date_validation']
+                article.est_valide_client = True
+                article.date_validation = now
+
+                quantite_recue = item.get('quantite_recue')
+                if quantite_recue is not None:
+                    try:
+                        qte = int(quantite_recue)
+                        if qte >= 0:
+                            ancienne_qte = article.quantite_stock
+                            article.quantite_stock = qte
+                            update_fields.append('quantite_stock')
+                            if qte != ancienne_qte:
+                                MouvementStock.objects.create(
+                                    article=article,
+                                    type_mouvement='AJUSTEMENT',
+                                    quantite=qte - ancienne_qte,
+                                    commentaire=f"Validation réception bulk MAUI - Boutique: {boutique.nom}"
+                                )
+                    except (ValueError, TypeError):
+                        pass
+
+                article.save(update_fields=update_fields)
+                valides.append({'article_id': article.id, 'nom': article.nom})
+            except Article.DoesNotExist:
+                erreurs.append({'article_id': art_id, 'error': 'Article introuvable ou non autorisé'})
+
+        logger.info(f"Validation bulk - Boutique: {boutique.nom}, Validés: {len(valides)}, Erreurs: {len(erreurs)}")
+        return Response({
+            'success': True,
+            'valides_count': len(valides),
+            'valides': valides,
+            'erreurs': erreurs,
+        }, status=status.HTTP_200_OK)
+
+    except ValidationError as e:
+        return Response({'error': str(e), 'code': 'ACCESS_DENIED'}, status=status.HTTP_403_FORBIDDEN)
+    except Exception as e:
+        logger.error(f"Erreur validation bulk: {str(e)}")
+        return Response({'error': 'Erreur interne', 'code': 'INTERNAL_ERROR'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['PUT', 'PATCH'])

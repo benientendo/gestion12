@@ -19,6 +19,8 @@ urlpatterns = [
     # ===== ARTICLES =====
     path('articles/', api_views_v2.articles_list_v2, name='articles_list'),
     path('articles/<int:article_id>/stock/', api_views_v2.update_stock_v2, name='update_stock'),
+    path('articles/<int:article_id>/valider/', api_views_v2.valider_article_v2, name='valider_article'),
+    path('articles/valider-reception/', api_views_v2.valider_reception_bulk_v2, name='valider_reception_bulk'),
     
     # ===== CATÉGORIES =====
     path('categories/', api_views_v2.categories_list_v2, name='categories_list'),
