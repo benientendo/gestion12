@@ -98,28 +98,48 @@ class VarianteArticleSerializer(serializers.ModelSerializer):
 
 
 class ArticleAvecVariantesSerializer(serializers.ModelSerializer):
-    """Serializer d'article incluant ses variantes."""
+    """Serializer d'article incluant ses variantes actives — utilisé pour la sync MAUI."""
     
-    variantes = VarianteArticleSerializer(many=True, read_only=True)
+    variantes = serializers.SerializerMethodField()
     categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
+    categorie_backend_id = serializers.IntegerField(source='categorie.id', read_only=True, default=None)
     has_variantes = serializers.SerializerMethodField()
     stock_total_variantes = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
     
     class Meta:
         model = Article
         fields = [
-            'id', 'code', 'nom', 'description', 'devise', 
-            'prix_vente', 'prix_achat', 'categorie_nom',
+            'id', 'code', 'nom', 'description', 'devise',
+            'prix_vente', 'prix_achat', 'prix_vente_usd', 'prix_achat_usd',
+            'categorie_nom', 'categorie_backend_id',
             'quantite_stock', 'est_actif', 'has_variantes',
-            'stock_total_variantes', 'variantes'
+            'stock_total_variantes', 'variantes',
+            'est_valide_client', 'date_suppression',
+            'image_url',
         ]
     
+    def get_variantes(self, obj):
+        """Retourne uniquement les variantes actives avec leurs code-barres."""
+        variantes_actives = [v for v in obj.variantes.all() if v.est_actif]
+        return VarianteArticleSerializer(
+            variantes_actives,
+            many=True,
+            context=self.context
+        ).data
+
     def get_has_variantes(self, obj):
-        return obj.variantes.filter(est_actif=True).exists()
+        return any(v.est_actif for v in obj.variantes.all())
     
     def get_stock_total_variantes(self, obj):
         """Stock toujours sur le parent — identique à quantite_stock."""
         return obj.quantite_stock
+
+    def get_image_url(self, obj):
+        request = self.context.get('request')
+        if obj.image and hasattr(obj.image, 'url') and request:
+            return request.build_absolute_uri(obj.image.url)
+        return None
 
 
 class LigneVenteSerializer(serializers.ModelSerializer):

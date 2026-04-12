@@ -16,7 +16,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from datetime import timedelta
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime, parse_date
-from django.db.models import Sum, Q
+from django.db.models import Sum, Q, Prefetch
 from django.shortcuts import get_object_or_404
 from django.core.exceptions import ValidationError
 from datetime import datetime, time
@@ -24,10 +24,10 @@ import json
 import logging
 
 from .models import (
-    Client, Boutique, Article, Categorie, Vente, LigneVente, 
-    MouvementStock, SessionClientMaui, RapportCaisse
+    Client, Boutique, Article, Categorie, Vente, LigneVente,
+    MouvementStock, SessionClientMaui, RapportCaisse, VarianteArticle
 )
-from .serializers import ArticleSerializer, CategorieSerializer, VenteSerializer, RapportCaisseSerializer
+from .serializers import ArticleSerializer, ArticleAvecVariantesSerializer, CategorieSerializer, VenteSerializer, RapportCaisseSerializer
 
 logger = logging.getLogger(__name__)
 
@@ -284,15 +284,20 @@ def articles_list_v2(request):
         if actifs_seulement:
             articles = articles.filter(est_actif=True)
         
-        # Sérialiser et retourner
-        articles = articles.select_related('categorie').order_by('nom')
-        serializer = ArticleSerializer(articles, many=True)
-        
-        logger.info(f"Articles récupérés - Boutique: {boutique.nom}, Nombre: {articles.count()}")
-        
+        # Sérialiser et retourner (prefetch variantes actives pour éviter N+1 queries)
+        articles = articles.select_related('categorie').prefetch_related(
+            Prefetch('variantes', queryset=VarianteArticle.objects.filter(est_actif=True))
+        ).order_by('nom')
+        count = articles.count()
+        serializer = ArticleAvecVariantesSerializer(
+            articles, many=True, context={'request': request}
+        )
+
+        logger.info(f"Articles récupérés - Boutique: {boutique.nom}, Nombre: {count}")
+
         return Response({
             'success': True,
-            'count': articles.count(),
+            'count': count,
             'boutique_id': boutique.id,
             'boutique_nom': boutique.nom,
             'articles': serializer.data
