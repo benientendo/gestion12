@@ -12,11 +12,13 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
-import dj_database_url
-from dotenv import load_dotenv
 
 # Charger les variables d'environnement depuis .env en local
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -47,7 +49,7 @@ if DEBUG:
         "10.113.224.224",
         "13.113.224.224",
         "192.168.142.224",
-        "10.248.27.118",
+        "10.105.132.138",
         "10.105.97.235",
         "10.231.153.235",  # IP actuelle pour accès réseau multi-machines
         "10.231.153.235" 
@@ -123,6 +125,7 @@ WSGI_APPLICATION = 'gestion_magazin.wsgi.application'
 # Utiliser PostgreSQL en production, SQLite en développement
 if os.environ.get('DATABASE_URL'):
     # Production : PostgreSQL via Scalingo
+    import dj_database_url
     DATABASES = {
         'default': dj_database_url.config(
             default=os.environ.get('DATABASE_URL'),

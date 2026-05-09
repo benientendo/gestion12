@@ -1,6 +1,8 @@
+from decimal import Decimal
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
-from .models import MouvementStock, NotificationStock, Client, Article
+from .models import MouvementStock, NotificationStock, Client, Article, Inventaire, LigneInventaire
+from . import journal_valeur_stock as jvs
 import logging
 
 logger = logging.getLogger(__name__)
@@ -219,3 +221,150 @@ def notifier_ajustement_prix(sender, instance, created, **kwargs):
         f"💰 {notifications_creees} notification(s) d'ajustement de prix créée(s) "
         f"pour {instance.nom} dans {boutique.nom}"
     )
+
+
+# ──────────────────────────────────────────────────────────────
+# SIGNALS JOURNAL VALEUR STOCK
+# ──────────────────────────────────────────────────────────────
+
+@receiver(post_save, sender=MouvementStock)
+def alimenter_journal_valeur_stock(sender, instance, created, **kwargs):
+    """
+    Met à jour le JournalValeurStock à chaque nouveau MouvementStock.
+    Distingue les transferts (reference_document commence par 'TRANSFERT-')
+    des entrées/sorties classiques.
+    """
+    if not created:
+        return
+
+    article = instance.article
+    if not article or not article.boutique:
+        return
+
+    boutique = article.boutique
+    prix_vente = Decimal(str(article.prix_vente or 0))
+    quantite = abs(instance.quantite)
+    valeur = prix_vente * quantite
+
+    ref = instance.reference_document or ''
+    type_mouv = instance.type_mouvement
+
+    try:
+        date_mouv = instance.date_mouvement.date()
+    except Exception:
+        date_mouv = None
+
+    try:
+        if type_mouv == 'VENTE':
+            jvs.enregistrer_vente(boutique, valeur, date_mouv)
+
+        elif type_mouv == 'ENTREE':
+            if ref.startswith('TRANSFERT-'):
+                jvs.enregistrer_transfert_entrant(boutique, valeur, date_mouv)
+            else:
+                jvs.enregistrer_approvisionnement(boutique, valeur, date_mouv)
+
+        elif type_mouv == 'SORTIE':
+            if ref.startswith('TRANSFERT-'):
+                jvs.enregistrer_transfert_sortant(boutique, valeur, date_mouv)
+            else:
+                jvs.enregistrer_sortie_manuelle(boutique, valeur, date_mouv)
+
+        elif type_mouv == 'AJUSTEMENT':
+            # quantite signé : positif = ajout de valeur, négatif = retrait
+            impact = prix_vente * Decimal(str(instance.quantite))
+            jvs.enregistrer_inventaire(boutique, impact, date_mouv)
+
+        elif type_mouv == 'RETOUR':
+            # Retour client = réentrée de stock
+            jvs.enregistrer_approvisionnement(boutique, valeur, date_mouv)
+
+    except Exception as e:
+        logger.error(f"[JournalValeurStock] Erreur lors de l'enregistrement du mouvement {instance.pk}: {e}")
+
+
+@receiver(post_save, sender=MouvementStock)
+def synchroniser_inventaire_en_cours(sender, instance, created, **kwargs):
+    """
+    Quand un mouvement de stock se produit (vente, transfert, etc.),
+    met à jour le stock_theorique des lignes d'inventaire EN_COURS
+    pour que l'inventaire reste synchronisé avec les ventes.
+    """
+    if not created:
+        return
+
+    article = instance.article
+    if not article or not article.boutique:
+        return
+
+    # Trouver les inventaires en cours pour cette boutique
+    inventaires_en_cours = Inventaire.objects.filter(
+        boutique=article.boutique,
+        statut='EN_COURS'
+    )
+
+    for inventaire in inventaires_en_cours:
+        lignes = LigneInventaire.objects.filter(
+            inventaire=inventaire,
+            article=article
+        )
+        for ligne in lignes:
+            # Mettre à jour le stock théorique avec le stock actuel de l'article
+            ligne.stock_theorique = article.quantite_stock
+            # Recalculer l'écart si stock physique déjà saisi
+            if ligne.stock_physique is not None:
+                ligne.ecart = ligne.stock_physique - ligne.stock_theorique
+                ligne.valeur_ecart = ligne.ecart * ligne.prix_unitaire
+            ligne.save(update_fields=['stock_theorique', 'ecart', 'valeur_ecart'])
+            logger.info(
+                f"[Inventaire] Stock théorique mis à jour pour {article.nom}: "
+                f"{ligne.stock_theorique} (inventaire {inventaire.reference})"
+            )
+
+
+# Stockage temporaire du prix_vente avant modification
+_prix_vente_avant_save = {}
+
+
+@receiver(pre_save, sender=Article)
+def capturer_prix_vente_avant_modification(sender, instance, **kwargs):
+    """Capture le prix de vente avant modification pour calculer l'impact sur la valeur du stock."""
+    if instance.pk:
+        try:
+            ancien = Article.objects.get(pk=instance.pk)
+            _prix_vente_avant_save[instance.pk] = ancien.prix_vente
+        except Article.DoesNotExist:
+            pass
+
+
+@receiver(post_save, sender=Article)
+def enregistrer_impact_modification_prix_vente(sender, instance, created, **kwargs):
+    """
+    Quand le prix de vente d'un article change, enregistre l'impact
+    sur la valeur du stock dans le journal (nouveau_pv - ancien_pv) * qté_stock.
+    """
+    if created:
+        _prix_vente_avant_save.pop(instance.pk, None)
+        return
+
+    if not instance.boutique:
+        _prix_vente_avant_save.pop(instance.pk, None)
+        return
+
+    ancien_prix_vente = _prix_vente_avant_save.pop(instance.pk, None)
+    if not ancien_prix_vente:
+        return
+
+    if ancien_prix_vente == instance.prix_vente:
+        return
+
+    try:
+        impact = (
+            Decimal(str(instance.prix_vente)) - Decimal(str(ancien_prix_vente))
+        ) * Decimal(str(instance.quantite_stock))
+        jvs.enregistrer_modification_prix(instance.boutique, impact)
+        logger.info(
+            f"[JournalValeurStock] Impact prix vente {instance.nom}: {impact} FC"
+        )
+    except Exception as e:
+        logger.error(f"[JournalValeurStock] Erreur impact prix vente article {instance.pk}: {e}")

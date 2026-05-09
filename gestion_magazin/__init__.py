@@ -1,8 +1,10 @@
 # This will make sure the app is always imported when
 # Django starts so that shared_task will use this app.
-from .celery import app as celery_app
-
-__all__ = ('celery_app',)
+try:
+    from .celery import app as celery_app
+    __all__ = ('celery_app',)
+except Exception:
+    pass
 
 # Activer WAL mode pour SQLite (évite les erreurs "database locked")
 from django.db.backends.signals import connection_created

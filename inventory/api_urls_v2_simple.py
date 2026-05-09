@@ -75,4 +75,8 @@ urlpatterns = [
     
     # ===== NOTIFICATIONS =====
     path('', include(router.urls)),
+
+    # ===== JOURNAL VALEUR STOCK =====
+    path('journal-valeur-stock/', api_views_v2_simple.journal_valeur_stock_simple, name='journal_valeur_stock'),
+    path('journal-valeur-stock', api_views_v2_simple.journal_valeur_stock_simple, name='journal_valeur_stock_no_slash'),
 ]

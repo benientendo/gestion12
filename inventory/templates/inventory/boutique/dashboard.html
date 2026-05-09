@@ -219,11 +219,13 @@
                         <p class="mb-0">Ventes Récentes</p>
                     </div>
                     <div class="col-md-3">
-                        <h2><i class="fas fa-coins me-2"></i><span class="sensitive-amount">{{ valeur_stock_cdf|format_cdf:0 }} FC</span></h2>
-                        {% if valeur_stock_usd %}
-                        <h4 class="mb-1"><i class="fas fa-dollar-sign me-1"></i><span class="sensitive-amount">{{ valeur_stock_usd|floatformat:2 }} USD</span></h4>
-                        {% endif %}
-                        <p class="mb-0">Valeur du stock disponible</p>
+                        <a href="{% url 'inventory:journal_valeur_stock_boutique' boutique.id %}" class="text-decoration-none text-white js-boutique-metric-link">
+                            <h2><i class="fas fa-coins me-2"></i><span class="sensitive-amount">{{ valeur_stock_cdf|format_cdf:0 }} FC</span></h2>
+                            {% if valeur_stock_usd %}
+                            <h4 class="mb-1"><i class="fas fa-dollar-sign me-1"></i><span class="sensitive-amount">{{ valeur_stock_usd|floatformat:2 }} USD</span></h4>
+                            {% endif %}
+                            <p class="mb-0">Valeur du stock disponible <i class="fas fa-external-link-alt fa-xs"></i></p>
+                        </a>
                     </div>
                 </div>
                 

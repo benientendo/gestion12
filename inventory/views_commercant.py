@@ -19,7 +19,7 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 import json
 import io
@@ -6109,13 +6109,30 @@ def saisir_inventaire(request, depot_id, inventaire_id):
             if key.startswith('stock_physique_'):
                 ligne_id = key.replace('stock_physique_', '')
                 try:
-                    ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
+                    ligne = LigneInventaire.objects.select_related('article').get(id=ligne_id, inventaire=inventaire)
                     if value.strip():
-                        ligne.stock_physique = int(value)
-                        commentaire_key = f'commentaire_{ligne_id}'
-                        if commentaire_key in request.POST:
-                            ligne.commentaire = request.POST[commentaire_key]
+                        stock_physique_val = int(value)
+                        commentaire_val = request.POST.get(f'commentaire_{ligne_id}', '')
+                        user_nom = request.user.get_full_name() or request.user.username
+                        
+                        ligne.stock_physique = stock_physique_val
+                        if commentaire_val:
+                            ligne.commentaire = commentaire_val
+                        ligne.saisi_par = request.user
                         ligne.save()
+                        
+                        # Tracer dans l'historique
+                        HistoriqueSaisieInventaire.objects.create(
+                            ligne_inventaire=ligne,
+                            article=ligne.article,
+                            inventaire=inventaire,
+                            stock_physique_saisi=stock_physique_val,
+                            stock_theorique_au_moment=ligne.stock_theorique,
+                            ecart_au_moment=stock_physique_val - ligne.stock_theorique,
+                            saisi_par=request.user,
+                            nom_saisi_par=user_nom,
+                            commentaire=commentaire_val,
+                        )
                         lignes_mises_a_jour += 1
                 except (LigneInventaire.DoesNotExist, ValueError):
                     pass
@@ -6390,12 +6407,14 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
             if key.startswith('stock_physique_'):
                 ligne_id = key.replace('stock_physique_', '')
                 try:
-                    ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
+                    ligne = LigneInventaire.objects.select_related('article').get(id=ligne_id, inventaire=inventaire)
                     if value.strip():
-                        ligne.stock_physique = int(value)
-                        commentaire_key = f'commentaire_{ligne_id}'
-                        if commentaire_key in request.POST:
-                            ligne.commentaire = request.POST[commentaire_key]
+                        stock_physique_val = int(value)
+                        commentaire_val = request.POST.get(f'commentaire_{ligne_id}', '')
+                        
+                        ligne.stock_physique = stock_physique_val
+                        if commentaire_val:
+                            ligne.commentaire = commentaire_val
 
                         # Traçabilité : enregistrer qui a saisi et quand
                         ligne.saisi_par = request.user
@@ -6403,6 +6422,19 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                         ligne.date_modification = timezone.now()
 
                         ligne.save()
+                        
+                        # Tracer dans l'historique
+                        HistoriqueSaisieInventaire.objects.create(
+                            ligne_inventaire=ligne,
+                            article=ligne.article,
+                            inventaire=inventaire,
+                            stock_physique_saisi=stock_physique_val,
+                            stock_theorique_au_moment=ligne.stock_theorique,
+                            ecart_au_moment=stock_physique_val - ligne.stock_theorique,
+                            saisi_par=request.user,
+                            nom_saisi_par=user_nom_batch,
+                            commentaire=commentaire_val,
+                        )
                         lignes_mises_a_jour += 1
                 except (LigneInventaire.DoesNotExist, ValueError):
                     pass
@@ -6546,11 +6578,25 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
     else:
         user_nom_ajax = request.user.get_full_name() or request.user.username
 
+    ancien_stock_physique = ligne.stock_physique
     ligne.stock_physique = stock_physique
     ligne.saisi_par = request.user
     ligne.assigne_a = user_nom_ajax
     ligne.date_modification = timezone.now()
     ligne.save()
+
+    # Tracer la saisie dans l'historique
+    HistoriqueSaisieInventaire.objects.create(
+        ligne_inventaire=ligne,
+        article=ligne.article,
+        inventaire=inventaire,
+        stock_physique_saisi=stock_physique,
+        stock_theorique_au_moment=ligne.stock_theorique,
+        ecart_au_moment=stock_physique - ligne.stock_theorique,
+        saisi_par=request.user,
+        nom_saisi_par=user_nom_ajax,
+        commentaire=data.get('commentaire', ''),
+    )
 
     article_fields_updated = []
 
@@ -6598,6 +6644,43 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         'nb_saisis': nb_saisis,
         'nb_total': nb_total,
         'saisi_par_nom': user_nom_ajax,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HISTORIQUE DES SAISIES D'INVENTAIRE
+# ─────────────────────────────────────────────────────────────────────────────
+
+@login_required
+@commercant_required
+@boutique_access_required
+def historique_saisie_ligne_ajax(request, boutique_id, inventaire_id, ligne_id):
+    """AJAX : retourne l'historique des saisies pour une ligne d'inventaire."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+    ligne = get_object_or_404(LigneInventaire, id=ligne_id, inventaire=inventaire)
+
+    historique = HistoriqueSaisieInventaire.objects.filter(
+        ligne_inventaire=ligne
+    ).order_by('-date_saisie')[:50]
+
+    data = []
+    for h in historique:
+        data.append({
+            'stock_physique_saisi': h.stock_physique_saisi,
+            'stock_theorique_au_moment': h.stock_theorique_au_moment,
+            'ecart_au_moment': h.ecart_au_moment,
+            'saisi_par': h.nom_saisi_par or (h.saisi_par.username if h.saisi_par else ''),
+            'commentaire': h.commentaire,
+            'date_saisie': h.date_saisie.strftime('%d/%m/%Y %H:%M'),
+        })
+
+    return JsonResponse({
+        'success': True,
+        'article_nom': ligne.article.nom,
+        'article_id': ligne.article.id,
+        'nb_saisies': len(data),
+        'historique': data,
     })
 
 
@@ -6915,7 +6998,7 @@ def transfert_entre_boutiques(request, boutique_id):
                     stock_avant=stock_source_avant,
                     stock_apres=article_source.quantite_stock,
                     commentaire=f"Transfert vers {boutique_dest.nom}",
-                    reference_document=f"TRANS-BTQ-{boutique_source.id}-{boutique_dest.id}",
+                    reference_document=f"TRANSFERT-BTQ-{boutique_source.id}-{boutique_dest.id}",
                     utilisateur=request.user.username
                 )
                 
@@ -6926,7 +7009,7 @@ def transfert_entre_boutiques(request, boutique_id):
                     stock_avant=stock_dest_avant,
                     stock_apres=article_dest.quantite_stock,
                     commentaire=f"Transfert depuis {boutique_source.nom}",
-                    reference_document=f"TRANS-BTQ-{boutique_source.id}-{boutique_dest.id}",
+                    reference_document=f"TRANSFERT-BTQ-{boutique_source.id}-{boutique_dest.id}",
                     utilisateur=request.user.username
                 )
                 
@@ -7466,3 +7549,64 @@ def maj_quantite_attribuee_boutique(request, boutique_id, article_id):
         return JsonResponse({'success': True, 'quantite_attribuee': valeur})
     except (ValueError, TypeError, json.JSONDecodeError) as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def journal_valeur_stock_boutique(request, boutique_id):
+    """Journal de valeur du stock d'une boutique."""
+    boutique = request.boutique
+
+    # Dates par défaut : 30 derniers jours
+    date_fin = timezone.now().date()
+    date_debut = date_fin - timedelta(days=30)
+
+    date_debut_str = request.GET.get('date_debut')
+    date_fin_str = request.GET.get('date_fin')
+    if date_debut_str:
+        try:
+            date_debut = datetime.strptime(date_debut_str, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    if date_fin_str:
+        try:
+            date_fin = datetime.strptime(date_fin_str, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+
+    # Valeur stock actuelle (= dashboard)
+    valeur_stock_live = boutique.articles.filter(
+        est_actif=True, quantite_stock__gt=0, devise='CDF'
+    ).aggregate(
+        total=Sum(ExpressionWrapper(
+            F('quantite_stock') * F('prix_vente'),
+            output_field=OrmDecimalField()
+        ))
+    )['total'] or 0
+
+    # Mettre à jour la ligne du jour
+    aujourd_hui = timezone.localdate()
+    JournalValeurStock.objects.filter(
+        boutique=boutique, date=aujourd_hui
+    ).update(valeur_stock_reel=valeur_stock_live)
+
+    lignes = JournalValeurStock.objects.filter(
+        boutique=boutique,
+        date__gte=date_debut,
+        date__lte=date_fin
+    ).order_by('-date')
+
+    # Pour chaque ligne, ajouter la valeur live si c'est aujourd'hui
+    for ligne in lignes:
+        if ligne.date == aujourd_hui:
+            ligne.valeur_stock_reel = valeur_stock_live
+
+    context = {
+        'boutique': boutique,
+        'lignes': lignes,
+        'date_debut': date_debut,
+        'date_fin': date_fin,
+        'valeur_stock_actuelle': valeur_stock_live,
+    }
+    return render(request, 'inventory/boutique/journal_valeur_stock.html', context)

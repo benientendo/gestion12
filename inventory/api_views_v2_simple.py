@@ -21,7 +21,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Prefetch
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock
 from .serializers import ArticleSerializer, ArticleAvecVariantesSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created, notify_dashboard_stats
 
@@ -3792,3 +3792,111 @@ def rapport_negociations_simple(request):
             'code': 'REPORT_ERROR',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ──────────────────────────────────────────────────────────────
+# JOURNAL VALEUR STOCK
+# ──────────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def journal_valeur_stock_simple(request):
+    """
+    Retourne l'historique du journal de valeur du stock pour une boutique.
+
+    Paramètres GET :
+      - boutique_id  (int, obligatoire)  : identifiant de la boutique
+      - date_debut   (str, optionnel)    : filtre à partir de cette date (YYYY-MM-DD)
+      - date_fin     (str, optionnel)    : filtre jusqu'à cette date (YYYY-MM-DD)
+      - limit        (int, optionnel)    : nombre max de lignes (défaut 90)
+
+    Colonnes retournées :
+      date | valeur_stock_precedent | montant_inventaire | valeur_stock_ajoute
+      | valeur_transfert_entrant | impact_modification_prix
+      | valeur_stock_sorti | valeur_transfert_sortant | valeur_ventes
+      | valeur_stock_restant
+    """
+    boutique_id = request.GET.get('boutique_id')
+    if not boutique_id:
+        return Response(
+            {'error': 'Paramètre boutique_id obligatoire', 'code': 'MISSING_PARAM'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    try:
+        boutique = Boutique.objects.get(pk=boutique_id)
+    except Boutique.DoesNotExist:
+        return Response(
+            {'error': 'Boutique introuvable', 'code': 'NOT_FOUND'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+    # Calculer la valeur stock reel en direct (= valeur dashboard)
+    # Formule identique au dashboard : SUM(quantite_stock * prix_vente) pour articles CDF actifs
+    from django.db.models import F, DecimalField, Sum, ExpressionWrapper
+    from datetime import date as date_type
+    valeur_stock_reel_live = Article.objects.filter(
+        boutique=boutique, est_actif=True,
+        quantite_stock__gt=0, devise='CDF'
+    ).aggregate(
+        total=Sum(ExpressionWrapper(
+            F('quantite_stock') * F('prix_vente'),
+            output_field=DecimalField()
+        ))
+    )['total'] or 0
+
+    # Mettre a jour la ligne du jour en DB avec la valeur live
+    aujourd_hui = timezone.localdate()
+    ligne_jour = JournalValeurStock.objects.filter(boutique=boutique, date=aujourd_hui).first()
+    if ligne_jour:
+        ligne_jour.valeur_stock_reel = valeur_stock_reel_live
+        ligne_jour.save(update_fields=['valeur_stock_reel'])
+    else:
+        # Creer la ligne du jour avec stock_precedent = valeur_stock_reel de la veille
+        from inventory.journal_valeur_stock import _get_ou_creer_ligne
+        _get_ou_creer_ligne(boutique, aujourd_hui)
+        JournalValeurStock.objects.filter(
+            boutique=boutique, date=aujourd_hui
+        ).update(valeur_stock_reel=valeur_stock_reel_live)
+
+    qs = JournalValeurStock.objects.filter(boutique=boutique).order_by('-date')
+
+    date_debut = request.GET.get('date_debut')
+    date_fin = request.GET.get('date_fin')
+    if date_debut:
+        qs = qs.filter(date__gte=date_debut)
+    if date_fin:
+        qs = qs.filter(date__lte=date_fin)
+
+    try:
+        limit = int(request.GET.get('limit', 90))
+        limit = max(1, min(limit, 365))
+    except (ValueError, TypeError):
+        limit = 90
+
+    qs = qs[:limit]
+
+    lignes = []
+    for j in qs:
+        # Aujourd'hui = valeur live, dates passees = valeur enregistree
+        stock_reel = valeur_stock_reel_live if j.date == aujourd_hui else j.valeur_stock_reel
+        lignes.append({
+            'date': j.date.isoformat(),
+            'valeur_stock_precedent': str(j.valeur_stock_precedent),
+            'montant_inventaire': str(j.montant_inventaire),
+            'valeur_stock_ajoute': str(j.valeur_stock_ajoute),
+            'valeur_transfert_entrant': str(j.valeur_transfert_entrant),
+            'impact_modification_prix': str(j.impact_modification_prix),
+            'valeur_stock_sorti': str(j.valeur_stock_sorti),
+            'valeur_transfert_sortant': str(j.valeur_transfert_sortant),
+            'valeur_ventes': str(j.valeur_ventes),
+            'valeur_stock_restant': str(j.valeur_stock_restant),
+            'valeur_stock_reel': str(stock_reel),
+        })
+
+    return Response({
+        'boutique_id': boutique.id,
+        'boutique_nom': boutique.nom,
+        'total': len(lignes),
+        'journal': lignes,
+    })

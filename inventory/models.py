@@ -1339,6 +1339,39 @@ class LigneInventaire(models.Model):
         ordering = ['article__nom']
 
 
+class HistoriqueSaisieInventaire(models.Model):
+    """Trace chaque saisie/modification de stock physique pendant un inventaire."""
+    
+    ligne_inventaire = models.ForeignKey(
+        LigneInventaire, on_delete=models.CASCADE, related_name='historique_saisies'
+    )
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='historique_saisies_inventaire')
+    inventaire = models.ForeignKey(Inventaire, on_delete=models.CASCADE, related_name='historique_saisies')
+    
+    stock_physique_saisi = models.IntegerField(help_text="Quantité saisie")
+    stock_theorique_au_moment = models.IntegerField(help_text="Stock système au moment de la saisie")
+    ecart_au_moment = models.IntegerField(default=0, help_text="Écart calculé au moment de la saisie")
+    
+    saisi_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='historique_saisies_inventaire'
+    )
+    nom_saisi_par = models.CharField(max_length=150, blank=True, help_text="Nom affiché du saisisseur")
+    commentaire = models.TextField(blank=True)
+    date_saisie = models.DateTimeField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.article.nom}: {self.stock_physique_saisi} le {self.date_saisie:%d/%m/%Y %H:%M}"
+    
+    class Meta:
+        verbose_name = "Historique saisie inventaire"
+        verbose_name_plural = "Historiques saisies inventaire"
+        ordering = ['-date_saisie']
+        indexes = [
+            models.Index(fields=['inventaire', 'article', '-date_saisie']),
+        ]
+
+
 class ErreurTransaction(models.Model):
     """Capture et suivi des erreurs de transaction pour le débogage."""
     
@@ -1824,3 +1857,113 @@ class PaiementAcompte(models.Model):
         ordering = ['-date_paiement']
         verbose_name = "Paiement Acompte"
         verbose_name_plural = "Paiements Acompte"
+
+
+class JournalValeurStock(models.Model):
+    """
+    Journal quotidien de la valeur du stock par boutique.
+    Chaque ligne représente un jour et trace TOUS les mouvements
+    qui ont impacté la valeur du stock (en prix d'achat).
+    
+    Formule de cohérence :
+        valeur_stock_restant = valeur_stock_precedent
+            + montant_inventaire
+            + valeur_stock_ajoute
+            + valeur_transfert_entrant
+            + impact_modification_prix
+            - valeur_stock_sorti
+            - valeur_transfert_sortant
+            - valeur_ventes
+    """
+
+    boutique = models.ForeignKey(
+        'Boutique', on_delete=models.CASCADE,
+        related_name='journal_valeur_stock',
+        help_text="Boutique concernée"
+    )
+    date = models.DateField(
+        help_text="Date du journal (un enregistrement par jour par boutique)"
+    )
+
+    # --- Valeur d'ouverture ---
+    valeur_stock_precedent = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Valeur du stock au début de la journée (= valeur_stock_restant de la veille)"
+    )
+
+    # --- Entrées de valeur ---
+    montant_inventaire = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Impact net de la régularisation d'inventaire (positif ou négatif)"
+    )
+    valeur_stock_ajoute = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Valeur du stock ajouté par approvisionnement/facture fournisseur"
+    )
+    valeur_transfert_entrant = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Valeur du stock reçu en provenance d'un autre point de vente"
+    )
+    impact_modification_prix = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Impact de la modification des prix d'achat sur la valeur du stock existant"
+    )
+
+    # --- Sorties de valeur ---
+    valeur_stock_sorti = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Total de ce qu'on a enlevé (sorties manuelles, pertes, etc.)"
+    )
+    valeur_transfert_sortant = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Valeur du stock transféré vers un autre point de vente"
+    )
+    valeur_ventes = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Valeur (au prix d'achat) des articles vendus"
+    )
+
+    # --- Valeur de clôture ---
+    valeur_stock_restant = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Valeur du stock à la fin de la journée"
+    )
+
+    # --- Valeur réelle (calculée depuis les articles) ---
+    valeur_stock_reel = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Valeur réelle du stock = SUM(quantite_stock * prix_achat) des articles de la boutique"
+    )
+
+    # --- Métadonnées ---
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def recalculer_valeur_restant(self):
+        """Recalcule valeur_stock_restant selon la formule de cohérence."""
+        self.valeur_stock_restant = (
+            self.valeur_stock_precedent
+            + self.montant_inventaire
+            + self.valeur_stock_ajoute
+            + self.valeur_transfert_entrant
+            + self.impact_modification_prix
+            - self.valeur_stock_sorti
+            - self.valeur_transfert_sortant
+            - self.valeur_ventes
+        )
+
+    def save(self, *args, **kwargs):
+        self.recalculer_valeur_restant()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Journal {self.boutique.nom} — {self.date} — Restant: {self.valeur_stock_restant}"
+
+    class Meta:
+        verbose_name = "Journal valeur stock"
+        verbose_name_plural = "Journal valeur stock"
+        ordering = ['-date']
+        unique_together = [['boutique', 'date']]
+        indexes = [
+            models.Index(fields=['boutique', '-date'], name='idx_journal_boutique_date'),
+        ]

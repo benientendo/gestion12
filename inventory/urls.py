@@ -130,6 +130,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/tableau-bord/', views_commercant.tableau_bord_inventaire, name='tableau_bord_inventaire'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/auto-assigner/', views_auto_assign.auto_assigner_inventaire, name='auto_assigner_inventaire'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/reinitialiser-mes-articles/', views_reset_inventaire.reinitialiser_mes_articles, name='reinitialiser_mes_articles'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/ligne/<int:ligne_id>/historique/', views_commercant.historique_saisie_ligne_ajax, name='historique_saisie_ligne_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/terminer/', views_commercant.terminer_inventaire_boutique, name='terminer_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/regulariser/', views_commercant.regulariser_inventaire_boutique, name='regulariser_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/', views_commercant.rapports_caisse_boutique, name='commercant_rapports_caisse_boutique'),
@@ -139,6 +140,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/<int:rapport_id>/appliquer-depense/', views_commercant.appliquer_depense_rapport_caisse, name='appliquer_depense_rapport_caisse'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/<int:rapport_id>/supprimer/', views_commercant.supprimer_rapport_caisse, name='supprimer_rapport_caisse'),
 
+    path('commercant/boutiques/<int:boutique_id>/journal-valeur-stock/', views_commercant.journal_valeur_stock_boutique, name='journal_valeur_stock_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapport-ca-quotidien/', views_commercant.rapport_ca_quotidien, name='rapport_ca_quotidien'),
     path('commercant/boutiques/<int:boutique_id>/rapport-ca-mensuel/', views_commercant.rapport_ca_mensuel, name='rapport_ca_mensuel'),
     path('commercant/boutiques/<int:boutique_id>/export-ca-pdf/', views_commercant.exporter_ca_quotidien_pdf, name='exporter_ca_quotidien_pdf'),

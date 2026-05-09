@@ -266,6 +266,7 @@ kbd {
 
             <!-- Ligne 2 : Actions -->
             <div class="d-flex flex-wrap align-items-center gap-2">
+                {% if filtre == 'non_saisis' %}
                 <button type="button" id="scannerModeBtn" class="btn btn-sm btn-outline-warning" onclick="toggleScannerMode()">
                     <i class="fas fa-barcode me-1"></i>Scanner
                 </button>
@@ -273,6 +274,7 @@ kbd {
                     {% csrf_token %}
                     <button type="submit" class="btn btn-sm btn-outline-warning"><i class="fas fa-undo me-1"></i>Réinitialiser</button>
                 </form>
+                {% endif %}
                 <div class="ia-box">
                     <button type="button" class="btn-ia-inv" onclick="toggleIaMenu()"><i class="fas fa-robot me-1"></i>IA</button>
                     <div class="ia-menu" id="iaMenu">
@@ -312,8 +314,7 @@ kbd {
     {% endif %}
 
     {% if not is_collaborateur %}
-    <form method="post">
-        {% csrf_token %}
+    {% if filtre == 'non_saisis' %}<form method="post">{% csrf_token %}{% endif %}
         <div class="card shadow-sm">
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -328,7 +329,8 @@ kbd {
                                 <th class="text-center" style="width: 10%">Stock physique</th>
                                 <th class="text-center" style="width: 7%">Écart</th>
                                 <th class="text-end" style="width: 11%">Valeur stock</th>
-                                <th style="width: 20%">Commentaire</th>
+                                <th style="width: 18%">Commentaire</th>
+                                <th style="width: 3%" class="text-center"><i class="fas fa-history" title="Historique"></i></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -351,6 +353,7 @@ kbd {
                                     <span class="text-primary fw-bold">{{ ligne.article.prix_achat|floatformat:0 }}</span>
                                 </td>
                                 <td class="text-end align-middle">
+                                    {% if filtre == 'non_saisis' %}
                                     <input type="number" 
                                            name="prix_vente_{{ ligne.id }}" 
                                            class="form-control form-control-sm text-end prix-vente-input"
@@ -360,11 +363,15 @@ kbd {
                                            data-article-id="{{ ligne.article.id }}"
                                            data-original="{{ ligne.article.prix_vente|floatformat:0 }}"
                                            style="font-weight: 700; color: #28a745; border: 2px solid #e0e0e0;">
+                                    {% else %}
+                                    <span class="fw-bold" style="color:#28a745;">{{ ligne.article.prix_vente|floatformat:0 }}</span>
+                                    {% endif %}
                                 </td>
                                 <td class="text-center align-middle">
                                     <span class="badge bg-secondary fs-6">{{ ligne.stock_theorique }}</span>
                                 </td>
                                 <td class="text-center">
+                                    {% if filtre == 'non_saisis' %}
                                     <div class="carton-mode-container" style="display:none;">
                                         <div class="input-group input-group-sm">
                                             <input type="number" 
@@ -392,6 +399,13 @@ kbd {
                                            min="0" placeholder="?" data-theorique="{{ ligne.stock_theorique }}"
                                            data-ligne-id="{{ ligne.id }}" data-prix-vente="{{ ligne.article.prix_vente }}"
                                            tabindex="{{ forloop.counter }}">
+                                    {% else %}
+                                    {% if ligne.stock_physique is not None %}
+                                        <span class="badge bg-primary fs-6">{{ ligne.stock_physique }}</span>
+                                    {% else %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
+                                    {% endif %}
                                 </td>
                                 <td class="text-center align-middle">
                                     <span class="ecart-display" id="ecart_{{ ligne.id }}">
@@ -410,14 +424,25 @@ kbd {
                                     </span>
                                 </td>
                                 <td>
+                                    {% if filtre == 'non_saisis' %}
                                     <input type="text" name="commentaire_{{ ligne.id }}" 
                                            class="form-control form-control-sm commentaire-input"
                                            value="{{ ligne.commentaire }}" placeholder="Justification...">
+                                    {% else %}
+                                    <span class="text-muted" style="font-size:.85rem;">{{ ligne.commentaire|default:'—' }}</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center align-middle">
+                                    <button type="button" class="btn btn-outline-info btn-sm py-0 px-1" 
+                                            onclick="voirHistorique({{ ligne.id }}, '{{ ligne.article.nom|escapejs }}')"
+                                            title="Historique des saisies">
+                                        <i class="fas fa-history"></i>
+                                    </button>
                                 </td>
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="9" class="text-center text-muted py-4">
+                                <td colspan="10" class="text-center text-muted py-4">
                                     {% if filtre == 'non_saisis' %}Tous les articles ont été saisis !{% else %}Aucun article trouvé{% endif %}
                                 </td>
                             </tr>
@@ -426,7 +451,7 @@ kbd {
                     </table>
                 </div>
             </div>
-            {% if lignes %}
+            {% if lignes and filtre == 'non_saisis' %}
             <div class="card-footer d-flex justify-content-end gap-2">
                 <button type="submit" name="continuer" class="btn btn-outline-primary btn-sm">
                     <i class="fas fa-save me-1"></i>Enregistrer et continuer
@@ -437,7 +462,7 @@ kbd {
             </div>
             {% endif %}
         </div>
-    </form>
+    {% if filtre == 'non_saisis' %}</form>{% endif %}
 
     {% if total_lignes > 50 %}
     <div class="alert alert-info mt-3">
@@ -508,7 +533,96 @@ kbd {
     </div>
 </div>
 
+<!-- Modal : Historique des saisies d'un article -->
+<div class="modal fade" id="historiqueModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header py-2" style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;">
+                <h6 class="modal-title fw-bold mb-0">
+                    <i class="fas fa-history me-2"></i>Historique saisies — <span id="histArticleNom"></span>
+                </h6>
+                <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body py-3">
+                <div id="histLoading" class="text-center py-4" style="display:none;">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="text-muted mt-2">Chargement...</div>
+                </div>
+                <div id="histVide" class="text-center py-4 text-muted" style="display:none;">
+                    <i class="fas fa-inbox fa-2x mb-2"></i>
+                    <div>Aucune saisie enregistrée pour cet article.</div>
+                </div>
+                <div id="histTableWrap" style="display:none;">
+                    <div class="small text-muted mb-2"><span id="histNbSaisies" class="fw-bold text-primary"></span> saisie(s) enregistrée(s)</div>
+                    <div class="table-responsive" style="max-height:400px;overflow-y:auto;">
+                        <table class="table table-sm table-hover mb-0" style="font-size:.85rem;">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>Date & Heure</th>
+                                    <th>Saisi par</th>
+                                    <th class="text-center">Qté saisie</th>
+                                    <th class="text-center">Stock syst.</th>
+                                    <th class="text-center">Écart</th>
+                                    <th>Commentaire</th>
+                                </tr>
+                            </thead>
+                            <tbody id="histTbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer py-2 border-0">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+// =============================================
+// HISTORIQUE SAISIES INVENTAIRE
+// =============================================
+function voirHistorique(ligneId, articleNom) {
+    const modal = new bootstrap.Modal(document.getElementById('historiqueModal'));
+    document.getElementById('histArticleNom').textContent = articleNom;
+    document.getElementById('histLoading').style.display = '';
+    document.getElementById('histVide').style.display = 'none';
+    document.getElementById('histTableWrap').style.display = 'none';
+    modal.show();
+
+    const url = `/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/ligne/${ligneId}/historique/`;
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('histLoading').style.display = 'none';
+            if (!data.success || data.nb_saisies === 0) {
+                document.getElementById('histVide').style.display = '';
+                return;
+            }
+            document.getElementById('histNbSaisies').textContent = data.nb_saisies;
+            const tbody = document.getElementById('histTbody');
+            tbody.innerHTML = '';
+            data.historique.forEach((h, i) => {
+                const ecartClass = h.ecart_au_moment > 0 ? 'text-success' : h.ecart_au_moment < 0 ? 'text-danger' : '';
+                const ecartSign = h.ecart_au_moment > 0 ? '+' : '';
+                const isFirst = i === 0 ? 'fw-bold' : '';
+                tbody.innerHTML += `<tr class="${isFirst}">
+                    <td>${h.date_saisie}</td>
+                    <td><span class="badge bg-info text-dark">${h.saisi_par}</span></td>
+                    <td class="text-center fw-bold">${h.stock_physique_saisi}</td>
+                    <td class="text-center">${h.stock_theorique_au_moment}</td>
+                    <td class="text-center ${ecartClass} fw-bold">${ecartSign}${h.ecart_au_moment}</td>
+                    <td class="text-muted">${h.commentaire || '—'}</td>
+                </tr>`;
+            });
+            document.getElementById('histTableWrap').style.display = '';
+        })
+        .catch(() => {
+            document.getElementById('histLoading').style.display = 'none';
+            document.getElementById('histVide').style.display = '';
+        });
+}
+
 // =============================================
 // IA INVENTAIRE - FONCTIONS
 // =============================================

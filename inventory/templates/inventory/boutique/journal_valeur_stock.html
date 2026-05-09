@@ -1,0 +1,175 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load humanize %}
+{% load date_filters %}
+
+{% block title %}Journal valeur du stock - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .journal-table {
+        font-size: 0.85rem;
+    }
+    .journal-table th {
+        background: #3949AB;
+        color: white;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        white-space: nowrap;
+        padding: 10px 12px;
+    }
+    .journal-table td {
+        padding: 8px 12px;
+        white-space: nowrap;
+    }
+    .journal-table tbody tr:hover {
+        background-color: #E8EAF6;
+    }
+    .text-increase {
+        color: #2E7D32;
+        font-weight: 600;
+    }
+    .text-decrease {
+        color: #C62828;
+        font-weight: 600;
+    }
+    .text-neutral {
+        color: #757575;
+    }
+    .stock-reel {
+        color: #FF6F00;
+        font-weight: 700;
+    }
+    .stock-restant {
+        color: #3949AB;
+        font-weight: 700;
+    }
+    .valeur-actuelle-card {
+        background: linear-gradient(135deg, #FF6F00 0%, #FF9800 100%);
+        color: white;
+        border-radius: 12px;
+    }
+    @media (max-width: 576px) {
+        .journal-table {
+            font-size: 0.75rem;
+        }
+        .journal-table th, .journal-table td {
+            padding: 6px 8px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h2 class="mb-0"><i class="fas fa-book-open text-primary"></i> Journal de valeur du stock</h2>
+                    <p class="text-muted mb-0">{{ boutique.nom }} — Suivi quotidien des mouvements de valeur</p>
+                </div>
+                <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Retour au dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Valeur stock actuelle -->
+    <div class="row mb-3">
+        <div class="col-md-4">
+            <div class="valeur-actuelle-card p-3 text-center">
+                <p class="mb-1"><i class="fas fa-coins me-1"></i> Valeur stock actuelle (CDF)</p>
+                <h2 class="mb-0">{{ valeur_stock_actuelle|floatformat:0|intcomma }} FC</h2>
+                <small>Identique au dashboard</small>
+            </div>
+        </div>
+
+        <!-- Filtre dates -->
+        <div class="col-md-8">
+            <div class="card h-100">
+                <div class="card-body d-flex align-items-center">
+                    <form method="get" class="d-flex align-items-end gap-3 flex-wrap w-100">
+                        <div>
+                            <label class="form-label mb-1 small text-muted">Date début</label>
+                            <input type="date" name="date_debut" class="form-control" value="{{ date_debut|date:'Y-m-d' }}">
+                        </div>
+                        <div>
+                            <label class="form-label mb-1 small text-muted">Date fin</label>
+                            <input type="date" name="date_fin" class="form-control" value="{{ date_fin|date:'Y-m-d' }}">
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-filter"></i> Filtrer
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tableau journal -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-table me-2"></i>Journal des mouvements de valeur</h5>
+                    <span class="badge bg-light text-dark">{{ lignes|length }} ligne{{ lignes|length|pluralize:"s" }}</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if lignes %}
+                    <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                        <table class="table table-sm table-hover journal-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th class="text-end">Stock préc.</th>
+                                    <th class="text-end">Inventaire</th>
+                                    <th class="text-end">Stock ajouté</th>
+                                    <th class="text-end">Transfert IN</th>
+                                    <th class="text-end">Modif. prix</th>
+                                    <th class="text-end">Transfert OUT</th>
+                                    <th class="text-end">Ventes</th>
+                                    <th class="text-end">Stock réel</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for l in lignes %}
+                                <tr>
+                                    <td><strong>{{ l.date|date:"d/m/Y" }}</strong></td>
+                                    <td class="text-end">{{ l.valeur_stock_precedent|floatformat:0|intcomma }}</td>
+                                    <td class="text-end">{{ l.montant_inventaire|floatformat:0|intcomma }}</td>
+                                    <td class="text-end text-increase">{{ l.valeur_stock_ajoute|floatformat:0|intcomma }}</td>
+                                    <td class="text-end" style="color:#1565C0;">{{ l.valeur_transfert_entrant|floatformat:0|intcomma }}</td>
+                                    <td class="text-end">
+                                        {% if l.impact_modification_prix > 0 %}
+                                            <span class="text-increase">+{{ l.impact_modification_prix|floatformat:0|intcomma }}</span>
+                                        {% elif l.impact_modification_prix < 0 %}
+                                            <span class="text-decrease">{{ l.impact_modification_prix|floatformat:0|intcomma }}</span>
+                                        {% else %}
+                                            <span class="text-neutral">0</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end" style="color:#E65100;">{{ l.valeur_transfert_sortant|floatformat:0|intcomma }}</td>
+                                    <td class="text-end text-decrease">{{ l.valeur_ventes|floatformat:0|intcomma }}</td>
+                                    <td class="text-end stock-reel">{{ l.valeur_stock_reel|floatformat:0|intcomma }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="fas fa-inbox fa-3x mb-3"></i>
+                        <h5>Aucune donnée pour cette période</h5>
+                        <p>Les données du journal sont enregistrées automatiquement lors des mouvements de stock.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
