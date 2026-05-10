@@ -2167,11 +2167,12 @@ def verifier_code_barre(request, boutique_id):
                 'id': article.id,
                 'nom': article.nom,
                 'code': article.code,
-                'stock': stock_effectif,  # ⭐ Stock effectif (somme variantes ou stock article)
+                'stock': stock_effectif,
                 'prix': float(article.prix_vente),
                 'devise': article.devise,
                 'a_variantes': len(variantes) > 0,
-                'variantes': variantes
+                'variantes': variantes,
+                'date_expiration': article.date_expiration.isoformat() if article.date_expiration else None,
             }
         })
     
@@ -2199,7 +2200,8 @@ def verifier_code_barre(request, boutique_id):
                 'stock': stock_parent,
                 'prix': float(parent.prix_vente or 0),
                 'devise': parent.devise,
-                'a_variantes': True
+                'a_variantes': True,
+                'date_expiration': parent.date_expiration.isoformat() if parent.date_expiration else None,
             },
             'variante': {
                 'id': variante.id,
@@ -2231,9 +2233,10 @@ def modifier_article_existant(request, boutique_id):
     
     boutique = request.boutique
     article_id = request.POST.get('article_id')
-    variante_id = request.POST.get('variante_id')  # Nouveau paramètre
+    variante_id = request.POST.get('variante_id')
     quantite = request.POST.get('quantite', 0)
     prix_vente = request.POST.get('prix_vente', '')
+    date_expiration_str = request.POST.get('date_expiration', '').strip()
     
     try:
         quantite = int(quantite)
@@ -2244,7 +2247,16 @@ def modifier_article_existant(request, boutique_id):
         prix_vente = Decimal(str(prix_vente)) if prix_vente else None
     except (ValueError, TypeError, InvalidOperation):
         prix_vente = None
-    
+
+    from datetime import date as date_type
+    date_expiration = None
+    effacer_date_exp = (date_expiration_str == '')
+    if date_expiration_str:
+        try:
+            date_expiration = date_type.fromisoformat(date_expiration_str)
+        except ValueError:
+            date_expiration = None
+
     modifications = []
     nom_element = ""
     
@@ -2268,6 +2280,14 @@ def modifier_article_existant(request, boutique_id):
                 article.prix_vente = prix_vente
                 article.save()
                 modifications.append(f"Prix: {ancien_prix} → {prix_vente}")
+        if date_expiration is not None:
+            article.date_expiration = date_expiration
+            article.save()
+            modifications.append(f"Date expiration: {date_expiration.strftime('%d/%m/%Y')}")
+        elif effacer_date_exp and article.date_expiration:
+            article.date_expiration = None
+            article.save()
+            modifications.append("Date expiration supprimée")
         
         # Stock toujours sur le PARENT — la variante est un identifiant de vente
         if quantite > 0:
@@ -2317,6 +2337,12 @@ def modifier_article_existant(request, boutique_id):
         if abs(ancien_prix - prix_vente) > Decimal('0.01'):
             article.prix_vente = prix_vente
             modifications.append(f"Prix: {ancien_prix} → {prix_vente}")
+    if date_expiration is not None:
+        article.date_expiration = date_expiration
+        modifications.append(f"Date expiration: {date_expiration.strftime('%d/%m/%Y')}")
+    elif effacer_date_exp and article.date_expiration:
+        article.date_expiration = None
+        modifications.append("Date expiration supprimée")
     
     # Ajouter du stock si quantité > 0 → envoyer en validation MAUI
     if quantite > 0:

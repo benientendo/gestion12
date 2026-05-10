@@ -883,6 +883,23 @@
                             </div>
                         </div>
                         
+                        <!-- Date d'expiration -->
+                        <div class="row g-3 mt-1">
+                            <div class="col-12">
+                                <label for="dateExpirationModif" class="form-label fw-bold">
+                                    <i class="fas fa-calendar-times text-danger"></i> Date d'expiration
+                                    <small class="text-muted fw-normal">(optionnel)</small>
+                                </label>
+                                <div class="input-group">
+                                    <input type="date" class="form-control" id="dateExpirationModif" name="date_expiration">
+                                    <button class="btn btn-outline-secondary" type="button" id="btnEffacerDateExp" title="Effacer la date">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div id="dateExpStatus" class="mt-1" style="font-size:.8rem;"></div>
+                            </div>
+                        </div>
+
                         <!-- Indicateur si prix modifié -->
                         <div id="prixModifieAlert" class="alert alert-warning mt-2" style="display: none;">
                             <i class="fas fa-exclamation-triangle"></i> 
@@ -3117,6 +3134,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('articleTrouveId').value = data.article.id;
                 document.getElementById('varianteTrouveId').value = '';
                 
+                // Date d'expiration
+                const dateExpInput = document.getElementById('dateExpirationModif');
+                const dateExpStatus = document.getElementById('dateExpStatus');
+                dateExpInput.value = data.article.date_expiration || '';
+                if (data.article.date_expiration) {
+                    const today = new Date().toISOString().slice(0,10);
+                    if (data.article.date_expiration < today) {
+                        dateExpStatus.innerHTML = '<span class="text-danger"><i class="fas fa-exclamation-circle"></i> Produit expiré</span>';
+                    } else {
+                        dateExpStatus.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Expire le ' + data.article.date_expiration.split('-').reverse().join('/') + '</span>';
+                    }
+                } else {
+                    dateExpStatus.innerHTML = '<span class="text-muted">Aucune date d\'expiration</span>';
+                }
+
                 // Prix
                 const devise = data.article.devise || 'CDF';
                 const isUSD = devise === 'USD';
@@ -3239,6 +3271,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
+    // Bouton effacer date d'expiration
+    document.getElementById('btnEffacerDateExp').addEventListener('click', function() {
+        document.getElementById('dateExpirationModif').value = '';
+        document.getElementById('dateExpStatus').innerHTML = '<span class="text-muted">Date supprimée</span>';
+    });
+
     // Événements
     btnRechercherArticle.addEventListener('click', rechercherArticle);
     rechercheCodeBarreInput.addEventListener('keypress', function(e) {
@@ -3331,6 +3369,8 @@ document.addEventListener('DOMContentLoaded', function() {
         formData.append('article_id', articleTrouveData.id);
         formData.append('quantite', quantite);
         formData.append('prix_vente', nouveauPrix);
+        const dateExp = document.getElementById('dateExpirationModif').value;
+        formData.append('date_expiration', dateExp);
         
         // Ajouter variante_id si une variante est sélectionnée
         if (varianteId) {
@@ -3371,6 +3411,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 prixModifiableInput.value = '';
                 document.getElementById('prixModifieAlert').style.display = 'none';
                 document.getElementById('varianteTrouveId').value = '';
+                document.getElementById('dateExpirationModif').value = '';
+                document.getElementById('dateExpStatus').innerHTML = '';
                 
                 // Focus sur le champ code-barres pour le prochain scan
                 rechercheCodeBarreInput.focus();
