@@ -256,7 +256,21 @@ def alimenter_journal_valeur_stock(sender, instance, created, **kwargs):
 
     try:
         if type_mouv == 'VENTE':
-            jvs.enregistrer_vente(boutique, valeur, date_mouv)
+            # Utiliser le vrai montant de la LigneVente si disponible
+            # (prix réel = peut être négocié, différent de article.prix_vente actuel)
+            valeur_reelle = None
+            if ref:
+                try:
+                    from .models import LigneVente
+                    ligne_vente = LigneVente.objects.filter(
+                        vente__numero_facture=ref,
+                        article=article
+                    ).first()
+                    if ligne_vente:
+                        valeur_reelle = ligne_vente.prix_unitaire * Decimal(str(abs(instance.quantite)))
+                except Exception:
+                    pass
+            jvs.enregistrer_vente(boutique, valeur_reelle if valeur_reelle is not None else valeur, date_mouv)
 
         elif type_mouv == 'ENTREE':
             if ref.startswith('TRANSFERT-'):
