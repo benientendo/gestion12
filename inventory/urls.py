@@ -133,6 +133,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/ligne/<int:ligne_id>/historique/', views_commercant.historique_saisie_ligne_ajax, name='historique_saisie_ligne_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/terminer/', views_commercant.terminer_inventaire_boutique, name='terminer_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/regulariser/', views_commercant.regulariser_inventaire_boutique, name='regulariser_inventaire_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/supprimer/', views_commercant.supprimer_inventaire_boutique, name='supprimer_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/', views_commercant.rapports_caisse_boutique, name='commercant_rapports_caisse_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/articles-negocies/', views_commercant.articles_negocies_boutique, name='commercant_articles_negocies_boutique'),
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/retours-articles/', views_commercant.retours_articles_boutique, name='commercant_retours_articles_boutique'),

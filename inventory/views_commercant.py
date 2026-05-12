@@ -6942,6 +6942,25 @@ def regulariser_inventaire_boutique(request, boutique_id, inventaire_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@require_POST
+def supprimer_inventaire_boutique(request, boutique_id, inventaire_id):
+    """Supprimer un inventaire (en cours ou terminé). Interdit si déjà régularisé."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+
+    if inventaire.statut == 'REGULARISE':
+        messages.error(request, "Impossible de supprimer un inventaire déjà régularisé.")
+        return redirect('inventory:liste_inventaires_boutique', boutique_id=boutique.id)
+
+    reference = inventaire.reference
+    inventaire.delete()
+    messages.success(request, f"Inventaire {reference} supprimé avec succès.")
+    return redirect('inventory:liste_inventaires_boutique', boutique_id=boutique.id)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
 def transfert_entre_boutiques(request, boutique_id):
     """Transférer des articles d'un point de vente vers un autre"""
     commercant = request.user.profil_commercant

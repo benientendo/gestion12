@@ -108,9 +108,23 @@
                                 {% if inv.valeur_ecart_negatif > 0 %}-{{ inv.valeur_ecart_negatif|floatformat:0 }} FC{% endif %}
                             </td>
                             <td class="text-end">
-                                <a href="{% url 'inventory:detail_inventaire_boutique' boutique.id inv.id %}" class="btn btn-sm btn-outline-primary">
+                                <a href="{% url 'inventory:detail_inventaire_boutique' boutique.id inv.id %}" class="btn btn-sm btn-outline-primary me-1">
                                     <i class="fas fa-eye"></i>
                                 </a>
+                                {% if inv.statut != 'REGULARISE' %}
+                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                        data-bs-toggle="modal" data-bs-target="#modalSupprimerInventaire"
+                                        data-inv-id="{{ inv.id }}"
+                                        data-inv-ref="{{ inv.reference }}"
+                                        data-inv-statut="{{ inv.statut }}"
+                                        title="Supprimer cet inventaire">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                {% else %}
+                                <button class="btn btn-sm btn-outline-secondary" disabled title="Inventaire régularisé — suppression impossible">
+                                    <i class="fas fa-lock"></i>
+                                </button>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -132,4 +146,52 @@
     </div>
     {% endif %}
 </div>
+
+<!-- Modal confirmation suppression inventaire -->
+<div class="modal fade" id="modalSupprimerInventaire" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-danger">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle me-2"></i>Supprimer l'inventaire</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Vous êtes sur le point de supprimer l'inventaire :</p>
+                <div class="alert alert-warning">
+                    <strong id="suppRefLabel"></strong>
+                    <span id="suppStatutLabel" class="ms-2"></span>
+                </div>
+                <p class="text-danger mb-0">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <strong>Cette action est irréversible.</strong> Toutes les saisies associées seront perdues.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Annuler
+                </button>
+                <form id="formSupprimerInventaire" method="post" action="">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash"></i> Supprimer définitivement
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('modalSupprimerInventaire').addEventListener('show.bs.modal', function(e) {
+    const btn = e.relatedTarget;
+    const invId = btn.dataset.invId;
+    const invRef = btn.dataset.invRef;
+    const invStatut = btn.dataset.invStatut;
+    document.getElementById('suppRefLabel').textContent = invRef;
+    const statutMap = {'EN_COURS': 'En cours', 'TERMINE': 'Terminé'};
+    document.getElementById('suppStatutLabel').textContent = '(' + (statutMap[invStatut] || invStatut) + ')';
+    document.getElementById('formSupprimerInventaire').action =
+        "{% url 'inventory:supprimer_inventaire_boutique' boutique.id 0 %}".replace('/0/', '/' + invId + '/');
+});
+</script>
 {% endblock %}
