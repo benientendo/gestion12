@@ -131,6 +131,7 @@
                                     <th class="text-end">Transfert IN</th>
                                     <th class="text-end">Modif. prix</th>
                                     <th class="text-end">Transfert OUT</th>
+                                    <th class="text-end">Stock sorti</th>
                                     <th class="text-end">Ventes</th>
                                     <th class="text-end">Stock réel</th>
                                 </tr>
@@ -153,6 +154,7 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-end" style="color:#E65100;">{{ l.valeur_transfert_sortant|floatformat:0|intcomma }}</td>
+                                    <td class="text-end text-decrease">{{ l.valeur_stock_sorti|floatformat:0|intcomma }}</td>
                                     <td class="text-end text-decrease">{{ l.valeur_ventes|floatformat:0|intcomma }}</td>
                                     <td class="text-end stock-reel">{{ l.valeur_stock_reel|floatformat:0|intcomma }}</td>
                                 </tr>

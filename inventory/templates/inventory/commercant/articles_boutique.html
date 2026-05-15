@@ -478,8 +478,8 @@
                             <div class="p-3 border rounded-3 bg-light">
                                 <div class="fw-semibold mb-2">Prix & stock</div>
                                 <div class="row g-3">
-                                    <!-- Prix d'achat (visible seulement si mode marge activé) -->
-                                    <div class="col-md-3" id="prixAchatContainer" style="display:none;">
+                                    <!-- Prix d'achat (toujours visible) -->
+                                    <div class="col-md-4" id="prixAchatContainer">
                                         <label for="prix_achat" class="form-label">Prix d'achat <span id="devisePrixAchat">(CDF)</span></label>
                                         <div class="input-group">
                                             <span class="input-group-text" id="symbolePrixAchat">FC</span>
@@ -489,7 +489,7 @@
                                     </div>
                                     
                                     <!-- Mode marge + Prix de vente -->
-                                    <div class="col-md-5">
+                                    <div class="col-md-5" id="prixVenteContainer">
                                         <div class="d-flex align-items-center gap-2 mb-1">
                                             <label for="prix_vente" class="form-label mb-0">Prix vente <span id="devisePrixVente">(CDF)</span></label>
                                             <div class="form-check form-switch m-0">
@@ -1723,8 +1723,8 @@ document.addEventListener('DOMContentLoaded', function() {
             calculerPrixVente();
             localStorage.setItem(STORAGE_KEY_MARGE, 'true');
         } else {
-            // Mode manuel : cacher prix achat et marge
-            if (prixAchatContainer) prixAchatContainer.style.display = 'none';
+            // Mode manuel : garder prix achat visible, cacher seulement la marge
+            if (prixAchatContainer) prixAchatContainer.style.display = 'block';
             margeContainer.style.display = 'none';
             prixVenteInput.readOnly = false;
             prixVenteInput.placeholder = 'Saisir le prix';

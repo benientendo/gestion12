@@ -1778,17 +1778,36 @@ def update_stock_simple(request, article_id):
         
         # Créer un mouvement de stock avec traçabilité complète
         difference = nouvelle_quantite - ancienne_quantite
-        type_mouvement = 'AJUSTEMENT' if difference != 0 else 'AJUSTEMENT'
-        
+
+        if difference == 0:
+            return Response({
+                'success': True,
+                'article': {
+                    'id': article.id,
+                    'nom': article.nom,
+                    'code': article.code,
+                    'ancienne_quantite': ancienne_quantite,
+                    'nouvelle_quantite': nouvelle_quantite,
+                    'difference': 0
+                },
+                'boutique_id': boutique.id
+            })
+
+        # ENTREE pour ajout de stock, SORTIE pour retrait
+        if difference > 0:
+            type_mouvement = 'ENTREE'
+        else:
+            type_mouvement = 'SORTIE'
+
         MouvementStock.objects.create(
             article=article,
             type_mouvement=type_mouvement,
             quantite=difference,
-            stock_avant=ancienne_quantite,  # ⭐ NOUVEAU
-            stock_apres=nouvelle_quantite,  # ⭐ NOUVEAU
-            reference_document=f"AJUST-{article.id}",  # ⭐ NOUVEAU
-            utilisateur="API",  # ⭐ NOUVEAU
-            commentaire=f"Ajustement stock API - Prix achat: {article.prix_achat} CDF"
+            stock_avant=ancienne_quantite,
+            stock_apres=nouvelle_quantite,
+            reference_document=f"MAUI-{article.id}",
+            utilisateur="MAUI",
+            commentaire=f"{'Ajout' if difference > 0 else 'Retrait'} stock MAUI ({difference:+d} unités)"
         )
         
         return Response({
