@@ -52,7 +52,7 @@ if DEBUG:
         "10.105.132.138",
         "10.105.97.235",
         "10.231.153.235",  # IP actuelle pour accès réseau multi-machines
-        "10.231.153.235" 
+        "10.180.137.138" 
     ])
     # En dev, accepter toutes les origines localhost (proxy Cascade, etc.)
     CSRF_TRUSTED_ORIGINS = [

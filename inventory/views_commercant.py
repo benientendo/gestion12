@@ -2554,9 +2554,13 @@ def ajouter_article_boutique(request, boutique_id):
             article = form.save(commit=False)
             article.boutique = boutique
             stock_initial = article.quantite_stock
-            article.quantite_stock = 0  # Stock à 0 — sera appliqué après validation MAUI
-            article.est_valide_client = False
-            article.quantite_envoyee = stock_initial
+            if stock_initial > 0:
+                article.quantite_stock = 0  # Stock à 0 — sera appliqué après validation MAUI
+                article.est_valide_client = False
+                article.quantite_envoyee = stock_initial
+            else:
+                article.est_valide_client = True
+                article.quantite_envoyee = 0
             article.save()
             
             # ⭐ Créer les variantes si présentes dans le formulaire
@@ -2810,7 +2814,8 @@ def importer_articles_entre_boutiques(request, boutique_id):
                             categorie=categorie_dest,
                             boutique=boutique,
                             quantite_stock=0,
-                            est_actif=True
+                            est_actif=True,
+                            est_valide_client=True,
                         )
                         
                         # Copier les variantes actives (sans stock)
@@ -3715,29 +3720,34 @@ def detail_depot(request, depot_id):
     commercant = request.user.profil_commercant
     depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
     
-    # Articles du dépôt
-    articles = depot.articles.filter(est_actif=True).select_related('categorie').order_by('nom')
+    # Base queryset (tous les articles actifs)
+    articles_base = depot.articles.filter(est_actif=True)
     
-    # Statistiques
-    total_articles = articles.count()
-    
-    # Valeur du stock en CDF (articles en CDF + conversion des articles en USD)
-    articles_cdf = articles.filter(devise='CDF')
-    articles_usd = articles.filter(devise='USD')
-    
-    valeur_stock_cdf = articles_cdf.aggregate(
+    # Statistiques sur l'ensemble (avant filtrage recherche)
+    total_articles = articles_base.count()
+    valeur_stock_cdf = articles_base.filter(devise='CDF').aggregate(
         total=Sum(F('quantite_stock') * F('prix_achat'))
     )['total'] or 0
-    
-    # Valeur du stock en USD (articles en USD)
-    valeur_stock_usd = articles_usd.aggregate(
+    valeur_stock_usd = articles_base.filter(devise='USD').aggregate(
         total=Sum(F('quantite_stock') * F('prix_achat'))
     )['total'] or 0
-    
-    # Valeur totale (pour compatibilité - en CDF)
     valeur_stock = valeur_stock_cdf
+    articles_stock_bas = articles_base.filter(quantite_stock__lte=depot.alerte_stock_bas).count()
     
-    articles_stock_bas = articles.filter(quantite_stock__lte=depot.alerte_stock_bas).count()
+    # Recherche serveur
+    search_q = request.GET.get('q', '').strip()
+    articles_qs = articles_base.select_related('categorie').order_by('nom')
+    if search_q:
+        articles_qs = articles_qs.filter(
+            Q(nom__icontains=search_q) | Q(code__icontains=search_q)
+        )
+    
+    # Pagination 100 par page
+    paginator = Paginator(articles_qs, 100)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+    
+    # Articles pour le select du modal transfert (tous, champs minimaux)
+    articles_modal = articles_base.order_by('nom').values('id', 'nom', 'code', 'quantite_stock')
     
     # Transferts récents
     transferts_recents = TransfertStock.objects.filter(
@@ -3749,7 +3759,9 @@ def detail_depot(request, depot_id):
     
     context = {
         'depot': depot,
-        'articles': articles,
+        'articles': page_obj,
+        'articles_modal': articles_modal,
+        'page_obj': page_obj,
         'total_articles': total_articles,
         'valeur_stock': valeur_stock,
         'valeur_stock_cdf': valeur_stock_cdf,
@@ -3757,6 +3769,7 @@ def detail_depot(request, depot_id):
         'articles_stock_bas': articles_stock_bas,
         'transferts_recents': transferts_recents,
         'boutiques_destination': boutiques_destination,
+        'search_q': search_q,
     }
     
     return render(request, 'inventory/commercant/detail_depot.html', context)
@@ -4172,22 +4185,13 @@ def importer_articles_vers_depot(request, depot_id):
                             prix_vente_usd=article_source.prix_vente_usd,
                             categorie=article_source.categorie,
                             boutique=depot,
-                            quantite_stock=quantite_initiale,
-                            est_actif=True
+                            quantite_stock=0 if quantite_initiale > 0 else 0,
+                            est_actif=True,
+                            est_valide_client=True if quantite_initiale == 0 else False,
+                            quantite_envoyee=quantite_initiale if quantite_initiale > 0 else 0,
                         )
                         
-                        # Créer un mouvement de stock si quantité > 0
-                        if quantite_initiale > 0:
-                            MouvementStock.objects.create(
-                                article=article_depot,
-                                type_mouvement='ENTREE',
-                                quantite=quantite_initiale,
-                                stock_avant=0,
-                                stock_apres=quantite_initiale,
-                                commentaire=f"Import depuis point de vente: {article_source.boutique.nom}",
-                                reference_document=f"IMPORT-{depot.id}-{article_depot.id}",
-                                utilisateur=request.user.username
-                            )
+                        # Mouvement de stock créé lors de la validation client (si quantite_envoyee > 0)
 
                         # Copier les variantes actives (stock = 0)
                         for var_src in article_source.variantes.filter(est_actif=True):

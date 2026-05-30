@@ -345,15 +345,25 @@
                     <h5 class="mb-0"><i class="fas fa-boxes"></i> Articles du dépôt</h5>
                 </div>
                 <div class="card-body">
-                    <div class="row g-2 align-items-center mb-3">
+                    <form method="get" class="row g-2 align-items-center mb-3">
                         <div class="col-12 col-md-6 col-lg-5">
                             <div class="input-group input-group-sm">
                                 <span class="input-group-text"><i class="fas fa-search"></i></span>
-                                <input type="text" class="form-control" id="searchArticle" placeholder="Rechercher (nom ou code)" autofocus>
-                                <button class="btn btn-outline-secondary" type="button" id="clearSearch">X</button>
+                                <input type="text" class="form-control" name="q" id="searchArticle"
+                                       placeholder="Rechercher (nom ou code)"
+                                       value="{{ search_q }}" autofocus>
+                                <button class="btn btn-primary" type="submit"><i class="fas fa-search"></i></button>
+                                {% if search_q %}
+                                <a href="?" class="btn btn-outline-secondary" title="Effacer"><i class="fas fa-times"></i> Effacer</a>
+                                {% endif %}
                             </div>
                         </div>
-                    </div>
+                        {% if search_q %}
+                        <div class="col-auto">
+                            <span class="badge bg-info fs-6">{{ page_obj.paginator.count }} résultat(s) pour "{{ search_q }}"</span>
+                        </div>
+                        {% endif %}
+                    </form>
                     <div class="table-responsive">
                         <table class="table table-hover table-sm depot-articles-table" id="articlesTable">
                             <thead>
@@ -416,14 +426,36 @@
                                 {% endfor %}
                             </tbody>
                         </table>
-                        <div id="noResultsMsg" class="alert alert-info d-none">
+                        {% if not articles %}
+                        <div class="alert alert-info">
                             <i class="fas fa-info-circle me-2"></i>
-                            Aucun article trouvé.
-                            <button type="button" class="btn btn-sm btn-success ms-3" data-bs-toggle="modal" data-bs-target="#approvisionnementModal">
-                                <i class="fas fa-plus"></i> Ajouter un article
-                            </button>
+                            Aucun article trouvé{% if search_q %} pour "{{ search_q }}"{% endif %}.
                         </div>
+                        {% endif %}
                     </div>
+                    {% if page_obj.paginator.num_pages > 1 %}
+                    <nav aria-label="Pagination articles" class="mt-2">
+                        <ul class="pagination pagination-sm justify-content-center mb-0">
+                            {% if page_obj.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_q %}&q={{ search_q }}{% endif %}">&#8249; Préc.</a>
+                            </li>
+                            {% else %}
+                            <li class="page-item disabled"><span class="page-link">&#8249; Préc.</span></li>
+                            {% endif %}
+                            <li class="page-item disabled">
+                                <span class="page-link">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} &mdash; {{ page_obj.paginator.count }} articles</span>
+                            </li>
+                            {% if page_obj.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_q %}&q={{ search_q }}{% endif %}">Suiv. &#8250;</a>
+                            </li>
+                            {% else %}
+                            <li class="page-item disabled"><span class="page-link">Suiv. &#8250;</span></li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -555,7 +587,7 @@
                                 <label for="article_existant" class="form-label">Sélectionner un article *</label>
                                 <select class="form-select" name="article_existant" id="article_existant">
                                     <option value="">-- Choisir un article --</option>
-                                    {% for article in articles %}
+                                    {% for article in articles_modal %}
                                     <option value="{{ article.id }}">{{ article.nom }} ({{ article.code }}) - Stock: {{ article.quantite_stock }}</option>
                                     {% endfor %}
                                 </select>
@@ -609,40 +641,9 @@ function openTransfertModal(articleId, articleNom, articleStock) {
     modal.show();
 }
 
-function filterDepotArticles() {
-    var q = (document.getElementById('searchArticle')?.value || '').toLowerCase();
-    var rows = document.querySelectorAll('#articlesTable tbody tr.article-row');
-    var visibleCount = 0;
-    rows.forEach(function(row) {
-        var name = (row.querySelector('td strong')?.textContent || '').toLowerCase();
-        var code = (row.querySelector('td code')?.textContent || '').toLowerCase();
-        var show = !q || name.includes(q) || code.includes(q);
-        row.style.display = show ? '' : 'none';
-        if (show) visibleCount++;
-    });
-    var noResultsMsg = document.getElementById('noResultsMsg');
-    if (noResultsMsg) {
-        if (visibleCount === 0 && q && rows.length > 0) {
-            noResultsMsg.classList.remove('d-none');
-        } else {
-            noResultsMsg.classList.add('d-none');
-        }
-    }
-}
-
 document.addEventListener('DOMContentLoaded', function() {
     var input = document.getElementById('searchArticle');
-    var clear = document.getElementById('clearSearch');
-    if (input) {
-        input.addEventListener('input', filterDepotArticles);
-    }
-    if (clear && input) {
-        clear.addEventListener('click', function() {
-            input.value = '';
-            filterDepotArticles();
-            input.focus();
-        });
-    }
+    if (input && !input.value) { input.focus(); }
 });
 
 var approTargetArticleId = null;
