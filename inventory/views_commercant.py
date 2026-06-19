@@ -2607,7 +2607,11 @@ def ajouter_article_boutique(request, boutique_id):
                 for error in errors:
                     messages.error(request, f"Erreur dans {field}: {error}")
     else:
-        form = ArticleForm()
+        initial = {}
+        code_from_scan = request.GET.get('code', '').strip()
+        if code_from_scan:
+            initial['code'] = code_from_scan
+        form = ArticleForm(initial=initial)
     
     # Récupérer les catégories de la boutique
     categories = boutique.categories.all()
@@ -7659,3 +7663,258 @@ def journal_valeur_stock_boutique(request, boutique_id):
         'valeur_stock_actuelle': valeur_stock_live,
     }
     return render(request, 'inventory/boutique/journal_valeur_stock.html', context)
+
+
+# ===== SCANNER GLOBAL - Recherche code-barres toutes boutiques =====
+
+@login_required
+@commercant_required
+def verifier_code_barre_global(request):
+    """Vérifier un code-barres dans la boutique courante (ou toutes si pas de boutique_id)."""
+    code = request.GET.get('code', '').strip()
+    boutique_id = request.GET.get('boutique_id', '').strip()
+
+    if not code:
+        return JsonResponse({'existe': False})
+
+    try:
+        commercant = request.user.profil_commercant
+    except Commercant.DoesNotExist:
+        return JsonResponse({'existe': False, 'message': 'Pas commerçant'})
+
+    toutes_boutiques = Boutique.objects.filter(commercant=commercant, est_active=True)
+
+    # Si boutique_id fourni, filtrer sur CETTE boutique uniquement
+    if boutique_id:
+        boutique = toutes_boutiques.filter(id=boutique_id).first()
+        if not boutique:
+            return JsonResponse({'existe': False, 'message': 'Boutique non trouvée'})
+        boutiques_filtre = Boutique.objects.filter(id=boutique.id)
+        boutique_nom = boutique.nom
+    else:
+        boutiques_filtre = toutes_boutiques
+        boutique_nom = ''
+
+    # 1. Chercher dans les articles (par code)
+    article = Article.objects.filter(
+        code=code, boutique__in=boutiques_filtre, est_actif=True
+    ).select_related('boutique').first()
+
+    if article:
+        variantes_actives = article.variantes.filter(est_actif=True)
+        variantes = list(variantes_actives.values('id', 'nom_variante', 'code_barre', 'type_attribut'))
+        stock_effectif = article.quantite_stock
+
+        return JsonResponse({
+            'existe': True,
+            'type': 'article',
+            'article': {
+                'id': article.id,
+                'nom': article.nom,
+                'code': article.code,
+                'stock': stock_effectif,
+                'prix': float(article.prix_vente),
+                'devise': article.devise,
+                'a_variantes': len(variantes) > 0,
+                'variantes': variantes,
+                'date_expiration': article.date_expiration.isoformat() if article.date_expiration else None,
+            },
+            'boutique': {
+                'id': article.boutique.id,
+                'nom': article.boutique.nom,
+            }
+        })
+
+    # 2. Chercher dans les variantes
+    variante = VarianteArticle.objects.filter(
+        code_barre=code,
+        article_parent__boutique__in=boutiques_filtre,
+        est_actif=True
+    ).select_related('article_parent', 'article_parent__boutique').first()
+
+    if variante:
+        parent = variante.article_parent
+        stock_parent = parent.quantite_stock
+
+        return JsonResponse({
+            'existe': True,
+            'type': 'variante',
+            'article': {
+                'id': parent.id,
+                'nom': parent.nom,
+                'code': parent.code,
+                'stock': stock_parent,
+                'prix': float(parent.prix_vente or 0),
+                'devise': parent.devise,
+                'a_variantes': True,
+                'date_expiration': parent.date_expiration.isoformat() if parent.date_expiration else None,
+            },
+            'variante': {
+                'id': variante.id,
+                'nom': variante.nom_variante,
+                'nom_complet': variante.nom_complet,
+                'code_barre': variante.code_barre,
+                'stock': stock_parent,
+                'type_attribut': variante.type_attribut
+            },
+            'boutique': {
+                'id': parent.boutique.id,
+                'nom': parent.boutique.nom,
+            }
+        })
+
+    # Non trouvé - retourner le nom de la boutique + liste si pas de boutique courante
+    response_data = {'existe': False, 'boutique_nom': boutique_nom}
+    if not boutique_id:
+        response_data['boutiques'] = list(toutes_boutiques.values('id', 'nom', 'est_depot'))
+    return JsonResponse(response_data)
+
+
+@login_required
+@commercant_required
+def modifier_article_global(request):
+    """Modifier un article depuis le scanner global (stock + prix)."""
+    from .models import MouvementStock
+    from decimal import InvalidOperation
+
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'message': 'Méthode non autorisée'}, status=405)
+
+    try:
+        commercant = request.user.profil_commercant
+    except Commercant.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Pas commerçant'})
+
+    article_id = request.POST.get('article_id')
+    variante_id = request.POST.get('variante_id')
+    quantite = request.POST.get('quantite', 0)
+    prix_vente = request.POST.get('prix_vente', '')
+    date_expiration_str = request.POST.get('date_expiration', '').strip()
+
+    try:
+        quantite = int(quantite)
+    except (ValueError, TypeError):
+        quantite = 0
+
+    try:
+        prix_vente = Decimal(str(prix_vente)) if prix_vente else None
+    except (ValueError, TypeError, InvalidOperation):
+        prix_vente = None
+
+    from datetime import date as date_type
+    date_expiration = None
+    effacer_date_exp = (date_expiration_str == '')
+    if date_expiration_str:
+        try:
+            date_expiration = date_type.fromisoformat(date_expiration_str)
+        except ValueError:
+            date_expiration = None
+
+    modifications = []
+
+    # === CAS VARIANTE ===
+    if variante_id:
+        try:
+            variante = VarianteArticle.objects.select_related('article_parent', 'article_parent__boutique').get(
+                id=variante_id,
+                article_parent__boutique__commercant=commercant
+            )
+        except VarianteArticle.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Variante non trouvée'})
+
+        article = variante.article_parent
+
+        if prix_vente is not None and prix_vente > 0:
+            ancien_prix = article.prix_vente or Decimal('0')
+            if abs(ancien_prix - prix_vente) > Decimal('0.01'):
+                article.prix_vente = prix_vente
+                article.save()
+                modifications.append(f"Prix: {ancien_prix} → {prix_vente}")
+
+        if date_expiration is not None:
+            article.date_expiration = date_expiration
+            article.save()
+            modifications.append(f"Date expiration: {date_expiration.strftime('%d/%m/%Y')}")
+        elif effacer_date_exp and article.date_expiration:
+            article.date_expiration = None
+            article.save()
+            modifications.append("Date expiration supprimée")
+
+        if quantite > 0:
+            ancien_stock = article.quantite_stock
+            article.quantite_stock += quantite
+            article.save()
+            modifications.append(f"Stock: {ancien_stock} → {article.quantite_stock} (+{quantite})")
+
+            MouvementStock.objects.create(
+                article=article,
+                type_mouvement='ENTREE',
+                quantite=quantite,
+                stock_avant=ancien_stock,
+                stock_apres=article.quantite_stock,
+                reference_document=f"SCAN-VAR-{variante.id}",
+                commentaire=f"Ajout stock via scanner global (variante '{variante.nom_variante}')"
+            )
+
+        return JsonResponse({
+            'success': True,
+            'message': f"Modifié ({variante.nom_variante}): {', '.join(modifications)}" if modifications else 'Aucune modification',
+            'article': {
+                'id': article.id,
+                'nom': article.nom,
+                'stock': article.quantite_stock,
+                'prix': float(article.prix_vente or 0)
+            }
+        })
+
+    # === CAS ARTICLE ===
+    if not article_id:
+        return JsonResponse({'success': False, 'message': 'Article non spécifié'})
+
+    try:
+        article = Article.objects.get(id=article_id, boutique__commercant=commercant)
+    except Article.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Article non trouvé'})
+
+    if prix_vente is not None and prix_vente > 0:
+        ancien_prix = article.prix_vente or Decimal('0')
+        if abs(ancien_prix - prix_vente) > Decimal('0.01'):
+            article.prix_vente = prix_vente
+            modifications.append(f"Prix: {ancien_prix} → {prix_vente}")
+
+    if date_expiration is not None:
+        article.date_expiration = date_expiration
+        modifications.append(f"Date expiration: {date_expiration.strftime('%d/%m/%Y')}")
+    elif effacer_date_exp and article.date_expiration:
+        article.date_expiration = None
+        modifications.append("Date expiration supprimée")
+
+    if quantite > 0:
+        ancien_stock = article.quantite_stock
+        article.quantite_stock += quantite
+        modifications.append(f"Stock: {ancien_stock} → {article.quantite_stock} (+{quantite})")
+
+        MouvementStock.objects.create(
+            article=article,
+            type_mouvement='ENTREE',
+            quantite=quantite,
+            stock_avant=ancien_stock,
+            stock_apres=article.quantite_stock,
+            reference_document=f"SCAN-ART-{article.id}",
+            commentaire="Ajout stock via scanner global"
+        )
+
+    if modifications:
+        article.save()
+        return JsonResponse({
+            'success': True,
+            'message': f"Article modifié: {', '.join(modifications)}",
+            'article': {
+                'id': article.id,
+                'nom': article.nom,
+                'stock': article.quantite_stock,
+                'prix': float(article.prix_vente or 0)
+            }
+        })
+    else:
+        return JsonResponse({'success': True, 'message': 'Aucune modification effectuée'})

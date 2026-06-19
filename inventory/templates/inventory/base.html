@@ -104,6 +104,12 @@
                                 </li>
                                 
                                 {% if user.is_authenticated %}
+                                <!-- Bouton Scanner Global (visible uniquement dans un point de vente) -->
+                                <li class="nav-item mx-1" id="globalScannerBtn" style="display:none;">
+                                    <a class="nav-link position-relative" href="#" onclick="event.preventDefault(); if(window.openGlobalScanner) openGlobalScanner();" title="Scanner un article">
+                                        <i class="fas fa-barcode fa-fw text-primary"></i>
+                                    </a>
+                                </li>
                                 <li class="nav-item dropdown no-arrow">
                                     <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                                         <span class="d-none d-lg-inline text-gray-600 small me-2">{{ user.username }}</span>
@@ -183,6 +189,163 @@
         </div>
     </div>
 
+    {% if user.is_authenticated %}
+    <!-- ==================== MODAL SCANNER GLOBAL ==================== -->
+    <div class="modal fade" id="globalScannerModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="fas fa-barcode me-2"></i>Rechercher & Modifier un Article</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Zone de recherche -->
+                    <div class="mb-4">
+                        <label for="globalScanCodeBarre" class="form-label fw-bold">
+                            <i class="fas fa-barcode text-primary"></i> Code-barres
+                        </label>
+                        <div class="input-group">
+                            <input type="text" class="form-control form-control-lg" id="globalScanCodeBarre"
+                                   placeholder="Scannez ou saisissez le code-barres..." autofocus>
+                            <button class="btn btn-primary" type="button" id="globalBtnRechercher">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </div>
+                        <div id="globalScanFeedback" class="mt-2" style="display:none;"></div>
+                    </div>
+
+                    <!-- Article trouvé -->
+                    <div id="globalArticleTrouve" style="display:none;">
+                        <div class="alert alert-success mb-3">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-check-circle fa-2x me-3"></i>
+                                <div>
+                                    <strong id="globalArtNom">-</strong>
+                                    <div class="small">
+                                        Code: <span id="globalArtCode">-</span> |
+                                        Stock: <span id="globalArtStock" class="badge bg-info">-</span>
+                                    </div>
+                                    <div class="small text-muted">
+                                        <i class="fas fa-store"></i> <span id="globalArtBoutique">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Info variante -->
+                        <div id="globalVarianteInfo" class="alert alert-info mb-3" style="display:none;">
+                            <i class="fas fa-tags me-2"></i>
+                            <strong>Variante:</strong> <span id="globalVarianteNom">-</span>
+                            <div class="small mt-1">
+                                Code: <span id="globalVarianteCode">-</span> |
+                                Stock: <span id="globalVarianteStock" class="badge bg-warning text-dark">-</span>
+                            </div>
+                        </div>
+
+                        <!-- Sélecteur de variantes -->
+                        <div id="globalSelecteurVariantes" class="mb-3" style="display:none;">
+                            <label class="form-label fw-bold">
+                                <i class="fas fa-list text-info"></i> Sélectionner une variante
+                            </label>
+                            <select id="globalSelectVariante" class="form-select form-select-lg">
+                                <option value="">-- Article principal --</option>
+                            </select>
+                        </div>
+
+                        <form id="globalFormModifier">
+                            <input type="hidden" id="globalArtId">
+                            <input type="hidden" id="globalVarId">
+
+                            <div class="row g-3">
+                                <div class="col-6" id="globalQteCol">
+                                    <label class="form-label fw-bold">
+                                        <i class="fas fa-plus-circle text-success"></i> Quantité à ajouter
+                                    </label>
+                                    <div class="input-group">
+                                        <button class="btn btn-outline-danger" type="button" id="globalBtnMoins"><i class="fas fa-minus"></i></button>
+                                        <input type="number" class="form-control form-control-lg text-center"
+                                               id="globalQteAjout" value="0" min="0">
+                                        <button class="btn btn-outline-success" type="button" id="globalBtnPlus"><i class="fas fa-plus"></i></button>
+                                    </div>
+                                </div>
+                                <div class="col-6" id="globalPrixCol">
+                                    <label class="form-label fw-bold">
+                                        <i class="fas fa-money-bill text-warning"></i> Prix de vente
+                                        <span id="globalPrixDevise" class="text-muted">(FC)</span>
+                                    </label>
+                                    <div class="input-group">
+                                        <span class="input-group-text" id="globalPrixSymbole">FC</span>
+                                        <input type="number" class="form-control form-control-lg text-center"
+                                               id="globalPrixVente" step="0.01" min="0">
+                                    </div>
+                                    <small class="text-muted">Original: <span id="globalPrixOriginal" class="fw-bold">-</span></small>
+                                </div>
+                            </div>
+
+                            <!-- Aperçu stock -->
+                            <div class="alert alert-info mt-3">
+                                <div class="row text-center">
+                                    <div class="col-4">
+                                        <div class="small text-muted">Stock actuel</div>
+                                        <div class="fs-5 fw-bold" id="globalStockActuel">-</div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="small text-muted">+ Ajout</div>
+                                        <div class="fs-5 fw-bold text-success" id="globalAjoutApercu">+0</div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="small text-muted">= Nouveau</div>
+                                        <div class="fs-5 fw-bold text-primary" id="globalNouveauStock">-</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Date d'expiration -->
+                            <div class="mt-2">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-calendar-times text-danger"></i> Date d'expiration
+                                    <small class="text-muted fw-normal">(optionnel)</small>
+                                </label>
+                                <div class="input-group">
+                                    <input type="date" class="form-control" id="globalDateExp">
+                                    <button class="btn btn-outline-secondary" type="button" id="globalBtnEffacerDate" title="Effacer">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                                <div id="globalDateExpStatus" class="mt-1" style="font-size:.8rem;"></div>
+                            </div>
+
+                            <!-- Alerte prix modifié -->
+                            <div id="globalPrixModifieAlert" class="alert alert-warning mt-2" style="display:none;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <strong>Prix modifié!</strong> Le prix sera mis à jour.
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Article non trouvé -->
+                    <div id="globalArticleNonTrouve" style="display:none;">
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>Article non trouvé</strong>
+                            <div class="small" id="globalNonTrouveMsg">Aucun article avec ce code-barres.</div>
+                        </div>
+                        <div id="globalBoutiquesAjout" class="mt-2"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Fermer
+                    </button>
+                    <button type="button" class="btn btn-success" id="globalBtnConfirmer" disabled>
+                        <i class="fas fa-check"></i> Confirmer
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Bootstrap Bundle JS -->    
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- jQuery -->    
@@ -193,5 +356,393 @@
     
     <!-- CSRF Token for AJAX Requests -->    
     {% csrf_token %}
+
+    {% if user.is_authenticated %}
+    <!-- ==================== SCANNER GLOBAL JS ==================== -->
+    <script>
+    (function() {
+        // Détecter la boutique courante depuis l'URL
+        function getCurrentBoutiqueId() {
+            const match = window.location.pathname.match(/\/boutiques\/(\d+)/);
+            return match ? match[1] : null;
+        }
+
+        // Liste des boutiques (pour vérifier si c'est un dépôt)
+        const GLOBAL_BOUTIQUES = JSON.parse('{{ global_boutiques_json|escapejs|default:"[]" }}');
+
+        function isCurrentBoutiqueDepot() {
+            const bid = getCurrentBoutiqueId();
+            if (!bid) return false;
+            const b = GLOBAL_BOUTIQUES.find(x => String(x.id) === String(bid));
+            return b ? b.est_depot : false;
+        }
+
+        // Scanner actif UNIQUEMENT si on est dans un point de vente (pas un dépôt)
+        const boutiqueIdActuel = getCurrentBoutiqueId();
+        const scannerActif = boutiqueIdActuel && !isCurrentBoutiqueDepot();
+
+        // Afficher/masquer le bouton scanner dans la navbar
+        if (scannerActif) {
+            const scanBtn = document.getElementById('globalScannerBtn');
+            if (scanBtn) scanBtn.style.display = '';
+        }
+
+        // === Détection de scan barcode (caractères rapides + Enter) ===
+        let scanBuffer = '';
+        let scanTimeout = null;
+        const SCAN_THRESHOLD = 50; // ms entre caractères (scanner = très rapide)
+        const MIN_SCAN_LENGTH = 3;
+
+        document.addEventListener('keydown', function(e) {
+            // Scanner désactivé hors point de vente
+            if (!scannerActif) return;
+
+            // Ignorer si un modal AUTRE que le scanner global est ouvert
+            const openModals = document.querySelectorAll('.modal.show');
+            for (const m of openModals) {
+                if (m.id !== 'globalScannerModal') return;
+            }
+
+            // Ignorer si le focus est dans un input/textarea (sauf le champ scanner)
+            const activeEl = document.activeElement;
+            const isInInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT');
+            const isGlobalScanInput = activeEl && activeEl.id === 'globalScanCodeBarre';
+
+            if (isInInput && !isGlobalScanInput) return;
+
+            if (e.key === 'Enter' && scanBuffer.length >= MIN_SCAN_LENGTH) {
+                e.preventDefault();
+                const code = scanBuffer.trim();
+                scanBuffer = '';
+                clearTimeout(scanTimeout);
+                openGlobalScanner(code);
+                return;
+            }
+
+            if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                clearTimeout(scanTimeout);
+                scanBuffer += e.key;
+                scanTimeout = setTimeout(() => { scanBuffer = ''; }, SCAN_THRESHOLD);
+            }
+        });
+
+        // === Variables d'état ===
+        let gArticle = null;
+        let gVariante = null;
+        let gPrixOriginal = 0;
+        let gStockCourant = 0;
+
+        const URL_VERIFIER = "{% url 'inventory:verifier_code_barre_global' %}";
+        const URL_MODIFIER = "{% url 'inventory:modifier_article_global' %}";
+
+        function getCSRF() {
+            const el = document.querySelector('[name=csrfmiddlewaretoken]');
+            return el ? el.value : '';
+        }
+
+        // === Ouvrir le scanner avec un code (ou vide) ===
+        function openGlobalScanner(code) {
+            const modal = new bootstrap.Modal(document.getElementById('globalScannerModal'));
+            modal.show();
+            setTimeout(() => {
+                const input = document.getElementById('globalScanCodeBarre');
+                if (code) {
+                    input.value = code;
+                    globalRechercher();
+                } else {
+                    input.value = '';
+                    input.focus();
+                }
+            }, 200);
+        }
+
+        // === Reset du modal ===
+        document.getElementById('globalScannerModal').addEventListener('shown.bs.modal', function() {
+            if (!document.getElementById('globalScanCodeBarre').value) {
+                globalResetModal();
+                document.getElementById('globalScanCodeBarre').focus();
+            }
+        });
+
+        document.getElementById('globalScannerModal').addEventListener('hidden.bs.modal', function() {
+            globalResetModal();
+        });
+
+        function globalResetModal() {
+            gArticle = null; gVariante = null; gPrixOriginal = 0; gStockCourant = 0;
+            document.getElementById('globalScanCodeBarre').value = '';
+            document.getElementById('globalScanFeedback').style.display = 'none';
+            document.getElementById('globalArticleTrouve').style.display = 'none';
+            document.getElementById('globalArticleNonTrouve').style.display = 'none';
+            document.getElementById('globalVarianteInfo').style.display = 'none';
+            document.getElementById('globalSelecteurVariantes').style.display = 'none';
+            document.getElementById('globalBtnConfirmer').disabled = true;
+            document.getElementById('globalQteAjout').value = 0;
+            document.getElementById('globalPrixVente').value = '';
+            document.getElementById('globalPrixModifieAlert').style.display = 'none';
+            document.getElementById('globalVarId').value = '';
+            document.getElementById('globalDateExp').value = '';
+            document.getElementById('globalDateExpStatus').innerHTML = '';
+            document.getElementById('globalPrixCol').style.display = 'block';
+            document.getElementById('globalPrixCol').className = 'col-6';
+            document.getElementById('globalQteCol').className = 'col-6';
+        }
+
+        // === Recherche ===
+        function globalRechercher() {
+            const code = document.getElementById('globalScanCodeBarre').value.trim();
+            if (!code) return;
+
+            const fb = document.getElementById('globalScanFeedback');
+            fb.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recherche...';
+            fb.className = 'mt-2 text-muted';
+            fb.style.display = 'block';
+            document.getElementById('globalArticleTrouve').style.display = 'none';
+            document.getElementById('globalArticleNonTrouve').style.display = 'none';
+
+            const boutiqueId = getCurrentBoutiqueId();
+            let url = `${URL_VERIFIER}?code=${encodeURIComponent(code)}`;
+            if (boutiqueId) url += `&boutique_id=${boutiqueId}`;
+
+            fetch(url, {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(r => r.json())
+            .then(data => {
+                fb.style.display = 'none';
+
+                if (data.existe && data.article) {
+                    gArticle = data.article;
+                    gPrixOriginal = parseFloat(data.article.prix) || 0;
+
+                    document.getElementById('globalArtNom').textContent = data.article.nom;
+                    document.getElementById('globalArtCode').textContent = data.article.code || code;
+                    document.getElementById('globalArtStock').textContent = data.article.stock + ' unités';
+                    document.getElementById('globalArtId').value = data.article.id;
+                    document.getElementById('globalVarId').value = '';
+                    document.getElementById('globalArtBoutique').textContent = data.boutique ? data.boutique.nom : '';
+
+                    // Date d'expiration
+                    const dateExpInput = document.getElementById('globalDateExp');
+                    const dateExpStatus = document.getElementById('globalDateExpStatus');
+                    dateExpInput.value = data.article.date_expiration || '';
+                    if (data.article.date_expiration) {
+                        const today = new Date().toISOString().slice(0, 10);
+                        if (data.article.date_expiration < today) {
+                            dateExpStatus.innerHTML = '<span class="text-danger"><i class="fas fa-exclamation-circle"></i> Produit expiré</span>';
+                        } else {
+                            dateExpStatus.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Expire le ' + data.article.date_expiration.split('-').reverse().join('/') + '</span>';
+                        }
+                    } else {
+                        dateExpStatus.innerHTML = '<span class="text-muted">Aucune date d\'expiration</span>';
+                    }
+
+                    // Prix
+                    const devise = data.article.devise || 'CDF';
+                    const isUSD = devise === 'USD';
+                    const symbole = isUSD ? '$' : 'FC';
+                    document.getElementById('globalPrixDevise').textContent = `(${symbole})`;
+                    document.getElementById('globalPrixSymbole').textContent = symbole;
+                    document.getElementById('globalPrixVente').value = gPrixOriginal;
+                    document.getElementById('globalPrixVente').step = isUSD ? '0.01' : '1';
+                    document.getElementById('globalPrixOriginal').textContent = gPrixOriginal.toFixed(isUSD ? 2 : 0) + ' ' + symbole;
+
+                    // === Variante directe ===
+                    if (data.type === 'variante' && data.variante) {
+                        gVariante = data.variante;
+                        gStockCourant = data.variante.stock;
+                        document.getElementById('globalVarianteNom').textContent = data.variante.nom;
+                        document.getElementById('globalVarianteCode').textContent = data.variante.code_barre;
+                        document.getElementById('globalVarianteStock').textContent = data.variante.stock + ' unités';
+                        document.getElementById('globalVarId').value = data.variante.id;
+                        document.getElementById('globalVarianteInfo').style.display = 'block';
+                        document.getElementById('globalSelecteurVariantes').style.display = 'none';
+                        if (gPrixOriginal > 0) {
+                            document.getElementById('globalPrixCol').style.display = 'none';
+                            document.getElementById('globalQteCol').className = 'col-12';
+                        }
+                    }
+                    // === Article avec variantes ===
+                    else if (data.type === 'article' && data.article.a_variantes && data.article.variantes && data.article.variantes.length > 0) {
+                        gVariante = null;
+                        gStockCourant = data.article.stock;
+                        const sel = document.getElementById('globalSelectVariante');
+                        sel.innerHTML = `<option value="">-- Article principal (${data.article.stock}) --</option>`;
+                        data.article.variantes.forEach(v => {
+                            const opt = document.createElement('option');
+                            opt.value = v.id;
+                            opt.textContent = `${v.nom_variante} (${v.code_barre})`;
+                            sel.appendChild(opt);
+                        });
+                        document.getElementById('globalVarianteInfo').style.display = 'none';
+                        document.getElementById('globalSelecteurVariantes').style.display = 'block';
+                    }
+                    // === Article simple ===
+                    else {
+                        gVariante = null;
+                        gStockCourant = data.article.stock;
+                        document.getElementById('globalVarianteInfo').style.display = 'none';
+                        document.getElementById('globalSelecteurVariantes').style.display = 'none';
+                        document.getElementById('globalPrixCol').style.display = 'block';
+                        document.getElementById('globalPrixCol').className = 'col-6';
+                        document.getElementById('globalQteCol').className = 'col-6';
+                    }
+
+                    document.getElementById('globalStockActuel').textContent = gStockCourant;
+                    globalUpdateApercu();
+                    document.getElementById('globalArticleTrouve').style.display = 'block';
+                    document.getElementById('globalBtnConfirmer').disabled = false;
+                    document.getElementById('globalQteAjout').focus();
+
+                } else {
+                    // Non trouvé dans cette boutique
+                    gArticle = null; gVariante = null;
+                    const boutiqueNom = data.boutique_nom || '';
+                    document.getElementById('globalNonTrouveMsg').textContent =
+                        `Aucun article avec le code "${code}" dans ${boutiqueNom || 'ce point de vente'}`;
+                    document.getElementById('globalBtnConfirmer').disabled = true;
+
+                    // Bouton d'ajout dans la boutique courante
+                    const container = document.getElementById('globalBoutiquesAjout');
+                    container.innerHTML = '';
+                    const btn = document.createElement('a');
+                    btn.className = 'btn btn-success';
+                    btn.href = `/commercant/boutiques/${boutiqueId}/articles/ajouter/?code=${encodeURIComponent(code)}`;
+                    btn.innerHTML = `<i class="fas fa-plus"></i> Créer cet article${boutiqueNom ? ' dans ' + boutiqueNom : ''}`;
+                    container.appendChild(btn);
+                    document.getElementById('globalArticleNonTrouve').style.display = 'block';
+                }
+            })
+            .catch(err => {
+                fb.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Erreur réseau';
+                fb.className = 'mt-2 text-danger';
+                fb.style.display = 'block';
+            });
+        }
+
+        // === Aperçu stock ===
+        function globalUpdateApercu() {
+            const ajout = parseInt(document.getElementById('globalQteAjout').value) || 0;
+            document.getElementById('globalAjoutApercu').textContent = '+' + ajout;
+            document.getElementById('globalNouveauStock').textContent = gStockCourant + ajout;
+        }
+
+        // === Vérif prix modifié ===
+        function globalCheckPrix() {
+            if (!gArticle) return;
+            const np = parseFloat(document.getElementById('globalPrixVente').value) || 0;
+            document.getElementById('globalPrixModifieAlert').style.display =
+                Math.abs(np - gPrixOriginal) > 0.01 ? 'block' : 'none';
+        }
+
+        // === Événements ===
+        document.getElementById('globalBtnRechercher').addEventListener('click', globalRechercher);
+        document.getElementById('globalScanCodeBarre').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); globalRechercher(); }
+        });
+        document.getElementById('globalQteAjout').addEventListener('input', globalUpdateApercu);
+        document.getElementById('globalPrixVente').addEventListener('input', globalCheckPrix);
+        document.getElementById('globalQteAjout').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); document.getElementById('globalBtnConfirmer').click(); }
+        });
+        document.getElementById('globalPrixVente').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); document.getElementById('globalBtnConfirmer').click(); }
+        });
+        document.getElementById('globalBtnMoins').addEventListener('click', function() {
+            const inp = document.getElementById('globalQteAjout');
+            const v = parseInt(inp.value) || 0;
+            if (v > 0) { inp.value = v - 1; globalUpdateApercu(); }
+        });
+        document.getElementById('globalBtnPlus').addEventListener('click', function() {
+            const inp = document.getElementById('globalQteAjout');
+            inp.value = (parseInt(inp.value) || 0) + 1;
+            globalUpdateApercu();
+        });
+        document.getElementById('globalBtnEffacerDate').addEventListener('click', function() {
+            document.getElementById('globalDateExp').value = '';
+            document.getElementById('globalDateExpStatus').innerHTML = '<span class="text-muted">Date supprimée</span>';
+        });
+
+        // Changement de variante
+        document.getElementById('globalSelectVariante').addEventListener('change', function() {
+            if (this.value) {
+                document.getElementById('globalVarId').value = this.value;
+                // Stock reste celui du parent pour les variantes
+            } else {
+                document.getElementById('globalVarId').value = '';
+            }
+            if (gArticle) {
+                gStockCourant = gArticle.stock;
+                document.getElementById('globalStockActuel').textContent = gStockCourant;
+                globalUpdateApercu();
+            }
+        });
+
+        // === Confirmer modification ===
+        document.getElementById('globalBtnConfirmer').addEventListener('click', function() {
+            if (!gArticle) return;
+            const btn = this;
+            const qte = parseInt(document.getElementById('globalQteAjout').value) || 0;
+            const prix = parseFloat(document.getElementById('globalPrixVente').value) || 0;
+            const varId = document.getElementById('globalVarId').value;
+
+            if (prix <= 0) { alert('Veuillez saisir un prix valide.'); return; }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
+
+            const fd = new FormData();
+            fd.append('csrfmiddlewaretoken', getCSRF());
+            fd.append('article_id', gArticle.id);
+            fd.append('quantite', qte);
+            fd.append('prix_vente', prix);
+            fd.append('date_expiration', document.getElementById('globalDateExp').value);
+            if (varId) fd.append('variante_id', varId);
+
+            fetch(URL_MODIFIER, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check"></i> Confirmer';
+
+                if (data.success) {
+                    const nom = varId && gVariante ? gVariante.nom_complet : gArticle.nom;
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = 'alert alert-success alert-dismissible fade show mt-2';
+                    alertDiv.innerHTML = `<i class="fas fa-check-circle"></i> <strong>${nom}</strong> modifié avec succès! <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`;
+                    document.getElementById('globalArticleTrouve').insertBefore(alertDiv, document.getElementById('globalArticleTrouve').firstChild);
+
+                    // Reset pour prochain scan
+                    gArticle = null; gVariante = null;
+                    document.getElementById('globalScanCodeBarre').value = '';
+                    document.getElementById('globalArticleTrouve').style.display = 'none';
+                    document.getElementById('globalVarianteInfo').style.display = 'none';
+                    document.getElementById('globalSelecteurVariantes').style.display = 'none';
+                    document.getElementById('globalBtnConfirmer').disabled = true;
+                    document.getElementById('globalQteAjout').value = 0;
+                    document.getElementById('globalPrixVente').value = '';
+                    document.getElementById('globalPrixModifieAlert').style.display = 'none';
+                    document.getElementById('globalVarId').value = '';
+                    document.getElementById('globalDateExp').value = '';
+                    document.getElementById('globalDateExpStatus').innerHTML = '';
+                    document.getElementById('globalScanCodeBarre').focus();
+
+                    setTimeout(() => { alertDiv.classList.remove('show'); setTimeout(() => alertDiv.remove(), 150); }, 3000);
+                } else {
+                    alert('Erreur: ' + (data.message || 'Une erreur est survenue'));
+                }
+            })
+            .catch(err => {
+                alert('Erreur réseau: ' + err);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-check"></i> Confirmer';
+            });
+        });
+
+        // === Exposer pour ouverture manuelle (bouton dans la navbar par ex.) ===
+        window.openGlobalScanner = openGlobalScanner;
+    })();
+    </script>
+    {% endif %}
 </body>
 </html>

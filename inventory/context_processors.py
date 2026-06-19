@@ -1,6 +1,7 @@
 """
 Context processors pour injecter des données globales dans tous les templates.
 """
+import json
 from django.db.models import F
 from .models import Article, Boutique
 
@@ -54,6 +55,13 @@ def alertes_stock(request):
         alertes['alertes_stock_count'] = total_alertes
         alertes['alertes_stock_articles'] = articles_stock_bas
         alertes['alertes_stock_rupture'] = ruptures
+        
+        # Boutiques du commerçant (pour le scanner global)
+        all_boutiques = Boutique.objects.filter(
+            commercant=commercant,
+            est_active=True
+        ).values('id', 'nom', 'est_depot')
+        alertes['global_boutiques_json'] = json.dumps(list(all_boutiques))
         
     except Exception:
         # Pas un commerçant ou erreur - retourner les valeurs par défaut

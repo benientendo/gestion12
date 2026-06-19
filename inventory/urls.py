@@ -197,6 +197,10 @@ urlpatterns = [
     path('commercant/transferts/<int:transfert_id>/valider/', views_commercant.valider_transfert, name='valider_transfert'),
     path('commercant/transferts/<int:transfert_id>/annuler/', views_commercant.annuler_transfert, name='annuler_transfert'),
     
+    # ===== SCANNER GLOBAL (toutes boutiques) =====
+    path('commercant/scanner/verifier-code/', views_commercant.verifier_code_barre_global, name='verifier_code_barre_global'),
+    path('commercant/scanner/modifier-article/', views_commercant.modifier_article_global, name='modifier_article_global'),
+
     # ===== BILANS GÉNÉRAUX ET INDICATEURS =====
     path('bilan/tableau-bord/', views_bilan.tableau_bord_bilan, name='tableau_bord_bilan'),
     path('bilan/creer/', views_bilan.creer_bilan, name='creer_bilan'),

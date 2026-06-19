@@ -67,11 +67,11 @@
                             </div>
                         </div>
 
-                        <!-- Prix de vente et d'achat -->
+                        <!-- Prix de vente et d'achat (dans la devise sélectionnée) -->
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="{{ form.prix_vente.id_for_label }}" class="form-label" id="label_prix_vente">
-                                    <i class="fas fa-money-bill"></i> Prix de vente <span id="devise_prix_vente">(CDF)</span> *
+                                    <i class="fas fa-money-bill text-success"></i> Prix de vente <span id="devise_prix_vente" class="fw-bold text-success">(FC)</span> *
                                 </label>
                                 <div class="input-group">
                                     <span class="input-group-text" id="symbol_prix_vente">FC</span>
@@ -80,33 +80,12 @@
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="prix_achat" class="form-label" id="label_prix_achat">
-                                    <i class="fas fa-shopping-cart"></i> Prix d'achat <span id="devise_prix_achat">(CDF)</span>
+                                    <i class="fas fa-shopping-cart"></i> Prix d'achat <span id="devise_prix_achat">(FC)</span>
+                                    <small class="text-muted">(optionnel)</small>
                                 </label>
                                 <div class="input-group">
                                     <span class="input-group-text" id="symbol_prix_achat">FC</span>
-                                    <input type="number" class="form-control" name="prix_achat" id="prix_achat" min="0" step="0.01" placeholder="Prix d'achat (optionnel)">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Prix dans l'autre devise (optionnel) -->
-                        <div class="row" id="prix_autre_devise_container">
-                            <div class="col-md-6 mb-3">
-                                <label for="prix_vente_autre" class="form-label text-muted" id="label_prix_vente_autre">
-                                    <i class="fas fa-exchange-alt"></i> Prix de vente <span id="devise_autre_vente">(USD)</span> <small>(optionnel)</small>
-                                </label>
-                                <div class="input-group">
-                                    <span class="input-group-text" id="symbol_autre_vente">$</span>
-                                    <input type="number" class="form-control" name="prix_vente_usd" id="prix_vente_autre" min="0" step="0.01" placeholder="Conversion optionnelle">
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="prix_achat_autre" class="form-label text-muted" id="label_prix_achat_autre">
-                                    <i class="fas fa-exchange-alt"></i> Prix d'achat <span id="devise_autre_achat">(USD)</span> <small>(optionnel)</small>
-                                </label>
-                                <div class="input-group">
-                                    <span class="input-group-text" id="symbol_autre_achat">$</span>
-                                    <input type="number" class="form-control" name="prix_achat_usd" id="prix_achat_autre" min="0" step="0.01" placeholder="Conversion optionnelle">
+                                    <input type="number" class="form-control" name="prix_achat" id="prix_achat" min="0" step="0.01" placeholder="Optionnel">
                                 </div>
                             </div>
                         </div>
@@ -120,12 +99,6 @@
                             </div>
                         </div>
 
-                        <div class="mb-3">
-                            <label for="{{ form.description.id_for_label }}" class="form-label">
-                                <i class="fas fa-align-left"></i> Description
-                            </label>
-                            {{ form.description }}
-                        </div>
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
@@ -255,43 +228,33 @@
 function updatePrixLabels() {
     const devise = document.getElementById('devise').value;
     const isCDF = devise === 'CDF';
+    const symbole = isCDF ? 'FC' : '$';
+    const label = isCDF ? '(FC)' : '($)';
     
-    // Labels et symboles principaux
-    document.getElementById('devise_prix_vente').textContent = isCDF ? '(CDF)' : '(USD)';
-    document.getElementById('devise_prix_achat').textContent = isCDF ? '(CDF)' : '(USD)';
-    document.getElementById('symbol_prix_vente').textContent = isCDF ? 'FC' : '$';
-    document.getElementById('symbol_prix_achat').textContent = isCDF ? 'FC' : '$';
+    document.getElementById('devise_prix_vente').textContent = label;
+    document.getElementById('devise_prix_achat').textContent = label;
+    document.getElementById('symbol_prix_vente').textContent = symbole;
+    document.getElementById('symbol_prix_achat').textContent = symbole;
     
-    // Labels et symboles de l'autre devise
-    document.getElementById('devise_autre_vente').textContent = isCDF ? '(USD)' : '(CDF)';
-    document.getElementById('devise_autre_achat').textContent = isCDF ? '(USD)' : '(CDF)';
-    document.getElementById('symbol_autre_vente').textContent = isCDF ? '$' : 'FC';
-    document.getElementById('symbol_autre_achat').textContent = isCDF ? '$' : 'FC';
-    
-    // Mettre à jour les noms des champs pour l'autre devise
-    const prixVenteAutre = document.getElementById('prix_vente_autre');
-    const prixAchatAutre = document.getElementById('prix_achat_autre');
-    prixVenteAutre.name = isCDF ? 'prix_vente_usd' : 'prix_vente_cdf';
-    prixAchatAutre.name = isCDF ? 'prix_achat_usd' : 'prix_achat_cdf';
-    
-    // Highlight visuel
-    const prixPrincipalContainer = document.querySelector('#label_prix_vente').closest('.col-md-6');
-    const prixAutreContainer = document.getElementById('prix_autre_devise_container');
-    
-    if (prixPrincipalContainer) {
-        prixPrincipalContainer.classList.add('devise-highlight');
-    }
+    // Step pour les prix
+    const step = isCDF ? '1' : '0.01';
+    const pvField = document.querySelector('input[name="prix_vente"]');
+    const paField = document.getElementById('prix_achat');
+    if (pvField) pvField.step = step;
+    if (paField) paField.step = step;
 }
 
 // Initialiser au chargement
 document.addEventListener('DOMContentLoaded', function() {
     updatePrixLabels();
     
-    // ⭐ Autofocus sur le champ code-barres pour le lecteur de code-barres
+    // ⭐ Autofocus : si le code-barres est déjà rempli (venant du scanner), focus sur le nom
     const codeField = document.querySelector('input[name="code"]');
-    if (codeField) {
+    const nomField = document.querySelector('input[name="nom"]');
+    if (codeField && codeField.value.trim() !== '' && nomField) {
+        nomField.focus();
+    } else if (codeField) {
         codeField.focus();
-        console.log('✅ Autofocus activé sur le champ code-barres');
     }
     
     // Toggle chevron pour section variantes
@@ -300,6 +263,90 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     document.getElementById('sectionVariantes').addEventListener('hidden.bs.collapse', function() {
         document.getElementById('chevronVariantes').classList.replace('fa-chevron-up', 'fa-chevron-down');
+    });
+
+    // ===== NAVIGATION ENTER ENTRE LES CHAMPS =====
+    const fieldOrder = [
+        { sel: 'input[name="code"]',           required: true,  label: 'Code-barres' },
+        { sel: 'input[name="nom"]',            required: true,  label: 'Nom de l\'article' },
+        { sel: '#devise',                      required: true,  label: 'Devise' },
+        { sel: 'select[name="categorie"]',     required: false, label: 'Catégorie' },
+        { sel: 'input[name="prix_vente"]',     required: true,  label: 'Prix de vente' },
+        { sel: '#prix_achat',                  required: false, label: 'Prix d\'achat' },
+        { sel: 'input[name="quantite_stock"]', required: false, label: 'Quantité en stock' },
+    ];
+
+    function getFieldIndex(el) {
+        for (let i = 0; i < fieldOrder.length; i++) {
+            if (el.matches(fieldOrder[i].sel)) return i;
+        }
+        return -1;
+    }
+
+    function showFieldError(el, msg) {
+        el.classList.add('is-invalid');
+        let fb = el.parentElement.querySelector('.enter-nav-feedback');
+        if (!fb) {
+            fb = document.createElement('div');
+            fb.className = 'invalid-feedback enter-nav-feedback';
+            el.parentElement.appendChild(fb);
+        }
+        fb.textContent = msg;
+        el.focus();
+    }
+
+    function clearFieldError(el) {
+        el.classList.remove('is-invalid');
+        const fb = el.parentElement.querySelector('.enter-nav-feedback');
+        if (fb) fb.remove();
+    }
+
+    // Écouter Enter sur le formulaire
+    const mainForm = document.querySelector('form[method="post"]');
+    mainForm.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter') return;
+        const active = document.activeElement;
+        if (!active) return;
+
+        // Ignorer si c'est un textarea (Enter = nouvelle ligne) ou un bouton
+        if (active.tagName === 'TEXTAREA' || active.tagName === 'BUTTON') return;
+
+        e.preventDefault();
+
+        const idx = getFieldIndex(active);
+        if (idx === -1) return;
+
+        // Valider le champ courant si obligatoire
+        const fieldDef = fieldOrder[idx];
+        const val = active.value.trim();
+        if (fieldDef.required && !val) {
+            showFieldError(active, `${fieldDef.label} est obligatoire`);
+            return;
+        }
+        clearFieldError(active);
+
+        // Passer au champ suivant
+        for (let next = idx + 1; next < fieldOrder.length; next++) {
+            const nextEl = document.querySelector(fieldOrder[next].sel);
+            if (nextEl && nextEl.offsetParent !== null) {
+                nextEl.focus();
+                if (nextEl.select) nextEl.select();
+                return;
+            }
+        }
+
+        // Dernier champ → soumettre le formulaire directement
+        const submitBtn = mainForm.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.click();
+    });
+
+    // Effacer l'erreur quand l'utilisateur tape
+    fieldOrder.forEach(f => {
+        const el = document.querySelector(f.sel);
+        if (el) {
+            el.addEventListener('input', function() { clearFieldError(this); });
+            el.addEventListener('change', function() { clearFieldError(this); });
+        }
     });
 });
 
