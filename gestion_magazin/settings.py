@@ -303,6 +303,7 @@ CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes max par tâche
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # Avertissement à 25 minutes
 CELERY_WORKER_PREFETCH_MULTIPLIER = 4  # Nombre de tâches à précharger
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Redémarrer worker après 1000 tâches
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # Logging pour identifier les requêtes lentes (en dev uniquement)
 if DEBUG:
