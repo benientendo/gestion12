@@ -112,6 +112,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/qte-attribuee/', views_commercant.maj_quantite_attribuee_boutique, name='maj_quantite_attribuee_boutique'),
     path('commercant/boutiques/<int:boutique_id>/categories/', views_commercant.categories_boutique, name='commercant_categories_boutique'),
     path('commercant/boutiques/<int:boutique_id>/ventes/', views_commercant.ventes_boutique, name='commercant_ventes_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/ventes/export-historique-pdf/', views_commercant.exporter_historique_ventes_pdf, name='exporter_historique_ventes_pdf'),
     path('commercant/boutiques/<int:boutique_id>/ventes/<int:vente_id>/modifier/', views_modifier_vente.modifier_vente, name='modifier_vente'),
     path('commercant/boutiques/<int:boutique_id>/mouvements-stock/', views_commercant.historique_mouvements_stock, name='historique_mouvements_stock'),
     path('commercant/boutiques/<int:boutique_id>/ventes-refusees/', views_commercant.ventes_refusees_boutique, name='commercant_ventes_refusees_boutique'),

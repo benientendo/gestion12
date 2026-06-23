@@ -129,7 +129,7 @@ if os.environ.get('DATABASE_URL'):
     DATABASES = {
         'default': dj_database_url.config(
             default=os.environ.get('DATABASE_URL'),
-            conn_max_age=60,
+            conn_max_age=int(os.environ.get('DB_CONN_MAX_AGE', 0)),
             conn_health_checks=True,
         )
     }

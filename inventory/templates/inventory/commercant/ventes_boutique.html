@@ -42,11 +42,94 @@
     .periode-header:first-of-type {
         margin-top: 0;
     }
+    /* ===== TÉLÉCHARGEMENT HISTORIQUE MENSUEL ===== */
+    .dl-mois-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        padding: 18px 20px;
+        margin-bottom: 28px;
+    }
+    .dl-mois-card h6 {
+        font-weight: 700;
+        color: #4a5568;
+        margin-bottom: 14px;
+        font-size: 0.95rem;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+    }
+    .dl-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    .btn-dl-mois {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all 0.2s;
+    }
+    .btn-dl-mois.a-telecharger {
+        background: linear-gradient(135deg, #f6ad55, #ed8936);
+        color: white;
+        box-shadow: 0 0 0 0 rgba(246,173,85,0.7);
+        animation: pulse-dl 1.8s infinite;
+    }
+    .btn-dl-mois.a-telecharger:hover {
+        background: linear-gradient(135deg, #ed8936, #dd6b20);
+        animation: none;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(237,137,54,0.45);
+        color: white;
+    }
+    @keyframes pulse-dl {
+        0%   { box-shadow: 0 0 0 0 rgba(246,173,85,0.7); }
+        60%  { box-shadow: 0 0 0 10px rgba(246,173,85,0); }
+        100% { box-shadow: 0 0 0 0 rgba(246,173,85,0); }
+    }
+    .btn-dl-mois.telecharge {
+        background: #e6ffed;
+        color: #276749;
+        border: 1.5px solid #9ae6b4;
+        cursor: default;
+        pointer-events: none;
+    }
+    .btn-dl-mois.telecharge i { color: #38a169; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
+    <!-- ===== SECTION TÉLÉCHARGEMENT HISTORIQUE MENSUEL ===== -->
+    {% if mois_ecoules %}
+    <div class="dl-mois-card">
+        <h6><i class="fas fa-file-pdf me-2 text-danger"></i>Télécharger l'historique mensuel (PDF)</h6>
+        <div class="dl-grid">
+            {% for m in mois_ecoules %}
+            {% if m.telecharge %}
+            <span class="btn-dl-mois telecharge" title="Déjà téléchargé">
+                <i class="fas fa-check-circle"></i> {{ m.nom }} {{ m.annee }}
+            </span>
+            {% else %}
+            <a href="{% url 'inventory:exporter_historique_ventes_pdf' boutique.id %}?mois={{ m.mois }}&annee={{ m.annee }}"
+               class="btn-dl-mois a-telecharger"
+               title="Télécharger l'historique de {{ m.nom }} {{ m.annee }}">
+                <i class="fas fa-download"></i> {{ m.nom }} {{ m.annee }}
+            </a>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <p class="text-muted mt-2 mb-0" style="font-size:0.78rem;">
+            <i class="fas fa-info-circle me-1"></i>
+            Les boutons <span style="color:#ed8936;font-weight:600;">oranges</span> indiquent les mois non encore téléchargés.
+            Après téléchargement, ils passent en <span style="color:#38a169;font-weight:600;">vert</span>.
+        </p>
+    </div>
+    {% endif %}
+
     <!-- En-tête Simple -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>

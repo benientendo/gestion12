@@ -19,7 +19,7 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 import json
 import io
@@ -3478,6 +3478,30 @@ def ventes_boutique(request, boutique_id):
         if periode not in ventes_groupees_triees:
             ventes_groupees_triees[periode] = ventes_list
     
+    # --- Mois écoulés avec statut de téléchargement (12 derniers mois) ---
+    mois_noms = {
+        1: 'Janvier', 2: 'Février', 3: 'Mars', 4: 'Avril',
+        5: 'Mai', 6: 'Juin', 7: 'Juillet', 8: 'Août',
+        9: 'Septembre', 10: 'Octobre', 11: 'Novembre', 12: 'Décembre'
+    }
+    premier_mois_courant = aujourd_hui.replace(day=1)
+    telechargements_existants = set(
+        TelechargementRapportMensuel.objects.filter(boutique=boutique)
+        .values_list('annee', 'mois')
+    )
+    mois_ecoules = []
+    for i in range(1, 13):
+        from calendar import monthrange as _monthrange
+        d = premier_mois_courant
+        for _ in range(i):
+            d = (d.replace(day=1) - timedelta(days=1)).replace(day=1)
+        mois_ecoules.append({
+            'annee': d.year,
+            'mois': d.month,
+            'nom': mois_noms[d.month],
+            'telecharge': (d.year, d.month) in telechargements_existants,
+        })
+
     context = {
         'boutique': boutique,
         'ventes': ventes,
@@ -3492,6 +3516,7 @@ def ventes_boutique(request, boutique_id):
         'categories': categories,
         'categorie_selected': categorie_selected,
         'stats_par_categorie': stats_par_categorie,
+        'mois_ecoules': mois_ecoules,
     }
     
     return render(request, 'inventory/commercant/ventes_boutique.html', context)
@@ -7918,3 +7943,150 @@ def modifier_article_global(request):
         })
     else:
         return JsonResponse({'success': True, 'message': 'Aucune modification effectuée'})
+
+
+# ===== EXPORT HISTORIQUE VENTES MENSUEL PDF =====
+
+@login_required
+@commercant_required
+@boutique_access_required
+def exporter_historique_ventes_pdf(request, boutique_id):
+    """Génère et télécharge l'historique de ventes mensuel en PDF, puis enregistre le téléchargement."""
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from calendar import monthrange
+
+    boutique = request.boutique
+
+    try:
+        annee = int(request.GET.get('annee', timezone.now().year))
+        mois = int(request.GET.get('mois', timezone.now().month))
+    except (ValueError, TypeError):
+        annee = timezone.now().year
+        mois = timezone.now().month
+
+    # Vérifier que le mois est bien terminé
+    aujourd_hui = timezone.now().date()
+    mois_en_cours = aujourd_hui.replace(day=1)
+    mois_demande = aujourd_hui.replace(year=annee, month=mois, day=1)
+    if mois_demande >= mois_en_cours:
+        messages.error(request, "Vous ne pouvez télécharger que l'historique d'un mois entièrement écoulé.")
+        return redirect('inventory:commercant_ventes_boutique', boutique_id=boutique_id)
+
+    mois_noms = {
+        1: 'Janvier', 2: 'Février', 3: 'Mars', 4: 'Avril',
+        5: 'Mai', 6: 'Juin', 7: 'Juillet', 8: 'Août',
+        9: 'Septembre', 10: 'Octobre', 11: 'Novembre', 12: 'Décembre'
+    }
+    nom_mois = mois_noms.get(mois, 'Mois')
+
+    premier_jour = datetime(annee, mois, 1)
+    dernier_jour = datetime(annee, mois, monthrange(annee, mois)[1], 23, 59, 59)
+
+    ventes = Vente.objects.filter(
+        boutique=boutique,
+        date_vente__gte=premier_jour,
+        date_vente__lte=dernier_jour,
+        paye=True,
+        est_annulee=False,
+    ).select_related('client_maui').prefetch_related('lignes__article').order_by('date_vente')
+
+    total_ventes = ventes.count()
+    total_ca = ventes.aggregate(t=Sum('montant_total'))['t'] or 0
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=1.5*cm, rightMargin=1.5*cm,
+        topMargin=2*cm, bottomMargin=2*cm
+    )
+    styles = getSampleStyleSheet()
+    titre_style = ParagraphStyle('Titre', parent=styles['Title'], fontSize=14, spaceAfter=6)
+    sous_titre_style = ParagraphStyle('SousTitre', parent=styles['Normal'], fontSize=10, textColor=colors.grey, spaceAfter=12)
+    vente_header_style = ParagraphStyle('VenteHeader', parent=styles['Normal'], fontSize=9, textColor=colors.white, backColor=colors.HexColor('#4a5568'), spaceBefore=8, spaceAfter=2, leftIndent=4)
+    normal_small = ParagraphStyle('NormalSmall', parent=styles['Normal'], fontSize=8)
+
+    story = []
+
+    # --- En-tête ---
+    story.append(Paragraph(f"Historique des Ventes — {nom_mois} {annee}", titre_style))
+    story.append(Paragraph(f"Boutique : {boutique.nom} | {boutique.ville}", sous_titre_style))
+    story.append(Paragraph(f"Exporté le {timezone.now().strftime('%d/%m/%Y à %H:%M')} | {total_ventes} vente(s) | CA : {total_ca:,.0f} CDF", sous_titre_style))
+    story.append(HRFlowable(width='100%', thickness=1, color=colors.HexColor('#667eea'), spaceAfter=12))
+
+    if not ventes.exists():
+        story.append(Paragraph("Aucune vente enregistrée pour cette période.", styles['Normal']))
+    else:
+        for vente in ventes:
+            lignes = vente.lignes.all()
+            terminal = vente.client_maui.nom_terminal if vente.client_maui else "—"
+            date_str = timezone.localtime(vente.date_vente).strftime('%d/%m/%Y %H:%M')
+
+            # En-tête de vente
+            story.append(Paragraph(
+                f"  Facture {vente.numero_facture} — {date_str} — Terminal : {terminal} — {vente.get_mode_paiement_display()}",
+                vente_header_style
+            ))
+
+            # Lignes d'articles
+            data = [['Article', 'Qté', 'P.U. (CDF)', 'Total (CDF)']]
+            for ligne in lignes:
+                data.append([
+                    ligne.article.nom,
+                    str(ligne.quantite),
+                    f"{ligne.prix_unitaire:,.0f}",
+                    f"{ligne.quantite * ligne.prix_unitaire:,.0f}",
+                ])
+            data.append(['', '', 'TOTAL', f"{vente.montant_total:,.0f}"])
+
+            t = Table(data, colWidths=[9*cm, 1.5*cm, 3.5*cm, 3.5*cm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e2e8f0')),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+                ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+                ('GRID', (0, 0), (-1, -2), 0.5, colors.HexColor('#cbd5e0')),
+                ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor('#4a5568')),
+                ('FONTNAME', (2, -1), (-1, -1), 'Helvetica-Bold'),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f7fafc')),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 4))
+
+    # --- Résumé final ---
+    story.append(HRFlowable(width='100%', thickness=1, color=colors.HexColor('#667eea'), spaceBefore=12, spaceAfter=6))
+    resume = Table(
+        [['TOTAL DU MOIS', f"{total_ventes} vente(s)", f"{total_ca:,.0f} CDF"]],
+        colWidths=[8*cm, 4*cm, 5.5*cm]
+    )
+    resume.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#667eea')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(resume)
+
+    doc.build(story)
+    buffer.seek(0)
+
+    # Enregistrer le téléchargement (update_or_create pour éviter doublon)
+    TelechargementRapportMensuel.objects.update_or_create(
+        boutique=boutique,
+        annee=annee,
+        mois=mois,
+        defaults={'telecharge_par': request.user, 'date_telechargement': timezone.now()}
+    )
+
+    filename = f"Historique_Ventes_{nom_mois}_{annee}_{boutique.nom}.pdf"
+    response = HttpResponse(buffer, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response

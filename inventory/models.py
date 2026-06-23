@@ -1967,3 +1967,21 @@ class JournalValeurStock(models.Model):
         indexes = [
             models.Index(fields=['boutique', '-date'], name='idx_journal_boutique_date'),
         ]
+
+
+class TelechargementRapportMensuel(models.Model):
+    """Suivi du téléchargement de l'historique de ventes mensuel par boutique."""
+    boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='telechargements_rapport')
+    annee = models.PositiveIntegerField()
+    mois = models.PositiveIntegerField()
+    date_telechargement = models.DateTimeField(auto_now_add=True)
+    telecharge_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        unique_together = [['boutique', 'annee', 'mois']]
+        verbose_name = "Téléchargement rapport mensuel"
+        verbose_name_plural = "Téléchargements rapports mensuels"
+        ordering = ['-annee', '-mois']
+
+    def __str__(self):
+        return f"Rapport {self.mois}/{self.annee} - {self.boutique.nom}"
