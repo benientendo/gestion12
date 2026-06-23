@@ -3340,13 +3340,14 @@ def supprimer_terminal(request, boutique_id, terminal_id):
 def ventes_boutique(request, boutique_id):
     """Afficher les ventes d'une boutique spécifique"""
     boutique = request.boutique
-    
+
     # ⭐ ISOLATION: Récupérer UNIQUEMENT les ventes de CETTE boutique
+    # ⚡ OPTIMISATION: SANS prefetch_related pour l'instant (appliqué après pagination)
     ventes = Vente.objects.filter(
         boutique=boutique  # Filtrage direct par boutique
-    ).select_related('client_maui', 'boutique').prefetch_related('lignes__article').order_by('-date_vente')
+    ).select_related('client_maui', 'boutique').order_by('-date_vente')
     terminaux = boutique.clients.all().order_by('nom_terminal')
-    
+
     # Filtres optionnels
     periode = request.GET.get('periode') or 'CUSTOM'
     date_debut = request.GET.get('date_debut')
@@ -3367,6 +3368,10 @@ def ventes_boutique(request, boutique_id):
         date_debut = premier_jour.isoformat()
         date_fin = today.isoformat()
 
+    # ⚡ OPTIMISATION: Limite par défaut à 30 jours si aucun filtre de date
+    if not date_debut and not date_fin and periode == 'CUSTOM':
+        date_debut = (today - timedelta(days=30)).isoformat()
+
     # Appliquer les filtres de dates
     if date_debut:
         try:
@@ -3374,7 +3379,7 @@ def ventes_boutique(request, boutique_id):
             ventes = ventes.filter(date_vente__gte=date_debut_obj)
         except ValueError:
             pass
-    
+
     if date_fin:
         try:
             date_fin_obj = datetime.strptime(date_fin, '%Y-%m-%d') + timedelta(days=1)
@@ -3416,24 +3421,38 @@ def ventes_boutique(request, boutique_id):
         chiffre_affaires=Sum('montant_total')
     )
 
-    # Statistiques par catégorie (nb ventes distinctes + montant des lignes)
-    stats_par_categorie = LigneVente.objects.filter(
-        vente__in=ventes,
-        vente__est_annulee=False,
-    ).values(
-        cat_nom=F('article__categorie__nom'),
-        cat_id=F('article__categorie_id'),
-    ).annotate(
-        nb_ventes=Count('vente', distinct=True),
-        montant=Sum(ExpressionWrapper(F('quantite') * F('prix_unitaire'), output_field=OrmDecimalField(max_digits=15, decimal_places=2))),
-        nb_lignes=Count('id'),
-    ).order_by('-montant')
-    
-    # Regrouper les ventes par période
+    # ⚡ OPTIMISATION: Pagination AVANT prefetch_related
+    paginator = Paginator(ventes, 50)  # 50 ventes par page
+    page_number = request.GET.get('page', 1)
+    try:
+        page_obj = paginator.page(page_number)
+    except (PageNotAnInteger, EmptyPage):
+        page_obj = paginator.page(1)
+
+    # ⚡ OPTIMISATION: prefetch_related SEULEMENT sur les ventes de la page actuelle
+    ventes_page = page_obj.object_list.prefetch_related('lignes__article')
+
+    # ⚡ OPTIMISATION: stats_par_categorie seulement si pas trop de ventes (limité à 1000)
+    ventes_count = ventes.count()
+    stats_par_categorie = []
+    if ventes_count <= 1000:
+        stats_par_categorie = LigneVente.objects.filter(
+            vente__in=ventes,
+            vente__est_annulee=False,
+        ).values(
+            cat_nom=F('article__categorie__nom'),
+            cat_id=F('article__categorie_id'),
+        ).annotate(
+            nb_ventes=Count('vente', distinct=True),
+            montant=Sum(ExpressionWrapper(F('quantite') * F('prix_unitaire'), output_field=OrmDecimalField(max_digits=15, decimal_places=2))),
+            nb_lignes=Count('id'),
+        ).order_by('-montant')
+
+    # ⚡ OPTIMISATION: Regrouper les ventes par période SEULEMENT sur la page actuelle
     from collections import OrderedDict
     maintenant = timezone.localtime(timezone.now())
     aujourd_hui = maintenant.date()
-    
+
     ventes_groupees = OrderedDict()
     periodes_ordre = [
         "Aujourd'hui",
@@ -3442,11 +3461,11 @@ def ventes_boutique(request, boutique_id):
         "Ce mois",
         "Mois précédent"
     ]
-    
-    for vente in ventes:
+
+    for vente in ventes_page:
         # Déterminer la période
         date_vente = timezone.localtime(vente.date_vente).date()
-        
+
         if date_vente == aujourd_hui:
             periode = "Aujourd'hui"
         elif date_vente == aujourd_hui - timedelta(days=1):
@@ -3460,14 +3479,14 @@ def ventes_boutique(request, boutique_id):
             if vente.date_vente.year == mois_precedent.year and vente.date_vente.month == mois_precedent.month:
                 periode = "Mois précédent"
             else:
-                mois_fr = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                mois_fr = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
                           'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
                 periode = f"{mois_fr[vente.date_vente.month - 1]} {vente.date_vente.year}"
-        
+
         if periode not in ventes_groupees:
             ventes_groupees[periode] = []
         ventes_groupees[periode].append(vente)
-    
+
     # Trier les périodes dans l'ordre souhaité
     ventes_groupees_triees = OrderedDict()
     for periode in periodes_ordre:
@@ -3504,7 +3523,7 @@ def ventes_boutique(request, boutique_id):
 
     context = {
         'boutique': boutique,
-        'ventes': ventes,
+        'ventes': ventes_page,  # ⚡ Utiliser les ventes de la page actuelle
         'ventes_groupees': ventes_groupees_triees,
         'total_ventes': stats['total_ventes'] or 0,
         'chiffre_affaires': stats['chiffre_affaires'] or 0,
@@ -3517,6 +3536,7 @@ def ventes_boutique(request, boutique_id):
         'categorie_selected': categorie_selected,
         'stats_par_categorie': stats_par_categorie,
         'mois_ecoules': mois_ecoules,
+        'page_obj': page_obj,  # ⚡ Pagination
     }
     
     return render(request, 'inventory/commercant/ventes_boutique.html', context)

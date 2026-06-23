@@ -374,6 +374,58 @@
                     {% endif %}
                 </div>
             {% endif %}
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <nav aria-label="Pagination des ventes" class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?periode={{ periode_selected }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&terminal_id={{ terminal_selected }}&categorie_id={{ categorie_selected }}&page=1">
+                        <i class="fas fa-angle-double-left"></i>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?periode={{ periode_selected }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&terminal_id={{ terminal_selected }}&categorie_id={{ categorie_selected }}&page={{ page_obj.previous_page_number }}">
+                        <i class="fas fa-angle-left"></i>
+                    </a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link"><i class="fas fa-angle-double-left"></i></span></li>
+                <li class="page-item disabled"><span class="page-link"><i class="fas fa-angle-left"></i></span></li>
+            {% endif %}
+
+            {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?periode={{ periode_selected }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&terminal_id={{ terminal_selected }}&categorie_id={{ categorie_selected }}&page={{ num }}">{{ num }}</a>
+                    </li>
+                {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?periode={{ periode_selected }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&terminal_id={{ terminal_selected }}&categorie_id={{ categorie_selected }}&page={{ page_obj.next_page_number }}">
+                        <i class="fas fa-angle-right"></i>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?periode={{ periode_selected }}&date_debut={{ date_debut }}&date_fin={{ date_fin }}&terminal_id={{ terminal_selected }}&categorie_id={{ categorie_selected }}&page={{ page_obj.paginator.num_pages }}">
+                        <i class="fas fa-angle-double-right"></i>
+                    </a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link"><i class="fas fa-angle-right"></i></span></li>
+                <li class="page-item disabled"><span class="page-link"><i class="fas fa-angle-double-right"></i></span></li>
+            {% endif %}
+        </ul>
+        <p class="text-center text-muted small mb-0">
+            Page {{ page_obj.number }} sur {{ page_obj.paginator.num_pages }} — {{ page_obj.paginator.count }} vente(s) au total
+        </p>
+    </nav>
+    {% endif %}
         </div>
     </div>
 </div>
