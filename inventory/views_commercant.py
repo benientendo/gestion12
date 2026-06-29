@@ -8,7 +8,7 @@ from django.http import JsonResponse, HttpResponse
 from django.db.models import Q, Sum, Count, F, Avg, Max, Min, Prefetch, ExpressionWrapper, DecimalField as OrmDecimalField
 from django.db import transaction
 from django.utils import timezone
-from django.core.paginator import Paginator
+from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from django.views.decorators.http import require_POST
 from django.core.cache import cache
 from decimal import Decimal
