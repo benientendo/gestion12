@@ -158,8 +158,8 @@
                                     <th class="text-end">Valeur</th>
                                 </tr>
                             </thead>
-                            <tbody>_nnsaisq
-                                {% for ligne in lignes.filter(stock_physique__isnull=True) %}
+                            <tbody>
+                                {% for ligne in lignes_non_saisies_qs %}
                                 <tr>
                                     <td><strong>{{ ligne.article.nom }}</strong></td>
                                     <td class="text-center">{{ ligne.stock_theorique }}</td>
