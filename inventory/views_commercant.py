@@ -6606,22 +6606,22 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         {
             'ligne_id': l.id,
             'article_id': l.article.id,
-            'nom': l.article.nom,
-            'code': l.article.code,
-            'stock_theorique': l.stock_theorique,
-            'stock_physique': l.stock_physique,
-            'assigne_a': l.assigne_a or '',
-            'quantite_stock': l.article.quantite_stock,
-            'prix_vente': float(l.article.prix_vente),
-            'devise': l.article.devise,
+            'nom': str(l.article.nom) if l.article.nom else '',
+            'code': str(l.article.code) if l.article.code else '',
+            'stock_theorique': l.stock_theorique or 0,
+            'stock_physique': l.stock_physique or 0,
+            'assigne_a': str(l.assigne_a) if l.assigne_a else '',
+            'quantite_stock': l.article.quantite_stock or 0,
+            'prix_vente': float(l.article.prix_vente) if l.article.prix_vente else 0,
+            'devise': str(l.article.devise) if l.article.devise else '',
             'categorie_id': l.article.categorie_id,
-            'categorie_nom': l.article.categorie.nom if l.article.categorie else '',
+            'categorie_nom': str(l.article.categorie.nom) if l.article.categorie and l.article.categorie.nom else '',
         }
         for l in inventaire.lignes.select_related('article', 'article__categorie').order_by('article__nom')
     ], ensure_ascii=False)
 
     categories_json = json.dumps([
-        {'id': c.id, 'nom': c.nom}
+        {'id': c.id, 'nom': str(c.nom) if c.nom else ''}
         for c in Categorie.objects.filter(boutique=boutique).order_by('nom')
     ], ensure_ascii=False)
 
