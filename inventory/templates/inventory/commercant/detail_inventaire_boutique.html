@@ -1,5 +1,6 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
+{% load number_filters %}
 
 {% block title %}{{ inventaire.reference }} - {{ boutique.nom }}{% endblock %}
 
@@ -74,17 +75,63 @@
     <div class="row mb-4">
         <div class="col-md-6">
             <div class="card border-success">
-                <div class="card-body">
+                <div class="card-body cursor-pointer" data-bs-toggle="collapse" data-bs-target="#ecartsPositifsList" aria-expanded="false">
                     <h6 class="text-success"><i class="fas fa-arrow-up"></i> Écarts positifs</h6>
                     <h4 class="text-success mb-0">+{{ total_ecart_positif|floatformat:0 }} FC</h4>
+                    <small class="text-muted">{{ ecarts_positifs.count }} article(s) <i class="fas fa-chevron-down"></i></small>
+                </div>
+                <div class="collapse" id="ecartsPositifsList">
+                    <div class="card-body border-top">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Article</th>
+                                    <th class="text-center">Écart</th>
+                                    <th class="text-end">Valeur</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ligne in ecarts_positifs %}
+                                <tr>
+                                    <td><strong>{{ ligne.article.nom }}</strong></td>
+                                    <td class="text-center"><span class="badge bg-success">+{{ ligne.ecart }}</span></td>
+                                    <td class="text-end text-success">+{{ ligne.valeur_ecart|floatformat:0 }} FC</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
         <div class="col-md-6">
             <div class="card border-danger">
-                <div class="card-body">
+                <div class="card-body cursor-pointer" data-bs-toggle="collapse" data-bs-target="#ecartsNegatifsList" aria-expanded="false">
                     <h6 class="text-danger"><i class="fas fa-arrow-down"></i> Écarts négatifs</h6>
                     <h4 class="text-danger mb-0">-{{ total_ecart_negatif|floatformat:0 }} FC</h4>
+                    <small class="text-muted">{{ ecarts_negatifs.count }} article(s) <i class="fas fa-chevron-down"></i></small>
+                </div>
+                <div class="collapse" id="ecartsNegatifsList">
+                    <div class="card-body border-top">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Article</th>
+                                    <th class="text-center">Écart</th>
+                                    <th class="text-end">Valeur</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for ligne in ecarts_negatifs %}
+                                <tr>
+                                    <td><strong>{{ ligne.article.nom }}</strong></td>
+                                    <td class="text-center"><span class="badge bg-danger">{{ ligne.ecart }}</span></td>
+                                    <td class="text-end text-danger">{{ ligne.valeur_ecart|floatformat:0 }} FC</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -96,10 +143,32 @@
     <div class="row mb-4">
         <div class="col-md-12">
             <div class="card border-warning">
-                <div class="card-body">
+                <div class="card-body cursor-pointer" data-bs-toggle="collapse" data-bs-target="#stockNonInventorieList" aria-expanded="false">
                     <h6 class="text-warning"><i class="fas fa-clock"></i> Stock non inventorié</h6>
                     <h4 class="text-warning mb-0">{{ valeur_stock_non_inventorie|floatformat:0 }} FC</h4>
-                    <small class="text-muted">{{ lignes_non_saisies }} article(s) restant à compter</small>
+                    <small class="text-muted">{{ lignes_non_saisies }} article(s) restant à compter <i class="fas fa-chevron-down"></i></small>
+                </div>
+                <div class="collapse" id="stockNonInventorieList">
+                    <div class="card-body border-top">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Article</th>
+                                    <th class="text-center">Stock théorique</th>
+                                    <th class="text-end">Valeur</th>
+                                </tr>
+                            </thead>
+                            <tbody>_nnsaisq
+                                {% for ligne in lignes.filter(stock_physique__isnull=True) %}
+                                <tr>
+                                    <td><strong>{{ ligne.article.nom }}</strong></td>
+                                    <td class="text-center">{{ ligne.stock_theorique }}</td>
+                                    <td class="text-end">{{ ligne.stock_theorique|mul:ligne.prix_unitaire|floatformat:0 }} FC</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

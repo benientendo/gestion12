@@ -4,6 +4,20 @@ register = template.Library()
 
 
 @register.filter
+def mul(value, arg):
+    """
+    Multiplie deux valeurs.
+    
+    Usage:
+        {{ stock|mul:prix }}  → stock * prix
+    """
+    try:
+        return float(value) * float(arg)
+    except (ValueError, TypeError):
+        return 0
+
+
+@register.filter
 def format_number(value, separator=' '):
     """
     Formate un nombre avec des séparateurs de milliers.
