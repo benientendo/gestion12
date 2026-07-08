@@ -1001,6 +1001,8 @@ function playErrorBeep() {
 const modeAccumulationToggle = document.getElementById('modeAccumulation');
 let modeAccumulation = localStorage.getItem('modeAccumulation') !== 'false'; // Activé par défaut
 
+console.log('Mode accumulation initialisé:', modeAccumulation);
+
 // Initialiser l'état du toggle
 if (modeAccumulationToggle) {
     modeAccumulationToggle.checked = modeAccumulation;
@@ -1024,7 +1026,11 @@ if (modeAccumulationToggle) {
 }
 
 // Calcul écart et valeur stock en temps réel
-document.querySelectorAll('.stock-input').forEach(input => {
+console.log('Initialisation des stock-input...');
+const stockInputs = document.querySelectorAll('.stock-input');
+console.log('Nombre de stock-input trouvés:', stockInputs.length);
+
+stockInputs.forEach(input => {
     input.addEventListener('input', function() {
         const theorique = parseInt(this.dataset.theorique) || 0;
         const physique = parseInt(this.value);
