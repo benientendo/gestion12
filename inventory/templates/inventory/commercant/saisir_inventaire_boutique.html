@@ -216,6 +216,27 @@ kbd {
                     <div class="progress-bar bg-success" style="width:{% widthratio nb_saisis inventaire.lignes.count|default:1 100 %}%;border-radius:4px;"></div>
                 </div>
             </div>
+            <!-- Mode accumulation -->
+            <div class="card {% if mode_accumulation %}border-warning bg-warning-subtle{% else %}border-secondary{% endif %}" style="min-width:280px;">
+                <div class="card-body py-2 px-3 d-flex align-items-center justify-content-between">
+                    <div>
+                        <label class="form-check-label mb-0 fw-bold {% if mode_accumulation %}text-warning{% else %}text-muted{% endif %}" style="font-size:0.85rem;">
+                            <i class="fas fa-plus-circle"></i> Mode accumulation
+                        </label>
+                        <small class="text-muted ms-2" style="font-size:0.75rem;">
+                            {% if mode_accumulation %}
+                            <span class="text-warning fw-bold">ACTIVÉ</span>
+                            {% else %}
+                            Désactivé
+                            {% endif %}
+                        </small>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="modeAccumulation" 
+                               {% if mode_accumulation %}checked{% endif %}>
+                    </div>
+                </div>
+            </div>
             {% if not is_collaborateur %}
             <a href="{% url 'inventory:tableau_bord_inventaire' boutique.id inventaire.id %}" class="btn btn-sm btn-outline-success" title="Tableau de bord temps réel">
                 <i class="fas fa-tachometer-alt me-1"></i>Dashboard
@@ -963,6 +984,32 @@ function playErrorBeep() {
     setTimeout(() => oscillator.stop(), 200);
 }
 
+// Gestion du mode accumulation
+const modeAccumulationToggle = document.getElementById('modeAccumulation');
+let modeAccumulation = localStorage.getItem('modeAccumulation') === 'true';
+
+// Initialiser l'état du toggle
+if (modeAccumulationToggle) {
+    modeAccumulationToggle.checked = modeAccumulation;
+    
+    modeAccumulationToggle.addEventListener('change', function() {
+        modeAccumulation = this.checked;
+        localStorage.setItem('modeAccumulation', modeAccumulation);
+        
+        // Mettre à jour l'URL pour refléter le mode
+        const url = new URL(window.location);
+        if (modeAccumulation) {
+            url.searchParams.set('mode_accumulation', '1');
+        } else {
+            url.searchParams.delete('mode_accumulation');
+        }
+        window.history.replaceState({}, '', url);
+        
+        // Recharger la page pour appliquer le changement visuel
+        window.location.reload();
+    });
+}
+
 // Calcul écart et valeur stock en temps réel
 document.querySelectorAll('.stock-input').forEach(input => {
     input.addEventListener('input', function() {
@@ -1002,15 +1049,35 @@ document.querySelectorAll('.stock-input').forEach(input => {
     input.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            const allInputs = Array.from(document.querySelectorAll('.stock-input'));
-            const currentIndex = allInputs.indexOf(this);
-            if (currentIndex < allInputs.length - 1) {
-                allInputs[currentIndex + 1].focus();
-                allInputs[currentIndex + 1].select();
+            
+            // Mode accumulation: ajouter la valeur saisie à la valeur existante
+            if (modeAccumulation && this.value) {
+                const valeurSaisie = parseInt(this.value);
+                const valeurExistante = this.dataset.valeurExistante ? parseInt(this.dataset.valeurExistante) : 0;
+                const nouvelleValeur = valeurExistante + valeurSaisie;
+                
+                this.value = nouvelleValeur;
+                this.dataset.valeurExistante = nouvelleValeur;
+                
+                // Déclencher l'événement input pour mettre à jour l'écart
+                this.dispatchEvent(new Event('input'));
+                
+                // Vider le champ après accumulation pour permettre une nouvelle saisie
+                setTimeout(() => {
+                    this.value = '';
+                    this.focus();
+                }, 100);
             } else {
-                // Dernier champ - soumettre et retourner à la recherche
-                const form = this.closest('form');
-                const continuerBtn = document.querySelector('button[name="continuer"]');
+                // Mode normal: navigation vers le champ suivant
+                const allInputs = Array.from(document.querySelectorAll('.stock-input'));
+                const currentIndex = allInputs.indexOf(this);
+                if (currentIndex < allInputs.length - 1) {
+                    allInputs[currentIndex + 1].focus();
+                    allInputs[currentIndex + 1].select();
+                } else {
+                    // Dernier champ - soumettre et retourner à la recherche
+                    const form = this.closest('form');
+                    const continuerBtn = document.querySelector('button[name="continuer"]');
                 if (continuerBtn) {
                     // Marquer qu'on veut revenir à la recherche
                     sessionStorage.setItem('inventaire_focus_search', 'true');
@@ -1025,6 +1092,15 @@ document.querySelectorAll('.stock-input').forEach(input => {
             if (commentaireInput) {
                 commentaireInput.focus();
             }
+        }
+    });
+    
+    // Stocker la valeur existante au focus
+    input.addEventListener('focus', function() {
+        if (this.value) {
+            this.dataset.valeurExistante = this.value;
+        } else {
+            this.dataset.valeurExistante = '0';
         }
     });
 });

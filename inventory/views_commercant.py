@@ -6238,6 +6238,7 @@ def saisir_inventaire(request, depot_id, inventaire_id):
     filtre = request.GET.get('filtre', 'non_saisis')
     categorie_id = request.GET.get('categorie')
     recherche = request.GET.get('q', '')
+    mode_accumulation = request.GET.get('mode_accumulation') == '1'
     
     lignes = inventaire.lignes.select_related('article', 'article__categorie')
     
@@ -6268,6 +6269,7 @@ def saisir_inventaire(request, depot_id, inventaire_id):
         'filtre': filtre,
         'categorie_id': categorie_id,
         'recherche': recherche,
+        'mode_accumulation': mode_accumulation,
         'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
         'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
     }
@@ -6555,6 +6557,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     categorie_id = request.GET.get('categorie')
     recherche = request.GET.get('q', '')
     assigne_a_filtre = request.GET.get('assigne_a', '')
+    mode_accumulation = request.GET.get('mode_accumulation') == '1'
     
     lignes = inventaire.lignes.select_related('article', 'article__categorie')
     
@@ -6634,6 +6637,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'categorie_id': categorie_id,
         'recherche': recherche,
         'assigne_a_filtre': assigne_a_filtre,
+        'mode_accumulation': mode_accumulation,
         'employes_list': employes_list,
         'current_user_nom': current_user_nom,
         'is_collaborateur': is_collaborateur,
