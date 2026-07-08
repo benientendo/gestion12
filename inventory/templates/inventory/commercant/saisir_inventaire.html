@@ -269,7 +269,7 @@
 <script>
 // Gestion du mode accumulation
 const modeAccumulationToggle = document.getElementById('modeAccumulation');
-let modeAccumulation = localStorage.getItem('modeAccumulation') === 'true';
+let modeAccumulation = localStorage.getItem('modeAccumulation') !== 'false'; // Activé par défaut
 
 // Initialiser l'état du toggle
 if (modeAccumulationToggle) {

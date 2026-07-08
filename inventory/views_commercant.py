@@ -6238,7 +6238,7 @@ def saisir_inventaire(request, depot_id, inventaire_id):
     filtre = request.GET.get('filtre', 'non_saisis')
     categorie_id = request.GET.get('categorie')
     recherche = request.GET.get('q', '')
-    mode_accumulation = request.GET.get('mode_accumulation') == '1'
+    mode_accumulation = request.GET.get('mode_accumulation') != '0' # Activé par défaut
     
     lignes = inventaire.lignes.select_related('article', 'article__categorie')
     
@@ -6557,7 +6557,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     categorie_id = request.GET.get('categorie')
     recherche = request.GET.get('q', '')
     assigne_a_filtre = request.GET.get('assigne_a', '')
-    mode_accumulation = request.GET.get('mode_accumulation') == '1'
+    mode_accumulation = request.GET.get('mode_accumulation') != '0' # Activé par défaut
     
     lignes = inventaire.lignes.select_related('article', 'article__categorie')
     
