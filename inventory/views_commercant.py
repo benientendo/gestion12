@@ -6313,6 +6313,7 @@ def regulariser_inventaire(request, depot_id, inventaire_id):
         with transaction.atomic():
             lignes_regularisees = 0
             
+            # Régulariser les articles saisis avec écart
             for ligne in inventaire.lignes.filter(stock_physique__isnull=False, est_regularise=False):
                 if ligne.ecart != 0:
                     article = ligne.article
@@ -6335,6 +6336,30 @@ def regulariser_inventaire(request, depot_id, inventaire_id):
                     ligne.est_regularise = True
                     ligne.save()
                     lignes_regularisees += 1
+            
+            # Mettre les articles non saisis à zéro
+            lignes_non_saisises = inventaire.lignes.filter(stock_physique__isnull=True, est_regularise=False)
+            for ligne in lignes_non_saisises:
+                article = ligne.article
+                stock_avant = article.quantite_stock
+                
+                if stock_avant > 0:
+                    article.quantite_stock = 0
+                    article.save()
+                    
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='SORTIE',
+                        quantite=stock_avant,
+                        stock_avant=stock_avant,
+                        stock_apres=0,
+                        commentaire=f"Régularisation inventaire {inventaire.reference} (article non saisi)",
+                        reference_document=f"INV-{inventaire.id}"
+                    )
+                
+                ligne.est_regularise = True
+                ligne.save()
+                lignes_regularisees += 1
             
             inventaire.statut = 'REGULARISE'
             inventaire.date_regularisation = timezone.now()
@@ -6967,6 +6992,7 @@ def regulariser_inventaire_boutique(request, boutique_id, inventaire_id):
         with transaction.atomic():
             lignes_regularisees = 0
             
+            # Régulariser les articles saisis avec écart
             for ligne in inventaire.lignes.filter(stock_physique__isnull=False, est_regularise=False):
                 if ligne.ecart != 0:
                     article = ligne.article
@@ -6989,6 +7015,30 @@ def regulariser_inventaire_boutique(request, boutique_id, inventaire_id):
                     ligne.est_regularise = True
                     ligne.save()
                     lignes_regularisees += 1
+            
+            # Mettre les articles non saisis à zéro
+            lignes_non_saisises = inventaire.lignes.filter(stock_physique__isnull=True, est_regularise=False)
+            for ligne in lignes_non_saisises:
+                article = ligne.article
+                stock_avant = article.quantite_stock
+                
+                if stock_avant > 0:
+                    article.quantite_stock = 0
+                    article.save()
+                    
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='SORTIE',
+                        quantite=stock_avant,
+                        stock_avant=stock_avant,
+                        stock_apres=0,
+                        commentaire=f"Régularisation inventaire {inventaire.reference} (article non saisi)",
+                        reference_document=f"INV-{inventaire.id}"
+                    )
+                
+                ligne.est_regularise = True
+                ligne.save()
+                lignes_regularisees += 1
             
             inventaire.statut = 'REGULARISE'
             inventaire.date_regularisation = timezone.now()
