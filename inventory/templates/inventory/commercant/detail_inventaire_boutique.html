@@ -91,6 +91,21 @@
     </div>
     {% endif %}
 
+    <!-- Stock non inventorié -->
+    {% if lignes_non_saisies > 0 %}
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card border-warning">
+                <div class="card-body">
+                    <h6 class="text-warning"><i class="fas fa-clock"></i> Stock non inventorié</h6>
+                    <h4 class="text-warning mb-0">{{ valeur_stock_non_inventorie|floatformat:0 }} FC</h4>
+                    <small class="text-muted">{{ lignes_non_saisies }} article(s) restant à compter</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="card shadow-sm">
         <div class="card-header">
             <h6 class="mb-0"><i class="fas fa-list"></i> Détail des articles</h6>

@@ -6162,6 +6162,10 @@ def detail_inventaire(request, depot_id, inventaire_id):
     ecarts_positifs = lignes.filter(stock_physique__isnull=False, ecart__gt=0)
     ecarts_negatifs = lignes.filter(stock_physique__isnull=False, ecart__lt=0)
     
+    # Valeur du stock non inventorié
+    lignes_non_saisies = lignes.filter(stock_physique__isnull=True)
+    valeur_stock_non_inventorie = sum(l.stock_theorique * l.prix_unitaire for l in lignes_non_saisies)
+    
     context = {
         'depot': depot,
         'inventaire': inventaire,
@@ -6172,6 +6176,8 @@ def detail_inventaire(request, depot_id, inventaire_id):
         'ecarts_negatifs': ecarts_negatifs,
         'total_ecart_positif': sum(l.valeur_ecart for l in ecarts_positifs),
         'total_ecart_negatif': abs(sum(l.valeur_ecart for l in ecarts_negatifs)),
+        'lignes_non_saisies': lignes_non_saisies.count(),
+        'valeur_stock_non_inventorie': valeur_stock_non_inventorie,
     }
     return render(request, 'inventory/commercant/detail_inventaire.html', context)
 
@@ -6439,6 +6445,10 @@ def detail_inventaire_boutique(request, boutique_id, inventaire_id):
     ecarts_positifs = lignes.filter(stock_physique__isnull=False, ecart__gt=0)
     ecarts_negatifs = lignes.filter(stock_physique__isnull=False, ecart__lt=0)
     
+    # Valeur du stock non inventorié
+    lignes_non_saisies = lignes.filter(stock_physique__isnull=True)
+    valeur_stock_non_inventorie = sum(l.stock_theorique * l.prix_unitaire for l in lignes_non_saisies)
+    
     context = {
         'boutique': boutique,
         'inventaire': inventaire,
@@ -6449,6 +6459,8 @@ def detail_inventaire_boutique(request, boutique_id, inventaire_id):
         'ecarts_negatifs': ecarts_negatifs,
         'total_ecart_positif': sum(l.valeur_ecart for l in ecarts_positifs),
         'total_ecart_negatif': abs(sum(l.valeur_ecart for l in ecarts_negatifs)),
+        'lignes_non_saisies': lignes_non_saisies.count(),
+        'valeur_stock_non_inventorie': valeur_stock_non_inventorie,
     }
     return render(request, 'inventory/commercant/detail_inventaire_boutique.html', context)
 
