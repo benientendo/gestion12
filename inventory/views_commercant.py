@@ -6122,11 +6122,13 @@ def nouvel_inventaire(request, depot_id):
         articles = Article.objects.filter(boutique=depot, est_actif=True)
         lignes_creees = 0
         for article in articles:
+            # Utiliser le prix de vente si le prix d'achat est 0 ou None
+            prix_unitaire = article.prix_achat if article.prix_achat and article.prix_achat > 0 else article.prix_vente
             LigneInventaire.objects.create(
                 inventaire=inventaire,
                 article=article,
                 stock_theorique=article.quantite_stock,
-                prix_unitaire=article.prix_achat or 0
+                prix_unitaire=prix_unitaire or 0
             )
             lignes_creees += 1
         
@@ -6157,8 +6159,8 @@ def detail_inventaire(request, depot_id, inventaire_id):
     # Statistiques
     lignes_saisies = lignes.filter(stock_physique__isnull=False).count()
     lignes_avec_ecart = lignes.filter(stock_physique__isnull=False).exclude(ecart=0).count()
-    ecarts_positifs = lignes.filter(ecart__gt=0)
-    ecarts_negatifs = lignes.filter(ecart__lt=0)
+    ecarts_positifs = lignes.filter(stock_physique__isnull=False, ecart__gt=0)
+    ecarts_negatifs = lignes.filter(stock_physique__isnull=False, ecart__lt=0)
     
     context = {
         'depot': depot,
@@ -6399,11 +6401,13 @@ def nouvel_inventaire_boutique(request, boutique_id):
         articles = Article.objects.filter(boutique=boutique, est_actif=True)
         lignes_creees = 0
         for article in articles:
+            # Utiliser le prix de vente si le prix d'achat est 0 ou None
+            prix_unitaire = article.prix_achat if article.prix_achat and article.prix_achat > 0 else article.prix_vente
             LigneInventaire.objects.create(
                 inventaire=inventaire,
                 article=article,
                 stock_theorique=article.quantite_stock,
-                prix_unitaire=article.prix_achat or 0
+                prix_unitaire=prix_unitaire or 0
             )
             lignes_creees += 1
         
@@ -6432,8 +6436,8 @@ def detail_inventaire_boutique(request, boutique_id, inventaire_id):
     lignes = inventaire.lignes.select_related('article', 'article__categorie').all()
     lignes_saisies = lignes.filter(stock_physique__isnull=False).count()
     lignes_avec_ecart = lignes.filter(stock_physique__isnull=False).exclude(ecart=0).count()
-    ecarts_positifs = lignes.filter(ecart__gt=0)
-    ecarts_negatifs = lignes.filter(ecart__lt=0)
+    ecarts_positifs = lignes.filter(stock_physique__isnull=False, ecart__gt=0)
+    ecarts_negatifs = lignes.filter(stock_physique__isnull=False, ecart__lt=0)
     
     context = {
         'boutique': boutique,
