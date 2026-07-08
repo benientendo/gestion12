@@ -1088,13 +1088,13 @@ document.querySelectorAll('.stock-input').forEach(input => {
                     // Dernier champ - soumettre et retourner à la recherche
                     const form = this.closest('form');
                     const continuerBtn = document.querySelector('button[name="continuer"]');
-                if (continuerBtn) {
-                    // Marquer qu'on veut revenir à la recherche
-                    sessionStorage.setItem('inventaire_focus_search', 'true');
-                    continuerBtn.click();
+                    if (continuerBtn) {
+                        // Marquer qu'on veut revenir à la recherche
+                        sessionStorage.setItem('inventaire_focus_search', 'true');
+                        continuerBtn.click();
+                    }
                 }
             }
-        }
         // Shift+Enter pour aller au commentaire si nécessaire
         if (e.key === 'Enter' && e.shiftKey) {
             e.preventDefault();
