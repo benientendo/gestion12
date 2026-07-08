@@ -918,12 +918,25 @@ function processBarcodeScan(barcode) {
             row.scrollIntoView({ behavior: 'smooth', block: 'center' });
             row.classList.add('table-warning');
             
-            // Focus sur le champ stock
-            setTimeout(() => {
-                stockInput.focus();
-                stockInput.select();
-                row.classList.remove('table-warning');
-            }, 500);
+            // Mode accumulation: ajouter 1 automatiquement
+            if (modeAccumulation) {
+                const valeurExistante = stockInput.value ? parseInt(stockInput.value) : 0;
+                const nouvelleValeur = valeurExistante + 1;
+                stockInput.value = nouvelleValeur;
+                stockInput.dataset.valeurExistante = nouvelleValeur;
+                stockInput.dispatchEvent(new Event('input'));
+                
+                setTimeout(() => {
+                    row.classList.remove('table-warning');
+                }, 500);
+            } else {
+                // Mode normal: focus sur le champ stock pour saisie manuelle
+                setTimeout(() => {
+                    stockInput.focus();
+                    stockInput.select();
+                    row.classList.remove('table-warning');
+                }, 500);
+            }
             
             // Son de confirmation
             playBeep();
@@ -1062,11 +1075,8 @@ document.querySelectorAll('.stock-input').forEach(input => {
                 // Déclencher l'événement input pour mettre à jour l'écart
                 this.dispatchEvent(new Event('input'));
                 
-                // Vider le champ après accumulation pour permettre une nouvelle saisie
-                setTimeout(() => {
-                    this.value = '';
-                    this.focus();
-                }, 100);
+                // Sélectionner la valeur pour permettre une nouvelle saisie rapide
+                this.select();
             } else {
                 // Mode normal: navigation vers le champ suivant
                 const allInputs = Array.from(document.querySelectorAll('.stock-input'));

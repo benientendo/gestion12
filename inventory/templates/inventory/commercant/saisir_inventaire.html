@@ -345,11 +345,8 @@ document.querySelectorAll('.stock-input').forEach(input => {
                 // Déclencher l'événement input pour mettre à jour l'écart
                 this.dispatchEvent(new Event('input'));
                 
-                // Vider le champ après accumulation pour permettre une nouvelle saisie
-                setTimeout(() => {
-                    this.value = '';
-                    this.focus();
-                }, 100);
+                // Sélectionner la valeur pour permettre une nouvelle saisie rapide
+                this.select();
             } else {
                 // Mode normal: navigation vers le champ suivant
                 const allInputs = Array.from(document.querySelectorAll('.stock-input'));
