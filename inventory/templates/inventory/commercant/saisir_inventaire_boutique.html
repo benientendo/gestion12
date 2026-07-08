@@ -1205,15 +1205,22 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 // SAISIE RAPIDE — PANNEAU FIXE
 // =============================================
 (function() {
-    const ARTICLES        = {{ all_articles_json|safe }};
-    const CATEGORIES      = {{ categories_json|safe }};
-    const AJAX_URL        = '{{ ajax_url }}';
-    const LOCK_URL        = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/lock-ligne/';
-    const UNLOCK_URL      = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/unlock-ligne/';
-    const LOCKS_URL       = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/locks/';
-    const CSRF            = '{{ csrf_token }}';
-    const CURRENT_USER_NOM = '{{ current_user_nom|escapejs }}';
+    let ARTICLES, CATEGORIES, AJAX_URL, LOCK_URL, UNLOCK_URL, LOCKS_URL, CSRF, CURRENT_USER_NOM;
     let activeLocks = {};  // { ligne_id: nom_collaborateur }
+    
+    try {
+        ARTICLES        = {{ all_articles_json|safe }};
+        CATEGORIES      = {{ categories_json|safe }};
+        AJAX_URL        = '{{ ajax_url }}';
+        LOCK_URL        = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/lock-ligne/';
+        UNLOCK_URL      = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/unlock-ligne/';
+        LOCKS_URL       = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/locks/';
+        CSRF            = '{{ csrf_token }}';
+        CURRENT_USER_NOM = '{{ current_user_nom|escapejs }}';
+    } catch(e) {
+        console.error('Erreur lors de l\'initialisation des données:', e);
+        return;
+    }
 
     const srSearch      = document.getElementById('srSearch');
     const srDropdown    = document.getElementById('srDropdown');
