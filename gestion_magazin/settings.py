@@ -44,7 +44,6 @@ ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS_ENV.split(',')]
 # Ajouter les IPs locales pour développement
 if DEBUG:
     ALLOWED_HOSTS.extend([
-        "192.168.155.224",
         "192.168.194.224",
         "10.113.224.224",
         "13.113.224.224",

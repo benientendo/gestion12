@@ -1091,6 +1091,49 @@ def create_vente_simple(request):
     logger.info(f"🔍 Création vente - Headers: {dict(request.headers)}")
     logger.info(f"🔍 Création vente - Body: {request.data}")
     
+    # 🔍 VALIDATION DES DONNÉES CLIENT
+    validation_errors = []
+    
+    # Vérifier les lignes de vente
+    lignes = request.data.get('lignes', [])
+    if not lignes:
+        validation_errors.append("Le champ 'lignes' est requis et ne doit pas être vide")
+    else:
+        for i, ligne in enumerate(lignes):
+            if not ligne.get('article_id'):
+                validation_errors.append(f"Ligne {i}: 'article_id' est requis")
+            if not ligne.get('quantite') or ligne.get('quantite') <= 0:
+                validation_errors.append(f"Ligne {i}: 'quantite' doit être > 0")
+    
+    # Vérifier la devise
+    devise = request.data.get('devise', 'CDF')
+    if devise not in ['CDF', 'USD']:
+        validation_errors.append(f"Devise invalide: {devise}. Doit être 'CDF' ou 'USD'")
+    
+    # Vérifier le mode de paiement
+    mode_paiement = request.data.get('mode_paiement', 'CASH')
+    modes_valides = ['CASH', 'CARTE', 'MOBILE_MONEY', 'VIREMENT', 'CREDIT']
+    if mode_paiement not in modes_valides:
+        validation_errors.append(f"Mode de paiement invalide: {mode_paiement}")
+    
+    # Vérifier les montants
+    montant_total = request.data.get('montant_total')
+    if montant_total is not None:
+        try:
+            montant_float = float(montant_total)
+            if montant_float < 0:
+                validation_errors.append("Le montant total ne peut pas être négatif")
+        except (ValueError, TypeError):
+            validation_errors.append("Le montant total doit être un nombre valide")
+    
+    if validation_errors:
+        logger.warning(f"❌ Validation échouée: {validation_errors}")
+        return Response({
+            'error': 'Données invalides',
+            'code': 'VALIDATION_ERROR',
+            'errors': validation_errors
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
     boutique_id = request.data.get('boutique_id')
     numero_serie = request.data.get('numero_serie')
     
@@ -1264,11 +1307,27 @@ def create_vente_simple(request):
                     except VarianteArticle.DoesNotExist:
                         logger.warning(f"⚠️ Variante {variante_id} non trouvée pour article {article.nom}, vente sur article parent")
                 
-                # Vérifier le stock (avertissement seulement — la vente est toujours enregistrée)
+                # Vérifier le stock (avertissement + création d'alerte — la vente est toujours enregistrée)
                 nom_article = variante.nom_complet if variante else article.nom
                 stock_sera_negatif = article.quantite_stock < quantite
                 if stock_sera_negatif:
                     logger.warning(f"⚠️ Stock insuffisant: {nom_article} dispo={article.quantite_stock} demandé={quantite} → stock négatif accepté")
+                    
+                    # Créer une alerte de stock négatif pour suivi
+                    try:
+                        AlerteStock.objects.get_or_create(
+                            article=article,
+                            boutique=boutique,
+                            type_alerte='STOCK_NEGATIF',
+                            defaults={
+                                'message': f"Stock négatif après vente #{vente.numero_facture}: {nom_article} dispo={article.quantite_stock} demandé={quantite}",
+                                'seuil_critique': 0,
+                                'stock_actuel': article.quantite_stock - quantite,
+                                'est_resolue': False
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(f"❌ Erreur création alerte stock: {e}")
 
                 # Créer la ligne de vente avec support USD
                 devise_ligne = ligne_data.get('devise', devise_vente)
@@ -3809,6 +3868,231 @@ def rapport_negociations_simple(request):
         return Response({
             'error': 'Erreur lors de la génération du rapport',
             'code': 'REPORT_ERROR',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ──────────────────────────────────────────────────────────────
+# RÉCONCILIATION STOCKS CLIENT
+# ──────────────────────────────────────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reconcilier_stocks_client(request):
+    """
+    Réconcilie les stocks Django avec les données envoyées par le client.
+    
+    Le client envoie son état des stocks et Django:
+    1. Compare son état avec l'état du client
+    2. Corrige son stock pour correspondre au client
+    3. Crée des mouvements de stock pour tracer les corrections
+    4. Marque les alertes comme résolues
+    
+    Body attendu:
+    {
+        "boutique_id": 1,
+        "numero_serie": "XXX",
+        "stocks_client": [
+            {"article_id": 123, "stock_client": 50},
+            {"article_id": 456, "stock_client": 30}
+        ]
+    }
+    """
+    boutique_id = request.data.get('boutique_id')
+    numero_serie = request.data.get('numero_serie')
+    stocks_client = request.data.get('stocks_client', [])
+    
+    if not boutique_id or not numero_serie:
+        return Response({
+            'error': 'boutique_id et numero_serie requis',
+            'code': 'MISSING_PARAMS'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if not stocks_client:
+        return Response({
+            'error': 'stocks_client requis',
+            'code': 'MISSING_STOCKS'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        boutique = Boutique.objects.get(id=boutique_id, est_active=True)
+        terminal = Client.objects.filter(
+            numero_serie=numero_serie,
+            boutique=boutique,
+            est_actif=True
+        ).first()
+        
+        if not terminal:
+            return Response({
+                'error': 'Terminal non trouvé',
+                'code': 'TERMINAL_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        corrections = []
+        with transaction.atomic():
+            for stock_info in stocks_client:
+                article_id = stock_info.get('article_id')
+                stock_client = stock_info.get('stock_client', 0)
+                
+                try:
+                    article = Article.objects.select_for_update().get(
+                        id=article_id,
+                        boutique=boutique,
+                        est_actif=True
+                    )
+                    
+                    stock_django = article.quantite_stock
+                    difference = stock_client - stock_django
+                    
+                    if difference != 0:
+                        # Corriger le stock
+                        article.quantite_stock = stock_client
+                        article.save(update_fields=['quantite_stock'])
+                        
+                        # Créer un mouvement de stock pour tracer la correction
+                        type_mvt = 'ENTREE' if difference > 0 else 'SORTIE'
+                        MouvementStock.objects.create(
+                            article=article,
+                            type_mouvement=type_mvt,
+                            quantite=abs(difference),
+                            stock_avant=stock_django,
+                            stock_apres=stock_client,
+                            commentaire=f"Réconciliation client #{terminal.numero_serie} - Stock client: {stock_client}",
+                            reference_document=f"RECONC-{terminal.numero_serie}"
+                        )
+                        
+                        # Marquer les alertes comme résolues
+                        AlerteStock.objects.filter(
+                            article=article,
+                            boutique=boutique,
+                            est_resolue=False
+                        ).update(est_resolue=True, date_resolution=timezone.now())
+                        
+                        corrections.append({
+                            'article_id': article.id,
+                            'article_nom': article.nom,
+                            'stock_django': stock_django,
+                            'stock_client': stock_client,
+                            'difference': difference
+                        })
+                        
+                        logger.info(
+                            f"🔧 Réconciliation: {article.code} - "
+                            f"Django: {stock_django} → Client: {stock_client} (diff: {difference})"
+                        )
+                
+                except Article.DoesNotExist:
+                    logger.warning(f"⚠️ Article {article_id} non trouvé pour réconciliation")
+                    continue
+        
+        return Response({
+            'success': True,
+            'message': f'Réconciliation terminée: {len(corrections)} corrections effectuées',
+            'corrections': corrections,
+            'boutique': boutique.nom,
+            'terminal': terminal.numero_serie
+        }, status=status.HTTP_200_OK)
+        
+    except Boutique.DoesNotExist:
+        return Response({
+            'error': 'Boutique non trouvée',
+            'code': 'BOUTIQUE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"❌ Erreur réconciliation: {str(e)}")
+        return Response({
+            'error': 'Erreur lors de la réconciliation',
+            'code': 'RECONCILIATION_ERROR',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ──────────────────────────────────────────────────────────────
+# VÉRIFICATION DIVERGENCES STOCKS (SANS RÉCONCILIATION)
+# ──────────────────────────────────────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verifier_divergences_stocks(request):
+    """
+    Vérifie les divergences entre stocks Django et stocks client SANS faire la réconciliation.
+    """
+    boutique_id = request.data.get('boutique_id')
+    numero_serie = request.data.get('numero_serie')
+    stocks_client = request.data.get('stocks_client', [])
+    
+    if not boutique_id or not numero_serie:
+        return Response({
+            'error': 'boutique_id et numero_serie requis',
+            'code': 'MISSING_PARAMS'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    if not stocks_client:
+        return Response({
+            'error': 'stocks_client requis',
+            'code': 'MISSING_STOCKS'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        boutique = Boutique.objects.get(id=boutique_id, est_active=True)
+        terminal = Client.objects.filter(
+            numero_serie=numero_serie,
+            boutique=boutique,
+            est_actif=True
+        ).first()
+        
+        if not terminal:
+            return Response({
+                'error': 'Terminal non trouvé',
+                'code': 'TERMINAL_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        divergences = []
+        for stock_info in stocks_client:
+            article_id = stock_info.get('article_id')
+            stock_client = stock_info.get('stock_client', 0)
+            
+            try:
+                article = Article.objects.get(
+                    id=article_id,
+                    boutique=boutique,
+                    est_actif=True
+                )
+                
+                stock_django = article.quantite_stock
+                difference = stock_client - stock_django
+                
+                if difference != 0:
+                    divergences.append({
+                        'article_id': article.id,
+                        'article_nom': article.nom,
+                        'stock_django': stock_django,
+                        'stock_client': stock_client,
+                        'difference': difference
+                    })
+            
+            except Article.DoesNotExist:
+                logger.warning(f"⚠️ Article {article_id} non trouvé pour vérification")
+                continue
+        
+        return Response({
+            'success': True,
+            'a_divergences': len(divergences) > 0,
+            'nombre_divergences': len(divergences),
+            'message': f'{len(divergences)} divergences détectées' if divergences else 'Aucune divergence',
+            'divergences': divergences
+        }, status=status.HTTP_200_OK)
+        
+    except Boutique.DoesNotExist:
+        return Response({
+            'error': 'Boutique non trouvée',
+            'code': 'BOUTIQUE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"❌ Erreur vérification divergences: {str(e)}")
+        return Response({
+            'error': 'Erreur lors de la vérification',
+            'code': 'CHECK_ERROR',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

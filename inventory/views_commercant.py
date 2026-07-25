@@ -6289,13 +6289,14 @@ def saisir_inventaire(request, depot_id, inventaire_id):
                         ligne.save()
                         
                         # Tracer dans l'historique
+                        ligne.refresh_from_db()
                         HistoriqueSaisieInventaire.objects.create(
                             ligne_inventaire=ligne,
                             article=ligne.article,
                             inventaire=inventaire,
                             stock_physique_saisi=stock_physique_val,
                             stock_theorique_au_moment=ligne.stock_theorique,
-                            ecart_au_moment=stock_physique_val - ligne.stock_theorique,
+                            ecart_au_moment=ligne.ecart,
                             saisi_par=request.user,
                             nom_saisi_par=user_nom,
                             commentaire=commentaire_val,
@@ -6321,12 +6322,11 @@ def saisir_inventaire(request, depot_id, inventaire_id):
     
     lignes = inventaire.lignes.select_related('article', 'article__categorie')
     
-    if filtre == 'non_saisis':
-        lignes = lignes.filter(stock_physique__isnull=True)
-    elif filtre == 'saisis':
+    if filtre == 'saisis':
         lignes = lignes.filter(stock_physique__isnull=False)
     elif filtre == 'ecarts':
         lignes = lignes.filter(stock_physique__isnull=False).exclude(ecart=0)
+    # 'non_saisis' (défaut) : affiche TOUS les articles pour permettre l'ajout/accumulation
     
     if categorie_id:
         lignes = lignes.filter(article__categorie_id=categorie_id)
@@ -6633,13 +6633,14 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                         ligne.save()
                         
                         # Tracer dans l'historique
+                        ligne.refresh_from_db()
                         HistoriqueSaisieInventaire.objects.create(
                             ligne_inventaire=ligne,
                             article=ligne.article,
                             inventaire=inventaire,
                             stock_physique_saisi=stock_physique_val,
                             stock_theorique_au_moment=ligne.stock_theorique,
-                            ecart_au_moment=stock_physique_val - ligne.stock_theorique,
+                            ecart_au_moment=ligne.ecart,
                             saisi_par=request.user,
                             nom_saisi_par=user_nom_batch,
                             commentaire=commentaire_val,
@@ -6671,12 +6672,11 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     
     lignes = inventaire.lignes.select_related('article', 'article__categorie')
     
-    if filtre == 'non_saisis':
-        lignes = lignes.filter(stock_physique__isnull=True)
-    elif filtre == 'saisis':
+    if filtre == 'saisis':
         lignes = lignes.filter(stock_physique__isnull=False)
     elif filtre == 'ecarts':
         lignes = lignes.filter(stock_physique__isnull=False).exclude(ecart=0)
+    # 'non_saisis' (défaut) : affiche TOUS les articles pour permettre l'ajout/accumulation
     
     if categorie_id:
         lignes = lignes.filter(article__categorie_id=categorie_id)
@@ -6803,14 +6803,14 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
     ligne.date_modification = timezone.now()
     ligne.save()
 
-    # Tracer la saisie dans l'historique
+    # Tracer la saisie dans l'historique — stock_physique_saisi = quantité ajoutée
     HistoriqueSaisieInventaire.objects.create(
         ligne_inventaire=ligne,
         article=ligne.article,
         inventaire=inventaire,
         stock_physique_saisi=stock_physique,
         stock_theorique_au_moment=ligne.stock_theorique,
-        ecart_au_moment=stock_physique - ligne.stock_theorique,
+        ecart_au_moment=ligne.stock_physique - ligne.stock_theorique,
         saisi_par=request.user,
         nom_saisi_par=user_nom_ajax,
         commentaire=data.get('commentaire', ''),
@@ -6845,9 +6845,9 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
 
     inventaire.calculer_statistiques()
 
-    ecart = stock_physique - (ligne.stock_theorique or 0)
     nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
     nb_total = inventaire.lignes.count()
+    ligne.refresh_from_db()
 
     return JsonResponse({
         'success': True,
@@ -6855,10 +6855,10 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         'article_nom': ligne.article.nom,
         'article_id': ligne.article.id,
         'stock_theorique': ligne.stock_theorique,
-        'stock_physique': stock_physique,
+        'stock_physique': ligne.stock_physique,
         'prix_vente': float(ligne.article.prix_vente),
         'categorie_nom': ligne.article.categorie.nom if ligne.article.categorie else '',
-        'ecart': ecart,
+        'ecart': ligne.ecart,
         'nb_saisis': nb_saisis,
         'nb_total': nb_total,
         'saisi_par_nom': user_nom_ajax,

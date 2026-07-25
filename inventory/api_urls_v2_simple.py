@@ -79,4 +79,10 @@ urlpatterns = [
     # ===== JOURNAL VALEUR STOCK =====
     path('journal-valeur-stock/', api_views_v2_simple.journal_valeur_stock_simple, name='journal_valeur_stock'),
     path('journal-valeur-stock', api_views_v2_simple.journal_valeur_stock_simple, name='journal_valeur_stock_no_slash'),
+    
+    # ===== RÉCONCILIATION STOCKS CLIENT =====
+    path('reconciliation/stocks/', api_views_v2_simple.reconcilier_stocks_client, name='reconcilier_stocks_client'),
+    path('reconciliation/stocks', api_views_v2_simple.reconcilier_stocks_client, name='reconcilier_stocks_client_no_slash'),
+    path('reconciliation/stocks/check/', api_views_v2_simple.verifier_divergences_stocks, name='verifier_divergences_stocks'),
+    path('reconciliation/stocks/check', api_views_v2_simple.verifier_divergences_stocks, name='verifier_divergences_stocks_no_slash'),
 ]

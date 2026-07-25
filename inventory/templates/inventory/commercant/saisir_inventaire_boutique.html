@@ -124,6 +124,9 @@ kbd {
                 <small class="text-muted mt-1" style="font-size:.7rem;">
                     Système : <strong id="srStockActuel" style="color:#667eea;">—</strong>
                 </small>
+                <small class="text-success mt-1" id="srStockInventorie" style="font-size:.7rem;display:none;">
+                    Inventorié : <strong id="srStockInventorieValue">0</strong> pcs
+                </small>
             </div>
 
             <!-- Prix vente -->
@@ -220,20 +223,12 @@ kbd {
             <div class="card {% if mode_accumulation %}border-warning bg-warning-subtle{% else %}border-secondary{% endif %}" style="min-width:280px;">
                 <div class="card-body py-2 px-3 d-flex align-items-center justify-content-between">
                     <div>
-                        <label class="form-check-label mb-0 fw-bold {% if mode_accumulation %}text-warning{% else %}text-muted{% endif %}" style="font-size:0.85rem;">
+                        <label class="form-check-label mb-0 fw-bold text-success" style="font-size:0.85rem;">
                             <i class="fas fa-plus-circle"></i> Mode accumulation
                         </label>
-                        <small class="text-muted ms-2" style="font-size:0.75rem;">
-                            {% if mode_accumulation %}
-                            <span class="text-warning fw-bold">ACTIVÉ</span>
-                            {% else %}
-                            Désactivé
-                            {% endif %}
+                        <small class="text-success ms-2 fw-bold" style="font-size:0.75rem;">
+                            ACTIVÉ
                         </small>
-                    </div>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" id="modeAccumulation" 
-                               {% if mode_accumulation %}checked{% endif %}>
                     </div>
                 </div>
             </div>
@@ -335,7 +330,7 @@ kbd {
     {% endif %}
 
     {% if not is_collaborateur %}
-    {% if filtre == 'non_saisis' %}<form method="post">{% csrf_token %}{% endif %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="mode_accumulation" id="modeAccumulationInput" value="{% if mode_accumulation %}1{% else %}0{% endif %}">
         <div class="card shadow-sm">
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -414,19 +409,13 @@ kbd {
                                             = <span class="total-pieces-{{ ligne.id }}">0</span> pièces
                                         </small>
                                     </div>
+                                    {% endif %}
                                     <input type="number" name="stock_physique_{{ ligne.id }}" 
                                            class="form-control form-control-lg text-center stock-input piece-mode-input"
                                            value="{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% endif %}"
                                            min="0" placeholder="?" data-theorique="{{ ligne.stock_theorique }}"
                                            data-ligne-id="{{ ligne.id }}" data-prix-vente="{{ ligne.article.prix_vente }}"
                                            tabindex="{{ forloop.counter }}">
-                                    {% else %}
-                                    {% if ligne.stock_physique is not None %}
-                                        <span class="badge bg-primary fs-6">{{ ligne.stock_physique }}</span>
-                                    {% else %}
-                                        <span class="text-muted">—</span>
-                                    {% endif %}
-                                    {% endif %}
                                 </td>
                                 <td class="text-center align-middle">
                                     <span class="ecart-display" id="ecart_{{ ligne.id }}">
@@ -472,7 +461,7 @@ kbd {
                     </table>
                 </div>
             </div>
-            {% if lignes and filtre == 'non_saisis' %}
+            {% if lignes %}
             <div class="card-footer d-flex justify-content-end gap-2">
                 <button type="submit" name="continuer" class="btn btn-outline-primary btn-sm">
                     <i class="fas fa-save me-1"></i>Enregistrer et continuer
@@ -483,7 +472,7 @@ kbd {
             </div>
             {% endif %}
         </div>
-    {% if filtre == 'non_saisis' %}</form>{% endif %}
+    </form>
 
     {% if total_lignes > 50 %}
     <div class="alert alert-info mt-3">
@@ -1007,9 +996,20 @@ console.log('Mode accumulation initialisé:', modeAccumulation);
 if (modeAccumulationToggle) {
     modeAccumulationToggle.checked = modeAccumulation;
     
+    // Mettre à jour le champ caché pour le POST au chargement initial
+    const modeInput = document.getElementById('modeAccumulationInput');
+    if (modeInput) {
+        modeInput.value = modeAccumulation ? '1' : '0';
+    }
+    
     modeAccumulationToggle.addEventListener('change', function() {
         modeAccumulation = this.checked;
         localStorage.setItem('modeAccumulation', modeAccumulation);
+        
+        // Mettre à jour le champ caché pour le POST
+        if (modeInput) {
+            modeInput.value = modeAccumulation ? '1' : '0';
+        }
         
         // Mettre à jour l'URL pour refléter le mode
         const url = new URL(window.location);
@@ -1416,7 +1416,20 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         srStockActuel.textContent = art.quantite_stock + ' pcs';
         srPrixVente.value      = art.prix_vente;
         srDevise.textContent   = art.devise || 'CDF';
-        srQte.value            = art.stock_physique !== null ? art.stock_physique : '';
+        
+        // Afficher le stock déjà inventorié si existe
+        const srStockInventorieEl = document.getElementById('srStockInventorie');
+        const srStockInventorieValueEl = document.getElementById('srStockInventorieValue');
+        if (art.stock_physique !== null) {
+            srStockInventorieEl.style.display = '';
+            srStockInventorieValueEl.textContent = art.stock_physique;
+            // En mode accumulation, le champ est vide pour saisir l'ajout
+            // En mode normal, on affiche la valeur existante
+            srQte.value = modeAccumulation ? '' : art.stock_physique;
+        } else {
+            srStockInventorieEl.style.display = 'none';
+            srQte.value = '';
+        }
 
         // Sélectionner la catégorie courante dans le dropdown
         srCategorie.value = art.categorie_id || '';
@@ -1464,6 +1477,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         srPrixVente.value = '';
         srLabel.textContent = '';
         srStockActuel.textContent = '—';
+        document.getElementById('srStockInventorie').style.display = 'none';
         closeDropdown();
         srSearch.focus();
     }
@@ -1500,6 +1514,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 stock_physique: qte,
                 prix_vente:   parseFloat(srPrixVente.value) || null,
                 categorie_id: srCategorie.value ? parseInt(srCategorie.value) : null,
+                mode_accumulation: modeAccumulation,
             })
         })
         .then(function(r) { return r.json(); })
@@ -1511,13 +1526,27 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 const ecartTxt = data.ecart > 0 ? ' <span class="text-success">(+' + data.ecart + ')</span>'
                                : data.ecart < 0 ? ' <span class="text-danger">(' + data.ecart + ')</span>'
                                : ' <span class="text-secondary">(=)</span>';
-                showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + qte + ' pcs' + ecartTxt, 'success');
+                showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + data.stock_physique + ' pcs' + ecartTxt, 'success');
 
                 // Mettre à jour la ligne dans le tableau si visible
                 const tableInput = document.querySelector('input[name="stock_physique_' + data.ligne_id + '"]');
                 if (tableInput) {
-                    tableInput.value = qte;
+                    tableInput.value = data.stock_physique;
                     tableInput.dispatchEvent(new Event('input'));
+                }
+
+                // Mettre à jour l'affichage dans le panneau de saisie rapide si l'article est sélectionné
+                if (selectedArticle && selectedArticle.ligne_id === data.ligne_id) {
+                    const srStockInventorieValueEl = document.getElementById('srStockInventorieValue');
+                    if (srStockInventorieValueEl) {
+                        srStockInventorieValueEl.textContent = data.stock_physique;
+                    }
+                    // En mode accumulation, vider le champ pour la prochaine saisie
+                    if (modeAccumulation) {
+                        srQte.value = '';
+                    } else {
+                        srQte.value = data.stock_physique;
+                    }
                 }
 
                 // Mettre à jour les compteurs

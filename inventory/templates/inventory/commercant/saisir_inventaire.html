@@ -158,6 +158,7 @@
     <!-- Formulaire de saisie -->
     <form method="post">
         {% csrf_token %}
+        <input type="hidden" name="mode_accumulation" id="modeAccumulationInput" value="{% if mode_accumulation %}1{% else %}0{% endif %}">
         <div class="card shadow-sm">
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -278,6 +279,9 @@ if (modeAccumulationToggle) {
     modeAccumulationToggle.addEventListener('change', function() {
         modeAccumulation = this.checked;
         localStorage.setItem('modeAccumulation', modeAccumulation);
+        
+        // Mettre à jour le champ caché pour le POST
+        document.getElementById('modeAccumulationInput').value = modeAccumulation ? '1' : '0';
         
         // Mettre à jour l'URL pour refléter le mode
         const url = new URL(window.location);
