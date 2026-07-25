@@ -598,6 +598,79 @@ def articles_boutique(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+def exporter_articles_pdf(request, boutique_id):
+    """Exporte tous les articles d'une boutique en PDF."""
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.lib.pagesizes import A4, landscape
+    from io import BytesIO
+
+    boutique = request.boutique
+    articles = boutique.articles.filter(est_actif=True).select_related('categorie').prefetch_related('variantes').order_by('nom')
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=landscape(A4),
+        leftMargin=1*cm, rightMargin=1*cm,
+        topMargin=1.5*cm, bottomMargin=1.5*cm
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('Titre', parent=styles['Title'], fontSize=14, spaceAfter=4)
+    subtitle_style = ParagraphStyle('SousTitre', parent=styles['Normal'], fontSize=9, textColor=colors.grey, spaceAfter=10)
+    cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=7, leading=9)
+
+    story = []
+    story.append(Paragraph(f"Articles — {boutique.nom}", title_style))
+    story.append(Paragraph(
+        f"{boutique.get_type_commerce_display()} | {boutique.ville} | {articles.count()} article(s) | Exporté le {timezone.now().strftime('%d/%m/%Y %H:%M')}",
+        subtitle_style
+    ))
+    story.append(Spacer(1, 6))
+
+    data = [['Code', 'Nom', 'Catégorie', 'Prix Vente', 'Devise', 'Stock', 'Expiration', 'Variantes']]
+    for a in articles:
+        variantes = ', '.join([f"{v.nom_variante} ({v.code_barre})" for v in a.variantes.filter(est_actif=True)])
+        data.append([
+            Paragraph(a.code, cell_style),
+            Paragraph(a.nom, cell_style),
+            Paragraph(a.categorie.nom if a.categorie else '-', cell_style),
+            f"{a.prix_vente:,.0f}" if a.devise == 'CDF' else f"{a.prix_vente:,.2f}",
+            a.devise,
+            str(a.quantite_stock),
+            a.date_expiration.strftime('%d/%m/%Y') if a.date_expiration else '-',
+            Paragraph(variantes, cell_style),
+        ])
+
+    col_widths = [2.5*cm, 4.5*cm, 3*cm, 2.5*cm, 1.5*cm, 1.5*cm, 2*cm, 7*cm]
+    table = Table(data, colWidths=col_widths, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a237e')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f5f5f5')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#fafafa')]),
+    ]))
+    story.append(table)
+
+    doc.build(story)
+    buffer.seek(0)
+
+    response = HttpResponse(buffer, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="articles_{boutique.code_boutique}_{timezone.now().strftime("%Y%m%d")}.pdf"'
+    return response
+
+@login_required
+@commercant_required
+@boutique_access_required
 def articles_search_ajax(request, boutique_id):
     """Recherche AJAX d'articles - cherche dans TOUS les articles de la boutique ET leurs variantes"""
     from django.http import JsonResponse
@@ -6193,6 +6266,7 @@ def saisir_inventaire(request, depot_id, inventaire_id):
     
     if request.method == 'POST':
         lignes_mises_a_jour = 0
+        mode_accumulation = True  # Toujours activé
         for key, value in request.POST.items():
             if key.startswith('stock_physique_'):
                 ligne_id = key.replace('stock_physique_', '')
@@ -6203,7 +6277,12 @@ def saisir_inventaire(request, depot_id, inventaire_id):
                         commentaire_val = request.POST.get(f'commentaire_{ligne_id}', '')
                         user_nom = request.user.get_full_name() or request.user.username
                         
-                        ligne.stock_physique = stock_physique_val
+                        # Mode accumulation: toujours ajouter à la valeur existante
+                        if ligne.stock_physique is not None:
+                            ligne.stock_physique += stock_physique_val
+                        else:
+                            ligne.stock_physique = stock_physique_val
+                        
                         if commentaire_val:
                             ligne.commentaire = commentaire_val
                         ligne.saisi_par = request.user
@@ -6505,6 +6584,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     if request.method == 'POST':
         lignes_mises_a_jour = 0
         prix_modifies = 0
+        mode_accumulation = True  # Toujours activé
         
         # Traiter les modifications de prix de vente
         for key, value in request.POST.items():
@@ -6536,7 +6616,12 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                         stock_physique_val = int(value)
                         commentaire_val = request.POST.get(f'commentaire_{ligne_id}', '')
                         
-                        ligne.stock_physique = stock_physique_val
+                        # Mode accumulation: toujours ajouter à la valeur existante
+                        if ligne.stock_physique is not None:
+                            ligne.stock_physique += stock_physique_val
+                        else:
+                            ligne.stock_physique = stock_physique_val
+                        
                         if commentaire_val:
                             ligne.commentaire = commentaire_val
 
@@ -6688,6 +6773,7 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         data = json.loads(request.body)
         ligne_id = int(data.get('ligne_id'))
         stock_physique = int(data.get('stock_physique'))
+        mode_accumulation = data.get('mode_accumulation', True)  # Toujours activé par défaut
     except (ValueError, TypeError, KeyError):
         return JsonResponse({'success': False, 'error': 'Données invalides'}, status=400)
 
@@ -6705,7 +6791,13 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         user_nom_ajax = request.user.get_full_name() or request.user.username
 
     ancien_stock_physique = ligne.stock_physique
-    ligne.stock_physique = stock_physique
+    
+    # Mode accumulation: toujours ajouter à la valeur existante
+    if ligne.stock_physique is not None:
+        ligne.stock_physique += stock_physique
+    else:
+        ligne.stock_physique = stock_physique
+    
     ligne.saisi_par = request.user
     ligne.assigne_a = user_nom_ajax
     ligne.date_modification = timezone.now()

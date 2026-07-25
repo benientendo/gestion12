@@ -29,6 +29,10 @@
                     <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#rechercheArticleModal" title="Rechercher un article par code-barres">
                         <i class="fas fa-search"></i> <span class="d-none d-sm-inline">Recherche</span>
                     </button>
+                    <!-- Bouton Télécharger PDF -->
+                    <a href="{% url 'inventory:exporter_articles_pdf' boutique.id %}" class="btn btn-outline-primary btn-sm" title="Télécharger tous les articles en PDF">
+                        <i class="fas fa-file-pdf"></i> <span class="d-none d-sm-inline">PDF</span>
+                    </a>
                     <!-- Bouton Importer depuis un autre point de vente -->
                     <a href="{% url 'inventory:importer_articles_entre_boutiques' boutique.id %}" class="btn btn-outline-success btn-sm" title="Importer des articles depuis un autre point de vente">
                         <i class="fas fa-file-import"></i> <span class="d-none d-sm-inline">Importer</span>

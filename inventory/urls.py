@@ -103,6 +103,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/<int:variante_id>/modifier/', views_commercant.modifier_variante, name='modifier_variante'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/<int:variante_id>/supprimer/', views_commercant.supprimer_variante, name='supprimer_variante'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/variantes/<int:variante_id>/stock/', views_commercant.ajuster_stock_variante, name='ajuster_stock_variante'),
+    path('commercant/boutiques/<int:boutique_id>/articles/exporter-pdf/', views_commercant.exporter_articles_pdf, name='exporter_articles_pdf'),
     path('commercant/boutiques/<int:boutique_id>/articles/bulk-delete/', views_commercant.bulk_delete_articles, name='bulk_delete_articles'),
     path('commercant/boutiques/<int:boutique_id>/transfert/', views_commercant.transfert_entre_boutiques, name='transfert_entre_boutiques'),
     path('commercant/boutiques/<int:boutique_id>/articles/importer/', views_commercant.importer_articles_entre_boutiques, name='importer_articles_entre_boutiques'),
