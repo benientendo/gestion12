@@ -126,6 +126,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/', views_commercant.detail_inventaire_boutique, name='detail_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/saisir/', views_commercant.saisir_inventaire_boutique, name='saisir_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/saisir-ligne/', views_commercant.saisir_ligne_inventaire_ajax, name='saisir_ligne_inventaire_ajax'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/reset-ligne/', views_commercant.reset_ligne_inventaire_ajax, name='reset_ligne_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/lock-ligne/', views_commercant.lock_ligne_inventaire_ajax, name='lock_ligne_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/unlock-ligne/', views_commercant.unlock_ligne_inventaire_ajax, name='unlock_ligne_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/locks/', views_commercant.get_locks_inventaire_ajax, name='get_locks_inventaire_ajax'),
@@ -192,6 +193,7 @@ urlpatterns = [
     path('commercant/depots/<int:depot_id>/inventaires/nouveau/', views_commercant.nouvel_inventaire, name='nouvel_inventaire'),
     path('commercant/depots/<int:depot_id>/inventaires/<int:inventaire_id>/', views_commercant.detail_inventaire, name='detail_inventaire'),
     path('commercant/depots/<int:depot_id>/inventaires/<int:inventaire_id>/saisir/', views_commercant.saisir_inventaire, name='saisir_inventaire'),
+    path('commercant/depots/<int:depot_id>/inventaires/<int:inventaire_id>/reset-ligne/', views_commercant.reset_ligne_inventaire_depot_ajax, name='reset_ligne_inventaire_depot_ajax'),
     path('commercant/depots/<int:depot_id>/inventaires/<int:inventaire_id>/terminer/', views_commercant.terminer_inventaire, name='terminer_inventaire'),
     path('commercant/depots/<int:depot_id>/inventaires/<int:inventaire_id>/regulariser/', views_commercant.regulariser_inventaire, name='regulariser_inventaire'),
     

@@ -442,7 +442,14 @@ kbd {
                                     <span class="text-muted" style="font-size:.85rem;">{{ ligne.commentaire|default:'—' }}</span>
                                     {% endif %}
                                 </td>
-                                <td class="text-center align-middle">
+                                <td class="text-center align-middle" style="white-space:nowrap;">
+                                    {% if ligne.stock_physique is not None %}
+                                    <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1 me-1" 
+                                            onclick="resetLigne({{ ligne.id }}, '{{ ligne.article.nom|escapejs }}')"
+                                            title="Réinitialiser la saisie">
+                                        <i class="fas fa-undo-alt"></i>
+                                    </button>
+                                    {% endif %}
                                     <button type="button" class="btn btn-outline-info btn-sm py-0 px-1" 
                                             onclick="voirHistorique({{ ligne.id }}, '{{ ligne.article.nom|escapejs }}')"
                                             title="Historique des saisies">
@@ -1207,7 +1214,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 // SAISIE RAPIDE — PANNEAU FIXE
 // =============================================
 (function() {
-    let ARTICLES, CATEGORIES, AJAX_URL, LOCK_URL, UNLOCK_URL, LOCKS_URL, CSRF, CURRENT_USER_NOM;
+    let ARTICLES, CATEGORIES, AJAX_URL, LOCK_URL, UNLOCK_URL, LOCKS_URL, RESET_URL, CSRF, CURRENT_USER_NOM;
     let activeLocks = {};  // { ligne_id: nom_collaborateur }
     
     try {
@@ -1217,6 +1224,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         LOCK_URL        = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/lock-ligne/';
         UNLOCK_URL      = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/unlock-ligne/';
         LOCKS_URL       = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/locks/';
+        RESET_URL       = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/reset-ligne/';
         CSRF            = '{{ csrf_token }}';
         CURRENT_USER_NOM = '{{ current_user_nom|escapejs }}';
     } catch(e) {
@@ -1290,6 +1298,45 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     }
     fetchLocks();
     setInterval(fetchLocks, 30000);
+
+    // ---- Réinitialiser une ligne ----
+    window.resetLigne = function(ligneId, articleNom) {
+        if (!confirm('Réinitialiser la saisie de "' + articleNom + '" ?\nLe stock physique reviendra à "Non saisi".')) return;
+
+        postJson(RESET_URL, {ligne_id: ligneId}).then(function(d) {
+            if (!d.success) { showToast('Erreur: ' + (d.error || 'inconnue'), 'danger'); return; }
+
+            // Mettre à jour la ligne dans le tableau
+            const row = document.querySelector('tr[data-search] input[name="stock_physique_' + ligneId + '"]');
+            if (row) {
+                const input = row;
+                input.value = '';
+                input.placeholder = '?';
+
+                const tr = input.closest('tr');
+                if (tr) {
+                    tr.classList.remove('table-success', 'table-danger');
+                    const ecartBadge = tr.querySelector('.ecart-display');
+                    if (ecartBadge) ecartBadge.innerHTML = '';
+                    const valeurSpan = tr.querySelector('.valeur-stock');
+                    if (valeurSpan) valeurSpan.innerHTML = '<span class="text-muted">—</span>';
+                    const resetBtn = tr.querySelector('.btn-outline-danger');
+                    if (resetBtn) resetBtn.remove();
+                }
+            }
+
+            // Mettre à jour le cache local
+            updateLocalStock(ligneId, null);
+
+            // Mettre à jour les compteurs
+            document.getElementById('srNbSaisis').textContent = d.nb_saisis + ' saisis';
+            document.getElementById('srNbRestants').textContent = d.nb_total - d.nb_saisis + ' restants';
+
+            showToast('<i class="fas fa-undo me-2"></i> "' + d.article_nom + '" réinitialisé', 'warning');
+        }).catch(function() {
+            showToast('Erreur réseau lors de la réinitialisation', 'danger');
+        });
+    };
 
     // ---- Tableau session ----
     function addSessionEntry(data, qte) {

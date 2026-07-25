@@ -6865,6 +6865,78 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
     })
 
 
+@login_required
+@commercant_required
+@boutique_access_required
+def reset_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
+    """AJAX: Réinitialise le stock physique d'une ligne d'inventaire."""
+    try:
+        data = json.loads(request.body)
+        ligne_id = int(data.get('ligne_id'))
+    except (ValueError, TypeError, KeyError):
+        return JsonResponse({'success': False, 'error': 'Données invalides'}, status=400)
+
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=request.boutique, statut='EN_COURS')
+    ligne = get_object_or_404(LigneInventaire, id=ligne_id, inventaire=inventaire)
+
+    ligne.stock_physique = None
+    ligne.ecart = 0
+    ligne.valeur_ecart = 0
+    ligne.date_modification = timezone.now()
+    ligne.save()
+    ligne.refresh_from_db()
+
+    inventaire.calculer_statistiques()
+
+    nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
+    nb_total = inventaire.lignes.count()
+
+    return JsonResponse({
+        'success': True,
+        'ligne_id': ligne.id,
+        'article_nom': ligne.article.nom,
+        'nb_saisis': nb_saisis,
+        'nb_total': nb_total,
+    })
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def reset_ligne_inventaire_depot_ajax(request, depot_id, inventaire_id):
+    """AJAX: Réinitialise le stock physique d'une ligne d'inventaire (dépôt)."""
+    try:
+        data = json.loads(request.body)
+        ligne_id = int(data.get('ligne_id'))
+    except (ValueError, TypeError, KeyError):
+        return JsonResponse({'success': False, 'error': 'Données invalides'}, status=400)
+
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=depot, statut='EN_COURS')
+    ligne = get_object_or_404(LigneInventaire, id=ligne_id, inventaire=inventaire)
+
+    ligne.stock_physique = None
+    ligne.ecart = 0
+    ligne.valeur_ecart = 0
+    ligne.date_modification = timezone.now()
+    ligne.save()
+    ligne.refresh_from_db()
+
+    inventaire.calculer_statistiques()
+
+    nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
+    nb_total = inventaire.lignes.count()
+
+    return JsonResponse({
+        'success': True,
+        'ligne_id': ligne.id,
+        'article_nom': ligne.article.nom,
+        'nb_saisis': nb_saisis,
+        'nb_total': nb_total,
+    })
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # HISTORIQUE DES SAISIES D'INVENTAIRE
 # ─────────────────────────────────────────────────────────────────────────────
