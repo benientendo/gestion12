@@ -23,6 +23,7 @@ urlpatterns = [
     path('boutiques/', api_views_v2_simple.boutiques_list_simple, name='boutiques_list'),
     
     # ===== TERMINAUX =====
+    path('terminal/token/', api_views_v2_simple.enregistrer_token_fcm, name='terminal_token'),
     path('terminal/<str:numero_serie>/', api_views_v2_simple.terminal_info_simple, name='terminal_info'),
     
     # ===== ARTICLES =====

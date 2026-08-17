@@ -1,3 +1,4 @@
 # Dépendances pour la génération de codes QR
+# ⚠️ Pillow aligné sur requirements.txt (10.1.0) pour éviter les conflits de version
 qrcode[pil]==7.4.2
-Pillow==10.0.1
+Pillow==10.1.0

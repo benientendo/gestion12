@@ -302,7 +302,7 @@ def rafraichir_indicateurs(request):
 
 def _calculer_indicateurs_temps_reel(commercant, boutiques):
     """Calcule les indicateurs clés en temps réel"""
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     debut_mois = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     
     # Ventes du jour
@@ -348,7 +348,7 @@ def _calculer_indicateurs_temps_reel(commercant, boutiques):
 
 def _get_ca_jour(commercant, boutiques):
     """Retourne le chiffre d'affaires du jour"""
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     return Vente.objects.filter(
         boutique__in=boutiques,
         date_vente__date=aujourd_hui,
@@ -366,7 +366,7 @@ def _get_ca_mois(commercant, boutiques):
 
 def _get_ventes_jour(commercant, boutiques):
     """Retourne le nombre de ventes du jour"""
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     return Vente.objects.filter(
         boutique__in=boutiques,
         date_vente__date=aujourd_hui,
@@ -483,7 +483,7 @@ def _mettre_a_jour_indicateur(indicateur, boutiques):
         queryset = Vente.objects.filter(boutique__in=boutiques, est_annulee=False)
         
         if filtre == 'jour':
-            queryset = queryset.filter(date_vente__date=timezone.now().date())
+            queryset = queryset.filter(date_vente__date=timezone.localdate())
         elif filtre == 'semaine':
             debut_semaine = timezone.now() - timedelta(days=timezone.now().weekday())
             queryset = queryset.filter(date_vente__gte=debut_semaine)
@@ -499,7 +499,7 @@ def _mettre_a_jour_indicateur(indicateur, boutiques):
         queryset = Vente.objects.filter(boutique__in=boutiques, est_annulee=False)
         
         if filtre == 'jour':
-            queryset = queryset.filter(date_vente__date=timezone.now().date())
+            queryset = queryset.filter(date_vente__date=timezone.localdate())
         
         indicateur.valeur_actuelle = queryset.count()
         

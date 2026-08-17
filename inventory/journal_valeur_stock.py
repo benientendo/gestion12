@@ -58,7 +58,8 @@ def _calculer_valeur_stock_reel(boutique):
     """
     Calcule la valeur réelle du stock = SUM(quantite_stock * prix_vente)
     pour les articles actifs en CDF avec stock > 0.
-    Correspond exactement à la valeur affichée sur le dashboard du point de vente.
+    ⚠️ PRIX DE VENTE: valeur commerciale confiée au gérant
+    (ex: 100 u × PV 100 = 10 000 FC — pas le coût d'achat).
     """
     from .models import Article
 
@@ -103,14 +104,14 @@ def _incrementer(boutique, champ, montant, date=None):
 # API publique appelée par les signals / views
 # ──────────────────────────────────────────────
 
-def enregistrer_vente(boutique, valeur_cout, date=None):
-    """Vente : on retire la valeur au prix d'achat."""
-    _incrementer(boutique, 'valeur_ventes', valeur_cout, date)
+def enregistrer_vente(boutique, valeur, date=None):
+    """Vente : on retire la valeur au prix de vente (valeur commerciale)."""
+    _incrementer(boutique, 'valeur_ventes', valeur, date)
 
 
-def enregistrer_approvisionnement(boutique, valeur_cout, date=None):
-    """Approvisionnement / facture fournisseur : entrée de stock."""
-    _incrementer(boutique, 'valeur_stock_ajoute', valeur_cout, date)
+def enregistrer_approvisionnement(boutique, valeur, date=None):
+    """Approvisionnement / facture fournisseur : entrée de stock (valeur commerciale au prix de vente)."""
+    _incrementer(boutique, 'valeur_stock_ajoute', valeur, date)
 
 
 def enregistrer_transfert_entrant(boutique, valeur_cout, date=None):
@@ -132,15 +133,15 @@ def enregistrer_inventaire(boutique, impact_valeur, date=None):
     _incrementer(boutique, 'montant_inventaire', impact_valeur, date)
 
 
-def enregistrer_sortie_manuelle(boutique, valeur_cout, date=None):
-    """Sortie manuelle, perte, casse."""
-    _incrementer(boutique, 'valeur_stock_sorti', valeur_cout, date)
+def enregistrer_sortie_manuelle(boutique, valeur, date=None):
+    """Sortie manuelle, perte, casse (valeur au prix de vente)."""
+    _incrementer(boutique, 'valeur_stock_sorti', valeur, date)
 
 
 def enregistrer_modification_prix(boutique, impact_valeur, date=None):
     """
-    Modification du prix d'achat sur un article.
-    impact_valeur = (nouveau_prix_achat - ancien_prix_achat) * quantite_stock
+    Modification du prix de vente d'un article.
+    impact_valeur = (nouveau_prix_vente - ancien_prix_vente) * quantite_stock
     """
     _incrementer(boutique, 'impact_modification_prix', impact_valeur, date)
 

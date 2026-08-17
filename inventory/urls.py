@@ -9,6 +9,7 @@ from . import views_pin_login
 from . import views_auto_assign
 from . import views_modifier_vente
 from . import views_reset_inventaire
+from . import views_reset_pdv
 from . import views_credit
 
 app_name = 'inventory'
@@ -133,6 +134,14 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/tableau-bord/', views_commercant.tableau_bord_inventaire, name='tableau_bord_inventaire'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/auto-assigner/', views_auto_assign.auto_assigner_inventaire, name='auto_assigner_inventaire'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/reinitialiser-mes-articles/', views_reset_inventaire.reinitialiser_mes_articles, name='reinitialiser_mes_articles'),
+
+    # 🔄 Réinitialisation d'un point de vente (PDV) : demande commerçant → validation admin
+    path('commercant/boutiques/<int:boutique_id>/terminaux/<int:terminal_id>/demander-reset/', views_reset_pdv.demander_reset_pdv, name='demander_reset_pdv'),
+    path('admin-demandes-reset/', views_reset_pdv.liste_demandes_reset, name='liste_demandes_reset'),
+    path('admin-demandes-reset/<int:demande_id>/valider/', views_reset_pdv.valider_demande_reset, name='valider_demande_reset'),
+    path('admin-demandes-reset/<int:demande_id>/refuser/', views_reset_pdv.refuser_demande_reset, name='refuser_demande_reset'),
+    path('admin-demandes-reset/terminal/<int:terminal_id>/direct/', views_reset_pdv.reinitialiser_pdv_direct, name='reinitialiser_pdv_direct'),
+    path('admin-demandes-reset/terminal/<int:terminal_id>/direct-serveur/', views_reset_pdv.reinitialiser_pdv_serveur_direct, name='reinitialiser_pdv_serveur_direct'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/ligne/<int:ligne_id>/historique/', views_commercant.historique_saisie_ligne_ajax, name='historique_saisie_ligne_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/terminer/', views_commercant.terminer_inventaire_boutique, name='terminer_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/regulariser/', views_commercant.regulariser_inventaire_boutique, name='regulariser_inventaire_boutique'),

@@ -48,7 +48,7 @@ def to_local_iso(dt):
 def _compute_dashboard_stats(boutique):
     """Calcule les stats recette du jour/mois pour le push WebSocket dashboard."""
     from .models import RapportCaisse
-    today = timezone.now().date()
+    today = timezone.localdate()
     premier_jour_mois = today.replace(day=1)
 
     ventes_base = Q(paye=True, est_annulee=False) & (Q(boutique=boutique) | Q(client_maui__boutique=boutique))
@@ -98,6 +98,53 @@ def recalculer_stock_depuis_journal(article):
         article.save(update_fields=['quantite_stock'])
 
     return stock_journal, stock_avant, a_diverge
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def enregistrer_token_fcm(request):
+    """
+    Le terminal MAUI enregistre son jeton FCM pour recevoir les notifications push.
+
+    Body: {"fcm_token": "..."}
+    Le terminal est identifié via le header X-Device-Serial (vérifié par le middleware).
+    """
+    numero_serie = (
+        request.headers.get('X-Device-Serial') or
+        request.headers.get('Device-Serial') or
+        request.headers.get('Serial-Number') or
+        request.META.get('HTTP_X_DEVICE_SERIAL') or
+        request.META.get('HTTP_DEVICE_SERIAL')
+    )
+    if not numero_serie:
+        return Response({
+            'error': 'Numéro de série requis',
+            'code': 'MISSING_SERIAL'
+        }, status=status.HTTP_401_UNAUTHORIZED)
+
+    terminal = Client.objects.filter(numero_serie=numero_serie, est_actif=True).first()
+    if not terminal:
+        return Response({
+            'error': 'Terminal non trouvé ou inactif',
+            'code': 'TERMINAL_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    fcm_token = (request.data.get('fcm_token') or '').strip()
+    if not fcm_token:
+        return Response({
+            'error': 'fcm_token requis',
+            'code': 'MISSING_FCM_TOKEN'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    terminal.fcm_token = fcm_token
+    terminal.save(update_fields=['fcm_token'])
+
+    logger.info(f"🔔 FCM: jeton enregistré pour le terminal {terminal.numero_serie}")
+    return Response({
+        'success': True,
+        'message': 'Jeton FCM enregistré',
+        'terminal': terminal.nom_terminal
+    })
 
 
 @api_view(['GET'])
@@ -1104,6 +1151,16 @@ def create_vente_simple(request):
                 validation_errors.append(f"Ligne {i}: 'article_id' est requis")
             if not ligne.get('quantite') or ligne.get('quantite') <= 0:
                 validation_errors.append(f"Ligne {i}: 'quantite' doit être > 0")
+            # 🔒 Prix: rejeter les prix négatifs ou non numériques (le serveur contrôle les prix)
+            for champ_prix in ('prix_unitaire', 'prix_unitaire_usd'):
+                prix_ligne = ligne.get(champ_prix)
+                if prix_ligne is None:
+                    continue
+                try:
+                    if float(prix_ligne) < 0:
+                        validation_errors.append(f"Ligne {i}: '{champ_prix}' ne peut pas être négatif")
+                except (ValueError, TypeError):
+                    validation_errors.append(f"Ligne {i}: '{champ_prix}' doit être un nombre valide")
     
     # Vérifier la devise
     devise = request.data.get('devise', 'CDF')
@@ -1718,7 +1775,7 @@ def statistiques_boutique_simple(request):
         dashboard = _compute_dashboard_stats(boutique)
 
         # Nombre de ventes jour/mois (paye=True, non annulées, boutique + MAUI)
-        aujourd_hui = timezone.now().date()
+        aujourd_hui = timezone.localdate()
         debut_mois = aujourd_hui.replace(day=1)
         ventes_base = Q(paye=True, est_annulee=False) & (
             Q(boutique=boutique) | Q(client_maui__boutique=boutique)
@@ -2207,9 +2264,36 @@ def sync_ventes_simple(request):
                             logger.warning(f"⚠️ Stock insuffisant: {nom_article_vente} dispo={article.quantite_stock} demandé={quantite} → stock négatif accepté")
 
                         # Créer la ligne de vente avec support USD
-                        prix_unitaire = ligne_data.get('prix_unitaire', article.prix_vente)
-                        prix_unitaire_usd = ligne_data.get('prix_unitaire_usd') or article.prix_vente_usd
+                        # ⭐ MÊME LOGIQUE que create_vente_simple: pour une vente USD,
+                        #    le prix reçu (prix_unitaire) EST le prix USD effectif.
                         devise_ligne = ligne_data.get('devise', devise_vente)
+
+                        # 🔒 Validation prix: rejeter les prix négatifs ou non numériques
+                        #    (le serveur contrôle les prix, pas le client).
+                        try:
+                            prix_recu = float(ligne_data['prix_unitaire']) if ligne_data.get('prix_unitaire') is not None else None
+                        except (ValueError, TypeError):
+                            prix_recu = None
+                        if prix_recu is not None and prix_recu < 0:
+                            raise ValueError(f'PRIX_NEGATIF|{article.id}|{article.nom}|0|0|Prix négatif reçu pour {article.nom}')
+                        try:
+                            prix_usd_recu = float(ligne_data['prix_unitaire_usd']) if ligne_data.get('prix_unitaire_usd') is not None else None
+                        except (ValueError, TypeError):
+                            prix_usd_recu = None
+                        if prix_usd_recu is not None and prix_usd_recu < 0:
+                            raise ValueError(f'PRIX_NEGATIF_USD|{article.id}|{article.nom}|0|0|Prix USD négatif reçu pour {article.nom}')
+
+                        if devise_ligne == 'USD':
+                            prix_unitaire_usd = (
+                                ligne_data.get('prix_unitaire_usd') or
+                                ligne_data.get('prix_unitaire') or
+                                article.prix_vente_usd or
+                                0
+                            )
+                            prix_unitaire = 0
+                        else:
+                            prix_unitaire = ligne_data.get('prix_unitaire') or article.prix_vente
+                            prix_unitaire_usd = ligne_data.get('prix_unitaire_usd') or article.prix_vente_usd or 0
                         
                         # 💰 Gérer les négociations
                         prix_original = ligne_data.get('prix_original') or ligne_data.get('prixOriginal')
@@ -2223,7 +2307,7 @@ def sync_ventes_simple(request):
                         # Auto-détection si prix négocié (prix différent du prix original)
                         try:
                             prix_orig_decimal = float(prix_original)
-                            prix_unit_decimal = float(prix_unitaire)
+                            prix_unit_decimal = float(prix_unitaire if devise_ligne != 'USD' else prix_unitaire_usd)
                             if abs(prix_orig_decimal - prix_unit_decimal) > 0.01:
                                 est_negocie = True
                                 logger.info(f"💰 RÉDUCTION DÉTECTÉE: {article.nom} - Original: {prix_orig_decimal} → Vendu: {prix_unit_decimal}")
@@ -2243,9 +2327,13 @@ def sync_ventes_simple(request):
                             motif_reduction=motif_reduction
                         )
 
-                        # ⭐ Accumuler les montants (TOUJOURS, avant le dedup stock)
-                        montant_total += prix_unitaire * quantite
-                        montant_total_usd = (montant_total_usd or 0) + (prix_unitaire_usd * quantite if prix_unitaire_usd else 0)
+                        # ⭐ Accumuler les montants selon la devise (TOUJOURS, avant le dedup stock)
+                        if devise_ligne == 'USD':
+                            montant_total_usd = (montant_total_usd or 0) + (prix_unitaire_usd or 0) * quantite
+                        else:
+                            montant_total += prix_unitaire * quantite
+                            if prix_unitaire_usd:
+                                montant_total_usd = (montant_total_usd or 0) + prix_unitaire_usd * quantite
                         lignes_creees.append({
                             'article_id': article.id,
                             'article_nom': article.nom,
@@ -2254,7 +2342,7 @@ def sync_ventes_simple(request):
                             'prix_unitaire': str(prix_unitaire),
                             'prix_unitaire_usd': str(prix_unitaire_usd) if prix_unitaire_usd else None,
                             'devise': devise_ligne,
-                            'sous_total': str(prix_unitaire * quantite)
+                            'sous_total': str((prix_unitaire_usd * quantite) if devise_ligne == 'USD' else (prix_unitaire * quantite))
                         })
 
                         # ⭐ JOURNAL: Dedup — évite double réduction de stock (idempotence)
@@ -2275,10 +2363,12 @@ def sync_ventes_simple(request):
                         article.quantite_stock -= quantite
                         article.save(update_fields=['quantite_stock'])
 
+                        symbole_devise_stock = '$' if devise_ligne == 'USD' else 'FC'
+                        prix_affiche_stock = prix_unitaire_usd if devise_ligne == 'USD' else prix_unitaire
                         if variante:
-                            commentaire_stock = f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_unitaire} CDF"
+                            commentaire_stock = f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_affiche_stock} {symbole_devise_stock}"
                         else:
-                            commentaire_stock = f"Vente #{vente.numero_facture} - Prix: {prix_unitaire} CDF"
+                            commentaire_stock = f"Vente #{vente.numero_facture} - Prix: {prix_affiche_stock} {symbole_devise_stock}"
 
                         MouvementStock.objects.create(
                             article=article,
@@ -2317,18 +2407,25 @@ def sync_ventes_simple(request):
                         montant_maui = Decimal(str(montant_maui)) if montant_maui else None
                     except Exception:
                         montant_maui = None
-                    
+
+                    # ⭐ Comparer dans la devise de la vente (montant_total_usd pour USD,
+                    #    montant_total pour CDF) pour ne jamais mélanger les devises.
+                    montant_recalcule = montant_total_usd if devise_vente == 'USD' else montant_total
+
                     if montant_maui and montant_maui > 0:
-                        ecart = abs(montant_total - montant_maui)
+                        ecart = abs(montant_recalcule - montant_maui)
                         if ecart > 1:  # Tolérance de 1 unité pour les arrondis
                             logger.warning(
                                 f"⚠️ ÉCART MONTANT: Vente {numero_facture} — "
-                                f"MAUI={montant_maui} vs Recalculé={montant_total} (écart={ecart}) "
+                                f"MAUI={montant_maui} vs Recalculé={montant_recalcule} (écart={ecart}) "
                                 f"→ On utilise le Total MAUI (correct au moment de la vente)"
                             )
-                            montant_total = montant_maui
+                            if devise_vente == 'USD':
+                                montant_total_usd = montant_maui
+                            else:
+                                montant_total = montant_maui
                         else:
-                            logger.info(f"💰 SYNC - Montants cohérents: MAUI={montant_maui}, Recalculé={montant_total}")
+                            logger.info(f"💰 SYNC - Montants cohérents: MAUI={montant_maui}, Recalculé={montant_recalcule}")
                     
                     logger.info(f"💰 SYNC - Montant total final: {montant_total} {devise_vente} / USD: {montant_total_usd}")
                     vente.montant_total = montant_total

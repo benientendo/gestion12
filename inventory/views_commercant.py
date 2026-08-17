@@ -149,7 +149,7 @@ def dashboard_commercant(request):
         ).count()
     
     # Ajouter le compteur des ventes refusées du jour pour chaque boutique
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     for boutique in boutiques_list:
         boutique.nb_ventes_refusees_jour = VenteRejetee.objects.filter(
             boutique=boutique,
@@ -160,7 +160,7 @@ def dashboard_commercant(request):
     
     # Statistiques des 30 derniers jours
     date_debut = timezone.now() - timedelta(days=30)
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     # Début du mois en cours (pour les dépenses mensuelles)
     debut_mois = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     
@@ -464,7 +464,7 @@ def detail_boutique(request, boutique_id):
     ventes_recentes_display = ventes_recentes[:10]
     
     # Compteur des ventes refusées du jour + total potentiel
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     ventes_refusees_jour = VenteRejetee.objects.filter(
         boutique=boutique,
         date_tentative__date=aujourd_hui
@@ -805,10 +805,17 @@ def terminaux_boutique(request, boutique_id):
     """Gestion des terminaux MAUI d'une boutique"""
     boutique = request.boutique
     terminaux = boutique.clients.all().order_by('nom_terminal')
-    
+
+    # 🔄 Demandes de réinitialisation en attente pour cette boutique
+    from .models import DemandeResetPdv
+    demandes_en_attente = DemandeResetPdv.objects.filter(
+        boutique=boutique, statut='EN_ATTENTE'
+    ).select_related('terminal')
+
     context = {
         'boutique': boutique,
-        'terminaux': terminaux
+        'terminaux': terminaux,
+        'demandes_en_attente': demandes_en_attente
     }
     
     return render(request, 'inventory/commercant/terminaux_boutique.html', context)
@@ -860,7 +867,7 @@ def api_stats_boutique(request, boutique_id):
         boutique = get_object_or_404(Boutique, id=boutique_id, commercant=commercant)
         
         # Statistiques d'aujourd'hui
-        aujourd_hui = timezone.now().date()
+        aujourd_hui = timezone.localdate()
         try:
             ventes_aujourd_hui = Vente.objects.filter(
                 Q(boutique=boutique) | Q(client_maui__boutique=boutique),
@@ -915,7 +922,7 @@ def api_ca_jour_boutique(request, boutique_id):
     - Conçu pour le polling intelligent (Visibility API + backoff exponentiel)
     """
     boutique = request.boutique
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
 
     ventes_qs = Vente.objects.filter(
         Q(boutique=boutique) | Q(client_maui__boutique=boutique),
@@ -1059,7 +1066,7 @@ def entrer_boutique(request, boutique_id):
     nb_terminaux = boutique.clients.count()
     
     # Ventes d'aujourd'hui (exclure les ventes annulées)
-    date_aujourd_hui = timezone.now().date()
+    date_aujourd_hui = timezone.localdate()
     try:
         ventes_aujourd_hui = Vente.objects.filter(
             boutique=boutique,
@@ -1083,7 +1090,7 @@ def entrer_boutique(request, boutique_id):
     
     # Ventes du mois en cours (exclure les ventes annulées)
     try:
-        premier_jour_mois = timezone.now().date().replace(day=1)
+        premier_jour_mois = timezone.localdate().replace(day=1)
         ventes_mois = Vente.objects.filter(
             boutique=boutique,
             date_vente__date__gte=premier_jour_mois,
@@ -1203,7 +1210,7 @@ def entrer_boutique(request, boutique_id):
     
     # 💰 NÉGOCIATIONS - Statistiques des prix négociés pour cette boutique
     debut_mois = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     
     # Négociations du jour
     lignes_negociees_jour = LigneVente.objects.filter(
@@ -1331,9 +1338,9 @@ def rapport_ca_quotidien(request, boutique_id):
         try:
             date_cible = datetime.strptime(date_str, '%Y-%m-%d').date()
         except ValueError:
-            date_cible = timezone.now().date()
+            date_cible = timezone.localdate()
     else:
-        date_cible = timezone.now().date()
+        date_cible = timezone.localdate()
 
     ventes = Vente.objects.filter(
         boutique=boutique,
@@ -2011,7 +2018,7 @@ def exporter_ca_quotidien_pdf(request, boutique_id):
     story.append(Spacer(1, 20))
     
     # Données des 30 derniers jours
-    date_fin = timezone.now().date()
+    date_fin = timezone.localdate()
     date_debut = date_fin - timedelta(days=30)
     
     # Créer les données du tableau
@@ -2449,6 +2456,7 @@ def ajouter_article_boutique(request, boutique_id):
     """Ajouter un article à une boutique spécifique (interface commerçant)"""
     from django.http import JsonResponse
     from inventory.models import Article, Categorie
+    from .websocket_utils import notify_article_created, notify_article_updated, notify_sync_required
     
     boutique = request.boutique
     
@@ -2483,6 +2491,10 @@ def ajouter_article_boutique(request, boutique_id):
                             article_existant.est_valide_client = False
                             article_existant.quantite_envoyee = quantite_ajout
                             article_existant.save()
+                            
+                            # 🔔 Notifier le(s) terminal(aux) MAUI : stock en attente de validation
+                            notify_article_updated(boutique.id, article_existant)
+                            notify_sync_required(boutique.id, "Nouvelle quantité en attente de validation")
                             
                             return JsonResponse({
                                 'success': True,
@@ -2588,6 +2600,10 @@ def ajouter_article_boutique(request, boutique_id):
                 if variantes_creees > 0:
                     msg += f' avec {variantes_creees} variante(s)'
                 
+                # 🔔 Notifier le(s) terminal(aux) MAUI : nouvel article créé → sync immédiate
+                notify_article_created(boutique.id, article)
+                notify_sync_required(boutique.id, "Nouvel article ajouté depuis le web")
+                
                 return JsonResponse({
                     'success': True, 
                     'message': msg,
@@ -2616,6 +2632,10 @@ def ajouter_article_boutique(request, boutique_id):
                         article_existant.est_valide_client = False
                         article_existant.quantite_envoyee = quantite_ajout
                         article_existant.save()
+                        
+                        # 🔔 Notifier le(s) terminal(aux) MAUI : quantité en attente de validation
+                        notify_article_updated(boutique.id, article_existant)
+                        notify_sync_required(boutique.id, "Nouvelle quantité en attente de validation")
                         
                         messages.success(request, f'✅ Ajout de +{quantite_ajout} unités à "{article_existant.nom}" envoyé pour validation client')
                     else:
@@ -2674,6 +2694,11 @@ def ajouter_article_boutique(request, boutique_id):
             if variantes_creees > 0:
                 msg += f' {variantes_creees} variante(s) créée(s).'
             messages.success(request, msg)
+            
+            # 🔔 Notifier le(s) terminal(aux) MAUI : nouvel article créé → sync immédiate
+            notify_article_created(boutique.id, article)
+            notify_sync_required(boutique.id, "Nouvel article ajouté depuis le web")
+            
             return redirect('inventory:entrer_boutique', boutique_id=boutique.id)
         else:
             for field, errors in form.errors.items():
@@ -3428,7 +3453,7 @@ def ventes_boutique(request, boutique_id):
     terminal_id = request.GET.get('terminal_id')
 
     # Calculer les dates selon la période sélectionnée
-    today = timezone.now().date()
+    today = timezone.localdate()
     if periode == 'TODAY':
         date_debut = today.isoformat()
         date_fin = today.isoformat()
@@ -3623,7 +3648,7 @@ def ventes_boutique(request, boutique_id):
 def ventes_refusees_boutique(request, boutique_id):
     """Affiche les ventes refusées de la boutique avec statistiques"""
     boutique = request.boutique
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     
     # Récupérer les ventes refusées de la boutique
     ventes_refusees = VenteRejetee.objects.filter(
@@ -5174,9 +5199,9 @@ def approvisionner_facture(request, depot_id):
                 
                 # Date de facture
                 try:
-                    date_facture = datetime.strptime(date_facture_str, '%Y-%m-%d').date() if date_facture_str else timezone.now().date()
+                    date_facture = datetime.strptime(date_facture_str, '%Y-%m-%d').date() if date_facture_str else timezone.localdate()
                 except ValueError:
-                    date_facture = timezone.now().date()
+                    date_facture = timezone.localdate()
                 
                 # Vérifier unicité du numéro de facture
                 if FactureApprovisionnement.objects.filter(numero_facture=numero_facture, depot=depot).exists():
@@ -5336,7 +5361,7 @@ def approvisionner_facture(request, depot_id):
         'categories': categories,
         'articles_existants': articles_existants,
         'derniers_appros_json': json.dumps(derniers_appros),
-        'today': timezone.now().date().isoformat(),
+        'today': timezone.localdate().isoformat(),
     }
     
     return render(request, 'inventory/commercant/approvisionner_facture.html', context)
@@ -5404,9 +5429,9 @@ def approvisionner_facture_boutique(request, boutique_id):
                 
                 # Date de facture
                 try:
-                    date_facture = datetime.strptime(date_facture_str, '%Y-%m-%d').date() if date_facture_str else timezone.now().date()
+                    date_facture = datetime.strptime(date_facture_str, '%Y-%m-%d').date() if date_facture_str else timezone.localdate()
                 except ValueError:
-                    date_facture = timezone.now().date()
+                    date_facture = timezone.localdate()
                 
                 # Vérifier unicité du numéro de facture pour cette boutique
                 if FactureApprovisionnement.objects.filter(numero_facture=numero_facture, depot=boutique).exists():
@@ -5562,7 +5587,7 @@ def approvisionner_facture_boutique(request, boutique_id):
         'categories': categories,
         'articles_existants': articles_existants,
         'derniers_appros_json': json.dumps(derniers_appros),
-        'today': timezone.now().date().isoformat(),
+        'today': timezone.localdate().isoformat(),
     }
     
     return render(request, 'inventory/commercant/approvisionner_facture.html', context)
@@ -6179,7 +6204,7 @@ def nouvel_inventaire(request, depot_id):
         return redirect('inventory:detail_inventaire', depot_id=depot.id, inventaire_id=inventaire_en_cours.id)
     
     if request.method == 'POST':
-        date_inventaire = request.POST.get('date_inventaire', timezone.now().date())
+        date_inventaire = request.POST.get('date_inventaire', timezone.localdate())
         notes = request.POST.get('notes', '')
         
         # Créer l'inventaire
@@ -6214,7 +6239,7 @@ def nouvel_inventaire(request, depot_id):
     context = {
         'depot': depot,
         'nb_articles': Article.objects.filter(boutique=depot, est_actif=True).count(),
-        'today': timezone.now().date(),
+        'today': timezone.localdate(),
     }
     return render(request, 'inventory/commercant/nouvel_inventaire.html', context)
 
@@ -6500,7 +6525,7 @@ def nouvel_inventaire_boutique(request, boutique_id):
         return redirect('inventory:detail_inventaire_boutique', boutique_id=boutique.id, inventaire_id=inventaire_en_cours.id)
     
     if request.method == 'POST':
-        date_inventaire = request.POST.get('date_inventaire', timezone.now().date())
+        date_inventaire = request.POST.get('date_inventaire', timezone.localdate())
         notes = request.POST.get('notes', '')
         
         inventaire = Inventaire.objects.create(
@@ -6533,7 +6558,7 @@ def nouvel_inventaire_boutique(request, boutique_id):
     context = {
         'boutique': boutique,
         'nb_articles': Article.objects.filter(boutique=boutique, est_actif=True).count(),
-        'today': timezone.now().date(),
+        'today': timezone.localdate(),
     }
     return render(request, 'inventory/commercant/nouvel_inventaire_boutique.html', context)
 
@@ -6718,6 +6743,9 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
             'article_id': l.article.id,
             'nom': str(l.article.nom) if l.article.nom else '',
             'code': str(l.article.code) if l.article.code else '',
+            # 🔍 Codes-barres supplémentaires : toutes les VARIANTES de l'article
+            'codes': ([str(l.article.code) if l.article.code else '']
+                      + [str(v.code_barre) for v in l.article.variantes.filter(est_actif=True) if v.code_barre]),
             'stock_theorique': l.stock_theorique or 0,
             'stock_physique': l.stock_physique or 0,
             'assigne_a': str(l.assigne_a) if l.assigne_a else '',
@@ -6734,6 +6762,21 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         {'id': c.id, 'nom': str(c.nom) if c.nom else ''}
         for c in Categorie.objects.filter(boutique=boutique).order_by('nom')
     ], ensure_ascii=False)
+
+    # 🔍 Carte code-barres VARIANTES → article PARENT (pour le scan en inventaire)
+    # Scanner le code-barres d'une variante doit retrouver la ligne de l'article parent.
+    from .models import VarianteArticle
+    variants_scan = {
+        str(v.code_barre): {
+            'article_id': v.article_parent_id,
+            'nom': v.nom_complet,
+        }
+        for v in VarianteArticle.objects.filter(
+            article_parent__boutique=boutique, est_actif=True
+        ).select_related('article_parent')
+        if v.code_barre
+    }
+    variants_scan_json = json.dumps(variants_scan, ensure_ascii=False)
 
     is_collaborateur = hasattr(request.user, 'profil_collaborateur')
 
@@ -6755,6 +6798,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
         'all_articles_json': all_articles_json,
         'categories_json': categories_json,
+        'variants_scan_json': variants_scan_json,
         'ajax_url': f"/commercant/boutiques/{boutique.id}/inventaires/{inventaire.id}/saisir-ligne/",
     }
     return render(request, 'inventory/commercant/saisir_inventaire_boutique.html', context)
@@ -7774,7 +7818,7 @@ def suivi_articles_recents(request, depot_id):
     date_fin = request.GET.get('date_fin', '').strip()
     
     # Par défaut: aujourd'hui uniquement
-    aujourd_hui = datetime.now().date()
+    aujourd_hui = timezone.localdate()
     if not date_debut:
         date_debut = aujourd_hui.strftime('%Y-%m-%d')
     if not date_fin:
@@ -7893,7 +7937,7 @@ def journal_valeur_stock_boutique(request, boutique_id):
     boutique = request.boutique
 
     # Dates par défaut : 30 derniers jours
-    date_fin = timezone.now().date()
+    date_fin = timezone.localdate()
     date_debut = date_fin - timedelta(days=30)
 
     date_debut_str = request.GET.get('date_debut')
@@ -8224,7 +8268,7 @@ def exporter_historique_ventes_pdf(request, boutique_id):
         mois = timezone.now().month
 
     # Vérifier que le mois est bien terminé
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     mois_en_cours = aujourd_hui.replace(day=1)
     mois_demande = aujourd_hui.replace(year=annee, month=mois, day=1)
     if mois_demande >= mois_en_cours:

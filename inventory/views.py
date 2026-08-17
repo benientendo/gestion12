@@ -492,7 +492,7 @@ def historique_ventes(request):
     terminal_id = request.GET.get('terminal_id')
     
     # Calculer les dates selon la période sélectionnée
-    today = timezone.now().date()
+    today = timezone.localdate()
     if periode == 'TODAY':
         date_debut = today.isoformat()
         date_fin = today.isoformat()
@@ -803,8 +803,8 @@ def details_client_maui(request, client_id):
     stats = {
         'total_ventes': ventes.count(),
         'montant_total': ventes.aggregate(Sum('montant_total'))['montant_total__sum'] or 0,
-        'ventes_aujourd_hui': ventes.filter(date_vente__date=timezone.now().date()).count(),
-        'montant_aujourd_hui': ventes.filter(date_vente__date=timezone.now().date()).aggregate(Sum('montant_total'))['montant_total__sum'] or 0,
+        'ventes_aujourd_hui': ventes.filter(date_vente__date=timezone.localdate()).count(),
+        'montant_aujourd_hui': ventes.filter(date_vente__date=timezone.localdate()).aggregate(Sum('montant_total'))['montant_total__sum'] or 0,
     }
     
     # Sessions récentes
@@ -881,7 +881,7 @@ def dashboard_clients_maui(request):
         ).distinct().count()
         
         # Ventes du jour par client
-        aujourd_hui = timezone.now().date()
+        aujourd_hui = timezone.localdate()
         ventes_aujourd_hui = Vente.objects.filter(
             boutique__commercant=commercant,
             date_vente__date=aujourd_hui

@@ -87,6 +87,7 @@ class Command(BaseCommand):
 
         for mouv in mouvements:
             article = mouv.article
+            # ⚠️ Cohérence: valeur au PRIX DE VENTE (valeur commerciale confiée au gérant)
             prix_vente = Decimal(str(article.prix_vente or 0))
             quantite = abs(mouv.quantite)
             valeur = prix_vente * quantite
@@ -148,3 +149,16 @@ class Command(BaseCommand):
         # Recalculer les valeurs_stock_precedent dans l'ordre chronologique
         recalculer_tout_depuis_debut(boutique)
         self.stdout.write(f"    → Chaîne valeur_stock_precedent recalculée")
+
+        # ⚠️ Ancrer la PREMIÈRE ligne sur la valeur réelle du stock (Σ qté × prix de vente)
+        # pour éviter un restant négatif/inexplicable au démarrage du journal.
+        premiere = JournalValeurStock.objects.filter(boutique=boutique).order_by('date').first()
+        if premiere and premiere.valeur_stock_precedent == 0:
+            from inventory.journal_valeur_stock import _calculer_valeur_stock_reel
+            premiere.valeur_stock_precedent = _calculer_valeur_stock_reel(boutique)
+            premiere.recalculer_valeur_restant()
+            premiere.save(update_fields=['valeur_stock_precedent', 'valeur_stock_restant', 'updated_at'])
+            recalculer_tout_depuis_debut(boutique)
+            self.stdout.write(
+                f"    → Première ligne ancrée sur la valeur réelle du stock : {premiere.valeur_stock_precedent} FC"
+            )

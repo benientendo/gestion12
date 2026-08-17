@@ -62,7 +62,12 @@ class ArticleSerializer(serializers.ModelSerializer):
 
 
 class VarianteArticleSerializer(serializers.ModelSerializer):
-    """Serializer pour les variantes d'articles avec code-barres."""
+    """Serializer pour les variantes d'articles avec code-barres.
+
+    ⚠️ Conformité stock: les variantes sont des identifiants (code-barres) uniquement.
+    Le stock est TOUJOURS sur l'article parent (Article.quantite_stock).
+    'quantite_stock' est en lecture seule pour éviter toute divergence.
+    """
     
     article_parent_id = serializers.PrimaryKeyRelatedField(
         queryset=Article.objects.all(),
@@ -85,7 +90,7 @@ class VarianteArticleSerializer(serializers.ModelSerializer):
             'prix_vente', 'prix_achat', 'devise', 'nom_complet',
             'image_url', 'date_creation', 'date_mise_a_jour'
         ]
-        read_only_fields = ['date_creation', 'date_mise_a_jour']
+        read_only_fields = ['date_creation', 'date_mise_a_jour', 'quantite_stock']
     
     def get_image_url(self, obj):
         request = self.context.get('request')

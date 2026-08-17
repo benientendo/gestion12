@@ -267,7 +267,7 @@ def send_daily_report(boutique_id):
     
     try:
         boutique = Boutique.objects.get(id=boutique_id)
-        today = timezone.now().date()
+        today = timezone.localdate()
         
         # Récupérer les ventes du jour
         ventes = Vente.objects.filter(

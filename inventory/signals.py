@@ -242,6 +242,11 @@ def alimenter_journal_valeur_stock(sender, instance, created, **kwargs):
         return
 
     boutique = article.boutique
+    # ⚠️ Cohérence journal: TOUTES les valeurs sont au PRIX DE VENTE (valeur
+    #    commerciale confiée au gérant), comme exigé :
+    #    - entrée 100 u × PV 100 = 10 000 FC confiés
+    #    - vente 40 u × PV 100 = 4 000 FC retirés
+    #    - restant 60 u × PV 100 = 6 000 FC
     prix_vente = Decimal(str(article.prix_vente or 0))
     quantite = abs(instance.quantite)
     valeur = prix_vente * quantite
@@ -256,21 +261,11 @@ def alimenter_journal_valeur_stock(sender, instance, created, **kwargs):
 
     try:
         if type_mouv == 'VENTE':
-            # Utiliser le vrai montant de la LigneVente si disponible
-            # (prix réel = peut être négocié, différent de article.prix_vente actuel)
-            valeur_reelle = None
-            if ref:
-                try:
-                    from .models import LigneVente
-                    ligne_vente = LigneVente.objects.filter(
-                        vente__numero_facture=ref,
-                        article=article
-                    ).first()
-                    if ligne_vente:
-                        valeur_reelle = ligne_vente.prix_unitaire * Decimal(str(abs(instance.quantite)))
-                except Exception:
-                    pass
-            jvs.enregistrer_vente(boutique, valeur_reelle if valeur_reelle is not None else valeur, date_mouv)
+            # ⭐ Cohérence: on retire la valeur au PRIX DE VENTE catalogue de l'article.
+            #    Le prix NÉGOCIÉ (ex: vendu 90 au lieu de 100) ne doit PAS être utilisé ici,
+            #    sinon la formule casse : 10000 − (40×90) ≠ 60×100. Le négocié reste
+            #    tracé dans Vente/LigneVente (CA réel).
+            jvs.enregistrer_vente(boutique, prix_vente * quantite, date_mouv)
 
         elif type_mouv == 'ENTREE':
             if ref.startswith('TRANSFERT-'):
@@ -286,6 +281,7 @@ def alimenter_journal_valeur_stock(sender, instance, created, **kwargs):
 
         elif type_mouv == 'AJUSTEMENT':
             # quantite signé : positif = ajout de valeur, négatif = retrait
+            # ⭐ Valeur au prix de vente (valeur commerciale confiée au gérant)
             impact = prix_vente * Decimal(str(instance.quantite))
             jvs.enregistrer_inventaire(boutique, impact, date_mouv)
 
@@ -336,7 +332,7 @@ def synchroniser_inventaire_en_cours(sender, instance, created, **kwargs):
             )
 
 
-# Stockage temporaire du prix_vente avant modification
+# Stockage temporaire du prix de vente avant modification
 _prix_vente_avant_save = {}
 
 
@@ -354,8 +350,9 @@ def capturer_prix_vente_avant_modification(sender, instance, **kwargs):
 @receiver(post_save, sender=Article)
 def enregistrer_impact_modification_prix_vente(sender, instance, created, **kwargs):
     """
-    Quand le prix de vente d'un article change, enregistre l'impact
-    sur la valeur du stock dans le journal (nouveau_pv - ancien_pv) * qté_stock.
+    Quand le prix de VENTE d'un article change, enregistre l'impact
+    sur la valeur commerciale du stock dans le journal
+    (nouveau_pv - ancien_pv) * qté_stock.
     """
     if created:
         _prix_vente_avant_save.pop(instance.pk, None)
@@ -366,7 +363,7 @@ def enregistrer_impact_modification_prix_vente(sender, instance, created, **kwar
         return
 
     ancien_prix_vente = _prix_vente_avant_save.pop(instance.pk, None)
-    if not ancien_prix_vente:
+    if ancien_prix_vente is None:
         return
 
     if ancien_prix_vente == instance.prix_vente:

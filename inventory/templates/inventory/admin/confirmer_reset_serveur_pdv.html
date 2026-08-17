@@ -1,0 +1,62 @@
+{% extends 'inventory/base.html' %}
+
+{% block title %}⚠️ Confirmer la réinitialisation serveur - {{ terminal.nom_terminal }}{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 680px; margin-top: 40px;">
+    <div class="card">
+        <div class="card-header bg-danger text-white">
+            <h4 class="mb-0"><i class="fas fa-exclamation-triangle"></i> ⚠️ Réinitialisation serveur COMPLÈTE du point de vente</h4>
+        </div>
+        <div class="card-body">
+            <p>
+                Vous êtes sur le point de <strong>remettre à ZÉRO côté serveur</strong> tout ce qui a été
+                ajouté pour ce point de vente :
+            </p>
+            <ul>
+                <li><strong>PDV :</strong> {{ terminal.nom_terminal }} (<code>{{ terminal.numero_serie }}</code>)</li>
+                <li><strong>Boutique :</strong> {{ boutique.nom }}</li>
+            </ul>
+
+            <div class="alert alert-danger">
+                <h5 class="mb-2">Ce qui va être DÉFINITIVEMENT supprimé :</h5>
+                <table class="table table-sm table-bordered mb-0">
+                    <tr><td>Articles</td><td class="text-end"><strong>{{ decompte.articles }}</strong></td></tr>
+                    <tr><td>Variantes</td><td class="text-end"><strong>{{ decompte.variantes }}</strong></td></tr>
+                    <tr><td>Ventes</td><td class="text-end"><strong>{{ decompte.ventes }}</strong></td></tr>
+                    <tr><td>Lignes de vente</td><td class="text-end"><strong>{{ decompte.lignes_vente }}</strong></td></tr>
+                    <tr><td>Mouvements de stock</td><td class="text-end"><strong>{{ decompte.mouvements_stock }}</strong></td></tr>
+                    <tr><td>Journal de valeur de stock</td><td class="text-end"><strong>{{ decompte.journal_valeur_stock }}</strong></td></tr>
+                    <tr><td>Alertes stock</td><td class="text-end"><strong>{{ decompte.alertes_stock }}</strong></td></tr>
+                    <tr><td>Ventes rejetées</td><td class="text-end"><strong>{{ decompte.ventes_rejetees }}</strong></td></tr>
+                    <tr><td>Négociations / Retours</td><td class="text-end"><strong>{{ decompte.articles_negocies }} / {{ decompte.retours_articles }}</strong></td></tr>
+                    <tr><td>Catégories</td><td class="text-end"><strong>{{ decompte.categories }}</strong></td></tr>
+                </table>
+                <p class="mb-0 mt-2"><strong>Opération IRRÉVERSIBLE.</strong> Le terminal MAUI n'est pas supprimé,
+                mais il repartira de zéro à la prochaine synchronisation.</p>
+            </div>
+
+            <form method="post" action="{% url 'inventory:reinitialiser_pdv_serveur_direct' terminal.id %}">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label class="form-label">Confirmation obligatoire — tapez <code>RÉINITIALISER</code> :</label>
+                    <input type="text" name="confirmation" class="form-control" required
+                           placeholder="RÉINITIALISER" autocomplete="off">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Commentaire (optionnel)</label>
+                    <input type="text" name="reponse" class="form-control"
+                           placeholder="Ex: Fermeture définitive de ce point de vente">
+                </div>
+                <div class="d-flex justify-content-between">
+                    <a href="{% url 'admin:index' %}" class="btn btn-outline-secondary">Annuler</a>
+                    <button type="submit" class="btn btn-danger"
+                            onclick="var v=document.querySelector('[name=confirmation]').value; if(v.trim().toUpperCase()!=='RÉINITIALISER'.replace('É','E').toUpperCase() && v.trim().toUpperCase()!=='REINITIALISER') { alert('Tapez RÉINITIALISER pour confirmer'); return false; }">
+                        <i class="fas fa-undo-alt"></i> Oui, tout remettre à zéro
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1014,15 +1014,11 @@ def recherche_par_code_barre(request):
         parent = variante.article_parent
         logger.info(f"✅ Variante trouvée: {variante.nom_complet} → Parent: {parent.nom}")
         
-        # ⭐ SOMME de toutes les quantités des variantes actives
-        from django.db.models import Sum
-        total_stock_variantes = parent.variantes.filter(est_actif=True).aggregate(
-            total=Sum('quantite_stock')
-        )['total'] or 0
-        
-        # Retourner l'article parent avec la SOMME des stocks variantes
+        # ⭐ Conformité stock: le stock est TOUJOURS sur le parent (les variantes sont
+        #    des identifiants uniquement — migrés à 0 via migrate_variant_stock_to_parent).
+        #    On ne somme plus les stocks variantes pour éviter le double comptage.
         parent_data = ArticleSerializer(parent, context={'request': request}).data
-        parent_data['quantite_stock'] = total_stock_variantes  # Remplacer par la somme
+        total_stock_variantes = parent.quantite_stock  # Source unique = article parent
         
         return Response({
             'found': True,
@@ -1120,7 +1116,13 @@ class VarianteArticleViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def ajuster_stock(self, request, pk=None):
-        """Ajuste le stock d'une variante spécifique."""
+        """Ajuste le stock d'une variante spécifique.
+
+        ⚠️ Conformité stock: les variantes sont des identifiants (code-barres) uniquement.
+        Le stock vit sur l'ARTICLE PARENT (Article.quantite_stock) — seule source utilisée
+        par MAUI et les ventes (api/v2/simple). L'ajustement est donc appliqué au parent,
+        avec création d'un MouvementStock pour traçabilité.
+        """
         logger = logging.getLogger(__name__)
         
         try:
@@ -1128,25 +1130,37 @@ class VarianteArticleViewSet(viewsets.ModelViewSet):
             quantite = int(request.data.get('quantite', 0))
             operation = request.data.get('operation', 'AJUSTEMENT')
             
-            stock_avant = variante.quantite_stock
-            variante.quantite_stock += quantite
+            parent = Article.objects.select_for_update().get(pk=variante.article_parent_id)
+            stock_avant = parent.quantite_stock
+            nouveau_stock = stock_avant + quantite
             
-            if variante.quantite_stock < 0:
+            if nouveau_stock < 0:
                 return Response({
                     'error': 'Stock insuffisant',
                     'stock_actuel': stock_avant,
                     'quantite_demandee': abs(quantite)
                 }, status=status.HTTP_400_BAD_REQUEST)
             
-            variante.save()
+            parent.quantite_stock = nouveau_stock
+            parent.save(update_fields=['quantite_stock'])
             
-            logger.info(f"📦 Stock variante {variante.code_barre}: {stock_avant} → {variante.quantite_stock}")
+            MouvementStock.objects.create(
+                article=parent,
+                type_mouvement='AJUSTEMENT',
+                quantite=quantite,
+                stock_avant=stock_avant,
+                stock_apres=nouveau_stock,
+                reference_document=f"VARIANTE-{variante.code_barre}",
+                commentaire=f"Ajustement via variante {variante.nom_variante} ({variante.code_barre}) - {operation}"
+            )
+            
+            logger.info(f"📦 Stock ajusté via variante {variante.code_barre}: parent {stock_avant} → {nouveau_stock}")
             
             return Response({
                 'success': True,
                 'variante': self.get_serializer(variante).data,
                 'stock_avant': stock_avant,
-                'stock_apres': variante.quantite_stock,
+                'stock_apres': nouveau_stock,
                 'operation': operation
             })
             

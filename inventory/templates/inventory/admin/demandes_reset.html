@@ -1,0 +1,164 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Demandes de réinitialisation PDV - Administration{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1><i class="fas fa-undo-alt"></i> Demandes de réinitialisation PDV</h1>
+                    <p class="text-muted">Les réinitialisations sont exécutées UNIQUEMENT après validation par un administrateur.</p>
+                </div>
+                <div>
+                    <a href="{% url 'admin:index' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour admin
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- En attente -->
+    <div class="card mb-4 border-warning">
+        <div class="card-header bg-warning text-dark">
+            <h5 class="mb-0"><i class="fas fa-clock"></i> En attente de validation
+                <span class="badge bg-dark ms-2">{{ demandes.en_attente|length }}</span></h5>
+        </div>
+        <div class="card-body">
+            {% if demandes.en_attente %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>#</th><th>Point de vente</th><th>Boutique</th><th>Type</th><th>Demandeur</th>
+                                <th>Date demande</th><th>Motif</th><th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in demandes.en_attente %}
+                            <tr>
+                                <td>{{ d.id }}</td>
+                                <td><strong>{{ d.terminal.nom_terminal }}</strong><br>
+                                    <code>{{ d.terminal.numero_serie }}</code></td>
+                                <td>{{ d.boutique.nom }}</td>
+                                <td>
+                                    {% if d.type_reset == 'SERVEUR' %}
+                                        <span class="badge bg-danger">Serveur complet (destructif)</span>
+                                    {% else %}
+                                        <span class="badge bg-primary">Re-validation MAUI</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ d.demandeur.username|default:"—" }}</td>
+                                <td><small>{{ d.date_demande|date:"d/m/Y H:i" }}</small></td>
+                                <td>{{ d.motif|default:"—" }}</td>
+                                <td style="min-width: 320px;">
+                                    <form method="post" action="{% url 'inventory:valider_demande_reset' d.id %}" class="mb-2">
+                                        {% csrf_token %}
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" name="reponse" class="form-control"
+                                                   placeholder="Commentaire (optionnel)">
+                                            {% if d.type_reset == 'SERVEUR' %}
+                                            <button class="btn btn-danger" type="submit"
+                                                    onclick="return confirm('⚠️ RÉINITIALISATION SERVEUR COMPLÈTE de {{ d.terminal.nom_terminal }} ?\n\nTOUS les articles, ventes et mouvements de la boutique seront SUPPRIMÉS définitivement.')">
+                                                <i class="fas fa-skull"></i> Valider &amp; tout remettre à zéro
+                                            </button>
+                                            {% else %}
+                                            <button class="btn btn-success" type="submit"
+                                                    onclick="return confirm('Valider la réinitialisation de {{ d.terminal.nom_terminal }} ? Les articles seront remis en attente de re-validation.')">
+                                                <i class="fas fa-check"></i> Valider &amp; exécuter
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </form>
+                                    <form method="post" action="{% url 'inventory:refuser_demande_reset' d.id %}" class="mb-0">
+                                        {% csrf_token %}
+                                        <div class="input-group input-group-sm">
+                                            <input type="text" name="reponse" class="form-control"
+                                                   placeholder="Motif du refus (optionnel)">
+                                            <button class="btn btn-outline-danger" type="submit">
+                                                <i class="fas fa-times"></i> Refuser
+                                            </button>
+                                        </div>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted mb-0">Aucune demande en attente.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Historique -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-history"></i> Historique
+                <span class="badge bg-success ms-2">{{ demandes.validees|length }} validées</span>
+                <span class="badge bg-danger ms-2">{{ demandes.refusees|length }} refusées</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            {% if demandes.validees or demandes.refusees %}
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>#</th><th>PDV</th><th>Boutique</th><th>Type</th><th>Statut</th><th>Traité par</th>
+                                <th>Date traitement</th><th>Résultat</th><th>Réponse</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in demandes.validees %}
+                            <tr class="table-success">
+                                <td>{{ d.id }}</td>
+                                <td>{{ d.terminal.nom_terminal }}</td>
+                                <td>{{ d.boutique.nom }}</td>
+                                <td>
+                                    {% if d.type_reset == 'SERVEUR' %}
+                                        <span class="badge bg-danger">Serveur complet</span>
+                                    {% else %}
+                                        <span class="badge bg-primary">MAUI</span>
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge bg-success">Validée</span></td>
+                                <td>{{ d.traite_par.username|default:"—" }}</td>
+                                <td><small>{{ d.date_traitement|date:"d/m/Y H:i" }}</small></td>
+                                <td><small>{{ d.resultat }}</small></td>
+                                <td><small>{{ d.reponse_admin|default:"—" }}</small></td>
+                            </tr>
+                            {% endfor %}
+                            {% for d in demandes.refusees %}
+                            <tr class="table-danger">
+                                <td>{{ d.id }}</td>
+                                <td>{{ d.terminal.nom_terminal }}</td>
+                                <td>{{ d.boutique.nom }}</td>
+                                <td>
+                                    {% if d.type_reset == 'SERVEUR' %}
+                                        <span class="badge bg-danger">Serveur complet</span>
+                                    {% else %}
+                                        <span class="badge bg-primary">MAUI</span>
+                                    {% endif %}
+                                </td>
+                                <td><span class="badge bg-danger">Refusée</span></td>
+                                <td>{{ d.traite_par.username|default:"—" }}</td>
+                                <td><small>{{ d.date_traitement|date:"d/m/Y H:i" }}</small></td>
+                                <td><small>{{ d.resultat }}</small></td>
+                                <td><small>{{ d.reponse_admin|default:"—" }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted mb-0">Aucune demande traitée.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

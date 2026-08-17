@@ -22,7 +22,7 @@ def dashboard_mobile_money(request, boutique_id):
     boutique = get_object_or_404(Boutique, id=boutique_id, commercant=commercant, type_commerce='MOBILE_MONEY')
     
     # Statistiques du jour
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     transactions_jour = boutique.transactions_mobile_money.filter(
         date_transaction__date=aujourd_hui,
         statut='CONFIRME'
@@ -175,7 +175,7 @@ def rapport_mobile_money(request, boutique_id):
     boutique = get_object_or_404(Boutique, id=boutique_id, commercant=commercant, type_commerce='MOBILE_MONEY')
     
     # Période (défaut: 7 derniers jours)
-    date_fin = timezone.now().date()
+    date_fin = timezone.localdate()
     date_debut = date_fin - timedelta(days=6)
     
     if request.GET.get('date_debut'):
@@ -232,7 +232,7 @@ def dashboard_credit(request, boutique_id):
     commercant = get_object_or_404(Commercant, user=request.user)
     boutique = get_object_or_404(Boutique, id=boutique_id, commercant=commercant, type_commerce='MOBILE_MONEY')
     
-    aujourd_hui = timezone.now().date()
+    aujourd_hui = timezone.localdate()
     
     # Ventes du jour
     ventes_jour = boutique.ventes_credit.filter(date_vente__date=aujourd_hui)

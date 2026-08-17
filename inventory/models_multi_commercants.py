@@ -135,14 +135,14 @@ class Boutique(models.Model):
     def nombre_ventes_aujourd_hui(self):
         """Retourne le nombre de ventes d'aujourd'hui"""
         from django.utils import timezone
-        aujourd_hui = timezone.now().date()
+        aujourd_hui = timezone.localdate()
         return self.ventes.filter(date_vente__date=aujourd_hui).count()
     
     def chiffre_affaires_aujourd_hui(self):
         """Retourne le chiffre d'affaires d'aujourd'hui"""
         from django.utils import timezone
         from django.db.models import Sum
-        aujourd_hui = timezone.now().date()
+        aujourd_hui = timezone.localdate()
         result = self.ventes.filter(
             date_vente__date=aujourd_hui,
             paye=True

@@ -12,7 +12,7 @@ whitenoise==6.6.0
 # ASGI Server (WebSocket + HTTP/2)
 daphne==4.0.0
 
-# Dj<ango Channels - WebSocket
+# Django Channels - WebSocket
 channels==4.0.0
 channels-redis==4.1.0
 
@@ -42,3 +42,6 @@ openpyxl==3.1.2
 
 # Variables d'environnement
 python-dotenv==1.0.0
+
+# 🔔 Notifications push (FCM / Firebase) — optionnel, désactivé sans compte de service
+firebase-admin==6.5.0

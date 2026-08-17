@@ -89,6 +89,18 @@ def notify_article_created(boutique_id, article):
     except Exception as e:
         logger.error(f"❌ Erreur envoi WebSocket article_created: {e}")
 
+    # 🔔 PUSH FCM (même si l'app est fermée)
+    try:
+        from .services.firebase_push import envoyer_push_boutique
+        envoyer_push_boutique(
+            boutique_id,
+            "Nouvel article",
+            f"{article.nom} a été ajouté au catalogue.",
+            data={'type': 'article_created', 'article_id': article.id}
+        )
+    except Exception as e:
+        logger.error(f"❌ Erreur push FCM article_created: {e}")
+
 
 def notify_article_deleted(boutique_id, article_id):
     """
@@ -209,11 +221,11 @@ def notify_category_updated(boutique_id, category):
 
 def notify_sync_required(boutique_id, reason="Synchronisation demandée"):
     """
-    Demander à tous les POS de faire une synchronisation complète
+    Notifier tous les POS qu'une synchronisation est requise
     
     Args:
         boutique_id: ID de la boutique
-        reason: Raison de la synchronisation
+        reason: Motif de la synchronisation
     """
     try:
         channel_layer = get_channel_layer()
@@ -227,10 +239,22 @@ def notify_sync_required(boutique_id, reason="Synchronisation demandée"):
             }
         )
         
-        logger.info(f"🔔 WebSocket: Sync requise envoyée à boutique {boutique_id} - {reason}")
+        logger.info(f"🔔 WebSocket: Sync requise envoyée à boutique {boutique_id} ({reason})")
         
     except Exception as e:
         logger.error(f"❌ Erreur envoi WebSocket sync_required: {e}")
+
+    # 🔔 PUSH FCM (même si l'app est fermée)
+    try:
+        from .services.firebase_push import envoyer_push_boutique
+        envoyer_push_boutique(
+            boutique_id,
+            "Synchronisation nécessaire",
+            reason,
+            data={'type': 'sync_required', 'reason': reason}
+        )
+    except Exception as e:
+        logger.error(f"❌ Erreur push FCM sync_required: {e}")
 
 
 def notify_stock_alert(boutique_id, article_id, article_nom, stock_actuel, seuil_alerte=10):

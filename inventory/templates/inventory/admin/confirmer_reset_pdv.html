@@ -1,0 +1,46 @@
+{% extends 'inventory/base.html' %}
+
+{% block title %}Confirmer la réinitialisation - {{ terminal.nom_terminal }}{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 640px; margin-top: 40px;">
+    <div class="card">
+        <div class="card-header bg-danger text-white">
+            <h4 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Confirmer la réinitialisation du point de vente</h4>
+        </div>
+        <div class="card-body">
+            <p>
+                Vous êtes sur le point de réinitialiser le point de vente :
+            </p>
+            <ul>
+                <li><strong>Nom :</strong> {{ terminal.nom_terminal }}</li>
+                <li><strong>N° de série :</strong> <code>{{ terminal.numero_serie }}</code></li>
+                <li><strong>Boutique :</strong> {{ terminal.boutique.nom|default:"Aucune" }}</li>
+                <li><strong>Articles concernés :</strong> {{ nb_articles }}</li>
+            </ul>
+            <div class="alert alert-warning">
+                ⚠️ Effet : les articles de la boutique seront remis en attente de
+                re-validation (<code>est_valide_client = False</code>) et le terminal MAUI
+                devra re-synchroniser et re-valider l'ensemble de son stock.
+                <strong>Le stock, les prix et l'historique ne sont pas modifiés.</strong>
+            </div>
+
+            <form method="post" action="{% url 'inventory:reinitialiser_pdv_direct' terminal.id %}">
+                {% csrf_token %}
+                <div class="mb-3">
+                    <label class="form-label">Commentaire (optionnel)</label>
+                    <input type="text" name="reponse" class="form-control"
+                           placeholder="Ex: Le terminal perdait la synchronisation">
+                </div>
+                <div class="d-flex justify-content-between">
+                    <a href="{% url 'admin:index' %}" class="btn btn-outline-secondary">Annuler</a>
+                    <button type="submit" class="btn btn-danger"
+                            onclick="return confirm('Réinitialiser définitivement ce point de vente ?');">
+                        <i class="fas fa-undo-alt"></i> Réinitialiser le point de vente
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

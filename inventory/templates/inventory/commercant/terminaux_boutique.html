@@ -27,6 +27,20 @@
 
     
 
+    <!-- Alertes demandes de réinitialisation en attente -->
+    {% if demandes_en_attente %}
+    <div class="alert alert-warning d-flex justify-content-between align-items-center" role="alert">
+        <div>
+            <i class="fas fa-clock"></i>
+            <strong>{{ demandes_en_attente|length }} demande(s) de réinitialisation en attente de validation :</strong>
+            {% for d in demandes_en_attente %}
+                <span class="badge bg-warning text-dark ms-1">{{ d.terminal.nom_terminal }}</span>
+            {% endfor %}
+            <br><small>La réinitialisation sera exécutée uniquement après validation par l'administrateur.</small>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Liste des terminaux -->
     <div class="row">
         <div class="col-12">
@@ -123,6 +137,28 @@
                                                         title="Supprimer">
                                                     <i class="fas fa-trash"></i>
                                                 </button>
+                                                <form method="post"
+                                                      action="{% url 'inventory:demander_reset_pdv' boutique.id terminal.id %}"
+                                                      class="d-inline"
+                                                      onsubmit="return confirm('Demander la réinitialisation de {{ terminal.nom_terminal }} ?\n\n⚠️ Un administrateur devra VALIDER votre demande avant que la réinitialisation ne soit exécutée.');">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="type_reset" value="MAUI">
+                                                    <button type="submit" class="btn btn-sm btn-outline-info"
+                                                            title="Demander la réinitialisation MAUI (validation admin requise)">
+                                                        <i class="fas fa-undo-alt"></i>
+                                                    </button>
+                                                </form>
+                                                <form method="post"
+                                                      action="{% url 'inventory:demander_reset_pdv' boutique.id terminal.id %}"
+                                                      class="d-inline"
+                                                      onsubmit="return confirm('⚠️ Demander la RÉINITIALISATION SERVEUR COMPLÈTE de {{ terminal.nom_terminal }} ?\n\nTOUS les articles, ventes et mouvements de la boutique seront SUPPRIMÉS côté serveur après validation de l\'administrateur.');">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="type_reset" value="SERVEUR">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                            title="⚠️ Demander la réinitialisation SERVEUR COMPLÈTE (validation admin requise)">
+                                                        <i class="fas fa-skull"></i>
+                                                    </button>
+                                                </form>
                                             </div>
                                         </td>
                                     </tr>

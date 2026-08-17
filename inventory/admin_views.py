@@ -44,6 +44,15 @@ def admin_dashboard(request):
     # Boutiques récentes
     boutiques_recentes = Boutique.objects.select_related('commercant').order_by('-date_creation')[:5]
     
+    # Demandes de réinitialisation PDV en attente
+    try:
+        from .models import DemandeResetPdv
+        nb_demandes_reset_en_attente = DemandeResetPdv.objects.filter(
+            statut='EN_ATTENTE'
+        ).count()
+    except Exception:
+        nb_demandes_reset_en_attente = 0
+
     context = {
         'total_commercants': total_commercants,
         'commercants_actifs': commercants_actifs,
@@ -53,6 +62,7 @@ def admin_dashboard(request):
         'clients_actifs': clients_actifs,
         'commercants_recents': commercants_recents,
         'boutiques_recentes': boutiques_recentes,
+        'nb_demandes_reset_en_attente': nb_demandes_reset_en_attente,
     }
     
     return render(request, 'inventory/admin/dashboard.html', context)
@@ -457,7 +467,7 @@ def liste_erreurs_transactions(request):
         'total': erreurs.count(),
         'non_resolues': erreurs.filter(est_resolu=False).count(),
         'critiques': erreurs.filter(gravite='CRITICAL', est_resolu=False).count(),
-        'aujourd_hui': erreurs.filter(date_creation__date=timezone.now().date()).count(),
+        'aujourd_hui': erreurs.filter(date_creation__date=timezone.localdate()).count(),
     }
     
     # Pagination

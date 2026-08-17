@@ -104,6 +104,9 @@ kbd {
             </span>
             <span class="badge bg-success" id="srNbSaisis">{{ nb_saisis }} saisis</span>
             <span class="badge bg-warning text-dark" id="srNbRestants">{{ nb_non_saisis }} restants</span>
+            <span class="badge bg-info text-dark" id="srValeurInventoriee"
+                  title="Valeur du stock déjà inventorié (recalculée en direct pendant la saisie)"
+                  style="white-space:nowrap;">💵 Valeur : 0 FC</span>
         </div>
 
         <!-- Recherche -->
@@ -351,7 +354,10 @@ kbd {
                         </thead>
                         <tbody>
                             {% for ligne in lignes %}
-                            <tr class="{% if ligne.ecart > 0 %}table-success{% elif ligne.ecart < 0 %}table-danger{% endif %}" data-search="{{ ligne.article.nom|lower }} {{ ligne.article.code|lower }}">
+                            <tr class="{% if ligne.ecart > 0 %}table-success{% elif ligne.ecart < 0 %}table-danger{% endif %}"
+                                        data-search="{{ ligne.article.nom|lower }} {{ ligne.article.code|lower }} {% for v in ligne.article.variantes.all %}{{ v.code_barre }} {% endfor %}"
+                                        data-article-id="{{ ligne.article.id }}"
+                                        data-code-barre="{{ ligne.article.code }}">
                                 <td>
                                     <strong>{{ ligne.article.nom }}</strong>
                                     <br><small class="text-muted">{{ ligne.article.code }}</small>
@@ -898,52 +904,84 @@ if (_scanInput) _scanInput.addEventListener('input', function(e) {
 });
 
 function processBarcodeScan(barcode) {
-    // Chercher l'article par code-barres
+    // 🔍 Carte code-barres VARIANTES → article parent (fournie par Django)
+    const VARIANTS_SCAN = {{ variants_scan_json|safe }};
+    // Nettoyer le code scanné (espaces, retours, caractères parasites)
+    barcode = String(barcode || '').trim().replace(/[\r\n\t]/g, '');
     const rows = document.querySelectorAll('tbody tr');
-    let found = false;
-    
-    for (let row of rows) {
-        const articleCode = row.querySelector('[data-code-barre]')?.dataset.codeBarre;
-        const articleNom = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase();
-        
-        if (articleCode === barcode || articleNom.includes(barcode.toLowerCase())) {
-            found = true;
-            const stockInput = row.querySelector('.stock-input');
-            
-            // Scroll vers l'article
-            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            row.classList.add('table-warning');
-            
-            // Mode accumulation: ajouter 1 automatiquement
-            if (modeAccumulation) {
-                const valeurExistante = stockInput.value ? parseInt(stockInput.value) : 0;
-                const nouvelleValeur = valeurExistante + 1;
-                stockInput.value = nouvelleValeur;
-                stockInput.dataset.valeurExistante = nouvelleValeur;
-                stockInput.dispatchEvent(new Event('input'));
-                
-                setTimeout(() => {
-                    row.classList.remove('table-warning');
-                }, 500);
-            } else {
-                // Mode normal: focus sur le champ stock pour saisie manuelle
-                setTimeout(() => {
-                    stockInput.focus();
-                    stockInput.select();
-                    row.classList.remove('table-warning');
-                }, 500);
-            }
-            
-            // Son de confirmation
-            playBeep();
-            break;
+    let targetRow = null;
+    let scannedVariantNom = '';
+    let articleIdCible = null;
+
+    // 1) Code-barres d'une VARIANTE → retrouver la ligne de l'ARTICLE PARENT
+    const hit = VARIANTS_SCAN[barcode] || VARIANTS_SCAN[barcode.toLowerCase()];
+    if (hit) {
+        scannedVariantNom = hit.nom || '';
+        articleIdCible = String(hit.article_id);
+        for (let row of rows) {
+            if (String(row.dataset.articleId) === articleIdCible) { targetRow = row; break; }
         }
     }
-    
-    if (!found) {
+
+    // 2) Sinon, code-barres DIRECT de l'article parent
+    if (!targetRow && !hit) {
+        for (let row of rows) {
+            const articleCode = row.dataset.codeBarre;
+            if (articleCode && String(articleCode).trim() === barcode) { targetRow = row; break; }
+        }
+    }
+
+    // 3) Dernier recours : recherche par NOM d'article
+    if (!targetRow && !hit) {
+        const b = barcode.toLowerCase();
+        for (let row of rows) {
+            const articleNom = (row.querySelector('td:nth-child(1)')?.textContent || '').toLowerCase();
+            if (articleNom.includes(b)) { targetRow = row; break; }
+        }
+    }
+
+    if (targetRow) {
+        const stockInput = targetRow.querySelector('.stock-input');
+
+        // Scroll vers l'article
+        targetRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        targetRow.classList.add('table-warning');
+
+        // Mode accumulation: ajouter 1 automatiquement
+        if (modeAccumulation) {
+            const valeurExistante = stockInput.value ? parseInt(stockInput.value) : 0;
+            const nouvelleValeur = valeurExistante + 1;
+            stockInput.value = nouvelleValeur;
+            stockInput.dataset.valeurExistante = nouvelleValeur;
+            stockInput.dispatchEvent(new Event('input'));
+
+            setTimeout(() => {
+                targetRow.classList.remove('table-warning');
+            }, 500);
+        } else {
+            // Mode normal: focus sur le champ stock pour saisie manuelle
+            setTimeout(() => {
+                stockInput.focus();
+                stockInput.select();
+                targetRow.classList.remove('table-warning');
+            }, 500);
+        }
+
+        // Son de confirmation
+        playBeep();
+
+        // Notification si c'était une variante (le parent est rempli pour la saisie)
+        if (scannedVariantNom) {
+            showToast(`Variante scannée : ${scannedVariantNom} → saisie sur le parent`, 'info');
+        }
+    } else if (hit) {
+        // La variante est reconnue, mais la ligne du parent n'est pas affichée (filtre actif)
+        playErrorBeep();
+        showToast(`Variante reconnue (${scannedVariantNom}) mais l'article n'est pas dans la liste affichée — retirez le filtre ou recherchez l'article.`, 'warning');
+    } else {
         // Son d'erreur
         playErrorBeep();
-        
+
         const notification = document.createElement('div');
         notification.className = 'alert alert-danger alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
         notification.style.zIndex = '9999';
@@ -957,7 +995,8 @@ function processBarcodeScan(barcode) {
     }
     
     // Réinitialiser
-    document.getElementById('searchInventaire').value = '';
+    const searchInput = document.getElementById('searchInventaire');
+    if (searchInput) searchInput.value = '';
     scanBuffer = '';
 }
 
@@ -1064,13 +1103,13 @@ stockInputs.forEach(input => {
             
             // Mise à jour valeur stock
             valeurEl.innerHTML = '<span class="text-info">' + valeurStock.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' FC</span>';
-        } else {
+} else {
             ecartEl.innerHTML = '';
             valeurEl.innerHTML = '<span class="text-muted">—</span>';
             this.closest('tr').className = '';
         }
     });
-    
+
     // Navigation rapide avec Enter (champs importants uniquement)
     input.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -1129,6 +1168,46 @@ stockInputs.forEach(input => {
         }
     });
 });
+
+// 💰 VALEUR GLOBALE INVENTORIÉE — recalculée en direct pendant la saisie
+(function() {
+    // Base : toutes les lignes de l'inventaire (et leur valeur déjà inventoriée)
+    let ALL;
+    try { ALL = {{ all_articles_json|safe }}; } catch (e) { ALL = []; }
+    const BASE_CDF = ALL.reduce(function(s, a) {
+        return s + ((a.devise !== 'USD') ? ((a.stock_physique || 0) * (a.prix_vente || 0)) : 0);
+    }, 0);
+    const BASE_USD = ALL.reduce(function(s, a) {
+        return s + ((a.devise === 'USD') ? ((a.stock_physique || 0) * (a.prix_vente || 0)) : 0);
+    }, 0);
+
+    function recalculerValeurInventoriee() {
+        let cdf = BASE_CDF, usd = BASE_USD;
+        document.querySelectorAll('tbody tr').forEach(function(row) {
+            const artId = String(row.dataset.articleId || '');
+            const art = ALL.find(function(a) { return String(a.article_id) === artId; });
+            if (!art) return;
+            const qte = parseInt((row.querySelector('.stock-input')?.value) || 0) || 0;
+            const prixInput = row.querySelector('.prix-vente-input');
+            const prix = parseFloat(prixInput ? prixInput.value : (art.prix_vente || 0)) || 0;
+            const baseValeur = (art.stock_physique || 0) * (art.prix_vente || 0);
+            const delta = qte * prix - baseValeur;
+            if (art.devise === 'USD') { usd += delta; } else { cdf += delta; }
+        });
+        const el = document.getElementById('srValeurInventoriee');
+        if (!el) return;
+        const fmt = function(n) { return Math.round(n).toLocaleString('fr-FR'); };
+        el.textContent = '💵 Valeur inventoriée : ' + fmt(cdf) + ' FC' + (usd > 0 ? ' | ' + fmt(usd) + ' $' : '');
+    }
+
+    // Recalculer à chaque saisie de stock ET à chaque modification de prix
+    document.addEventListener('input', function(e) {
+        if (e.target && (e.target.classList.contains('stock-input') || e.target.classList.contains('prix-vente-input'))) {
+            recalculerValeurInventoriee();
+        }
+    });
+    recalculerValeurInventoriee();
+})();
 
 // Navigation intelligente pour les commentaires (Tab pour revenir au stock suivant)
 document.querySelectorAll('.commentaire-input').forEach(input => {
@@ -1624,8 +1703,13 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     srSearch.addEventListener('input', function() {
         const q = this.value.trim().toLowerCase();
         if (!q) { closeDropdown(); return; }
+        // 🔍 Recherche sur nom / code parent / codes des VARIANTES
         const results = ARTICLES.filter(function(a) {
-            return a.nom.toLowerCase().includes(q) || a.code.toLowerCase().includes(q);
+            const codes = (a.codes && a.codes.length) ? a.codes : [a.code || ''];
+            const codeOk = codes.some(function(c) {
+                return String(c).toLowerCase().includes(q);
+            });
+            return (a.nom || '').toLowerCase().includes(q) || codeOk;
         }).slice(0, 12);
         openDropdown(results);
     });

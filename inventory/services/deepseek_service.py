@@ -10,6 +10,11 @@ class DeepSeekService:
     @staticmethod
     def _call_deepseek(prompt, use_json=True):
         """Appel générique à l'API DeepSeek"""
+        # 🔐 Sans clé API configurée, on désactive l'IA proprement
+        # (évite tout crash et tout appel inutile).
+        if not getattr(settings, 'DEEPSEEK_API_KEY', ''):
+            print("DeepSeek Service: clé API non configurée — fonctionnalité IA désactivée")
+            return None
         try:
             payload = {
                 "model": settings.DEEPSEEK_MODEL,

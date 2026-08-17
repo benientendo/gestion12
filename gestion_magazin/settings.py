@@ -29,13 +29,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-s=efibuc#+l(2(6i5kr%60p$_avc4v!z5ko#+91j4j7)qs!1q+')
+# 🔐 La clé est lue UNIQUEMENT depuis l'environnement. Sans SECRET_KEY,
+# les sessions, tokens JWT et emails de reset sont falsifiables.
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY and os.environ.get('DEBUG', 'False') == 'True':
+    # Secours uniquement pour le développement local
+    SECRET_KEY = 'django-insecure-dev-only-key-do-not-use-in-production'
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY manquante: définissez la variable d'environnement SECRET_KEY en production.")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+# ⚠️ Pas de défaut permissif: la production doit définir DEBUG=False explicitement
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-# URL de base pour les requêtes API
-BASE_URL = 'http://192.168.52.224'
+# URL de base pour les requêtes API (lue depuis l'environnement)
+BASE_URL = os.environ.get('BASE_URL', 'http://127.0.0.1:8000')
 
 # Configuration des hôtes autorisés
 ALLOWED_HOSTS_ENV = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1')
@@ -63,9 +71,11 @@ if DEBUG:
     CSRF_COOKIE_DOMAIN = None
 
 # DeepSeek API Configuration
-DEEPSEEK_API_KEY = 'sk-94b7b101d7334473a9d46062212d6b7a'
-DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions'
-DEEPSEEK_MODEL = 'deepseek-chat'
+# 🔐 Clé lue depuis l'environnement (JAMAIS en dur dans le code).
+# La clé précédente, commitée en clair, doit être révoquée côté DeepSeek.
+DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
+DEEPSEEK_API_URL = os.environ.get('DEEPSEEK_API_URL', 'https://api.deepseek.com/v1/chat/completions')
+DEEPSEEK_MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')
 
 # Application definition
 
@@ -95,6 +105,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'inventory.middleware.ForceTimezoneMiddleware',  # Forcer le timezone correct
+    'inventory.middleware.TerminalAuthMiddleware',  # 🔐 Sécurité: authentification des terminaux MAUI
 ]
 
 ROOT_URLCONF = 'gestion_magazin.urls'
@@ -102,7 +113,7 @@ ROOT_URLCONF = 'gestion_magazin.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],  # Surcharges de templates (ex: admin/index.html avec boutons custom)
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [

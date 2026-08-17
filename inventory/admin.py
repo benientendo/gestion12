@@ -1,5 +1,69 @@
 from django.contrib import admin
-from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock, VarianteArticle, TransactionMobileMoney, VenteCredit, StockCredit, ApprovisionnementCredit
+from django import forms
+from django.utils import timezone
+from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock, VarianteArticle, TransactionMobileMoney, VenteCredit, StockCredit, ApprovisionnementCredit, DemandeResetPdv, Client
+
+
+class ArticleAdminForm(forms.ModelForm):
+    """Formulaire admin avec traçabilité du stock.
+
+    ⚠️ Toute modification de quantite_stock crée un MouvementStock 'AJUSTEMENT'
+    qui alimente automatiquement le JournalValeurStock (via signals).
+    """
+
+    class Meta:
+        model = Article
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        instance = kwargs.get('instance')
+        if instance and instance.pk:
+            self._ancienne_quantite = instance.quantite_stock
+            self.fields['quantite_stock'].help_text = (
+                f"⚠️ Stock actuel : {instance.quantite_stock}. Toute modification sera "
+                f"tracée dans le journal de valeur de stock (MouvementStock AJUSTEMENT)."
+            )
+        else:
+            self._ancienne_quantite = 0
+            self.fields['quantite_stock'].help_text = (
+                "⚠️ Toute modification sera tracée dans le journal de valeur de stock."
+            )
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if instance.pk:
+            try:
+                ancien = Article.objects.get(pk=instance.pk)
+                ancienne_qte = ancien.quantite_stock
+            except Article.DoesNotExist:
+                ancienne_qte = 0
+        else:
+            ancienne_qte = 0
+
+        nouveau = instance.quantite_stock or 0
+        difference = nouveau - ancienne_qte
+
+        if commit:
+            instance.save()
+
+        # 🔍 Traçabilité : créer le mouvement si le stock a changé
+        if difference != 0:
+            try:
+                MouvementStock.objects.create(
+                    article=instance,
+                    type_mouvement='AJUSTEMENT',
+                    quantite=difference,
+                    stock_avant=ancienne_qte,
+                    stock_apres=nouveau,
+                    reference_document=f"ADMIN-{instance.code or instance.pk}",
+                    utilisateur="Admin Django",
+                    commentaire=f"Ajustement manuel admin: {ancienne_qte} → {nouveau} ({difference:+d})"
+                )
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"[Admin] Erreur traçabilité stock {instance.pk}: {e}")
+        return instance
 
 @admin.register(Categorie)
 class CategorieAdmin(admin.ModelAdmin):
@@ -15,12 +79,16 @@ class VarianteArticleInline(admin.TabularInline):
     """Inline pour gérer les variantes directement depuis l'article."""
     model = VarianteArticle
     extra = 1
-    fields = ('code_barre', 'nom_variante', 'type_attribut', 'quantite_stock', 'est_actif')
-    readonly_fields = ('date_creation',)
+    # ⚠️ Conformité stock: les variantes sont des identifiants (code-barres) uniquement.
+    # Le stock vit sur le PARENT (Article.quantite_stock). 'quantite_stock' est donc
+    # affiché en lecture seule pour éviter toute divergence avec MAUI et les ventes.
+    fields = ('code_barre', 'nom_variante', 'type_attribut', 'est_actif')
+    readonly_fields = ('date_creation', 'quantite_stock')
 
 
 @admin.register(Article)
 class ArticleAdmin(admin.ModelAdmin):
+    form = ArticleAdminForm  # 🔍 Traçabilité du stock dans le journal
     list_display = ('code', 'nom', 'prix_vente', 'prix_achat', 'categorie', 'quantite_stock', 'nb_variantes', 'date_mise_a_jour')
     list_filter = ('categorie', 'date_creation')
     search_fields = ('code', 'nom')
@@ -55,7 +123,7 @@ class VarianteArticleAdmin(admin.ModelAdmin):
     list_display = ('code_barre', 'nom_variante', 'article_parent', 'type_attribut', 'quantite_stock', 'prix_vente', 'est_actif')
     list_filter = ('type_attribut', 'est_actif', 'article_parent__categorie')
     search_fields = ('code_barre', 'nom_variante', 'article_parent__nom', 'article_parent__code')
-    readonly_fields = ('date_creation', 'date_mise_a_jour', 'prix_vente', 'prix_achat', 'devise')
+    readonly_fields = ('date_creation', 'date_mise_a_jour', 'prix_vente', 'prix_achat', 'devise', 'quantite_stock')
     autocomplete_fields = ['article_parent']
     
     fieldsets = (
@@ -69,7 +137,7 @@ class VarianteArticleAdmin(admin.ModelAdmin):
             'fields': ('prix_vente', 'prix_achat', 'devise'),
             'classes': ('collapse',)
         }),
-        ('Stock', {
+        ('Stock (lecture seule — le stock est géré sur l\'article parent)', {
             'fields': ('quantite_stock', 'est_actif')
         }),
         ('Image', {
@@ -81,6 +149,97 @@ class VarianteArticleAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+
+@admin.register(DemandeResetPdv)
+class DemandeResetPdvAdmin(admin.ModelAdmin):
+    """Admin de suivi des demandes de réinitialisation PDV (validation via page dédiée)."""
+    list_display = ('id', 'terminal', 'boutique', 'demandeur', 'statut', 'date_demande', 'traite_par', 'date_traitement')
+    list_filter = ('statut', 'boutique')
+    search_fields = ('terminal__nom_terminal', 'terminal__numero_serie', 'boutique__nom')
+    readonly_fields = ('date_demande',)
+
+
+@admin.register(Client)
+class ClientAdmin(admin.ModelAdmin):
+    """Admin des terminaux MAUI avec réinitialisation directe du PDV."""
+    list_display = ('nom_terminal', 'numero_serie', 'boutique', 'est_actif', 'derniere_connexion', 'reset_bouton')
+    search_fields = ('nom_terminal', 'numero_serie', 'boutique__nom')
+    list_filter = ('est_actif', 'boutique')
+    actions = ['reinitialiser_pdv', 'reinitialiser_pdv_serveur']
+
+    @admin.action(description="🔄 Réinitialiser les PDV sélectionnés (exécution immédiate admin)")
+    def reinitialiser_pdv(self, request, queryset):
+        """Réinitialise directement les terminaux cochés (admin = autorité de validation)."""
+        from .views_reset_pdv import executer_reset_boutique
+
+        total_articles = 0
+        nb_terminal = 0
+        for terminal in queryset:
+            nb, nb_tot, resultat = executer_reset_boutique(terminal, request.user)
+            total_articles += nb
+            nb_terminal += 1
+            # Historique dans la même table que les demandes (traçabilité)
+            DemandeResetPdv.objects.create(
+                terminal=terminal,
+                boutique=terminal.boutique,
+                demandeur=request.user,
+                motif="Réinitialisation directe (admin Django)",
+                statut='VALIDEE',
+                traite_par=request.user,
+                date_traitement=timezone.now(),
+                resultat=resultat,
+            )
+        self.message_user(
+            request,
+            f"✔ {nb_terminal} point(s) de vente réinitialisé(s) : {total_articles} "
+            "article(s) remis en attente de re-validation par les terminaux MAUI.",
+        )
+
+    @admin.action(description="⚠️ Réinitialisation SERVEUR COMPLÈTE des PDV sélectionnés (supprime articles, ventes…)")
+    def reinitialiser_pdv_serveur(self, request, queryset):
+        """Attention : supprime TOUTES les données serveur des boutiques des terminaux sélectionnés."""
+        from .views_reset_pdv import executer_reset_serveur_boutique
+
+        nb_terminal = 0
+        for terminal in queryset:
+            if not terminal.boutique:
+                continue
+            compte_rendu, resultat = executer_reset_serveur_boutique(terminal.boutique, request.user)
+            nb_terminal += 1
+            DemandeResetPdv.objects.create(
+                terminal=terminal,
+                boutique=terminal.boutique,
+                demandeur=request.user,
+                motif="Réinitialisation serveur complète (admin Django)",
+                type_reset='SERVEUR',
+                statut='VALIDEE',
+                traite_par=request.user,
+                date_traitement=timezone.now(),
+                resultat=resultat,
+            )
+        self.message_user(
+            request,
+            f"⚠️ {nb_terminal} point(s) de vente remis à zéro (articles, ventes, mouvements supprimés).",
+            level='warning',
+        )
+
+    # 🔍 Boutons visibles par ligne : réinitialisation MAUI ou SERVEUR COMPLÈTE
+    @admin.display(description='Reset PDV')
+    def reset_bouton(self, obj):
+        from django.utils.html import format_html
+        url_maui = f"/admin-demandes-reset/terminal/{obj.id}/direct/"
+        url_serveur = f"/admin-demandes-reset/terminal/{obj.id}/direct-serveur/"
+        return format_html(
+            '<a class="button" style="background:#b02b2b; color:#fff; padding:3px 8px; '
+            'border-radius:3px; text-decoration:none; white-space:nowrap; margin-right:4px" '
+            'href="{url_maui}">↺ MAUI</a>'
+            '<a class="button" style="background:#7a0000; color:#fff; padding:3px 8px; '
+            'border-radius:3px; text-decoration:none; white-space:nowrap" '
+            'href="{url_serveur}">⚠️ Serveur</a>',
+            url_maui=url_maui,
+            url_serveur=url_serveur,
+        )
 
 
 @admin.register(Vente)

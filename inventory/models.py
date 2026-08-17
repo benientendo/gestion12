@@ -42,6 +42,8 @@ class Client(models.Model):
     derniere_activite = models.DateTimeField(null=True, blank=True)
     version_app_maui = models.CharField(max_length=20, blank=True, help_text="Version de l'application MAUI")
     derniere_adresse_ip = models.GenericIPAddressField(null=True, blank=True)
+    # 🔔 Notification push FCM (Firebase) — jeton du terminal
+    fcm_token = models.TextField(blank=True, default='', help_text="Jeton FCM du terminal pour les notifications push")
     
     # Métadonnées
     date_creation = models.DateTimeField(auto_now_add=True)
@@ -722,7 +724,7 @@ class Boutique(models.Model):
     def nombre_ventes_aujourd_hui(self):
         """Retourne le nombre de ventes d'aujourd'hui"""
         from django.utils import timezone
-        aujourd_hui = timezone.now().date()
+        aujourd_hui = timezone.localdate()
         return Vente.objects.filter(
             client_maui__boutique=self,
             date_vente__date=aujourd_hui
@@ -732,7 +734,7 @@ class Boutique(models.Model):
         """Retourne le chiffre d'affaires d'aujourd'hui"""
         from django.utils import timezone
         from django.db.models import Sum
-        aujourd_hui = timezone.now().date()
+        aujourd_hui = timezone.localdate()
         result = Vente.objects.filter(
             client_maui__boutique=self,
             date_vente__date=aujourd_hui,
@@ -1863,7 +1865,8 @@ class JournalValeurStock(models.Model):
     """
     Journal quotidien de la valeur du stock par boutique.
     Chaque ligne représente un jour et trace TOUS les mouvements
-    qui ont impacté la valeur du stock (en prix d'achat).
+    qui ont impacté la valeur du stock (au PRIX DE VENTE — valeur
+    commerciale confiée au gérant : 100 u × PV 100 = 10 000 FC).
     
     Formule de cohérence :
         valeur_stock_restant = valeur_stock_precedent
@@ -1920,7 +1923,7 @@ class JournalValeurStock(models.Model):
     )
     valeur_ventes = models.DecimalField(
         max_digits=18, decimal_places=2, default=0,
-        help_text="Valeur (au prix d'achat) des articles vendus"
+        help_text="Valeur (au prix de vente) des articles vendus"
     )
 
     # --- Valeur de clôture ---
@@ -1932,7 +1935,7 @@ class JournalValeurStock(models.Model):
     # --- Valeur réelle (calculée depuis les articles) ---
     valeur_stock_reel = models.DecimalField(
         max_digits=18, decimal_places=2, default=0,
-        help_text="Valeur réelle du stock = SUM(quantite_stock * prix_achat) des articles de la boutique"
+        help_text="Valeur réelle du stock = SUM(quantite_stock * prix_vente) des articles de la boutique (valeur commerciale confiée au gérant)"
     )
 
     # --- Métadonnées ---
@@ -1985,3 +1988,68 @@ class TelechargementRapportMensuel(models.Model):
 
     def __str__(self):
         return f"Rapport {self.mois}/{self.annee} - {self.boutique.nom}"
+
+
+class DemandeResetPdv(models.Model):
+    """
+    Demande de réinitialisation d'un point de vente (terminal MAUI).
+    ⚠️ Flux contrôlé : le commerçant demande, l'ADMINISTRATEUR valide.
+    La réinitialisation n'est réellement exécutée qu'à la validation.
+    """
+
+    STATUT_CHOICES = [
+        ('EN_ATTENTE', 'En attente de validation'),
+        ('VALIDEE', 'Validée et exécutée'),
+        ('REFUSEE', 'Refusée'),
+    ]
+
+    # Type de réinitialisation :
+    #  - MAUI    : re-validation des articles par le terminal (stock/historique conservés)
+    #  - SERVEUR : remise à ZÉRO côté serveur (articles, ventes, mouvements, journal… supprimés)
+    TYPE_RESET_CHOICES = [
+        ('MAUI', 'Re-validation terminal MAUI'),
+        ('SERVEUR', 'Réinitialisation serveur complète (destructif)'),
+    ]
+    type_reset = models.CharField(
+        max_length=20, choices=TYPE_RESET_CHOICES, default='MAUI',
+        help_text="MAUI = re-validation des articles ; SERVEUR = remise à zéro des données côté Django"
+    )
+
+    # Cible : le point de vente (terminal MAUI) à réinitialiser
+    terminal = models.ForeignKey(
+        'Client', on_delete=models.CASCADE, related_name='demandes_reset',
+        help_text="Point de vente (terminal MAUI) concerné"
+    )
+    boutique = models.ForeignKey(
+        'Boutique', on_delete=models.CASCADE, related_name='demandes_reset',
+        help_text="Boutique du point de vente"
+    )
+
+    # Demandeur (commerçant / collaborateur)
+    demandeur = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='demandes_reset_effectuees',
+        help_text="Commerçant ou collaborateur ayant demandé la réinitialisation"
+    )
+    motif = models.TextField(blank=True, help_text="Motif de la demande (optionnel)")
+
+    # Traitement
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_ATTENTE')
+    traite_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='demandes_reset_traitees',
+        help_text="Administrateur ayant traité la demande"
+    )
+    date_traitement = models.DateTimeField(null=True, blank=True)
+    reponse_admin = models.TextField(blank=True, help_text="Commentaire de l'administrateur (validation ou refus)")
+
+    # Résultat de l'exécution (rempli à la validation)
+    resultat = models.TextField(blank=True, help_text="Journal des actions exécutées lors de la réinitialisation")
+
+    date_demande = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Reset {self.terminal.nom_terminal} ({self.boutique.nom}) — {self.get_statut_display()}"
+
+    class Meta:
+        verbose_name = "Demande de réinitialisation PDV"
+        verbose_name_plural = "Demandes de réinitialisation PDV"
+        ordering = ['-date_demande']

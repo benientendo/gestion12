@@ -6,6 +6,8 @@ __pycache__/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+db.sqlite3-shm
+db.sqlite3-wal
 media/
 
 # Environment variables
@@ -36,6 +38,18 @@ Thumbs.db
 # Backup files
 *.bak
 backup_*.json
+
+# Archives et artefacts de déploiement/analyse (ne jamais committer)
+*.tar.gz
+*.b64
+rapport_base64.txt
+deploy.tar.gz
+commit_message.txt
+commit_final.txt
+_temp_check.js
+recover_*.py
+restore_*.py
+replace_*.py
 
 # Static files (if collected)
 staticfiles/

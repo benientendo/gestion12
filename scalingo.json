@@ -2,7 +2,8 @@
   "name": "GestionMagazin",
   "description": "Application de gestion multi-boutiques avec système de ventes et inventaire",
   "addons": [
-    "postgresql:postgresql-starter-512"
+    "postgresql:postgresql-starter-512",
+    "redis:redis-starter-256"
   ],
   "env": {
     "SECRET_KEY": {
@@ -20,15 +21,20 @@
     "DJANGO_SETTINGS_MODULE": {
       "description": "Module de configuration Django",
       "value": "gestion_magazin.settings"
+    },
+    "BASE_URL": {
+      "description": "URL publique de l'application (liens QR/PDF)",
+      "value": "https://gestionnumerique.osc-fr1.scalingo.io"
     }
   },
   "formation": {
     "web": {
       "amount": 1,
       "size": "S"
+    },
+    "worker": {
+      "amount": 1,
+      "size": "S"
     }
-  },
-  "scripts": {
-    "postdeploy": "python manage.py migrate --noinput && python manage.py collectstatic --noinput"
   }
 }
