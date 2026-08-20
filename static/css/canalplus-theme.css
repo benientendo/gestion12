@@ -1,0 +1,135 @@
+/* ============================================================
+   📺 THÈME CANAL+ (noir profond + jaune Canal+)
+   Appliqué SANS modifier la disposition (mêmes classes Bootstrap).
+   Fond noir, cartes sombres, bordure fine, jaune #FFCF00 en accent.
+   ============================================================ */
+
+:root {
+    --canal-noir: #0a0a0a;      /* fond principal */
+    --canal-carte: #111111;      /* cartes */
+    --canal-carte2: #161616;     /* en-têtes / zones */
+    --canal-bordure: #262626;    /* bordures fines */
+    --canal-jaune: #ffcf00;      /* accent jaune Canal+ */
+    --canal-texte: #ffffff;
+    --canal-texte2: #a5a5a5;     /* secondaire / labels */
+}
+
+body {
+    background-color: var(--canal-noir);
+    color: var(--canal-texte);
+    font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+/* ── Barre de navigation Canal+ ── */
+.navbar {
+    background-color: var(--canal-noir) !important;
+    border-bottom: 2px solid var(--canal-jaune);
+}
+.navbar .navbar-brand, .navbar .nav-link, .navbar-light .navbar-text {
+    color: var(--canal-texte) !important;
+}
+.navbar .nav-link:hover, .navbar .nav-link.active {
+    color: var(--canal-jaune) !important;
+}
+
+/* ── Cartes Canal+ (noir, bordure fine, coins) ── */
+.card {
+    background-color: var(--canal-carte);
+    border: 1px solid var(--canal-bordure);
+    border-radius: 12px;
+    color: var(--canal-texte);
+}
+.card-header {
+    background-color: var(--canal-carte2);
+    border-bottom: 1px solid var(--canal-bordure);
+    border-radius: 12px 12px 0 0 !important;
+}
+.card-header h4, .card-header h5, .card-header h6, .card-header .h5 {
+    color: var(--canal-texte);
+}
+.card-body { color: var(--canal-texte); }
+
+/* ── Titres et textes ── */
+h1, h2, h3, h4, h5, h6, .modal-title { color: var(--canal-texte); font-weight: 700; }
+p { color: #e0e0e0; }
+
+/* ── Labels (forme Canal+ : gris, compact) ── */
+label, .form-label {
+    color: var(--canal-texte2);
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+
+/* ── Formulaires (bords fins, focus JAUNE CANAL+) ── */
+.form-control, .form-select, .form-control-sm, .form-select-sm {
+    background-color: #1a1a1a;
+    border: 1px solid #333333;
+    border-radius: 6px;
+    color: var(--canal-texte);
+}
+.form-control:focus, .form-select:focus,
+.form-control-sm:focus, .form-select-sm:focus {
+    background-color: #1a1a1a;
+    border-color: var(--canal-jaune);
+    box-shadow: 0 0 0 0.2rem rgba(255, 207, 0, 0.25);
+    color: var(--canal-texte);
+}
+.form-control::placeholder { color: #6b6b6b; }
+.form-control:disabled, .form-select:disabled { background-color: #121212; color: #6b6b6b; }
+.form-check-input { background-color: #1a1a1a; border-color: #333333; }
+.form-check-input:checked { background-color: var(--canal-jaune); border-color: var(--canal-jaune); }
+.input-group-text {
+    background-color: #1a1a1a;
+    border: 1px solid #333333;
+    color: #e0e0e0;
+    border-radius: 6px;
+}
+
+/* ── Tableaux ── */
+.table { color: var(--canal-texte); }
+.table th, .table td { border-color: var(--canal-bordure); color: var(--canal-texte); }
+.table thead th { background-color: var(--canal-carte2) !important; color: var(--canal-texte); border-bottom: 2px solid var(--canal-jaune); }
+.table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(255, 255, 255, 0.03); }
+.table-hover > tbody > tr:hover > * { background-color: rgba(255, 207, 0, 0.08); }
+
+/* ── Boutons CANAL+ (jaune = principal) ── */
+.btn { border-radius: 6px; font-weight: 600; }
+.btn-primary {
+    background-color: var(--canal-jaune);
+    border-color: var(--canal-jaune);
+    color: #0a0a0a !important;
+}
+.btn-primary:hover {
+    background-color: #e6ba00;
+    border-color: #e6ba00;
+    color: #0a0a0a !important;
+}
+.btn-warning {
+    background-color: var(--canal-jaune);
+    border-color: var(--canal-jaune);
+    color: #0a0a0a !important;
+}
+.btn-success { background-color: #00b341; border-color: #00b341; color: #ffffff; }
+.btn-warning:hover, .btn-outline-warning:hover { background-color: #e6ba00; border-color: #e6ba00; color: #0a0a0a; }
+
+/* ── Badges ── */
+.badge { font-weight: 700; letter-spacing: 0.2px; }
+.badge-warning, .badge.bg-warning { background-color: var(--canal-jaune) !important; color: #0a0a0a; }
+
+/* ── Liens ── */
+a { color: var(--canal-jaune); }
+a:hover { color: #ffe34d; }
+
+/* ── Texte secondaire ── */
+.text-muted, small.text-muted { color: var(--canal-texte2) !important; }
+
+/* ── Modales ── */
+.modal-content, .modal-header, .modal-footer {
+    background-color: var(--canal-carte);
+    border-color: var(--canal-bordure);
+    color: var(--canal-texte);
+}
+.modal-header { border-bottom: 1px solid var(--canal-bordure); }
+.modal-footer { border-top: 1px solid var(--canal-bordure); }

@@ -1,0 +1,115 @@
+/* ============================================================
+   🟢 THÈME WHATSAPP WEB (sombre) — style conversation
+   Appliqué SANS modifier la disposition (mêmes classes Bootstrap).
+   Fond type chat WhatsApp, cartes, formulaires, labels.
+   ============================================================ */
+
+body {
+    background-color: #0b141a; /* fond sombre WhatsApp (fallback) */
+    /* 📷 Photo : fond de discussion WhatsApp (tuile officielle sombre, répétée) */
+    background-image: url("/static/images/whatsapp-bg-tile-dark.png");
+    background-repeat: repeat;
+    background-attachment: fixed;
+    color: #e9edef;
+    font-family: "Segoe UI", "Helvetica Neue", Helvetica, Lucida Grande, Arial, sans-serif;
+}
+
+/* ── Barre de navigation type WhatsApp ── */
+.navbar {
+    background-color: #202c33 !important;
+    border-bottom: 1px solid #2a3942;
+}
+.navbar .navbar-brand,
+.navbar .nav-link,
+.navbar-light .navbar-text {
+    color: #e9edef !important;
+}
+.navbar .nav-link:hover,
+.navbar .nav-link.active {
+    color: #25d366 !important;
+}
+
+/* ── Cartes (fond + bordure + coins arrondis WhatsApp) ── */
+.card {
+    background-color: #202c33;
+    border: 1px solid #2a3942;
+    border-radius: 14px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    color: #e9edef;
+}
+.card-header {
+    background-color: #2a3942;
+    border-bottom: 1px solid #111b21;
+    border-radius: 14px 14px 0 0 !important;
+}
+.card-header h4, .card-header h5, .card-header h6,
+.card-header .h4, .card-header .h5, .card-header .h6 {
+    color: #e9edef;
+}
+.card-body { color: #e9edef; }
+
+/* ── Titres et textes ── */
+h1, h2, h3, h4, h5, h6, .modal-title { color: #e9edef; }
+p { color: #d1d7db; }
+
+/* ── Labels (forme de texte) ── */
+label, .form-label {
+    color: #8696a0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+/* ── Formulaires (bords, fonds, focus vert WhatsApp) ── */
+.form-control, .form-select, .form-control-sm, .form-select-sm {
+    background-color: #2a3942;
+    border: 1px solid #3b4a54;
+    border-radius: 8px;
+    color: #e9edef;
+}
+.form-control:focus, .form-select:focus,
+.form-control-sm:focus, .form-select-sm:focus {
+    background-color: #2a3942;
+    border-color: #00a884;
+    box-shadow: 0 0 0 0.2rem rgba(0, 168, 132, 0.25);
+    color: #e9edef;
+}
+.form-control::placeholder { color: #8696a0; }
+.form-control:disabled, .form-select:disabled { background-color: #1f2c34; color: #8696a0; }
+.form-check-input { background-color: #2a3942; border-color: #3b4a54; }
+.form-check-input:checked { background-color: #00a884; border-color: #00a884; }
+.input-group-text {
+    background-color: #2a3942;
+    border: 1px solid #3b4a54;
+    color: #d1d7db;
+    border-radius: 8px;
+}
+
+/* ── Tableaux (Lecture sur fond sombre) ── */
+.table { color: #e9edef; }
+.table th, .table td { border-color: #2a3942; color: #e9edef; }
+.table thead th { background-color: #2a3942 !important; color: #e9edef; }
+.table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(255, 255, 255, 0.03); }
+.table-hover > tbody > tr:hover > * { background-color: rgba(0, 168, 132, 0.08); }
+
+/* ── Badges, liens, boutons ── */
+a { color: #53bdeb; }
+a:hover { color: #7cc9f0; }
+.badge { font-weight: 600; }
+.btn { border-radius: 8px; }
+.btn-success { background-color: #25d366; border-color: #25d366; color: #0b141a; }
+.btn-success:hover { background-color: #1fb457; border-color: #1fb457; }
+.btn-primary { background-color: #00a884; border-color: #00a884; }
+.btn-primary:hover { background-color: #008f72; border-color: #008f72; }
+
+/* ── Texte secondaire (forme des libellés d'aide) ── */
+.text-muted, small.text-muted { color: #8696a0 !important; }
+
+/* ── Modales (accents WhatsApp) ── */
+.modal-content, .modal-header, .modal-footer {
+    background-color: #202c33;
+    border-color: #2a3942;
+    color: #e9edef;
+}
+.modal-header { border-bottom: 1px solid #2a3942; }
+.modal-footer { border-top: 1px solid #2a3942; }

@@ -1,0 +1,128 @@
+/* ============================================================
+   🎨 THÈME POS PRO — clair, minimal, Indigo
+   Refonte UI/UX SANS modifier la structure ni les comportements :
+   mêmes classes Bootstrap, mêmes IDs — seul le style change.
+   Fond slate clair, cartes blanches, primaire indigo, Inter.
+   ============================================================ */
+
+:root {
+    --pos-bg: #f6f7fb;            /* fond général slate-50 */
+    --pos-carte: #ffffff;         /* cartes */
+    --pos-bordure: #e2e8f0;       /* slate-200 */
+    --pos-primaire: #4f46e5;      /* indigo-600 */
+    --pos-primaire-h: #4338ca;    /* indigo-700 */
+    --pos-texte: #1e293b;         /* slate-800 */
+    --pos-muted: #64748b;         /* slate-500 */
+    --pos-succes: #059669;        /* emerald-600 */
+    --pos-danger: #dc2626;        /* red-600 */
+    --pos-radius: 14px;
+}
+
+body {
+    background-color: var(--pos-bg);
+    color: var(--pos-texte);
+    font-family: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ── Barre de navigation (blanche, propre) ── */
+.navbar {
+    background-color: var(--pos-carte) !important;
+    border-bottom: 1px solid var(--pos-bordure);
+}
+.navbar .navbar-brand, .navbar .nav-link, .navbar-light .navbar-text { color: var(--pos-texte) !important; }
+.navbar .nav-link:hover, .navbar .nav-link.active { color: var(--pos-primaire) !important; }
+
+/* ── Cartes épurées + ombres douces ── */
+.card {
+    background-color: var(--pos-carte);
+    border: 1px solid var(--pos-bordure);
+    border-radius: var(--pos-radius);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.card-header {
+    background-color: #f8fafc;
+    border-bottom: 1px solid var(--pos-bordure);
+    border-radius: var(--pos-radius) var(--pos-radius) 0 0 !important;
+}
+.card-header h4, .card-header h5, .card-header h6, .card-header .h5 { color: var(--pos-texte); }
+.card-body { color: var(--pos-texte); }
+
+/* ── Titres & textes ── */
+h1, h2, h3, h4, h5, h6, .modal-title { color: var(--pos-texte); font-weight: 700; letter-spacing: -0.01em; }
+p { color: #334155; }
+
+/* ── Labels (lisibles, hiérarchie claire) ── */
+label, .form-label { color: var(--pos-muted); font-size: 0.82rem; font-weight: 600; }
+
+/* ── Formulaires épurés ── */
+.form-control, .form-select, .form-control-sm, .form-select-sm {
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    color: var(--pos-texte);
+}
+.form-control:focus, .form-select:focus,
+.form-control-sm:focus, .form-select-sm:focus {
+    border-color: var(--pos-primaire);
+    box-shadow: 0 0 0 0.2rem rgba(79, 70, 229, 0.15);
+    color: var(--pos-texte);
+}
+.form-control::placeholder { color: #94a3b8; }
+.form-control:disabled, .form-select:disabled { background-color: #f1f5f9; }
+.form-check-input:checked { background-color: var(--pos-primaire); border-color: var(--pos-primaire); }
+.input-group-text { background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; color: #475569; }
+
+/* ── Tableaux épurés Ŕ─ */
+.table { color: var(--pos-texte); }
+.table th { color: #475569; font-weight: 600; border-color: var(--pos-bordure); }
+.table td { border-color: var(--pos-bordure); }
+.table thead th { background-color: #f8fafc !important; color: #334155; }
+.table-striped > tbody > tr:nth-of-type(odd) > * { background-color: #f8fafc; }
+.table-hover > tbody > tr:hover > * { background-color: rgba(79, 70, 229, 0.05); }
+
+/* ── Boutons d'action (grands & tactiles) ── */
+.btn { border-radius: 8px; font-weight: 600; }
+.btn-lg { border-radius: 10px; padding: .6rem 1.4rem; }
+.btn-primary {
+    background-color: var(--pos-primaire);
+    border-color: var(--pos-primaire);
+    color: #ffffff !important;
+}
+.btn-primary:hover { background-color: var(--pos-primaire-h); border-color: var(--pos-primaire-h); color: #ffffff !important; }
+.btn-outline-primary { color: var(--pos-primaire); border-color: #c7d2fe; }
+.btn-outline-primary:hover { background-color: var(--pos-primaire); border-color: var(--pos-primaire); color: #ffffff; }
+.btn-success { background-color: var(--pos-succes); border-color: var(--pos-succes); color: #ffffff !important; }
+.btn-success:hover { background-color: #047857; border-color: #047857; color: #ffffff !important; }
+.btn-danger { background-color: var(--pos-danger); border-color: var(--pos-danger); color: #ffffff !important; }
+.btn-danger:hover { background-color: #b91c1c; border-color: #b91c1c; color: #ffffff !important; }
+
+/* ── Badges d'état lisibles ── */
+.badge { font-weight: 600; letter-spacing: 0.2px; }
+.badge.bg-warning, .badge-warning { background-color: #f59e0b !important; color: #1e293b; }
+.badge.bg-success, .badge-success { background-color: #059669 !important; color: #ffffff; }
+.badge.bg-danger, .badge-danger { background-color: #dc2626 !important; color: #ffffff; }
+.badge.bg-info, .badge-info { background-color: #0891b2 !important; color: #ffffff; }
+.badge.bg-primary, .badge-primary { background-color: var(--pos-primaire) !important; color: #ffffff; }
+
+/* ── Liens ── */
+a { color: var(--pos-primaire); }
+a:hover { color: var(--pos-primaire-h); }
+
+/* ── Texte secondaire ── */
+.text-muted, small.text-muted { color: var(--pos-muted) !important; }
+
+/* ── Modales fluides ── */
+.modal-content, .modal-header, .modal-footer {
+    background-color: var(--pos-carte);
+    border-color: var(--pos-bordure);
+    border-radius: var(--pos-radius);
+    color: var(--pos-texte);
+}
+.modal-header { border-bottom: 1px solid var(--pos-bordure); }
+.modal-footer { border-top: 1px solid var(--pos-bordure); }
+
+/* ── Alertes propres ── */
+.alert { border-radius: 10px; border-width: 1px; }
+
+/* ── Petit raffinement du fond des zones de statistiques ── */
+.card.stats-card { background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color:#fff; border:none; }

@@ -9,6 +9,15 @@ from asgiref.sync import async_to_sync
 logger = logging.getLogger(__name__)
 
 
+def _push_fcm(boutique_id, titre, corps, data=None):
+    """🔔 PUSH FCM (même si l'app MAUI est fermée) — silencieux si non configuré."""
+    try:
+        from .services.firebase_push import envoyer_push_boutique
+        envoyer_push_boutique(boutique_id, titre, corps, data=data)
+    except Exception as e:
+        logger.error(f"❌ Erreur push FCM ({titre}): {e}")
+
+
 def notify_article_updated(boutique_id, article):
     """
     Notifier tous les POS qu'un article a été modifié
@@ -45,7 +54,15 @@ def notify_article_updated(boutique_id, article):
         )
         
         logger.info(f"🔔 WebSocket: Article {article.id} mis à jour envoyé à boutique {boutique_id}")
-        
+
+        # 🔔 PUSH FCM (même si l'app est fermée)
+        _push_fcm(
+            boutique_id,
+            "Article modifié",
+            f"{article.nom} a été mis à jour (code {article.code}).",
+            data={'type': 'article_updated', 'article_id': article.id}
+        )
+
     except Exception as e:
         logger.error(f"❌ Erreur envoi WebSocket article_updated: {e}")
 
@@ -90,16 +107,12 @@ def notify_article_created(boutique_id, article):
         logger.error(f"❌ Erreur envoi WebSocket article_created: {e}")
 
     # 🔔 PUSH FCM (même si l'app est fermée)
-    try:
-        from .services.firebase_push import envoyer_push_boutique
-        envoyer_push_boutique(
-            boutique_id,
-            "Nouvel article",
-            f"{article.nom} a été ajouté au catalogue.",
-            data={'type': 'article_created', 'article_id': article.id}
-        )
-    except Exception as e:
-        logger.error(f"❌ Erreur push FCM article_created: {e}")
+    _push_fcm(
+        boutique_id,
+        "Nouvel article",
+        f"{article.nom} a été ajouté au catalogue.",
+        data={'type': 'article_created', 'article_id': article.id}
+    )
 
 
 def notify_article_deleted(boutique_id, article_id):
@@ -128,7 +141,7 @@ def notify_article_deleted(boutique_id, article_id):
         logger.error(f"❌ Erreur envoi WebSocket article_deleted: {e}")
 
 
-def notify_stock_updated(boutique_id, article_id, new_stock):
+def notify_stock_updated(boutique_id, article_id, new_stock, article_nom=None, push_fcm=False):
     """
     Notifier tous les POS qu'un stock a changé
     
@@ -136,6 +149,9 @@ def notify_stock_updated(boutique_id, article_id, new_stock):
         boutique_id: ID de la boutique
         article_id: ID de l'article
         new_stock: Nouveau stock
+        article_nom: Nom de l'article (optionnel, pour le push FCM)
+        push_fcm: Envoyer un push FCM (activer pour les modifs faites depuis le web
+                  uniquement, pour éviter la surcharge sur chaque vente)
     """
     try:
         channel_layer = get_channel_layer()
@@ -151,7 +167,17 @@ def notify_stock_updated(boutique_id, article_id, new_stock):
         )
         
         logger.info(f"🔔 WebSocket: Stock article {article_id} → {new_stock} envoyé à boutique {boutique_id}")
-        
+
+        # 🔔 PUSH FCM (même si l'app est fermée) — uniquement sur demande explicite
+        if push_fcm:
+            _push_fcm(
+                boutique_id,
+                "Stock mis à jour",
+                f"Le stock de l'article #{article_id} est passé à {new_stock}."
+                + (f" ({article_nom})" if article_nom else ""),
+                data={'type': 'stock_updated', 'article_id': article_id, 'new_stock': new_stock}
+            )
+
     except Exception as e:
         logger.error(f"❌ Erreur envoi WebSocket stock_updated: {e}")
 
@@ -245,16 +271,12 @@ def notify_sync_required(boutique_id, reason="Synchronisation demandée"):
         logger.error(f"❌ Erreur envoi WebSocket sync_required: {e}")
 
     # 🔔 PUSH FCM (même si l'app est fermée)
-    try:
-        from .services.firebase_push import envoyer_push_boutique
-        envoyer_push_boutique(
-            boutique_id,
-            "Synchronisation nécessaire",
-            reason,
-            data={'type': 'sync_required', 'reason': reason}
-        )
-    except Exception as e:
-        logger.error(f"❌ Erreur push FCM sync_required: {e}")
+    _push_fcm(
+        boutique_id,
+        "Synchronisation nécessaire",
+        reason,
+        data={'type': 'sync_required', 'reason': reason}
+    )
 
 
 def notify_stock_alert(boutique_id, article_id, article_nom, stock_actuel, seuil_alerte=10):

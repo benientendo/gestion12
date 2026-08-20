@@ -22,6 +22,28 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
+# 🎵 Son de notification Android (doit correspondre à un fichier présent dans
+# Resources/Raw de l'app MAUI, ex. notification_sound.wav → res/raw)
+SON_NOTIFICATION = "notification_sound"
+CANAL_NOTIFICATION = "notifications"
+
+
+def _config_android_notification():
+    """Config Android (son + canal + priorité) pour que la notification
+    retentisse même quand l'app est en arrière-plan."""
+    try:
+        from firebase_admin import messaging
+        return messaging.AndroidConfig(
+            priority="high",
+            notification=messaging.AndroidNotification(
+                sound=SON_NOTIFICATION,
+                channel_id=CANAL_NOTIFICATION,
+                priority="high",
+            ),
+        )
+    except Exception:
+        return None
+
 
 def _creds_prets():
     """Vérifie que les identifiants Firebase sont disponibles."""
@@ -76,6 +98,7 @@ def envoyer_push_boutique(boutique_id, titre, corps, data=None):
         message = messaging.MulticastMessage(
             notification=messaging.Notification(title=titre, body=corps),
             data={k: str(v) for k, v in (data or {}).items()},
+            android=_config_android_notification(),
             tokens=tokens,
         )
         response = messaging.send_multicast(message)
@@ -114,6 +137,7 @@ def envoyer_push_terminal(terminal, titre, corps, data=None):
         message = messaging.Message(
             notification=messaging.Notification(title=titre, body=corps),
             data={k: str(v) for k, v in (data or {}).items()},
+            android=_config_android_notification(),
             token=terminal.fcm_token,
         )
         messaging.send(message)

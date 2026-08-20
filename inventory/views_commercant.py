@@ -2746,6 +2746,11 @@ def modifier_article_boutique(request, boutique_id, article_id):
             article.code = ancien_code
             article.save()
             
+            # 🔔 Notifier le(s) terminal(aux) MAUI : article modifié (prix, quantité, …)
+            from .websocket_utils import notify_article_updated, notify_sync_required
+            notify_article_updated(boutique.id, article)
+            notify_sync_required(boutique.id, "Article modifié depuis le web")
+            
             messages.success(request, f'Article "{article.nom}" modifié avec succès.')
             return redirect('inventory:commercant_articles_boutique', boutique_id=boutique.id)
         else:
