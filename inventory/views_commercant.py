@@ -2387,6 +2387,12 @@ def modifier_article_existant(request, boutique_id):
             )
         
         if modifications:
+            try:
+                from .websocket_utils import notify_article_updated, notify_sync_required
+                notify_article_updated(boutique.id, article)
+                notify_sync_required(boutique.id, "Article modifié depuis le web (variante)")
+            except Exception:
+                pass
             return JsonResponse({
                 'success': True,
                 'message': f"Modifié ({variante.nom_variante}): {', '.join(modifications)}",
@@ -2432,6 +2438,12 @@ def modifier_article_existant(request, boutique_id):
     
     if modifications:
         article.save()
+        try:
+            from .websocket_utils import notify_article_updated, notify_sync_required
+            notify_article_updated(boutique.id, article)
+            notify_sync_required(boutique.id, "Article modifié depuis le web")
+        except Exception:
+            pass
         return JsonResponse({
             'success': True,
             'message': f"Article modifié: {', '.join(modifications)}",
