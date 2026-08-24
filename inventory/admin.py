@@ -116,6 +116,17 @@ class ArticleAdmin(admin.ModelAdmin):
         return obj.variantes.filter(est_actif=True).count()
     nb_variantes.short_description = 'Variantes'
 
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if change:
+            try:
+                from inventory.websocket_utils import notify_article_updated, notify_sync_required
+                if obj.boutique:
+                    notify_article_updated(obj.boutique.id, obj)
+                    notify_sync_required(obj.boutique.id, "Article modifié depuis l'admin")
+            except Exception:
+                pass
+
 
 @admin.register(VarianteArticle)
 class VarianteArticleAdmin(admin.ModelAdmin):
