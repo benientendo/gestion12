@@ -124,9 +124,12 @@ def enregistrer_token_fcm(request):
 
     terminal = Client.objects.filter(numero_serie=numero_serie, est_actif=True).first()
     if not terminal:
+        serials_connus = list(Client.objects.values_list('numero_serie', flat=True))
         return Response({
             'error': 'Terminal non trouvé ou inactif',
-            'code': 'TERMINAL_NOT_FOUND'
+            'code': 'TERMINAL_NOT_FOUND',
+            'serial_recu': numero_serie,
+            'serials_connus': serials_connus,
         }, status=status.HTTP_404_NOT_FOUND)
 
     fcm_token = (request.data.get('fcm_token') or '').strip()
@@ -144,6 +147,31 @@ def enregistrer_token_fcm(request):
         'success': True,
         'message': 'Jeton FCM enregistré',
         'terminal': terminal.nom_terminal
+    })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def debug_terminals(request):
+    """
+    Diagnostic: liste tous les terminaux avec leur état FCM.
+    """
+    from django.db.models import Q
+    terminaux = Client.objects.all().select_related('boutique')
+    data = []
+    for t in terminaux:
+        data.append({
+            'id': t.id,
+            'numero_serie': t.numero_serie,
+            'nom_terminal': t.nom_terminal,
+            'est_actif': t.est_actif,
+            'boutique_id': t.boutique_id,
+            'has_fcm_token': bool(t.fcm_token),
+            'fcm_token_len': len(t.fcm_token) if t.fcm_token else 0,
+        })
+    return Response({
+        'count': len(data),
+        'terminaux': data,
     })
 
 
