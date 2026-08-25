@@ -68,6 +68,7 @@ def envoyer_push_boutique(boutique_id, titre, corps, data=None):
     """
     try:
         if not _creds_prets():
+            logger.warning(f"🔔 FCM: credentials non configurés, push ignoré pour boutique {boutique_id}")
             return 0
 
         from inventory.models import Client
@@ -79,7 +80,10 @@ def envoyer_push_boutique(boutique_id, titre, corps, data=None):
             .values_list('fcm_token', flat=True)
         )
         if not tokens:
+            logger.warning(f"🔔 FCM: aucun token pour boutique {boutique_id}")
             return 0
+
+        logger.info(f"🔔 FCM: {len(tokens)} token(s) trouvé(s) pour boutique {boutique_id}")
 
         import firebase_admin
         from firebase_admin import credentials, messaging
@@ -95,18 +99,23 @@ def envoyer_push_boutique(boutique_id, titre, corps, data=None):
                 )
             firebase_admin.initialize_app(cred)
 
-        message = messaging.MulticastMessage(
-            notification=messaging.Notification(title=titre, body=corps),
-            data={k: str(v) for k, v in (data or {}).items()},
-            android=_config_android_notification(),
-            tokens=tokens,
-        )
-        response = messaging.send_multicast(message)
+        sent = 0
+        for token in tokens:
+            try:
+                message = messaging.Message(
+                    notification=messaging.Notification(title=titre, body=corps),
+                    data={k: str(v) for k, v in (data or {}).items()},
+                    android=_config_android_notification(),
+                    token=token,
+                )
+                messaging.send(message)
+                sent += 1
+            except Exception as e:
+                logger.error(f"❌ FCM: échec envoi vers token {token[:20]}...: {e}")
         logger.info(
-            f"🔔 FCM: {response.success_count} envoyé(s) / {len(tokens)} terminal(s) "
-            f"(boutique {boutique_id}) — {response.failure_count} échec(s)"
+            f"🔔 FCM: {sent}/{len(tokens)} envoyé(s) (boutique {boutique_id})"
         )
-        return response.success_count
+        return sent
 
     except Exception as e:
         logger.error(f"❌ Erreur envoi push FCM (boutique {boutique_id}): {e}")
