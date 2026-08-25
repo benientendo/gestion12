@@ -182,7 +182,7 @@ def test_push_fcm(request):
     Test: envoie un push FCM a un terminal specifique.
     Body: {"serial": "..."} ou {"boutique_id": X}
     """
-    from .services.firebase_push import envoyer_push_boutique, _creds_prets
+    from .services.firebase_push import envoyer_push_boutique, envoyer_push_terminal, _creds_prets
 
     if not _creds_prets():
         return Response({'error': 'Firebase credentials not configured', 'code': 'NO_CREDS'}, status=500)
@@ -197,29 +197,11 @@ def test_push_fcm(request):
         if not terminal.fcm_token:
             return Response({'error': f'Terminal {serial} has no FCM token'}, status=400)
 
-        from firebase_admin import messaging
-        msg = messaging.Message(
-            notification=messaging.Notification(
-                title='Test Push FCM',
-                body='Ceci est un test depuis le serveur!'
-            ),
-            android=messaging.AndroidConfig(
-                priority='high',
-                notification=messaging.AndroidNotification(
-                    sound='notification_sound',
-                    channel_id='notifications',
-                ),
-            ),
-            token=terminal.fcm_token,
-        )
-        try:
-            resp = messaging.send(msg)
-            return Response({'success': True, 'message': f'Push envoye a {terminal.nom_terminal}', 'response': resp})
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
+        ok = envoyer_push_terminal(terminal, 'Test Push FCM', 'Test depuis le serveur!')
+        return Response({'success': ok, 'terminal': terminal.nom_terminal})
 
     if boutique_id:
-        nb = envoyer_push_boutique(boutique_id, 'Test push depuis le serveur')
+        nb = envoyer_push_boutique(boutique_id, 'Test push depuis le serveur', 'Test push FCM')
         return Response({'success': True, 'pushes_envoyes': nb})
 
     return Response({'error': 'serial ou boutique_id requis'}, status=400)
