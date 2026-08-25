@@ -25,6 +25,7 @@ urlpatterns = [
     # ===== TERMINAUX =====
     path('terminal/token/', api_views_v2_simple.enregistrer_token_fcm, name='terminal_token'),
     path('terminal/debug/', api_views_v2_simple.debug_terminals, name='terminal_debug'),
+    path('terminal/test-push/', api_views_v2_simple.test_push_fcm, name='terminal_test_push'),
     path('terminal/<str:numero_serie>/', api_views_v2_simple.terminal_info_simple, name='terminal_info'),
     
     # ===== ARTICLES =====

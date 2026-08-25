@@ -175,6 +175,56 @@ def debug_terminals(request):
     })
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def test_push_fcm(request):
+    """
+    Test: envoie un push FCM a un terminal specifique.
+    Body: {"serial": "..."} ou {"boutique_id": X}
+    """
+    from .services.firebase_push import envoyer_push_boutique, _creds_prets
+
+    if not _creds_prets():
+        return Response({'error': 'Firebase credentials not configured', 'code': 'NO_CREDS'}, status=500)
+
+    serial = request.data.get('serial', '')
+    boutique_id = request.data.get('boutique_id')
+
+    if serial:
+        terminal = Client.objects.filter(numero_serie=serial, est_actif=True).first()
+        if not terminal:
+            return Response({'error': f'Terminal {serial} not found'}, status=404)
+        if not terminal.fcm_token:
+            return Response({'error': f'Terminal {serial} has no FCM token'}, status=400)
+
+        from firebase_admin import messaging
+        msg = messaging.Message(
+            notification=messaging.Notification(
+                title='Test Push FCM',
+                body='Ceci est un test depuis le serveur!'
+            ),
+            android=messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    sound='notification_sound',
+                    channel_id='notifications',
+                ),
+            ),
+            token=terminal.fcm_token,
+        )
+        try:
+            resp = messaging.send(msg)
+            return Response({'success': True, 'message': f'Push envoye a {terminal.nom_terminal}', 'response': resp})
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+    if boutique_id:
+        nb = envoyer_push_boutique(boutique_id, 'Test push depuis le serveur')
+        return Response({'success': True, 'pushes_envoyes': nb})
+
+    return Response({'error': 'serial ou boutique_id requis'}, status=400)
+
+
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def api_status_v2_simple(request):
