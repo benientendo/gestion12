@@ -3310,6 +3310,11 @@ def ajuster_stock_article(request, boutique_id, article_id):
                 article.est_valide_client = False
                 article.quantite_envoyee = quantite
                 article.save(update_fields=['est_valide_client', 'quantite_envoyee'])
+                
+                from .websocket_utils import notify_stock_updated, notify_sync_required
+                notify_stock_updated(boutique.id, article.id, stock_avant, article_nom=article.nom)
+                notify_sync_required(boutique.id, f"Nouveau stock en attente de validation: {article.nom}")
+                
                 return JsonResponse({
                     'success': True,
                     'message': f'+{quantite} unités envoyées pour validation client (stock actuel: {stock_avant})',
@@ -3342,6 +3347,10 @@ def ajuster_stock_article(request, boutique_id, article_id):
                 utilisateur=request.user.username,
                 commentaire=commentaire or f"Ajustement {type_ajustement}: {stock_avant} → {article.quantite_stock}"
             )
+            
+            from .websocket_utils import notify_stock_updated, notify_sync_required
+            notify_stock_updated(boutique.id, article.id, article.quantite_stock, article_nom=article.nom)
+            notify_sync_required(boutique.id, f"Stock ajusté: {article.nom}")
             
             return JsonResponse({
                 'success': True,
@@ -3379,6 +3388,10 @@ def modifier_prix_article(request, boutique_id, article_id):
             ancien_prix = article.prix_vente or Decimal('0')
             article.prix_vente = nouveau_prix
             article.save()
+            
+            from .websocket_utils import notify_price_updated, notify_sync_required
+            notify_price_updated(boutique.id, article.id, nouveau_prix, article_nom=article.nom)
+            notify_sync_required(boutique.id, f"Prix modifié: {article.nom}")
             
             return JsonResponse({
                 'success': True,
