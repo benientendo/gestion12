@@ -115,20 +115,21 @@ def notify_article_created(boutique_id, article):
     )
 
 
-def notify_article_deleted(boutique_id, article_id):
+def notify_article_deleted(boutique_id, article_id, article_nom=None):
     """
     Notifier tous les POS qu'un article a été supprimé/désactivé
     
     Args:
         boutique_id: ID de la boutique
         article_id: ID de l'article supprimé
+        article_nom: Nom de l'article (optionnel)
     """
     try:
         channel_layer = get_channel_layer()
-        room_group_name = f'boutique_{boutique_id}'
+        notification_group_name = f'notifications_{boutique_id}'
         
         async_to_sync(channel_layer.group_send)(
-            room_group_name,
+            notification_group_name,
             {
                 'type': 'article_deleted',
                 'article_id': article_id
@@ -140,8 +141,15 @@ def notify_article_deleted(boutique_id, article_id):
     except Exception as e:
         logger.error(f"❌ Erreur envoi WebSocket article_deleted: {e}")
 
+    _push_fcm(
+        boutique_id,
+        "Article supprimé",
+        f"L'article {article_nom or f'#{article_id}'} a été supprimé.",
+        data={'type': 'article_deleted', 'article_id': article_id}
+    )
 
-def notify_stock_updated(boutique_id, article_id, new_stock, article_nom=None, push_fcm=False):
+
+def notify_stock_updated(boutique_id, article_id, new_stock, article_nom=None, push_fcm=True):
     """
     Notifier tous les POS qu'un stock a changé
     
@@ -150,8 +158,7 @@ def notify_stock_updated(boutique_id, article_id, new_stock, article_nom=None, p
         article_id: ID de l'article
         new_stock: Nouveau stock
         article_nom: Nom de l'article (optionnel, pour le push FCM)
-        push_fcm: Envoyer un push FCM (activer pour les modifs faites depuis le web
-                  uniquement, pour éviter la surcharge sur chaque vente)
+        push_fcm: Envoyer un push FCM (actif par défaut)
     """
     try:
         channel_layer = get_channel_layer()
@@ -168,7 +175,6 @@ def notify_stock_updated(boutique_id, article_id, new_stock, article_nom=None, p
         
         logger.info(f"🔔 WebSocket: Stock article {article_id} → {new_stock} envoyé à boutique {boutique_id}")
 
-        # 🔔 PUSH FCM (même si l'app est fermée) — uniquement sur demande explicite
         if push_fcm:
             _push_fcm(
                 boutique_id,
@@ -182,7 +188,7 @@ def notify_stock_updated(boutique_id, article_id, new_stock, article_nom=None, p
         logger.error(f"❌ Erreur envoi WebSocket stock_updated: {e}")
 
 
-def notify_price_updated(boutique_id, article_id, new_price, devise='CDF'):
+def notify_price_updated(boutique_id, article_id, new_price, devise='CDF', article_nom=None):
     """
     Notifier tous les POS qu'un prix a changé
     
@@ -191,13 +197,14 @@ def notify_price_updated(boutique_id, article_id, new_price, devise='CDF'):
         article_id: ID de l'article
         new_price: Nouveau prix
         devise: Devise du prix (CDF ou USD)
+        article_nom: Nom de l'article (optionnel)
     """
     try:
         channel_layer = get_channel_layer()
-        room_group_name = f'boutique_{boutique_id}'
+        notification_group_name = f'notifications_{boutique_id}'
         
         async_to_sync(channel_layer.group_send)(
-            room_group_name,
+            notification_group_name,
             {
                 'type': 'price_updated',
                 'article_id': article_id,
@@ -210,6 +217,13 @@ def notify_price_updated(boutique_id, article_id, new_price, devise='CDF'):
         
     except Exception as e:
         logger.error(f"❌ Erreur envoi WebSocket price_updated: {e}")
+
+    _push_fcm(
+        boutique_id,
+        "Prix modifié",
+        f"Le prix de {article_nom or f'#{article_id}'} est maintenant {new_price} {devise}.",
+        data={'type': 'price_updated', 'article_id': article_id}
+    )
 
 
 def notify_category_updated(boutique_id, category):

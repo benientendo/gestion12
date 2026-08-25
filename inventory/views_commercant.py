@@ -2833,8 +2833,12 @@ def bulk_delete_articles(request, boutique_id):
     failed = []
     for article in articles:
         try:
+            from .websocket_utils import notify_article_deleted
+            nom = article.nom
+            article_id = article.id
             article.delete()
             deleted_count += 1
+            notify_article_deleted(boutique.id, article_id, nom)
         except Exception as e:
             failed.append(f"{article.nom}: {str(e)}")
     
@@ -3269,8 +3273,11 @@ def supprimer_article_boutique(request, boutique_id, article_id):
     
     if request.method == 'POST':
         nom_article = article.nom
+        article_id = article.id
         try:
             article.delete()
+            from .websocket_utils import notify_article_deleted
+            notify_article_deleted(boutique.id, article_id, nom_article)
             messages.success(request, f"Article '{nom_article}' supprimé avec succès!")
         except Exception as e:
             messages.error(request, f"Impossible de supprimer l'article : {str(e)}")
@@ -4018,6 +4025,20 @@ def valider_transfert(request, transfert_id):
             with transaction.atomic():
                 transfert.valider_transfert(request.user.username)
             
+            from .websocket_utils import _push_fcm
+            _push_fcm(
+                transfert.boutique_destination.id,
+                "Transfert reçu",
+                f"{transfert.quantite} x {transfert.article.nom} transféré depuis {transfert.depot_source.nom}.",
+                data={'type': 'transfer_received', 'article_id': transfert.article.id}
+            )
+            _push_fcm(
+                transfert.depot_source.id,
+                "Transfert envoyé",
+                f"{transfert.quantite} x {transfert.article.nom} transféré vers {transfert.boutique_destination.nom}.",
+                data={'type': 'transfer_sent', 'article_id': transfert.article.id}
+            )
+            
             messages.success(request, f"Transfert validé avec succès! {transfert.quantite} x {transfert.article.nom} transféré vers {transfert.boutique_destination.nom}")
             return redirect('inventory:detail_depot', depot_id=transfert.depot_source.id)
             
@@ -4273,6 +4294,9 @@ def supprimer_article_depot(request, depot_id, article_id):
     nom_article = article.nom
     article.est_actif = False
     article.save()
+    
+    from .websocket_utils import notify_article_deleted
+    notify_article_deleted(depot.id, article.id, nom_article)
     
     messages.success(request, f"Article '{nom_article}' supprimé du dépôt")
     return redirect('inventory:detail_depot', depot_id=depot.id)
@@ -6486,6 +6510,14 @@ def regulariser_inventaire(request, depot_id, inventaire_id):
             inventaire.date_regularisation = timezone.now()
             inventaire.save()
             
+            from .websocket_utils import _push_fcm
+            _push_fcm(
+                depot.id,
+                "Inventaire régularisé",
+                f"{lignes_regularisees} article(s) ajusté(s) lors de l'inventaire {inventaire.reference}.",
+                data={'type': 'inventory_regulated', 'inventaire_id': inventaire.id}
+            )
+            
             messages.success(request, f"Inventaire régularisé: {lignes_regularisees} articles ajustés")
         
         return redirect('inventory:detail_inventaire', depot_id=depot.id, inventaire_id=inventaire.id)
@@ -7268,6 +7300,14 @@ def regulariser_inventaire_boutique(request, boutique_id, inventaire_id):
             inventaire.statut = 'REGULARISE'
             inventaire.date_regularisation = timezone.now()
             inventaire.save()
+            
+            from .websocket_utils import _push_fcm
+            _push_fcm(
+                boutique.id,
+                "Inventaire régularisé",
+                f"{lignes_regularisees} article(s) ajusté(s) lors de l'inventaire {inventaire.reference}.",
+                data={'type': 'inventory_regulated', 'inventaire_id': inventaire.id}
+            )
             
             messages.success(request, f"Inventaire régularisé: {lignes_regularisees} articles ajustés")
         
