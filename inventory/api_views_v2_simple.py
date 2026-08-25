@@ -201,8 +201,13 @@ def test_push_fcm(request):
         return Response({'success': ok, 'terminal': terminal.nom_terminal})
 
     if boutique_id:
+        from inventory.models import Client as ClientModel
+        nb_tokens = ClientModel.objects.filter(
+            boutique_id=boutique_id, est_actif=True
+        ).exclude(fcm_token='').exclude(fcm_token__isnull=True).count()
+        nb_all = ClientModel.objects.filter(boutique_id=boutique_id, est_actif=True).count()
         nb = envoyer_push_boutique(boutique_id, 'Test push depuis le serveur', 'Test push FCM')
-        return Response({'success': True, 'pushes_envoyes': nb})
+        return Response({'success': True, 'pushes_envoyes': nb, 'nb_tokens_boutique': nb_tokens, 'nb_terminaux_boutique': nb_all})
 
     return Response({'error': 'serial ou boutique_id requis'}, status=400)
 
