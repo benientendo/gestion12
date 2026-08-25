@@ -55,16 +55,15 @@ def notify_article_updated(boutique_id, article):
         
         logger.info(f"🔔 WebSocket: Article {article.id} mis à jour envoyé à boutique {boutique_id}")
 
-        # 🔔 PUSH FCM (même si l'app est fermée)
-        _push_fcm(
-            boutique_id,
-            "Article modifié",
-            f"{article.nom} a été mis à jour (code {article.code}).",
-            data={'type': 'article_updated', 'article_id': article.id}
-        )
-
     except Exception as e:
         logger.error(f"❌ Erreur envoi WebSocket article_updated: {e}")
+
+    _push_fcm(
+        boutique_id,
+        "Article modifié",
+        f"{article.nom} a été mis à jour (code {article.code}).",
+        data={'type': 'article_updated', 'article_id': article.id}
+    )
 
 
 def notify_article_created(boutique_id, article):
@@ -175,17 +174,17 @@ def notify_stock_updated(boutique_id, article_id, new_stock, article_nom=None, p
         
         logger.info(f"🔔 WebSocket: Stock article {article_id} → {new_stock} envoyé à boutique {boutique_id}")
 
-        if push_fcm:
-            _push_fcm(
-                boutique_id,
-                "Stock mis à jour",
-                f"Le stock de l'article #{article_id} est passé à {new_stock}."
-                + (f" ({article_nom})" if article_nom else ""),
-                data={'type': 'stock_updated', 'article_id': article_id, 'new_stock': new_stock}
-            )
-
     except Exception as e:
         logger.error(f"❌ Erreur envoi WebSocket stock_updated: {e}")
+
+    if push_fcm:
+        _push_fcm(
+            boutique_id,
+            "Stock mis à jour",
+            f"Le stock de l'article #{article_id} est passé à {new_stock}."
+            + (f" ({article_nom})" if article_nom else ""),
+            data={'type': 'stock_updated', 'article_id': article_id, 'new_stock': new_stock}
+        )
 
 
 def notify_price_updated(boutique_id, article_id, new_price, devise='CDF', article_nom=None):
