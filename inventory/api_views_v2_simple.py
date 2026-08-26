@@ -21,7 +21,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Prefetch
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner
 from .serializers import ArticleSerializer, ArticleAvecVariantesSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created, notify_dashboard_stats
 
@@ -4365,3 +4365,62 @@ def journal_valeur_stock_simple(request):
         'total': len(lignes),
         'journal': lignes,
     })
+
+
+# ============================================================================
+# BANNIÈRES PUBLICITAIRES
+# ============================================================================
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def banners_list_simple(request):
+    """
+    Liste des bannières publicitaires actives pour une boutique.
+    GET /api/v2/simple/banners/?boutique_id=X
+    """
+    try:
+        boutique_id = request.GET.get('boutique_id')
+        now = timezone.now()
+
+        banners = Banner.objects.filter(est_active=True)
+
+        # Filtrer par boutique (null = toutes les boutiques)
+        if boutique_id:
+            banners = banners.filter(Q(boutique_id=boutique_id) | Q(boutique__isnull=True))
+
+        # Filtrer par dates
+        banners = banners.filter(Q(date_debut__isnull=True) | Q(date_debut__lte=now))
+        banners = banners.filter(Q(date_fin__isnull=True) | Q(date_fin__gte=now))
+
+        # Trier par priorité décroissante
+        banners = banners.order_by('-priorite')[:10]
+
+        banners_data = []
+        for banner in banners:
+            image_url = ''
+            if banner.image:
+                image_url = request.build_absolute_uri(banner.image.url)
+
+            banners_data.append({
+                'id': banner.id,
+                'titre': banner.titre,
+                'sous_titre': banner.sous_titre,
+                'image_url': image_url,
+                'couleur_fond': banner.couleur_fond,
+                'texte_bouton': banner.texte_bouton,
+                'action_type': banner.action_type,
+                'action_cible': banner.action_cible,
+            })
+
+        return Response({
+            'success': True,
+            'count': len(banners_data),
+            'banners': banners_data,
+        })
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des bannières: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

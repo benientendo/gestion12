@@ -2053,3 +2053,52 @@ class DemandeResetPdv(models.Model):
         verbose_name = "Demande de réinitialisation PDV"
         verbose_name_plural = "Demandes de réinitialisation PDV"
         ordering = ['-date_demande']
+
+
+class Banner(models.Model):
+    """Bannière publicitaire / informative affichée dans l'app MAUI."""
+
+    ACTION_CHOICES = [
+        ('NONE', 'Aucune'),
+        ('URL', 'Ouvrir URL'),
+        ('SYNC', 'Synchroniser'),
+    ]
+
+    titre = models.CharField(max_length=200, help_text="Titre principal de la bannière")
+    sous_titre = models.CharField(max_length=300, blank=True, help_text="Texte secondaire optionnel")
+    image = models.ImageField(upload_to='banners/', blank=True, null=True,
+                              help_text="Image de la bannière (optionnel)")
+    couleur_fond = models.CharField(max_length=7, default='#1565C0',
+                                     help_text="Couleur de fond hex (ex: #1565C0)")
+    texte_bouton = models.CharField(max_length=50, blank=True,
+                                     help_text="Texte du bouton d'action (optionnel)")
+
+    # Action au clic
+    action_type = models.CharField(max_length=20, choices=ACTION_CHOICES, default='NONE')
+    action_cible = models.CharField(max_length=500, blank=True,
+                                     help_text="URL ou paramètre de l'action")
+
+    # Planification
+    est_active = models.BooleanField(default=True)
+    priorite = models.IntegerField(default=0, help_text="Plus grand = affiché en premier")
+    date_debut = models.DateTimeField(null=True, blank=True,
+                                       help_text="Date de début d'affichage (vide = immédiat)")
+    date_fin = models.DateTimeField(null=True, blank=True,
+                                     help_text="Date de fin d'affichage (vide = pas de limite)")
+
+    # Portée
+    boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, null=True, blank=True,
+                                 help_text="Null = toutes les boutiques")
+
+    # Métadonnées
+    creee_le = models.DateTimeField(auto_now_add=True)
+    modifiee_le = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        scope = self.boutique.nom if self.boutique else "Toutes"
+        return f"{self.titre} [{scope}]"
+
+    class Meta:
+        verbose_name = "Bannière publicitaire"
+        verbose_name_plural = "Bannières publicitaires"
+        ordering = ['-priorite', '-creee_le']

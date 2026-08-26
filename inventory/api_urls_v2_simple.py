@@ -88,4 +88,8 @@ urlpatterns = [
     path('reconciliation/stocks', api_views_v2_simple.reconcilier_stocks_client, name='reconcilier_stocks_client_no_slash'),
     path('reconciliation/stocks/check/', api_views_v2_simple.verifier_divergences_stocks, name='verifier_divergences_stocks'),
     path('reconciliation/stocks/check', api_views_v2_simple.verifier_divergences_stocks, name='verifier_divergences_stocks_no_slash'),
+
+    # ===== BANNIÈRES PUBLICITAIRES =====
+    path('banners/', api_views_v2_simple.banners_list_simple, name='banners_list'),
+    path('banners', api_views_v2_simple.banners_list_simple, name='banners_list_no_slash'),
 ]

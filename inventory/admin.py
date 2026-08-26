@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django import forms
 from django.utils import timezone
-from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock, VarianteArticle, TransactionMobileMoney, VenteCredit, StockCredit, ApprovisionnementCredit, DemandeResetPdv, Client
+from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock, VarianteArticle, TransactionMobileMoney, VenteCredit, StockCredit, ApprovisionnementCredit, DemandeResetPdv, Client, Banner
 
 
 class ArticleAdminForm(forms.ModelForm):
@@ -449,4 +449,31 @@ class ApprovisionnementCreditAdmin(admin.ModelAdmin):
     search_fields = ('fournisseur', 'reference')
     readonly_fields = ('date_approvisionnement',)
     date_hierarchy = 'date_approvisionnement'
+
+
+@admin.register(Banner)
+class BannerAdmin(admin.ModelAdmin):
+    list_display = ('titre', 'boutique', 'est_active', 'priorite', 'date_debut', 'date_fin')
+    list_filter = ('est_active', 'boutique', 'action_type')
+    search_fields = ('titre', 'sous_titre')
+    list_editable = ('est_active', 'priorite')
+    readonly_fields = ('creee_le', 'modifiee_le')
+    fieldsets = (
+        ('Contenu', {
+            'fields': ('titre', 'sous_titre', 'image', 'couleur_fond', 'texte_bouton')
+        }),
+        ('Action au clic', {
+            'fields': ('action_type', 'action_cible')
+        }),
+        ('Planification', {
+            'fields': ('est_active', 'priorite', 'date_debut', 'date_fin')
+        }),
+        ('Portée', {
+            'fields': ('boutique',)
+        }),
+        ('Métadonnées', {
+            'fields': ('creee_le', 'modifiee_le'),
+            'classes': ('collapse',)
+        }),
+    )
 
