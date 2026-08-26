@@ -2,6 +2,7 @@ from django.contrib import admin
 from django import forms
 from django.utils import timezone
 from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock, VarianteArticle, TransactionMobileMoney, VenteCredit, StockCredit, ApprovisionnementCredit, DemandeResetPdv, Client, Banner
+from .websocket_utils import notify_banner_created
 
 
 class ArticleAdminForm(forms.ModelForm):
@@ -476,4 +477,13 @@ class BannerAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if obj.est_active:
+            notify_banner_created(
+                boutique_id=obj.boutique_id if obj.boutique_id else None,
+                banner_id=obj.id,
+                banner_titre=obj.titre,
+            )
 

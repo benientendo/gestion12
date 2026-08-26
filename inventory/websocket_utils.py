@@ -376,3 +376,50 @@ def notify_vente_rejected(boutique_id, vente_uid, raison):
         
     except Exception as e:
         logger.error(f"❌ Erreur envoi WebSocket vente_rejected: {e}")
+
+
+def notify_banner_created(boutique_id, banner_id, banner_titre):
+    """
+    Notifier les POS qu'une nouvelle bannière publicitaire est disponible.
+    
+    Args:
+        boutique_id: ID de la boutique (None = toutes les boutiques)
+        banner_id: ID de la bannière
+        banner_titre: Titre de la bannière
+    """
+    try:
+        channel_layer = get_channel_layer()
+        
+        if boutique_id:
+            room_group_name = f'boutique_{boutique_id}'
+            async_to_sync(channel_layer.group_send)(
+                room_group_name,
+                {
+                    'type': 'banner_created',
+                    'banner_id': banner_id,
+                    'banner_titre': banner_titre,
+                }
+            )
+        else:
+            from .models import Boutique
+            for b in Boutique.objects.filter(est_active=True):
+                async_to_sync(channel_layer.group_send)(
+                    f'boutique_{b.id}',
+                    {
+                        'type': 'banner_created',
+                        'banner_id': banner_id,
+                        'banner_titre': banner_titre,
+                    }
+                )
+        
+        logger.info(f"🔔 WebSocket: Bannière '{banner_titre}' (#{banner_id}) notifiée")
+        
+    except Exception as e:
+        logger.error(f"❌ Erreur envoi WebSocket banner_created: {e}")
+
+    _push_fcm(
+        boutique_id,
+        "📢 Nouvelle bannière",
+        banner_titre,
+        data={'type': 'banner_created', 'banner_id': banner_id}
+    )
