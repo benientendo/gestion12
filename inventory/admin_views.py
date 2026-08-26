@@ -765,6 +765,16 @@ def admin_ajouter_banniere(request):
                 banniere.image = image
                 banniere.save()
 
+            try:
+                from .websocket_utils import notify_banner_created
+                notify_banner_created(
+                    boutique_id=boutique.id if boutique else None,
+                    banner_id=banniere.id,
+                    banner_titre=banniere.titre,
+                )
+            except Exception as e:
+                logger.warning(f"Erreur notification bannière: {e}")
+
             messages.success(request, f'Bannière "{banniere.titre}" créée avec succès.')
             return redirect('inventory:admin_gestion_bannieres')
         except Exception as e:
@@ -805,6 +815,17 @@ def admin_modifier_banniere(request, banniere_id):
                 banniere.image = image
 
             banniere.save()
+
+            try:
+                from .websocket_utils import notify_banner_created
+                notify_banner_created(
+                    boutique_id=banniere.boutique.id if banniere.boutique else None,
+                    banner_id=banniere.id,
+                    banner_titre=banniere.titre,
+                )
+            except Exception as e:
+                logger.warning(f"Erreur notification bannière: {e}")
+
             messages.success(request, f'Bannière "{banniere.titre}" modifiée.')
             return redirect('inventory:admin_gestion_bannieres')
         except Exception as e:

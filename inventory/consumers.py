@@ -160,6 +160,16 @@ class BoutiqueConsumer(AsyncWebsocketConsumer):
         }))
         logger.info(f"📤 Sync requise envoyée - Raison: {event.get('reason')}")
     
+    async def banner_created(self, event):
+        """Une nouvelle bannière publicitaire est disponible"""
+        await self.send(text_data=json.dumps({
+            'type': 'banner_created',
+            'banner_id': event.get('banner_id'),
+            'banner_titre': event.get('banner_titre', ''),
+            'timestamp': self.get_timestamp()
+        }))
+        logger.info(f"📤 Bannière notifiée - ID {event.get('banner_id')}, Titre: {event.get('banner_titre')}")
+    
     # Méthodes utilitaires
     
     @database_sync_to_async
