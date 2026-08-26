@@ -71,7 +71,13 @@ urlpatterns = [
     path('superadmin/erreurs-transactions/<int:erreur_id>/', admin_views.detail_erreur_transaction, name='admin_detail_erreur_transaction'),
     path('superadmin/ventes-rejetees/', admin_views.admin_ventes_rejetees, name='admin_ventes_rejetees'),
     path('superadmin/ventes-rejetees/<int:vente_id>/traiter/', admin_views.admin_traiter_vente_rejetee, name='admin_traiter_vente_rejetee'),
-    
+    # Bannières
+    path('superadmin/bannieres/', admin_views.admin_gestion_bannieres, name='admin_gestion_bannieres'),
+    path('superadmin/bannieres/ajouter/', admin_views.admin_ajouter_banniere, name='admin_ajouter_banniere'),
+    path('superadmin/bannieres/<int:banniere_id>/modifier/', admin_views.admin_modifier_banniere, name='admin_modifier_banniere'),
+    path('superadmin/bannieres/<int:banniere_id>/supprimer/', admin_views.admin_supprimer_banniere, name='admin_supprimer_banniere'),
+    path('superadmin/bannieres/<int:banniere_id>/toggle/', admin_views.admin_toggle_banniere, name='admin_toggle_banniere'),
+
     # ===== INTERFACE COMMERÇANT =====
     path('commercant/login/', views_commercant.login_commercant, name='login_commercant'),
     path('commercant/logout/', views_commercant.logout_commercant, name='logout_commercant'),

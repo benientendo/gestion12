@@ -1,0 +1,189 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Gestion des Bannières{% endblock %}
+
+{% block extra_css %}
+<style>
+    .banner-preview {
+        border-radius: 8px;
+        padding: 15px;
+        color: white;
+        min-height: 80px;
+        display: flex;
+        align-items: center;
+    }
+    .banner-preview img {
+        max-height: 60px;
+        border-radius: 4px;
+    }
+    .badge-toggle {
+        cursor: pointer;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        border: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <a href="{% url 'inventory:admin_dashboard' %}" class="btn btn-outline-secondary me-2">
+                        <i class="fas fa-arrow-left"></i> Dashboard
+                    </a>
+                    <h2 class="d-inline"><i class="fas fa-image text-primary"></i> Gestion des Bannières</h2>
+                </div>
+                <a href="{% url 'inventory:admin_ajouter_banniere' %}" class="btn btn-success">
+                    <i class="fas fa-plus"></i> Nouvelle Bannière
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card bg-primary text-white text-center">
+                <div class="card-body">
+                    <h3>{{ stats.total }}</h3>
+                    <p class="mb-0">Total</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-success text-white text-center">
+                <div class="card-body">
+                    <h3>{{ stats.actives }}</h3>
+                    <p class="mb-0">Actives</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-secondary text-white text-center">
+                <div class="card-body">
+                    <h3>{{ stats.inactives }}</h3>
+                    <p class="mb-0">Inactives</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtres -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Boutique</label>
+                    <select name="boutique" class="form-select">
+                        <option value="">Toutes les boutiques</option>
+                        {% for b in boutiques %}
+                        <option value="{{ b.id }}" {% if filtre_boutique == b.id|stringformat:"d" %}selected{% endif %}>{{ b.nom }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Statut</label>
+                    <select name="actif" class="form-select">
+                        <option value="">Tous</option>
+                        <option value="1" {% if filtre_actif == '1' %}selected{% endif %}>Actif</option>
+                        <option value="0" {% if filtre_actif == '0' %}selected{% endif %}>Inactif</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary me-2"><i class="fas fa-filter"></i> Filtrer</button>
+                    <a href="{% url 'inventory:admin_gestion_bannieres' %}" class="btn btn-outline-secondary">Réinitialiser</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Liste -->
+    <div class="card">
+        <div class="card-body">
+            {% if bannières %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Aperçu</th>
+                            <th>Titre</th>
+                            <th>Boutique</th>
+                            <th>Priorité</th>
+                            <th>Statut</th>
+                            <th>Créée le</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in bannières %}
+                        <tr>
+                            <td>
+                                <div class="banner-preview" style="background: {{ b.couleur_fond }};">
+                                    {% if b.image %}
+                                    <img src="{{ b.image.url }}" alt="{{ b.titre }}">
+                                    {% endif %}
+                                    <span class="ms-2">{{ b.titre|truncatechars:30 }}</span>
+                                </div>
+                            </td>
+                            <td><strong>{{ b.titre }}</strong>{% if b.sous_titre %}<br><small class="text-muted">{{ b.sous_titre|truncatechars:40 }}</small>{% endif %}</td>
+                            <td>{% if b.boutique %}{{ b.boutique.nom }}{% else %}<span class="badge bg-info">Toutes</span>{% endif %}</td>
+                            <td>{{ b.priorite }}</td>
+                            <td>
+                                <button class="badge-toggle {% if b.est_active %}bg-success{% else %}bg-secondary{% endif %} text-white"
+                                        onclick="toggleBanniere({{ b.id }}, this)">
+                                    {% if b.est_active %}Active{% else %}Inactive{% endif %}
+                                </button>
+                            </td>
+                            <td><small>{{ b.creee_le|date:"d/m/Y H:i" }}</small></td>
+                            <td>
+                                <a href="{% url 'inventory:admin_modifier_banniere' b.id %}" class="btn btn-sm btn-outline-primary" title="Modifier">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <a href="{% url 'inventory:admin_supprimer_banniere' b.id %}" class="btn btn-sm btn-outline-danger" title="Supprimer">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center text-muted py-5">
+                <i class="fas fa-image fa-3x mb-3"></i>
+                <p>Aucune bannière créée.</p>
+                <a href="{% url 'inventory:admin_ajouter_banniere' %}" class="btn btn-success">
+                    <i class="fas fa-plus"></i> Créer la première bannière
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleBanniere(id, btn) {
+    fetch(`/superadmin/bannieres/${id}/toggle/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            btn.textContent = data.est_active ? 'Active' : 'Inactive';
+            btn.className = 'badge-toggle text-white ' + (data.est_active ? 'bg-success' : 'bg-secondary');
+        }
+    });
+}
+</script>
+{% endblock %}

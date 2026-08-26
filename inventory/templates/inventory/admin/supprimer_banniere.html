@@ -1,0 +1,49 @@
+{% extends 'inventory/base.html' %}
+
+{% block title %}Supprimer Bannière — {{ banniere.titre }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card border-danger mt-4">
+                <div class="card-header bg-danger text-white">
+                    <h5><i class="fas fa-exclamation-triangle"></i> Confirmer la suppression</h5>
+                </div>
+                <div class="card-body">
+                    <div class="banner-preview mb-3" style="background: {{ banniere.couleur_fond }}; border-radius: 12px; padding: 20px; color: white;">
+                        <div class="text-center">
+                            <h4>{{ banniere.titre }}</h4>
+                            {% if banniere.sous_titre %}<p class="mb-0 small opacity-75">{{ banniere.sous_titre }}</p>{% endif %}
+                            {% if banniere.image %}
+                            <img src="{{ banniere.image.url }}" class="img-fluid rounded mt-2" style="max-height:80px;">
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <p class="mb-1"><strong>Boutique :</strong> {% if banniere.boutique %}{{ banniere.boutique.nom }}{% else %}Toutes les boutiques{% endif %}</p>
+                        <p class="mb-1"><strong>Statut :</strong> {% if banniere.est_active %}Active{% else %}Inactive{% endif %}</p>
+                        <p class="mb-1"><strong>Priorité :</strong> {{ banniere.priorite }}</p>
+                        <p class="mb-0"><strong>Créée le :</strong> {{ banniere.creee_le|date:"d/m/Y H:i" }}</p>
+                    </div>
+
+                    <p class="text-danger fw-bold">Cette action est irréversible. La bannière sera définitivement supprimée.</p>
+
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-danger btn-lg">
+                                <i class="fas fa-trash"></i> Oui, supprimer
+                            </button>
+                            <a href="{% url 'inventory:admin_gestion_bannieres' %}" class="btn btn-secondary btn-lg">
+                                <i class="fas fa-times"></i> Annuler
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,185 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Nouvelle Bannière{% endblock %}
+
+{% block extra_css %}
+<style>
+    .color-preview {
+        width: 40px; height: 40px; border-radius: 50%;
+        border: 2px solid #ddd; display: inline-block; vertical-align: middle;
+    }
+    .banner-live {
+        border-radius: 12px; padding: 20px; color: white; min-height: 100px;
+        display: flex; align-items: center; justify-content: center; transition: all 0.3s;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <a href="{% url 'inventory:admin_gestion_bannieres' %}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left"></i> Retour
+            </a>
+            <h2 class="d-inline"><i class="fas fa-plus-circle text-success"></i> Nouvelle Bannière</h2>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="card">
+                    <div class="card-header"><h5>Contenu</h5></div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Titre <span class="text-danger">*</span></label>
+                            <input type="text" name="titre" class="form-control" required maxlength="200"
+                                   id="bannerTitre" placeholder="Ex: Promo spéciale">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Sous-titre</label>
+                            <input type="text" name="sous_titre" class="form-control" maxlength="300"
+                                   id="bannerSousTitre" placeholder="Texte secondaire (optionnel)">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Image</label>
+                            <input type="file" name="image" class="form-control" accept="image/*" id="bannerImage">
+                            <small class="text-muted">Format recommandé : 1200x400px, max 2 Mo</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Texte du bouton</label>
+                            <input type="text" name="texte_bouton" class="form-control" maxlength="50"
+                                   id="bannerBtnText" placeholder="Ex: Voir l'offre">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mt-3">
+                    <div class="card-header"><h5>Apparence</h5></div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Couleur de fond</label>
+                                <div class="input-group">
+                                    <input type="color" name="couleur_fond" class="form-control form-control-color"
+                                           value="#1565C0" id="bannerColor">
+                                    <span class="input-group-text color-preview" id="colorPreview" style="background:#1565C0;"></span>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Priorité</label>
+                                <input type="number" name="priorite" class="form-control" value="0" min="0"
+                                       id="bannerPriorite">
+                                <small class="text-muted">Plus grand = affiché en premier</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mt-3">
+                    <div class="card-header"><h5>Action au clic</h5></div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Type d'action</label>
+                                <select name="action_type" class="form-select" id="bannerActionType">
+                                    <option value="NONE">Aucune</option>
+                                    <option value="URL">Ouvrir URL</option>
+                                    <option value="SYNC">Synchroniser</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Cible (URL ou paramètre)</label>
+                                <input type="text" name="action_cible" class="form-control" maxlength="500"
+                                       id="bannerActionCible" placeholder="https://...">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mt-3">
+                    <div class="card-header"><h5>Portée et planification</h5></div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Boutique</label>
+                                <select name="boutique" class="form-select">
+                                    <option value="">Toutes les boutiques</option>
+                                    {% for b in boutiques %}
+                                    <option value="{{ b.id }}">{{ b.nom }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">Active</label>
+                                <div class="form-check form-switch mt-2">
+                                    <input type="checkbox" name="est_active" class="form-check-input" checked id="bannerActive">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 mb-4">
+                    <button type="submit" class="btn btn-success btn-lg">
+                        <i class="fas fa-save"></i> Créer la bannière
+                    </button>
+                    <a href="{% url 'inventory:admin_gestion_bannieres' %}" class="btn btn-secondary btn-lg ms-2">Annuler</a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Aperçu live -->
+        <div class="col-md-4">
+            <div class="card sticky-top" style="top: 20px;">
+                <div class="card-header"><h5><i class="fas fa-eye"></i> Aperçu</h5></div>
+                <div class="card-body">
+                    <div class="banner-live" id="bannerPreview" style="background: #1565C0;">
+                        <div class="text-center">
+                            <h4 id="previewTitre" class="mb-1">Titre de la bannière</h4>
+                            <p id="previewSousTitre" class="mb-2 small opacity-75"></p>
+                            <div id="previewImg"></div>
+                            <button class="btn btn-light btn-sm mt-2" id="previewBtn" style="display:none;"></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const $ = id => document.getElementById(id);
+
+$('bannerTitre').addEventListener('input', e => {
+    $('previewTitre').textContent = e.target.value || 'Titre de la bannière';
+});
+$('bannerSousTitre').addEventListener('input', e => {
+    $('previewSousTitre').textContent = e.target.value;
+});
+$('bannerColor').addEventListener('input', e => {
+    $('bannerPreview').style.background = e.target.value;
+    $('colorPreview').style.background = e.target.value;
+});
+$('bannerBtnText').addEventListener('input', e => {
+    const btn = $('previewBtn');
+    if (e.target.value) { btn.textContent = e.target.value; btn.style.display = ''; }
+    else { btn.style.display = 'none'; }
+});
+$('bannerImage').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = ev => {
+            $('previewImg').innerHTML = `<img src="${ev.target.result}" class="img-fluid rounded" style="max-height:120px;">`;
+        };
+        reader.readAsDataURL(file);
+    }
+});
+</script>
+{% endblock %}

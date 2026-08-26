@@ -53,6 +53,11 @@ def admin_dashboard(request):
     except Exception:
         nb_demandes_reset_en_attente = 0
 
+    # Bannières
+    from .models import Banner
+    nb_bannieres_total = Banner.objects.count()
+    nb_bannieres_actives = Banner.objects.filter(est_active=True).count()
+
     context = {
         'total_commercants': total_commercants,
         'commercants_actifs': commercants_actifs,
@@ -63,6 +68,8 @@ def admin_dashboard(request):
         'commercants_recents': commercants_recents,
         'boutiques_recentes': boutiques_recentes,
         'nb_demandes_reset_en_attente': nb_demandes_reset_en_attente,
+        'nb_bannieres_total': nb_bannieres_total,
+        'nb_bannieres_actives': nb_bannieres_actives,
     }
     
     return render(request, 'inventory/admin/dashboard.html', context)
@@ -682,3 +689,170 @@ def admin_traiter_vente_rejetee(request, vente_id):
             messages.info(request, f"Vente {vente.vente_uid} rouverte.")
     
     return redirect('inventory:admin_ventes_rejetees')
+
+
+# ===== GESTION DES BANNIÈRES PUBLICITAIRES (ADMIN) =====
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_gestion_bannieres(request):
+    """Liste des bannières publicitaires."""
+    from .models import Banner
+    from django.utils import timezone
+
+    bannières = Banner.objects.select_related('boutique').all()
+
+    # Filtres
+    boutique_id = request.GET.get('boutique')
+    est_active = request.GET.get('actif')
+    if boutique_id:
+        bannières = bannières.filter(boutique_id=boutique_id)
+    if est_active == '1':
+        bannières = bannières.filter(est_active=True)
+    elif est_active == '0':
+        bannières = bannières.filter(est_active=False)
+
+    stats = {
+        'total': Banner.objects.count(),
+        'actives': Banner.objects.filter(est_active=True).count(),
+        'inactives': Banner.objects.filter(est_active=False).count(),
+    }
+
+    boutiques = Boutique.objects.all().order_by('nom')
+
+    context = {
+        'bannières': bannières,
+        'stats': stats,
+        'boutiques': boutiques,
+        'filtre_boutique': boutique_id or '',
+        'filtre_actif': est_active or '',
+    }
+    return render(request, 'inventory/admin/gestion_bannieres.html', context)
+
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_ajouter_banniere(request):
+    """Créer une nouvelle bannière."""
+    from .models import Banner
+
+    if request.method == 'POST':
+        try:
+            titre = request.POST.get('titre', '').strip()
+            if not titre:
+                messages.error(request, 'Le titre est obligatoire.')
+                return render(request, 'inventory/admin/ajouter_banniere.html', {'boutiques': Boutique.objects.all().order_by('nom')})
+
+            boutique_id = request.POST.get('boutique')
+            boutique = None
+            if boutique_id:
+                boutique = get_object_or_404(Boutique, id=boutique_id)
+
+            banniere = Banner.objects.create(
+                titre=titre,
+                sous_titre=request.POST.get('sous_titre', '').strip(),
+                couleur_fond=request.POST.get('couleur_fond', '#1565C0'),
+                texte_bouton=request.POST.get('texte_bouton', '').strip(),
+                action_type=request.POST.get('action_type', 'NONE'),
+                action_cible=request.POST.get('action_cible', '').strip(),
+                est_active=request.POST.get('est_active') == 'on',
+                priorite=int(request.POST.get('priorite', 0)),
+                boutique=boutique,
+            )
+
+            image = request.FILES.get('image')
+            if image:
+                banniere.image = image
+                banniere.save()
+
+            messages.success(request, f'Bannière "{banniere.titre}" créée avec succès.')
+            return redirect('inventory:admin_gestion_bannieres')
+        except Exception as e:
+            logger.error(f"Erreur création bannière: {e}")
+            messages.error(request, f'Erreur: {str(e)}')
+
+    boutiques = Boutique.objects.all().order_by('nom')
+    return render(request, 'inventory/admin/ajouter_banniere.html', {'boutiques': boutiques})
+
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_modifier_banniere(request, banniere_id):
+    """Modifier une bannière."""
+    from .models import Banner
+
+    banniere = get_object_or_404(Banner, id=banniere_id)
+
+    if request.method == 'POST':
+        try:
+            banniere.titre = request.POST.get('titre', banniere.titre).strip()
+            banniere.sous_titre = request.POST.get('sous_titre', '').strip()
+            banniere.couleur_fond = request.POST.get('couleur_fond', banniere.couleur_fond)
+            banniere.texte_bouton = request.POST.get('texte_bouton', '').strip()
+            banniere.action_type = request.POST.get('action_type', banniere.action_type)
+            banniere.action_cible = request.POST.get('action_cible', '').strip()
+            banniere.est_active = request.POST.get('est_active') == 'on'
+            banniere.priorite = int(request.POST.get('priorite', banniere.priorite))
+
+            boutique_id = request.POST.get('boutique')
+            if boutique_id:
+                banniere.boutique = get_object_or_404(Boutique, id=boutique_id)
+            else:
+                banniere.boutique = None
+
+            image = request.FILES.get('image')
+            if image:
+                banniere.image = image
+
+            banniere.save()
+            messages.success(request, f'Bannière "{banniere.titre}" modifiée.')
+            return redirect('inventory:admin_gestion_bannieres')
+        except Exception as e:
+            logger.error(f"Erreur modification bannière {banniere_id}: {e}")
+            messages.error(request, f'Erreur: {str(e)}')
+
+    boutiques = Boutique.objects.all().order_by('nom')
+    return render(request, 'inventory/admin/modifier_banniere.html', {
+        'banniere': banniere,
+        'boutiques': boutiques,
+    })
+
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_supprimer_banniere(request, banniere_id):
+    """Supprimer une bannière."""
+    from .models import Banner
+
+    banniere = get_object_or_404(Banner, id=banniere_id)
+
+    if request.method == 'POST':
+        try:
+            titre = banniere.titre
+            banniere.delete()
+            messages.success(request, f'Bannière "{titre}" supprimée.')
+        except Exception as e:
+            logger.error(f"Erreur suppression bannière {banniere_id}: {e}")
+            messages.error(request, f'Erreur: {str(e)}')
+        return redirect('inventory:admin_gestion_bannieres')
+
+    return render(request, 'inventory/admin/supprimer_banniere.html', {'banniere': banniere})
+
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_toggle_banniere(request, banniere_id):
+    """Activer/désactiver une bannière (AJAX)."""
+    from .models import Banner
+
+    if request.method == 'POST':
+        banniere = get_object_or_404(Banner, id=banniere_id)
+        banniere.est_active = not banniere.est_active
+        banniere.save(update_fields=['est_active'])
+        return JsonResponse({
+            'success': True,
+            'est_active': banniere.est_active,
+            'message': f'Bannière {"activée" if banniere.est_active else "désactivée"}.'
+        })
+
+    return JsonResponse({'success': False, 'message': 'Méthode non autorisée.'})
