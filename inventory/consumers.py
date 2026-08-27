@@ -170,6 +170,17 @@ class BoutiqueConsumer(AsyncWebsocketConsumer):
         }))
         logger.info(f"📤 Bannière notifiée - ID {event.get('banner_id')}, Titre: {event.get('banner_titre')}")
     
+    async def merchant_message(self, event):
+        """Un nouveau message est disponible pour le commerçant"""
+        await self.send(text_data=json.dumps({
+            'type': 'merchant_message',
+            'message_id': event.get('message_id'),
+            'message_titre': event.get('message_titre', ''),
+            'message_type': event.get('message_type', 'INFO'),
+            'timestamp': self.get_timestamp()
+        }))
+        logger.info(f"📤 Message notifié - ID {event.get('message_id')}, Titre: {event.get('message_titre')}")
+    
     # Méthodes utilitaires
     
     @database_sync_to_async

@@ -423,3 +423,66 @@ def notify_banner_created(boutique_id, banner_id, banner_titre):
         banner_titre,
         data={'type': 'banner_created', 'banner_id': banner_id}
     )
+
+
+def notify_merchant_message(commercant_id, message_id, message_titre, message_type):
+    """
+    Notifier un commerçant qu'il a reçu un nouveau message.
+    """
+    try:
+        from .models import Boutique
+        boutiques = Boutique.objects.filter(commercant_id=commercant_id, est_active=True)
+        for b in boutiques:
+            try:
+                channel_layer = get_channel_layer()
+                async_to_sync(channel_layer.group_send)(
+                    f'boutique_{b.id}',
+                    {
+                        'type': 'merchant_message',
+                        'message_id': message_id,
+                        'message_titre': message_titre,
+                        'message_type': message_type,
+                    }
+                )
+            except Exception as e:
+                logger.error(f"❌ Erreur WebSocket message commerçant boutique {b.id}: {e}")
+
+        logger.info(f"🔔 WebSocket: Message '{message_titre}' notifié au commerçant #{commercant_id}")
+    except Exception as e:
+        logger.error(f"❌ Erreur notification message commerçant: {e}")
+
+    # Push FCM
+    try:
+        from .models import Client
+        terminals = Client.objects.filter(
+            boutique__commercant_id=commercant_id,
+            est_actif=True,
+            fcm_token__isnull=False
+        ).exclude(fcm_token='')
+
+        for terminal in terminals:
+            try:
+                _push_fcm_to_token(
+                    terminal.fcm_token,
+                    f"📩 {message_titre}",
+                    f"Type: {message_type}",
+                    data={'type': 'merchant_message', 'message_id': message_id}
+                )
+            except Exception as e:
+                logger.error(f"❌ FCM message commerçant terminal {terminal.numero_serie}: {e}")
+    except Exception as e:
+        logger.error(f"❌ Erreur FCM message commerçant: {e}")
+
+
+def _push_fcm_to_token(token, title, body, data=None):
+    """Envoyer un push FCM à un token spécifique."""
+    try:
+        from firebase_admin import messaging
+        message = messaging.Message(
+            notification=messaging.Notification(title=title, body=body),
+            data=data or {},
+            token=token,
+        )
+        messaging.send(message)
+    except Exception as e:
+        logger.error(f"❌ FCM push échoué: {e}")

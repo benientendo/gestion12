@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django import forms
 from django.utils import timezone
-from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock, VarianteArticle, TransactionMobileMoney, VenteCredit, StockCredit, ApprovisionnementCredit, DemandeResetPdv, Client, Banner
+from .models import Categorie, Article, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, NotificationStock, VarianteArticle, TransactionMobileMoney, VenteCredit, StockCredit, ApprovisionnementCredit, DemandeResetPdv, Client, Banner, MerchantMessage
 from .websocket_utils import notify_banner_created
 
 
@@ -486,4 +486,12 @@ class BannerAdmin(admin.ModelAdmin):
                 banner_id=obj.id,
                 banner_titre=obj.titre,
             )
+
+
+@admin.register(MerchantMessage)
+class MerchantMessageAdmin(admin.ModelAdmin):
+    list_display = ('titre', 'type_message', 'commercant', 'est_lu', 'date_creation')
+    list_filter = ('type_message', 'est_lu')
+    search_fields = ('titre', 'contenu')
+    readonly_fields = ('date_creation', 'date_lecture')
 

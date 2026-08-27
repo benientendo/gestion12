@@ -92,4 +92,8 @@ urlpatterns = [
     # ===== BANNIÈRES PUBLICITAIRES =====
     path('banners/', api_views_v2_simple.banners_list_simple, name='banners_list'),
     path('banners', api_views_v2_simple.banners_list_simple, name='banners_list_no_slash'),
+
+    # ===== MESSAGES COMMERCANT =====
+    path('merchant-messages/', api_views_v2_simple.merchant_messages_list, name='merchant_messages_list'),
+    path('merchant-messages/<int:message_id>/read/', api_views_v2_simple.merchant_messages_mark_read, name='merchant_messages_mark_read'),
 ]

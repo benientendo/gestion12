@@ -58,6 +58,10 @@ def admin_dashboard(request):
     nb_bannieres_total = Banner.objects.count()
     nb_bannieres_actives = Banner.objects.filter(est_active=True).count()
 
+    # Messages
+    from .models import MerchantMessage
+    nb_messages_non_lus = MerchantMessage.objects.filter(est_lu=False).count()
+
     context = {
         'total_commercants': total_commercants,
         'commercants_actifs': commercants_actifs,
@@ -70,6 +74,7 @@ def admin_dashboard(request):
         'nb_demandes_reset_en_attente': nb_demandes_reset_en_attente,
         'nb_bannieres_total': nb_bannieres_total,
         'nb_bannieres_actives': nb_bannieres_actives,
+        'nb_messages_non_lus': nb_messages_non_lus,
     }
     
     return render(request, 'inventory/admin/dashboard.html', context)
@@ -877,3 +882,124 @@ def admin_toggle_banniere(request, banniere_id):
         })
 
     return JsonResponse({'success': False, 'message': 'Méthode non autorisée.'})
+
+
+# ===== GESTION DES MESSAGES COMMERCANT (ADMIN) =====
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_gestion_messages(request):
+    """Liste des messages envoyés aux commerçants."""
+    from .models import MerchantMessage
+
+    msgs = MerchantMessage.objects.select_related('commercant').all()
+
+    # Filtres
+    type_msg = request.GET.get('type')
+    if type_msg:
+        msgs = msgs.filter(type_message=type_msg)
+
+    stats = {
+        'total': MerchantMessage.objects.count(),
+        'non_lus': MerchantMessage.objects.filter(est_lu=False).count(),
+        'paiements': MerchantMessage.objects.filter(type_message='PAIEMENT').count(),
+    }
+
+    commercants = Commercant.objects.all().order_by('nom_entreprise')
+
+    context = {
+        'messages_list': msgs,
+        'stats': stats,
+        'commercants': commercants,
+        'filtre_type': type_msg or '',
+    }
+    return render(request, 'inventory/admin/gestion_messages.html', context)
+
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_ajouter_message(request):
+    """Envoyer un message à un ou plusieurs commerçants."""
+    from .models import MerchantMessage
+
+    if request.method == 'POST':
+        try:
+            titre = request.POST.get('titre', '').strip()
+            contenu = request.POST.get('contenu', '').strip()
+            type_message = request.POST.get('type_message', 'INFO')
+            commercant_id = request.POST.get('commercant')
+
+            if not titre or not contenu:
+                messages.error(request, 'Le titre et le contenu sont obligatoires.')
+                return render(request, 'inventory/admin/ajouter_message.html', {
+                    'commercants': Commercant.objects.all().order_by('nom_entreprise'),
+                })
+
+            commercant = None
+            if commercant_id:
+                commercant = get_object_or_404(Commercant, id=commercant_id)
+
+            msg = MerchantMessage.objects.create(
+                titre=titre,
+                contenu=contenu,
+                type_message=type_message,
+                commercant=commercant,
+            )
+
+            # Notifier via WebSocket si commerçant spécifique
+            if commercant:
+                try:
+                    from .websocket_utils import notify_merchant_message
+                    notify_merchant_message(commercant.id, msg.id, msg.titre, msg.type_message)
+                except Exception:
+                    pass
+
+            messages.success(request, f'Message "{titre}" envoyé avec succès.')
+            return redirect('inventory:admin_gestion_messages')
+
+        except Exception as e:
+            logger.error(f"Erreur création message: {e}")
+            messages.error(request, f'Erreur: {str(e)}')
+
+    commercants = Commercant.objects.all().order_by('nom_entreprise')
+    return render(request, 'inventory/admin/ajouter_message.html', {
+        'commercants': commercants,
+    })
+
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_supprimer_message(request, message_id):
+    """Supprimer un message."""
+    from .models import MerchantMessage
+
+    msg = get_object_or_404(MerchantMessage, id=message_id)
+
+    if request.method == 'POST':
+        try:
+            titre = msg.titre
+            msg.delete()
+            messages.success(request, f'Message "{titre}" supprimé.')
+        except Exception as e:
+            logger.error(f"Erreur suppression message: {e}")
+            messages.error(request, f'Erreur: {str(e)}')
+        return redirect('inventory:admin_gestion_messages')
+
+    return render(request, 'inventory/admin/supprimer_message.html', {'message_obj': msg})
+
+
+@login_required
+@user_passes_test(is_superuser)
+def admin_marquer_lu_message(request, message_id):
+    """Marquer un message comme lu."""
+    from .models import MerchantMessage
+    from django.utils import timezone
+
+    if request.method == 'POST':
+        msg = get_object_or_404(MerchantMessage, id=message_id)
+        msg.est_lu = True
+        msg.date_lecture = timezone.now()
+        msg.save(update_fields=['est_lu', 'date_lecture'])
+        messages.success(request, f'Message "{msg.titre}" marqué comme lu.')
+
+    return redirect('inventory:admin_gestion_messages')

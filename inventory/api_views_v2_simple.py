@@ -4424,3 +4424,86 @@ def banners_list_simple(request):
             'error': 'Erreur interne du serveur',
             'code': 'INTERNAL_ERROR'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+def merchant_messages_list(request):
+    """
+    GET /api/v2/simple/merchant-messages/?commercant_id=X
+    
+    Récupère les messages non lus pour un commerçant spécifique.
+    Si aucun commerçant n'est spécifié, retourne tous les messages (admin).
+    """
+    from .models import MerchantMessage, Commercant
+
+    try:
+        commercant_id = request.GET.get('commercant_id')
+
+        messages = MerchantMessage.objects.all()
+
+        if commercant_id:
+            # Messages pour ce commerçant OU messages globaux (commercant=null)
+            messages = messages.filter(
+                Q(commercant_id=commercant_id) | Q(commercant__isnull=True)
+            )
+
+        messages = messages.order_by('-date_creation')[:20]
+
+        messages_data = []
+        for msg in messages:
+            messages_data.append({
+                'id': msg.id,
+                'titre': msg.titre,
+                'contenu': msg.contenu,
+                'type_message': msg.type_message,
+                'est_lu': msg.est_lu,
+                'date_creation': msg.date_creation.isoformat() if msg.date_creation else None,
+            })
+
+        return Response({
+            'success': True,
+            'count': len(messages_data),
+            'messages': messages_data,
+        })
+
+    except Exception as e:
+        logger.error(f"Erreur messages commerçant: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+def merchant_messages_mark_read(request, message_id):
+    """
+    POST /api/v2/simple/merchant-messages/<id>/read/
+    
+    Marquer un message comme lu.
+    """
+    from .models import MerchantMessage
+    from django.utils import timezone
+
+    try:
+        msg = MerchantMessage.objects.get(id=message_id)
+        msg.est_lu = True
+        msg.date_lecture = timezone.now()
+        msg.save(update_fields=['est_lu', 'date_lecture'])
+
+        return Response({
+            'success': True,
+            'message': 'Message marqué comme lu',
+        })
+
+    except MerchantMessage.DoesNotExist:
+        return Response({
+            'error': 'Message non trouvé',
+            'code': 'NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    except Exception as e:
+        logger.error(f"Erreur marquage message: {str(e)}")
+        return Response({
+            'error': 'Erreur interne du serveur',
+            'code': 'INTERNAL_ERROR'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

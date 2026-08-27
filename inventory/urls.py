@@ -77,6 +77,11 @@ urlpatterns = [
     path('superadmin/bannieres/<int:banniere_id>/modifier/', admin_views.admin_modifier_banniere, name='admin_modifier_banniere'),
     path('superadmin/bannieres/<int:banniere_id>/supprimer/', admin_views.admin_supprimer_banniere, name='admin_supprimer_banniere'),
     path('superadmin/bannieres/<int:banniere_id>/toggle/', admin_views.admin_toggle_banniere, name='admin_toggle_banniere'),
+    # Messages commerçants
+    path('superadmin/messages/', admin_views.admin_gestion_messages, name='admin_gestion_messages'),
+    path('superadmin/messages/ajouter/', admin_views.admin_ajouter_message, name='admin_ajouter_message'),
+    path('superadmin/messages/<int:message_id>/supprimer/', admin_views.admin_supprimer_message, name='admin_supprimer_message'),
+    path('superadmin/messages/<int:message_id>/lu/', admin_views.admin_marquer_lu_message, name='admin_marquer_lu_message'),
 
     # ===== INTERFACE COMMERÇANT =====
     path('commercant/login/', views_commercant.login_commercant, name='login_commercant'),

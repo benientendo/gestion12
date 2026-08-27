@@ -1,0 +1,118 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Nouveau Message{% endblock %}
+
+{% block extra_css %}
+<style>
+    .type-paiement { background: linear-gradient(135deg, #dc3545, #c82333); }
+    .type-info { background: linear-gradient(135deg, #17a2b8, #138496); }
+    .type-alerte { background: linear-gradient(135deg, #ffc107, #e0a800); color: #333; }
+    .type-maintenance { background: linear-gradient(135deg, #6c757d, #5a6268); }
+    .preview-msg { border-radius: 12px; padding: 20px; color: white; min-height: 100px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <a href="{% url 'inventory:admin_gestion_messages' %}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left"></i> Retour
+            </a>
+            <h2 class="d-inline"><i class="fas fa-paper-plane text-success"></i> Nouveau Message</h2>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <form method="post">
+                {% csrf_token %}
+                <div class="card">
+                    <div class="card-header"><h5>Contenu du message</h5></div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">Type de message <span class="text-danger">*</span></label>
+                            <select name="type_message" class="form-select" id="msgType">
+                                <option value="PAIEMENT">💰 Paiement</option>
+                                <option value="INFO" selected>ℹ️ Information</option>
+                                <option value="ALERTE">⚠️ Alerte</option>
+                                <option value="MAINTENANCE">🔧 Maintenance</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Titre <span class="text-danger">*</span></label>
+                            <input type="text" name="titre" class="form-control" required maxlength="200"
+                                   id="msgTitre" placeholder="Ex: Paiement reçu">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Contenu <span class="text-danger">*</span></label>
+                            <textarea name="contenu" class="form-control" rows="5" required
+                                      id="msgContenu" placeholder="Détails du message..."></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Destinataire</label>
+                            <select name="commercant" class="form-select">
+                                <option value="">Tous les commerçants</option>
+                                {% for c in commercants %}
+                                <option value="{{ c.id }}">{{ c.nom_entreprise }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Laisser vide pour envoyer à tous</small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4 mb-4">
+                    <button type="submit" class="btn btn-success btn-lg">
+                        <i class="fas fa-paper-plane"></i> Envoyer
+                    </button>
+                    <a href="{% url 'inventory:admin_gestion_messages' %}" class="btn btn-secondary btn-lg ms-2">Annuler</a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Aperçu -->
+        <div class="col-md-4">
+            <div class="card sticky-top" style="top: 20px;">
+                <div class="card-header"><h5><i class="fas fa-eye"></i> Aperçu</h5></div>
+                <div class="card-body">
+                    <div class="preview-msg type-info" id="msgPreview">
+                        <h5 id="previewType">ℹ️ Information</h5>
+                        <h6 id="previewTitre" class="mt-2">Titre du message</h6>
+                        <p id="previewContenu" class="small opacity-75 mt-1">Contenu du message...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const typeClasses = {
+    'PAIEMENT': { class: 'type-paiement', icon: '💰', label: 'Paiement' },
+    'INFO': { class: 'type-info', icon: 'ℹ️', label: 'Information' },
+    'ALERTE': { class: 'type-alerte', icon: '⚠️', label: 'Alerte' },
+    'MAINTENANCE': { class: 'type-maintenance', icon: '🔧', label: 'Maintenance' },
+};
+
+const $ = id => document.getElementById(id);
+
+function updatePreview() {
+    const type = $('msgType').value;
+    const info = typeClasses[type] || typeClasses['INFO'];
+    const preview = $('msgPreview');
+    
+    preview.className = 'preview-msg ' + info.class;
+    $('previewType').textContent = info.icon + ' ' + info.label;
+    $('previewTitre').textContent = $('msgTitre').value || 'Titre du message';
+    $('previewContenu').textContent = $('msgContenu').value || 'Contenu du message...';
+}
+
+$('msgType').addEventListener('change', updatePreview);
+$('msgTitre').addEventListener('input', updatePreview);
+$('msgContenu').addEventListener('input', updatePreview);
+</script>
+{% endblock %}

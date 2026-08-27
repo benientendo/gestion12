@@ -2102,3 +2102,37 @@ class Banner(models.Model):
         verbose_name = "Bannière publicitaire"
         verbose_name_plural = "Bannières publicitaires"
         ordering = ['-priorite', '-creee_le']
+
+
+class MerchantMessage(models.Model):
+    """Message envoyé par l'admin à un commerçant (affiché à la connexion)."""
+
+    TYPE_CHOICES = [
+        ('PAIEMENT', 'Paiement'),
+        ('INFO', 'Information'),
+        ('ALERTE', 'Alerte'),
+        ('MAINTENANCE', 'Maintenance'),
+    ]
+
+    titre = models.CharField(max_length=200, help_text="Titre du message")
+    contenu = models.TextField(help_text="Contenu détaillé du message")
+    type_message = models.CharField(max_length=20, choices=TYPE_CHOICES, default='INFO',
+                                     help_text="Type de message (détermine la couleur)")
+
+    # Destinataire
+    commercant = models.ForeignKey('Commercant', on_delete=models.CASCADE, null=True, blank=True,
+                                   help_text="Null = tous les commerçants")
+
+    # Métadonnées
+    est_lu = models.BooleanField(default=False)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_lecture = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        scope = self.commercant.nom_entreprise if self.commercant else "Tous"
+        return f"[{self.get_type_message_display()}] {self.titre} → {scope}"
+
+    class Meta:
+        verbose_name = "Message commerçant"
+        verbose_name_plural = "Messages commerçants"
+        ordering = ['-date_creation']
