@@ -166,6 +166,34 @@
                             {% endfor %}
                         </div>
                     {% endif %}
+
+                    <!-- Messages du superadmin -->
+                    {% if merchant_messages %}
+                        <div class="mb-3">
+                            {% for msg in merchant_messages %}
+                                <div class="alert alert-dismissible fade show shadow-sm d-flex align-items-start mb-2"
+                                     role="alert"
+                                     style="border-left: 5px solid {% if msg.type_message == 'PAIEMENT' %}#dc3545{% elif msg.type_message == 'INFO' %}#0d6efd{% elif msg.type_message == 'ALERTE' %}#ffc107{% elif msg.type_message == 'MAINTENANCE' %}#6c757d{% else %}#333{% endif %};
+                                            background-color: {% if msg.type_message == 'PAIEMENT' %}#fff5f5{% elif msg.type_message == 'INFO' %}#f0f7ff{% elif msg.type_message == 'ALERTE' %}#fffbe6{% elif msg.type_message == 'MAINTENANCE' %}#f8f9fa{% else %}#fff{% endif %};">
+                                    <span class="me-2" style="font-size: 1.2em;">
+                                        {% if msg.type_message == 'PAIEMENT' %}💰{% elif msg.type_message == 'INFO' %}ℹ️{% elif msg.type_message == 'ALERTE' %}⚠️{% elif msg.type_message == 'MAINTENANCE' %}🔧{% else %}📩{% endif %}
+                                    </span>
+                                    <div class="flex-grow-1">
+                                        <strong style="color: {% if msg.type_message == 'PAIEMENT' %}#dc3545{% elif msg.type_message == 'INFO' %}#0d6efd{% elif msg.type_message == 'ALERTE' %}#ffc107{% elif msg.type_message == 'MAINTENANCE' %}#6c757d{% else %}#333{% endif %};">
+                                            {{ msg.titre }}
+                                        </strong>
+                                        <div class="mt-1" style="font-size: 0.9em; color: #444;">{{ msg.contenu }}</div>
+                                        <small class="text-muted">{{ msg.date_creation|date:"d/m/Y H:i" }}</small>
+                                    </div>
+                                    <a href="{% url 'inventory:admin_marquer_lu_message' msg.id %}"
+                                       class="btn btn-sm btn-outline-secondary ms-2 flex-shrink-0"
+                                       title="Marquer comme lu">
+                                        <i class="bi bi-check-lg"></i>
+                                    </a>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
                     
                     <!-- Page Content -->
                     {% block content %}

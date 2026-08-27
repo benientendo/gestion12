@@ -991,15 +991,19 @@ def admin_supprimer_message(request, message_id):
 @login_required
 @user_passes_test(is_superuser)
 def admin_marquer_lu_message(request, message_id):
-    """Marquer un message comme lu."""
+    """Marquer un message comme lu (GET ou POST)."""
     from .models import MerchantMessage
     from django.utils import timezone
 
-    if request.method == 'POST':
+    if request.method in ('GET', 'POST'):
         msg = get_object_or_404(MerchantMessage, id=message_id)
         msg.est_lu = True
         msg.date_lecture = timezone.now()
         msg.save(update_fields=['est_lu', 'date_lecture'])
         messages.success(request, f'Message "{msg.titre}" marqué comme lu.')
 
-    return redirect('inventory:admin_gestion_messages')
+    # Retourner à la page précédente ou au dashboard
+    referer = request.META.get('HTTP_REFERER')
+    if referer and 'superadmin' in referer:
+        return redirect('inventory:admin_gestion_messages')
+    return redirect('inventory:admin_dashboard')

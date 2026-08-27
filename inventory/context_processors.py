@@ -3,7 +3,7 @@ Context processors pour injecter des données globales dans tous les templates.
 """
 import json
 from django.db.models import F
-from .models import Article, Boutique
+from .models import Article, Boutique, MerchantMessage
 
 
 def alertes_stock(request):
@@ -68,3 +68,32 @@ def alertes_stock(request):
         pass
     
     return alertes
+
+
+def messages_commercant(request):
+    """
+    Injecte les messages non lus du superadmin dans le contexte de tous les templates.
+    Affichés comme bandes colorées selon le type (PAIEMENT, INFO, ALERTE, MAINTENANCE).
+    """
+    result = {
+        'merchant_messages': [],
+        'merchant_messages_count': 0,
+    }
+
+    if not request.user.is_authenticated:
+        return result
+
+    try:
+        commercant = request.user.profil_commercant
+        messages_qs = MerchantMessage.objects.filter(
+            commercant=commercant,
+            est_lu=False
+        ).order_by('-date_creation')[:5]
+        result['merchant_messages'] = messages_qs
+        result['merchant_messages_count'] = MerchantMessage.objects.filter(
+            commercant=commercant, est_lu=False
+        ).count()
+    except Exception:
+        pass
+
+    return result
