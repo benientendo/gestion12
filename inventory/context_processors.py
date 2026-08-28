@@ -84,14 +84,16 @@ def messages_commercant(request):
         return result
 
     try:
+        from django.db.models import Q
         commercant = request.user.profil_commercant
         messages_qs = MerchantMessage.objects.filter(
-            commercant=commercant,
+            Q(commercant=commercant) | Q(commercant__isnull=True),
             est_lu=False
         ).order_by('-date_creation')[:5]
         result['merchant_messages'] = messages_qs
         result['merchant_messages_count'] = MerchantMessage.objects.filter(
-            commercant=commercant, est_lu=False
+            Q(commercant=commercant) | Q(commercant__isnull=True),
+            est_lu=False
         ).count()
     except Exception:
         pass

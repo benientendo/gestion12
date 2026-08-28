@@ -1002,8 +1002,11 @@ def admin_marquer_lu_message(request, message_id):
         msg.save(update_fields=['est_lu', 'date_lecture'])
         messages.success(request, f'Message "{msg.titre}" marqué comme lu.')
 
-    # Retourner à la page précédente ou au dashboard
+    # Retourner à la page précédente
     referer = request.META.get('HTTP_REFERER')
-    if referer and 'superadmin' in referer:
-        return redirect('inventory:admin_gestion_messages')
-    return redirect('inventory:admin_dashboard')
+    if referer:
+        from django.http import HttpResponseRedirect
+        return HttpResponseRedirect(referer)
+    if request.user.is_superuser:
+        return redirect('inventory:admin_dashboard')
+    return redirect('inventory:home')
