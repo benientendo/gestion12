@@ -18,6 +18,9 @@ urlpatterns = [
     # Catégories
     path('categories/', api_views_maui_desktop.categories_boutique, name='categories_boutique'),
 
+    # Articles (sans facture)
+    path('articles/', api_views_maui_desktop.recevoir_articles, name='recevoir_articles'),
+
     # Facture approvisionnement
     path('approvisionnement/', api_views_maui_desktop.recevoir_facture, name='recevoir_facture'),
 ]

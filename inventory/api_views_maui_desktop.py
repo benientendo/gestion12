@@ -394,6 +394,149 @@ def recevoir_facture(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+# ===== RÉCEPTION ARTICLES (sans facture) =====
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@parser_classes([JSONParser])
+def recevoir_articles(request):
+    """
+    Recevoir des articles depuis MAUI Windows SANS créer de facture.
+
+    Crée/met à jour uniquement:
+    - Article (stock, prix_achat, prix_vente)
+    - MouvementStock (traçabilité)
+
+    Body JSON:
+    {
+        "boutique_id": 1,
+        "date": "2026-09-05",
+        "source": "inventaire",
+        "articles": [
+            {
+                "nom": "Riz 5kg",
+                "categorie": "Alimentaire",
+                "qte": 205,
+                "prix_achat": 2500,
+                "prix_vente": 3500
+            }
+        ]
+    }
+    """
+    user_id = _get_user_id(request)
+    if user_id is None:
+        return Response({'error': 'Authentification requise'}, status=401)
+
+    try:
+        commercant = Commercant.objects.get(user_id=user_id, est_actif=True)
+    except Commercant.DoesNotExist:
+        return Response({'error': 'Commerçant non trouvé'}, status=404)
+
+    data = request.data
+    if not data:
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            data = {}
+
+    boutique_id = data.get('boutique_id')
+    articles = data.get('articles', [])
+    source = data.get('source', 'MAUI')
+    date_ref = data.get('date', '')
+
+    if not boutique_id:
+        return Response({'error': 'boutique_id requis'}, status=400)
+    if not articles:
+        return Response({'error': 'Au moins un article requis'}, status=400)
+
+    try:
+        boutique = Boutique.objects.get(id=boutique_id, commercant=commercant, est_active=True)
+    except Boutique.DoesNotExist:
+        return Response({'error': 'Boutique non trouvée'}, status=404)
+
+    try:
+        with transaction.atomic():
+            articles_crees = 0
+            articles_mis_a_jour = 0
+
+            for art_data in articles:
+                nom = art_data.get('nom', '').strip()
+                if not nom:
+                    continue
+
+                qte = int(art_data.get('qte', 0))
+                prix_achat = Decimal(str(art_data.get('prix_achat', 0)))
+                prix_vente = Decimal(str(art_data.get('prix_vente', 0)))
+                categorie_nom = art_data.get('categorie', '').strip()
+
+                if qte <= 0:
+                    continue
+
+                # Catégorie
+                categorie = None
+                if categorie_nom:
+                    categorie, _ = Categorie.objects.get_or_create(
+                        nom=categorie_nom,
+                        boutique=boutique,
+                        defaults={'description': f'Créée depuis {source}'}
+                    )
+
+                code_article = nom[:50].upper().replace(' ', '_')
+
+                article, created = Article.objects.get_or_create(
+                    code=code_article,
+                    boutique=boutique,
+                    defaults={
+                        'nom': nom,
+                        'devise': 'CDF',
+                        'prix_vente': prix_vente,
+                        'prix_achat': prix_achat,
+                        'categorie': categorie,
+                        'quantite_stock': qte,
+                        'est_actif': True,
+                    }
+                )
+
+                if created:
+                    articles_crees += 1
+                else:
+                    ancien_stock = article.quantite_stock
+                    article.quantite_stock += qte
+                    if prix_vente > 0:
+                        article.prix_vente = prix_vente
+                    if prix_achat > 0:
+                        article.prix_achat = prix_achat
+                    if categorie:
+                        article.categorie = categorie
+                    article.save()
+                    articles_mis_a_jour += 1
+
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='ENTREE',
+                        quantite=qte,
+                        stock_avant=ancien_stock,
+                        stock_apres=article.quantite_stock,
+                        reference_document=source,
+                        utilisateur="MAUI-Windows",
+                        commentaire=f"{source} {date_ref}".strip()
+                    )
+
+            return Response({
+                'success': True,
+                'message': f'{articles_crees} article(s) créé(s), {articles_mis_a_jour} mis à jour',
+                'articles_crees': articles_crees,
+                'articles_mis_a_jour': articles_mis_a_jour,
+            })
+
+    except Exception as e:
+        logger.error(f"Erreur réception articles: {str(e)}", exc_info=True)
+        return Response({
+            'error': f'Erreur serveur: {str(e)}'
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 # ===== UTILITAIRES =====
 
 def _get_user_id(request):
