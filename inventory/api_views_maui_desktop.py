@@ -470,7 +470,7 @@ def recevoir_articles(request):
                 prix_vente = Decimal(str(art_data.get('prix_vente', 0)))
                 categorie_nom = art_data.get('categorie', '').strip()
 
-                if qte <= 0:
+                if qte < 0:
                     continue
 
                 # Catégorie
