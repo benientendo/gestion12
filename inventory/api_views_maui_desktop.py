@@ -470,6 +470,10 @@ def recevoir_articles(request):
                 prix_vente = Decimal(str(art_data.get('prix_vente', 0)))
                 categorie_nom = art_data.get('categorie', '').strip()
 
+                # Ne jamais copier PV en PA : si non renseigné ou égal au PV, on laisse 0
+                if prix_achat <= 0 or prix_achat == prix_vente:
+                    prix_achat = Decimal('0')
+
                 if qte < 0:
                     continue
 
