@@ -224,7 +224,14 @@
                             {% if valeur_stock_usd %}
                             <h4 class="mb-1"><i class="fas fa-dollar-sign me-1"></i><span class="sensitive-amount">{{ valeur_stock_usd|floatformat:2 }} USD</span></h4>
                             {% endif %}
-                            <p class="mb-0">Valeur du stock disponible <i class="fas fa-external-link-alt fa-xs"></i></p>
+                            <p class="mb-1">Valeur stock (PV) <i class="fas fa-external-link-alt fa-xs"></i></p>
+                            <small class="d-block">
+                                Achat:
+                                <span class="sensitive-amount fw-semibold">{{ valeur_stock_achat_cdf|format_cdf:0 }} FC</span>
+                                {% if valeur_stock_achat_usd %}
+                                / <span class="sensitive-amount">{{ valeur_stock_achat_usd|floatformat:2 }} USD</span>
+                                {% endif %}
+                            </small>
                         </a>
                     </div>
                 </div>

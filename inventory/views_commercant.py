@@ -1162,26 +1162,36 @@ def entrer_boutique(request, boutique_id):
         ca_aujourd_hui_usd = 0
         ca_mois_usd = 0
     
-    # Valeur totale du stock disponible (prix de vente x quantité) - séparé par devise
+    # Valeur totale du stock disponible - séparé par devise
     try:
         articles_actifs = boutique.articles.filter(est_actif=True, quantite_stock__gt=0)
-        
-        # Stock en CDF
+
+        # Stock en CDF (prix de vente)
         valeur_stock_cdf = articles_actifs.filter(devise='CDF').aggregate(
             total=Sum(F('prix_vente') * F('quantite_stock'))
         )['total'] or 0
-        
-        # Stock en USD
+
+        # Stock en USD (prix de vente)
         valeur_stock_usd = articles_actifs.filter(devise='USD').aggregate(
             total=Sum(F('prix_vente') * F('quantite_stock'))
         )['total'] or 0
-        
+
+        # Valeur au prix d'achat (coût)
+        valeur_stock_achat_cdf = articles_actifs.filter(devise='CDF').aggregate(
+            total=Sum(F('prix_achat') * F('quantite_stock'))
+        )['total'] or 0
+        valeur_stock_achat_usd = articles_actifs.filter(devise='USD').aggregate(
+            total=Sum(F('prix_achat') * F('quantite_stock'))
+        )['total'] or 0
+
         # Valeur totale pour compatibilité (en CDF)
         valeur_stock_disponible = valeur_stock_cdf
     except Exception:
         valeur_stock_disponible = 0
         valeur_stock_cdf = 0
         valeur_stock_usd = 0
+        valeur_stock_achat_cdf = 0
+        valeur_stock_achat_usd = 0
     
     # Articles en stock faible
     try:
@@ -1291,6 +1301,8 @@ def entrer_boutique(request, boutique_id):
         'valeur_stock_disponible': valeur_stock_disponible,
         'valeur_stock_cdf': valeur_stock_cdf,
         'valeur_stock_usd': valeur_stock_usd,
+        'valeur_stock_achat_cdf': valeur_stock_achat_cdf,
+        'valeur_stock_achat_usd': valeur_stock_achat_usd,
         'articles_stock_faible': articles_stock_faible,
         'mouvements_recents': mouvements_recents,
         'ventes_recentes': ventes_recentes,
