@@ -514,7 +514,14 @@ def recevoir_articles(request):
                     articles_crees += 1
                 else:
                     ancien_stock = article.quantite_stock
-                    article.quantite_stock += qte
+                    # Inventaire/stock = instantané : on remet le stock à la valeur reçue
+                    # (permet de recommencer l'envoi sans doubler)
+                    # Facture = entrée de marchandise : on additionne
+                    if source in ('inventaire', 'stock'):
+                        article.quantite_stock = qte
+                    else:
+                        article.quantite_stock += qte
+
                     if prix_vente > 0:
                         article.prix_vente = prix_vente
                     if prix_achat > 0:
@@ -524,16 +531,17 @@ def recevoir_articles(request):
                     article.save()
                     articles_mis_a_jour += 1
 
-                    MouvementStock.objects.create(
-                        article=article,
-                        type_mouvement='ENTREE',
-                        quantite=qte,
-                        stock_avant=ancien_stock,
-                        stock_apres=article.quantite_stock,
-                        reference_document=source,
-                        utilisateur="MAUI-Windows",
-                        commentaire=f"{source} {date_ref}".strip()
-                    )
+                    if article.quantite_stock != ancien_stock:
+                        MouvementStock.objects.create(
+                            article=article,
+                            type_mouvement='AJUSTEMENT' if source in ('inventaire', 'stock') else 'ENTREE',
+                            quantite=abs(article.quantite_stock - ancien_stock),
+                            stock_avant=ancien_stock,
+                            stock_apres=article.quantite_stock,
+                            reference_document=source,
+                            utilisateur="MAUI-Windows",
+                            commentaire=f"{source} {date_ref}".strip()
+                        )
 
             return Response({
                 'success': True,

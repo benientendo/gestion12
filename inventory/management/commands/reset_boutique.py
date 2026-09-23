@@ -28,6 +28,8 @@ class Command(BaseCommand):
                 nb_articles = articles.update(
                     quantite_stock=0,
                     prix_vente=0,
+                    prix_achat=0,
+                    point_vente_source='',
                     date_mise_a_jour=timezone.now()
                 )
                 nb_variantes = variantes.update(
@@ -35,7 +37,8 @@ class Command(BaseCommand):
                     date_mise_a_jour=timezone.now()
                 )
                 self.stdout.write(self.style.SUCCESS(
-                    f"{nb_articles} articles + {nb_variantes} variantes reinitialises"
+                    f"{nb_articles} articles + {nb_variantes} variantes reinitialises "
+                    f"(stock, prix, PV source vides — pret pour re-envoi MAUI)"
                 ))
             else:
                 self.stdout.write(self.style.WARNING("Ajoutez --reset pour reinitialiser"))
