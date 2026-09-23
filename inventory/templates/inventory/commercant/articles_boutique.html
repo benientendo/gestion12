@@ -1466,8 +1466,15 @@
         font-size: 0.85rem;
         font-weight: 600;
     }
-    
-    .table-body tbody td.col-prix::before {
+
+    .table-body tbody td.col-prix:nth-of-type(6)::before {
+        content: "PA: ";
+        font-weight: 400;
+        color: #6c757d;
+        font-size: 0.7rem;
+    }
+
+    .table-body tbody td.col-prix:nth-of-type(7)::before {
         content: "Prix: ";
         font-weight: 400;
         color: #6c757d;
@@ -1602,7 +1609,21 @@
         width: 30%;
         order: 3;
     }
-    
+
+    .table-body tbody td.col-prix:nth-of-type(6)::before {
+        content: "PA: ";
+        font-weight: 400;
+        color: #6c757d;
+        font-size: 0.7rem;
+    }
+
+    .table-body tbody td.col-prix:nth-of-type(7)::before {
+        content: "Prix: ";
+        font-weight: 400;
+        color: #6c757d;
+        font-size: 0.7rem;
+    }
+
     .table-body tbody td.col-stock {
         width: 25%;
         order: 4;
