@@ -137,7 +137,7 @@ class Article(models.Model):
     version = models.IntegerField(default=1, help_text="Version pour sync optimisée")
     point_vente_source = models.CharField(
         max_length=200, blank=True, default='',
-        help_text="Point de vente d'origine (ex: KIYAMBU 04 MPOLO, KIYAMBU DUBAI 04 MPOLO)"
+        help_text="Point de vente d'origine (ex: MPOLO 04, DUBAI 04 MPOLO)"
     )
 
     def __str__(self):

@@ -28,6 +28,24 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+def _normaliser_pv_source(pv: str) -> str:
+    """
+    Normaliser le nom du point de vente source.
+    Ex: 'KIYAMBU 04 MPOLO' → 'MPOLO 04'
+        'KIYAMBU DUBAI 04 MPOLO' → 'DUBAI 04 MPOLO'
+    """
+    pv = (pv or '').strip()
+    if not pv:
+        return ''
+    parts = pv.upper().replace('KIYAMBU', ' ').split()
+    if not parts:
+        return ''
+    # '04 MPOLO' → 'MPOLO 04' ; 'DUBAI 04 MPOLO' → 'DUBAI 04 MPOLO'
+    if len(parts) == 2 and parts[0].isdigit() and parts[1] == 'MPOLO':
+        return f'{parts[1]} {parts[0]}'
+    return ' '.join(parts)
+
+
 # ===== AUTHENTIFICATION =====
 
 @csrf_exempt
@@ -487,7 +505,7 @@ def recevoir_articles(request):
                     )
 
                 code_article = nom[:50].upper().replace(' ', '_')
-                pv_source = (art_data.get('point_vente') or '').strip()
+                pv_source = _normaliser_pv_source(art_data.get('point_vente') or '')
 
                 article, created = Article.objects.get_or_create(
                     code=code_article,
@@ -504,14 +522,27 @@ def recevoir_articles(request):
                     }
                 )
 
-                if pv_source:
-                    sources = [s.strip() for s in (article.point_vente_source or '').split(',') if s.strip()]
-                    if pv_source not in sources:
+                if pv_source or article.point_vente_source:
+                    sources = []
+                    for s in (article.point_vente_source or '').split(','):
+                        ns = _normaliser_pv_source(s)
+                        if ns and ns not in sources:
+                            sources.append(ns)
+                    if pv_source and pv_source not in sources:
                         sources.append(pv_source)
-                        article.point_vente_source = ', '.join(sources)
+                    new_val = ', '.join(sources)
+                    if new_val != article.point_vente_source:
+                        article.point_vente_source = new_val
+                        pv_changed = True
+                    else:
+                        pv_changed = False
+                else:
+                    pv_changed = False
 
                 if created:
                     articles_crees += 1
+                    if pv_changed:
+                        article.save(update_fields=['point_vente_source'])
                 else:
                     ancien_stock = article.quantite_stock
                     # Inventaire/stock = instantané : on remet le stock à la valeur reçue
