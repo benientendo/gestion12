@@ -483,6 +483,7 @@ def recevoir_articles(request):
                     )
 
                 code_article = nom[:50].upper().replace(' ', '_')
+                pv_source = (art_data.get('point_vente') or '').strip()
 
                 article, created = Article.objects.get_or_create(
                     code=code_article,
@@ -495,8 +496,15 @@ def recevoir_articles(request):
                         'categorie': categorie,
                         'quantite_stock': qte,
                         'est_actif': True,
+                        'point_vente_source': pv_source,
                     }
                 )
+
+                if pv_source:
+                    sources = [s.strip() for s in (article.point_vente_source or '').split(',') if s.strip()]
+                    if pv_source not in sources:
+                        sources.append(pv_source)
+                        article.point_vente_source = ', '.join(sources)
 
                 if created:
                     articles_crees += 1

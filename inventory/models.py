@@ -135,6 +135,10 @@ class Article(models.Model):
     quantite_attribuee = models.IntegerField(default=0, help_text="Référence quantité attribuée (configurable indépendamment par article)")
     last_updated = models.DateTimeField(auto_now=True, help_text="Dernière modification pour sync incrémentale")
     version = models.IntegerField(default=1, help_text="Version pour sync optimisée")
+    point_vente_source = models.CharField(
+        max_length=200, blank=True, default='',
+        help_text="Point de vente d'origine (ex: KIYAMBU 04 MPOLO, KIYAMBU DUBAI 04 MPOLO)"
+    )
 
     def __str__(self):
         return f"{self.nom} ({self.code})"

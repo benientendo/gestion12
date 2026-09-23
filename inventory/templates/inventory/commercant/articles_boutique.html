@@ -104,6 +104,14 @@
                         <option value="normal">Normal</option>
                     </select>
                 </div>
+                <div class="col-md-2 col-lg-2">
+                    <select class="form-select form-select-sm" id="filterPv" title="Point de vente source">
+                        <option value="">Tous PV</option>
+                        {% for pv in pv_options %}
+                        <option value="{{ pv }}" {% if pv_filter == pv %}selected{% endif %}>{{ pv }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="col-md-2 col-lg-1">
                     <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="btnResetFilters">
                         <i class="fas fa-redo"></i>
@@ -136,6 +144,7 @@
                         <th class="col-stock">Stock</th>
                         <th class="col-exp">Expiration</th>
                         <th class="col-qteatt" title="Référence quantité attribuée">Réf. Qté att.</th>
+                        <th class="col-pv" title="Point de vente source">PV source</th>
                         <th class="col-actions">Actions</th>
                     </tr>
                 </thead>
@@ -146,7 +155,7 @@
             <table class="table table-hover">
                 <tbody>
                     {% for article in articles %}
-                    <tr data-article-id="{{ article.id }}" data-article-nom="{{ article.nom|escapejs }}" data-article-stock="{{ article.stock_total }}" data-article-prix="{{ article.prix_vente }}" data-has-variantes="{{ article.a_variantes|yesno:'true,false' }}">
+                    <tr data-article-id="{{ article.id }}" data-article-nom="{{ article.nom|escapejs }}" data-article-stock="{{ article.stock_total }}" data-article-prix="{{ article.prix_vente }}" data-has-variantes="{{ article.a_variantes|yesno:'true,false' }}" data-pv-source="{{ article.point_vente_source|escapejs }}">
                         <td class="col-checkbox">
                             <input type="checkbox" class="form-check-input article-checkbox" value="{{ article.id }}">
                         </td>
@@ -236,6 +245,13 @@
                                 </button>
                             </div>
                         </td>
+                        <td class="col-pv">
+                            {% if article.point_vente_source %}
+                            <span class="badge bg-info text-dark" title="{{ article.point_vente_source }}">{{ article.point_vente_source }}</span>
+                            {% else %}
+                            <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
                         <td class="col-actions">
                             <div class="btn-group btn-group-sm">
                                 <button type="button" class="btn btn-outline-primary btn-sm" 
@@ -310,12 +326,12 @@
                 <ul class="pagination pagination-sm mb-0">
                     {% if articles.has_previous %}
                     <li class="page-item">
-                        <a class="page-link" href="?page=1{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
+                        <a class="page-link" href="?page=1{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if pv_filter %}&pv={{ pv_filter|urlencode }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
                             <i class="fas fa-angle-double-left"></i>
                         </a>
                     </li>
                     <li class="page-item">
-                        <a class="page-link" href="?page={{ articles.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
+                        <a class="page-link" href="?page={{ articles.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if pv_filter %}&pv={{ pv_filter|urlencode }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
                             <i class="fas fa-angle-left"></i>
                         </a>
                     </li>
@@ -326,19 +342,19 @@
                         <li class="page-item active"><span class="page-link">{{ num }}</span></li>
                         {% elif num > articles.number|add:'-3' and num < articles.number|add:'3' %}
                         <li class="page-item">
-                            <a class="page-link" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">{{ num }}</a>
+                            <a class="page-link" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if pv_filter %}&pv={{ pv_filter|urlencode }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">{{ num }}</a>
                         </li>
                         {% endif %}
                     {% endfor %}
                     
                     {% if articles.has_next %}
                     <li class="page-item">
-                        <a class="page-link" href="?page={{ articles.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
+                        <a class="page-link" href="?page={{ articles.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if pv_filter %}&pv={{ pv_filter|urlencode }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
                             <i class="fas fa-angle-right"></i>
                         </a>
                     </li>
                     <li class="page-item">
-                        <a class="page-link" href="?page={{ articles.paginator.num_pages }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
+                        <a class="page-link" href="?page={{ articles.paginator.num_pages }}{% if search %}&search={{ search }}{% endif %}{% if categorie_id %}&categorie={{ categorie_id }}{% endif %}{% if stock_filter %}&stock={{ stock_filter }}{% endif %}{% if pv_filter %}&pv={{ pv_filter|urlencode }}{% endif %}{% if populaires_filter %}&populaires={{ populaires_filter }}{% endif %}">
                             <i class="fas fa-angle-double-right"></i>
                         </a>
                     </li>
@@ -1172,6 +1188,7 @@
 .col-stock { width: 80px; }
 .col-exp { width: 105px; }
 .col-qteatt { width: 115px; }
+.col-pv { width: 180px; }
 .col-actions { width: 160px; }
 
 /* ========== ÉLÉMENTS DU TABLEAU ========== */
@@ -2262,6 +2279,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const searchInput = document.getElementById('searchRealTime');
     const filterCategorie = document.getElementById('filterCategorie');
     const filterStock = document.getElementById('filterStock');
+    const filterPv = document.getElementById('filterPv');
     const btnResetFilters = document.getElementById('btnResetFilters');
     const resultCount = document.getElementById('resultCount');
     const tableBody = document.querySelector('tbody');
@@ -2330,6 +2348,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 </td>
                 <td class="col-exp">
                     <span class="text-muted">-</span>
+                </td>
+                <td class="col-qteatt">
+                    <span class="text-muted">-</span>
+                </td>
+                <td class="col-pv">
+                    ${article.point_vente_source ? `<span class="badge bg-info text-dark">${article.point_vente_source}</span>` : '<span class="text-muted">-</span>'}
                 </td>
                 <td class="col-actions">
                     <div class="btn-group btn-group-sm">
@@ -2429,10 +2453,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const searchTerm = searchInput.value.trim();
             const categorieFilter = filterCategorie.value.toLowerCase();
             const stockFilter = filterStock.value;
-            
+            const pvFilter = filterPv ? filterPv.value.toLowerCase() : '';
+
             // Masquer le dropdown (on utilise le tableau principal maintenant)
             searchActionsDropdown.style.display = 'none';
-            
+
             // Si recherche vide, restaurer le tableau original
             if (searchTerm.length < 2) {
                 if (isShowingSearchResults) {
@@ -2441,7 +2466,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     isShowingSearchResults = false;
                 }
                 // Filtrer localement les lignes originales
-                filterLocalRows(categorieFilter, stockFilter);
+                filterLocalRows(categorieFilter, stockFilter, pvFilter);
                 return;
             }
             
@@ -2454,7 +2479,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Afficher un indicateur de chargement
             tableBody.innerHTML = `
                 <tr class="loading-row">
-                    <td colspan="9" class="text-center py-5">
+                    <td colspan="12" class="text-center py-5">
                         <i class="fas fa-spinner fa-spin fa-2x text-primary mb-3"></i>
                         <div class="text-muted">Recherche en cours...</div>
                     </td>
@@ -2478,7 +2503,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Aucun résultat
                     tableBody.innerHTML = `
                         <tr class="no-result-row">
-                            <td colspan="9" class="text-center py-5">
+                            <td colspan="12" class="text-center py-5">
                                 <i class="fas fa-search fa-3x text-muted mb-3"></i>
                                 <h5>Aucun article trouvé pour "${searchTerm}"</h5>
                                 <p class="text-muted">Essayez un autre terme de recherche</p>
@@ -2502,7 +2527,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('Erreur recherche:', error);
                 tableBody.innerHTML = `
                     <tr class="error-row">
-                        <td colspan="9" class="text-center py-5 text-danger">
+                        <td colspan="12" class="text-center py-5 text-danger">
                             <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
                             <div>Erreur lors de la recherche</div>
                         </td>
@@ -2513,21 +2538,22 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Filtrer les lignes locales (quand pas de recherche AJAX)
-    function filterLocalRows(categorieFilter, stockFilter) {
+    function filterLocalRows(categorieFilter, stockFilter, pvFilter) {
         let visibleCount = 0;
-        
+
         allRows.forEach(row => {
             if (row.classList.contains('no-result-row') || row.classList.contains('loading-row')) return;
-            
+
             const cells = row.querySelectorAll('td');
             if (cells.length === 0) return;
-            
+
             const categorie = cells[4]?.textContent.toLowerCase() || '';
             const stock = parseInt(row.dataset.articleStock) || 0;
-            
+            const pvSource = (row.dataset.pvSource || '').toLowerCase();
+
             // Appliquer le filtre de catégorie
             const matchCategorie = !categorieFilter || categorie.includes(categorieFilter);
-            
+
             // Appliquer le filtre de stock
             let matchStock = true;
             if (stockFilter === 'bas') {
@@ -2537,15 +2563,18 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (stockFilter === 'normal') {
                 matchStock = stock >= seuilStockBas;
             }
-            
-            if (matchCategorie && matchStock) {
+
+            // Appliquer le filtre point de vente source
+            const matchPv = !pvFilter || pvSource.includes(pvFilter);
+
+            if (matchCategorie && matchStock && matchPv) {
                 row.style.display = '';
                 visibleCount++;
             } else {
                 row.style.display = 'none';
             }
         });
-        
+
         if (resultCount) resultCount.textContent = `${visibleCount} article(s)`;
     }
     
@@ -2563,16 +2592,19 @@ document.addEventListener('DOMContentLoaded', function() {
         window.location.href = url.toString();
     });
     filterStock.addEventListener('change', filterArticles);
-    
+    if (filterPv) filterPv.addEventListener('change', filterArticles);
+
     // Bouton de réinitialisation
     btnResetFilters.addEventListener('click', function() {
         const url = new URL(window.location.href);
         url.searchParams.delete('categorie');
         url.searchParams.delete('stock');
         url.searchParams.delete('search');
+        url.searchParams.delete('pv');
         url.searchParams.delete('page');
         searchInput.value = '';
         filterStock.value = '';
+        if (filterPv) filterPv.value = '';
         window.location.href = url.toString();
     });
     

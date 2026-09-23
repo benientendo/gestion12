@@ -517,10 +517,11 @@ def articles_boutique(request, boutique_id):
     categorie_id = request.GET.get('categorie', '')
     stock_filter = request.GET.get('stock', '')
     populaires_filter = request.GET.get('populaires', '')
-    
+    pv_filter = request.GET.get('pv', '')
+
     # Requête optimisée avec select_related et prefetch_related pour les variantes
     articles = boutique.articles.filter(est_actif=True).select_related('categorie').prefetch_related('variantes')
-    
+
     if search:
         # ⭐ Chercher dans articles ET dans les codes-barres des variantes
         articles = articles.filter(
@@ -529,16 +530,19 @@ def articles_boutique(request, boutique_id):
             Q(description__icontains=search) |
             Q(variantes__code_barre__icontains=search, variantes__est_actif=True)
         ).distinct()
-    
+
     if categorie_id:
         articles = articles.filter(categorie_id=categorie_id)
-    
+
     if stock_filter == 'bas':
         articles = articles.filter(quantite_stock__lte=boutique.alerte_stock_bas)
     elif stock_filter == 'zero':
         articles = articles.filter(quantite_stock=0)
     elif stock_filter == 'normal':
         articles = articles.filter(quantite_stock__gt=boutique.alerte_stock_bas)
+
+    if pv_filter:
+        articles = articles.filter(point_vente_source__icontains=pv_filter)
     
     # Filtre pour les articles populaires (ayant des ventes)
     if populaires_filter:
@@ -566,19 +570,33 @@ def articles_boutique(request, boutique_id):
     
     # Catégories pour le filtre (mise en cache possible)
     categories = boutique.categories.all()
-    
+
+    # Points de vente source distincts (pour le filtre PV)
+    pv_sources = (
+        boutique.articles.filter(est_actif=True)
+        .exclude(point_vente_source='')
+        .values_list('point_vente_source', flat=True)
+        .distinct()
+    )
+    pv_options = sorted({
+        p.strip()
+        for raw in pv_sources
+        for p in raw.split(',')
+        if p.strip()
+    })
+
     # Calculer le nombre d'articles en stock bas (optimisé avec only)
     articles_stock_bas = boutique.articles.filter(
         quantite_stock__lte=boutique.alerte_stock_bas,
         est_actif=True
     ).only('id').count()
-    
+
     # Articles en attente de validation MAUI
     articles_en_attente = boutique.articles.filter(
         est_actif=True,
         est_valide_client=False
     ).only('id').count()
-    
+
     context = {
         'boutique': boutique,
         'articles': articles_page,
@@ -589,6 +607,8 @@ def articles_boutique(request, boutique_id):
         'categorie_id': int(categorie_id) if categorie_id else None,
         'stock_filter': stock_filter,
         'populaires_filter': populaires_filter,
+        'pv_filter': pv_filter,
+        'pv_options': pv_options,
         'total_articles': total_articles,
         'paginator': paginator,
     }
@@ -724,6 +744,7 @@ def articles_search_ajax(request, boutique_id):
             'description': art.description[:100] if art.description else '',
             'est_valide_client': art.est_valide_client,
             'quantite_envoyee': art.quantite_envoyee,
+            'point_vente_source': art.point_vente_source or '',
             'url': f'/commercant/boutiques/{boutique.id}/articles/{art.id}/'
         })
     
