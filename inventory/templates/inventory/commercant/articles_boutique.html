@@ -139,6 +139,7 @@
                         <th class="col-nom">Nom</th>
                         <th class="col-code">Code</th>
                         <th class="col-cat">Catégorie</th>
+                        <th class="col-prix">PA</th>
                         <th class="col-prix">P.U. Vente</th>
                         <th class="col-total">Total Vente</th>
                         <th class="col-stock">Stock</th>
@@ -185,6 +186,13 @@
                             <span class="badge bg-secondary">{{ article.categorie.nom }}</span>
                             {% else %}
                             <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="col-prix">
+                            {% if article.devise == 'USD' %}
+                            <span class="text-muted">$ {{ article.prix_achat|floatformat:2 }}</span>
+                            {% else %}
+                            <span class="text-muted">{{ article.prix_achat|floatformat:0 }} <small>FC</small></span>
                             {% endif %}
                         </td>
                         <td class="col-prix">
@@ -2337,6 +2345,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     ${article.categorie ? `<span class="badge bg-secondary">${article.categorie}</span>` : `<span class="text-muted">-</span>`}
                 </td>
                 <td class="col-prix">
+                    <span class="text-muted">${isUSD ? `$ ${parseFloat(article.prix_achat || 0).toFixed(2)}` : `${parseInt(article.prix_achat || 0)} <small>FC</small>`}</span>
+                </td>
+                <td class="col-prix">
                     <span class="${prixClass}">${prixFormatted}</span>
                 </td>
                 <td class="col-total">
@@ -2479,7 +2490,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Afficher un indicateur de chargement
             tableBody.innerHTML = `
                 <tr class="loading-row">
-                    <td colspan="12" class="text-center py-5">
+                    <td colspan="13" class="text-center py-5">
                         <i class="fas fa-spinner fa-spin fa-2x text-primary mb-3"></i>
                         <div class="text-muted">Recherche en cours...</div>
                     </td>
@@ -2503,7 +2514,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Aucun résultat
                     tableBody.innerHTML = `
                         <tr class="no-result-row">
-                            <td colspan="12" class="text-center py-5">
+                            <td colspan="13" class="text-center py-5">
                                 <i class="fas fa-search fa-3x text-muted mb-3"></i>
                                 <h5>Aucun article trouvé pour "${searchTerm}"</h5>
                                 <p class="text-muted">Essayez un autre terme de recherche</p>
@@ -2527,7 +2538,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('Erreur recherche:', error);
                 tableBody.innerHTML = `
                     <tr class="error-row">
-                        <td colspan="12" class="text-center py-5 text-danger">
+                        <td colspan="13" class="text-center py-5 text-danger">
                             <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
                             <div>Erreur lors de la recherche</div>
                         </td>

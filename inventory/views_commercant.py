@@ -736,6 +736,7 @@ def articles_search_ajax(request, boutique_id):
             'code': art.code or '',
             'categorie': art.categorie.nom if art.categorie else '',
             'prix_vente': str(art.prix_vente),
+            'prix_achat': str(art.prix_achat),
             'devise': art.devise,
             'quantite_stock': art.stock_total,  # Utiliser stock_total pour inclure les variantes
             'a_variantes': art.a_variantes,
