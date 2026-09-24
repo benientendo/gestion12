@@ -1455,17 +1455,19 @@ function applyLocalSuggestion(articleId) {
     }
     
     // Prix d'achat
-    var prixAchat = appro.prix_achat_unitaire || art.prix_achat || 0;
+    var prixAchat = (appro && appro.prix_achat_unitaire) || art.prix_achat || 0;
     if (prixAchat > 0) getEl('art_prix_achat').value = convertirPrix(prixAchat);
     
     // Prix de vente (toujours en FC)
     if (art.prix_vente > 0) getEl('art_prix_vente').value = art.prix_vente;
     
-    // Carton si disponible
-    if (appro.type_quantite === 'CARTON') {
+    // Carton: appro récent, sinon pièce/carton legacy
+    if (appro && appro.type_quantite === 'CARTON') {
         if (appro.nombre_cartons > 0) getEl('art_nb_cartons').value = appro.nombre_cartons;
         if (appro.pieces_par_carton > 0) getEl('art_pcs_carton').value = appro.pieces_par_carton;
         if (appro.prix_achat_carton > 0) getEl('art_prix_carton').value = convertirPrix(appro.prix_achat_carton);
+    } else if (art.pieces_par_carton > 0) {
+        getEl('art_pcs_carton').value = art.pieces_par_carton;
     }
     
     // Fermer modal et recalculer
