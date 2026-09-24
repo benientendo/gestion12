@@ -958,8 +958,9 @@ function ajouterArticle() {
             return val || defaultVal;
         }
 
+        var artIdVal = getEl('art_id').value;
         var art = {
-            article_id: getEl('art_id').value || null,
+            article_id: (artIdVal && artIdVal !== '0') ? artIdVal : null,
             code: getEl('art_code').value || '',
             nom: nom,
             description: '',
@@ -1420,7 +1421,7 @@ function applyLocalSuggestion(articleId) {
     // Remplir les champs
     getEl('art_nom').value = art.nom;
     getEl('art_nom').classList.add('input-matched');
-    getEl('art_id').value = art.id;
+    getEl('art_id').value = (art.id && art.id !== 0) ? art.id : '';
     getEl('art_code').value = art.code || '';
     
     // Catégorie
@@ -1434,10 +1435,15 @@ function applyLocalSuggestion(articleId) {
                 break;
             }
         }
+    } else if (art.famille) {
+        getEl('art_categorie').value = art.famille;
+        getEl('art_categorie_id').value = '';
+        getEl('art_categorie_nom').value = art.famille;
+        getEl('art_categorie').classList.add('input-matched');
     }
     
     // Prix (conversion si USD)
-    var appro = FACT_DERNIERS_APPROS[String(art.id)] || {};
+    var appro = (art.id && FACT_DERNIERS_APPROS) ? FACT_DERNIERS_APPROS[String(art.id)] : null;
     var deviseActuelle = getDevise();
     var taux = factGetTaux();
     
