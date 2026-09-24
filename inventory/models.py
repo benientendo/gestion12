@@ -133,6 +133,7 @@ class Article(models.Model):
     date_mise_a_jour = models.DateTimeField(auto_now=True)
     
     quantite_attribuee = models.IntegerField(default=0, help_text="Référence quantité attribuée (configurable indépendamment par article)")
+    pieces_par_carton = models.PositiveIntegerField(default=1, help_text="Nombre de pièces par carton (auto-rempli à la saisie facture)")
     last_updated = models.DateTimeField(auto_now=True, help_text="Dernière modification pour sync incrémentale")
     version = models.IntegerField(default=1, help_text="Version pour sync optimisée")
     point_vente_source = models.CharField(

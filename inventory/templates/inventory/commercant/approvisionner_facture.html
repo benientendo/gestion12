@@ -369,7 +369,7 @@ var FACT_CATEGORIES = [
 ];
 var FACT_ARTICLES = [
     {% for art in articles_existants %}
-    { id: {{ art.id }}, nom: "{{ art.nom|escapejs }}", code: "{{ art.code|escapejs }}", prix_vente: {{ art.prix_vente|default:"0" }}, prix_achat: {{ art.prix_achat|default:"0" }}, devise: "{{ art.devise|default:'CDF' }}", stock: {{ art.quantite_stock|default:"0" }}, categorie_id: "{{ art.categorie_id|default:'' }}" },
+    { id: {{ art.id }}, nom: "{{ art.nom|escapejs }}", code: "{{ art.code|escapejs }}", prix_vente: {{ art.prix_vente|default:"0" }}, prix_achat: {{ art.prix_achat|default:"0" }}, devise: "{{ art.devise|default:'CDF' }}", stock: {{ art.quantite_stock|default:"0" }}, categorie_id: "{{ art.categorie_id|default:'' }}", pieces_par_carton: {{ art.pieces_par_carton|default:1 }} },
     {% endfor %}
 ];
 
@@ -759,9 +759,15 @@ function onSaisieArticleInput() {
             // L'utilisateur peut cliquer sur le hint pour appliquer la valeur
             // Si aucune valeur n'est saisie, la valeur précédente sera utilisée à l'ajout
             
+            // Auto-remplir pièces/carton depuis l'article ou le dernier appro
+            var pcsFromArt = (match.pieces_par_carton && match.pieces_par_carton > 0) ? match.pieces_par_carton : 0;
+            var pcsFromAppro = (appro && appro.pieces_par_carton > 0) ? appro.pieces_par_carton : 0;
+            var pcsAuto = pcsFromAppro || pcsFromArt || 1;
+            getEl('art_pcs_carton').value = pcsAuto;
+
             // Hints carton (valeurs originales FC) - pas de hint pour nb_cartons et pcs_sup
             if (appro && appro.type_quantite === 'CARTON') {
-                if (appro.pieces_par_carton > 0) {
+                if (appro.pieces_par_carton > 0 && appro.pieces_par_carton !== pcsAuto) {
                     showHint('hint_pcs_carton', appro.pieces_par_carton, 'pcs');
                 }
                 if (appro.prix_achat_carton > 0) {
