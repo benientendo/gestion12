@@ -61,11 +61,13 @@ class Command(BaseCommand):
         nb_cat = nb_four = nb_art = nb_upd = 0
 
         with transaction.atomic():
-            # 1. Catégories (familles)
+            # 1. Catégories (familles) — ignorer vides, chiffres purs, symboles
             cat_map = {}
             for nom in familles:
                 nom = nom.strip()
-                if not nom or len(nom) > 100:
+                if not nom or len(nom) < 3 or len(nom) > 100:
+                    continue
+                if re.match(r'^[\d\-\*\%\#\$\@\!\?\.]+$', nom):
                     continue
                 cat, created = Categorie.objects.get_or_create(
                     nom=nom,
