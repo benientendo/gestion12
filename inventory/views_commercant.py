@@ -26,7 +26,75 @@ import io
 
 # ... (rest of the code remains the same)
 import uuid
+from pathlib import Path
 from django.core.files.base import ContentFile
+
+
+def _load_autocomplete_legacy():
+    """Charge l'autocomplétion legacy (JSON) sans écrire en base."""
+    path = Path(__file__).resolve().parent / 'data' / 'autocomplete_client.json'
+    if not path.exists():
+        return {'articles': [], 'familles': [], 'fournisseurs': []}
+    try:
+        with path.open(encoding='utf-8') as f:
+            data = json.load(f)
+        return {
+            'articles': data.get('articles') or [],
+            'familles': data.get('familles') or [],
+            'fournisseurs': data.get('fournisseurs') or [],
+        }
+    except (OSError, json.JSONDecodeError):
+        return {'articles': [], 'familles': [], 'fournisseurs': []}
+
+
+def _autocomplete_articles_json(articles_qs):
+    """Articles du dépôt + suggestions legacy (id=0 → article créé à l'enregistrement)."""
+    existants = []
+    for art in articles_qs:
+        existants.append({
+            'id': art.id,
+            'nom': art.nom,
+            'code': art.code,
+            'prix_vente': float(art.prix_vente or 0),
+            'prix_achat': float(art.prix_achat or 0),
+            'devise': art.devise or 'CDF',
+            'stock': art.quantite_stock or 0,
+            'categorie_id': art.categorie_id or '',
+            'pieces_par_carton': art.pieces_par_carton or 1,
+            'legacy': False,
+        })
+    noms = {a['nom'].lower() for a in existants}
+    legacy = _load_autocomplete_legacy()
+    for a in legacy['articles']:
+        nom = a.get('nom') or ''
+        if not nom or nom.lower() in noms:
+            continue
+        noms.add(nom.lower())
+        existants.append({
+            'id': 0,
+            'nom': nom,
+            'code': '',
+            'prix_vente': float(a.get('prix_vente') or 0),
+            'prix_achat': 0,
+            'devise': 'CDF',
+            'stock': 0,
+            'categorie_id': '',
+            'famille': a.get('famille') or '',
+            'pieces_par_carton': int(a.get('pieces_par_carton') or 1),
+            'legacy': True,
+        })
+    return existants, legacy
+
+
+def _legacy_options_json(db_noms, legacy_noms):
+    """Liste [{id, nom}] = objets DB + suggestions legacy absentes de la DB."""
+    out = [{'id': 0, 'nom': n} for n in db_noms]
+    seen = {n.lower() for n in db_noms}
+    for n in legacy_noms:
+        if n and n.lower() not in seen:
+            seen.add(n.lower())
+            out.append({'id': 0, 'nom': n})
+    return out
 
 # ===== DÉCORATEURS ET UTILITAIRES =====
 
@@ -5236,7 +5304,17 @@ def approvisionner_facture(request, depot_id):
     # Récupérer les fournisseurs et catégories
     fournisseurs = Fournisseur.objects.filter(commercant=commercant, est_actif=True)
     categories = Categorie.objects.filter(boutique=depot)
-    articles_existants = Article.objects.filter(boutique=depot, est_actif=True).order_by('nom')
+    articles_qs = Article.objects.filter(boutique=depot, est_actif=True).order_by('nom')
+    autocomplete_articles, legacy_ac = _autocomplete_articles_json(articles_qs)
+    fournisseurs_noms = list(fournisseurs.values_list('nom', flat=True))
+    for nom in legacy_ac['fournisseurs']:
+        if nom not in fournisseurs_noms:
+            fournisseurs_noms.append(nom)
+    categories_noms = list(categories.values_list('nom', flat=True))
+    for nom in legacy_ac['familles']:
+        if nom not in categories_noms:
+            categories_noms.append(nom)
+    articles_existants = articles_qs
     
     # Récupérer les dernières données d'approvisionnement par article (pour pré-remplissage)
     derniers_appros = {}
@@ -5448,6 +5526,16 @@ def approvisionner_facture(request, depot_id):
         'fournisseurs': fournisseurs,
         'categories': categories,
         'articles_existants': articles_existants,
+        'autocomplete_articles_json': json.dumps(autocomplete_articles),
+        'autocomplete_article_noms': [a['nom'] for a in autocomplete_articles],
+        'autocomplete_fournisseurs_noms': fournisseurs_noms,
+        'autocomplete_fournisseurs_noms_json': json.dumps(
+            [{'id': 0, 'nom': n} for n in fournisseurs_noms]
+        ),
+        'autocomplete_categories_noms': categories_noms,
+        'autocomplete_categories_noms_json': json.dumps(
+            [{'id': 0, 'nom': n} for n in categories_noms]
+        ),
         'derniers_appros_json': json.dumps(derniers_appros),
         'today': timezone.localdate().isoformat(),
     }
@@ -5466,7 +5554,17 @@ def approvisionner_facture_boutique(request, boutique_id):
     # Récupérer les fournisseurs et catégories
     fournisseurs = Fournisseur.objects.filter(commercant=commercant, est_actif=True)
     categories = Categorie.objects.filter(boutique=boutique)
-    articles_existants = Article.objects.filter(boutique=boutique, est_actif=True).order_by('nom')
+    articles_qs = Article.objects.filter(boutique=boutique, est_actif=True).order_by('nom')
+    autocomplete_articles, legacy_ac = _autocomplete_articles_json(articles_qs)
+    fournisseurs_noms = list(fournisseurs.values_list('nom', flat=True))
+    for nom in legacy_ac['fournisseurs']:
+        if nom not in fournisseurs_noms:
+            fournisseurs_noms.append(nom)
+    categories_noms = list(categories.values_list('nom', flat=True))
+    for nom in legacy_ac['familles']:
+        if nom not in categories_noms:
+            categories_noms.append(nom)
+    articles_existants = articles_qs
     
     # Récupérer les dernières données d'approvisionnement par article (pour pré-remplissage)
     derniers_appros = {}
@@ -5674,6 +5772,16 @@ def approvisionner_facture_boutique(request, boutique_id):
         'fournisseurs': fournisseurs,
         'categories': categories,
         'articles_existants': articles_existants,
+        'autocomplete_articles_json': json.dumps(autocomplete_articles),
+        'autocomplete_article_noms': [a['nom'] for a in autocomplete_articles],
+        'autocomplete_fournisseurs_noms': fournisseurs_noms,
+        'autocomplete_fournisseurs_noms_json': json.dumps(
+            [{'id': 0, 'nom': n} for n in fournisseurs_noms]
+        ),
+        'autocomplete_categories_noms': categories_noms,
+        'autocomplete_categories_noms_json': json.dumps(
+            [{'id': 0, 'nom': n} for n in categories_noms]
+        ),
         'derniers_appros_json': json.dumps(derniers_appros),
         'today': timezone.localdate().isoformat(),
     }

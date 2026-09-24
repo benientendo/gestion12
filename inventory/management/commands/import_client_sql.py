@@ -1,48 +1,77 @@
 """
-Importe familles, fournisseurs, noms d'articles et pièces/carton
-depuis un dump MySQL legacy (ex: client_034846.sql) vers Django.
+Exporte l'autocomplétion (articles, familles, fournisseurs, pièces/carton)
+depuis un dump MySQL legacy vers un JSON — sans remplir le dépôt.
 
 Usage:
-    python manage.py import_client_sql --sql "C:/Users/PC/Downloads/client_034846.sql" --boutique <ID>
+    python manage.py import_client_sql --sql "C:/Users/PC/Downloads/client_034846.sql"
+    python manage.py import_client_sql --clear-depot 13
 """
+import json
 import re
 from pathlib import Path
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from inventory.models import Article, Boutique, Categorie, Fournisseur
+from inventory.models import Article, Boutique
 
 
 class Command(BaseCommand):
-    help = "Importe familles, fournisseurs, articles et pieces/carton depuis un dump SQL legacy"
+    help = "Exporte autocomplete legacy (JSON) et/ou vide un dépôt — n'écrit pas d'articles en stock"
 
     def add_arguments(self, parser):
-        parser.add_argument('--sql', required=True, help='Chemin vers le fichier .sql')
-        parser.add_argument('--boutique', type=int, required=True, help='ID de la boutique/dépôt cible')
-        parser.add_argument('--commercant', type=int, default=None, help='ID commerçant (déduit de la boutique si absent)')
+        parser.add_argument('--sql', help='Chemin vers le fichier .sql (export JSON)')
+        parser.add_argument(
+            '--out',
+            default='inventory/data/autocomplete_client.json',
+            help='Chemin de sortie JSON (défaut: inventory/data/autocomplete_client.json)',
+        )
+        parser.add_argument(
+            '--clear-depot',
+            type=int,
+            default=None,
+            metavar='BOUTIQUE_ID',
+            help="Supprimer TOUS les articles du dépôt/boutique indiqué",
+        )
 
     def handle(self, *args, **options):
-        sql_path = Path(options['sql'])
+        if options['clear_depot'] is not None:
+            self._clear_depot(options['clear_depot'])
+        if options['sql']:
+            self._export_json(options['sql'], options['out'])
+        if not options['sql'] and options['clear_depot'] is None:
+            self.stdout.write(self.style.WARNING("Rien à faire: passez --sql et/ou --clear-depot <id>"))
+
+    # ---------- clear ----------
+
+    def _clear_depot(self, boutique_id: int):
+        try:
+            boutique = Boutique.objects.get(id=boutique_id)
+        except Boutique.DoesNotExist:
+            raise CommandError(f"Boutique {boutique_id} introuvable")
+
+        qs = Article.objects.filter(boutique=boutique)
+        n = qs.count()
+        with transaction.atomic():
+            qs.delete()
+        self.stdout.write(self.style.SUCCESS(
+            f"Dépôt vidé: {n} article(s) supprimé(s) de « {boutique.nom} »"
+        ))
+
+    # ---------- export JSON ----------
+
+    def _export_json(self, sql_path_str: str, out_rel: str):
+        sql_path = Path(sql_path_str)
         if not sql_path.exists():
             raise CommandError(f"Fichier introuvable: {sql_path}")
 
-        try:
-            boutique = Boutique.objects.get(id=options['boutique'])
-        except Boutique.DoesNotExist:
-            raise CommandError(f"Boutique {options['boutique']} introuvable")
-
-        commercant = boutique.commercant
-        self.stdout.write(f"Import vers boutique: {boutique.nom} (commercant={commercant})")
-
-        # Lire le dump (latin-1 pour accents MySQL)
         raw = sql_path.read_bytes()
         try:
             text = raw.decode('utf-8')
         except UnicodeDecodeError:
             text = raw.decode('latin-1', errors='replace')
 
-        # Extraire les blocs INSERT INTO `table` VALUES (...);
         inserts = self._extract_inserts(text)
 
         familles = self._parse_famille(inserts.get('famille', []))
@@ -50,107 +79,67 @@ class Command(BaseCommand):
             inserts.get('achat', []) + inserts.get('fournisseur', [])
         )
         produits = self._parse_produit(inserts.get('produit', []))
-        # Dernier piece/pau par produit depuis achat
         achat_meta = self._parse_achat_meta(inserts.get('achat', []))
 
-        self.stdout.write(f"  familles: {len(familles)}")
-        self.stdout.write(f"  fournisseurs: {len(fournisseurs)}")
-        self.stdout.write(f"  produits: {len(produits)}")
-        self.stdout.write(f"  meta achat: {len(achat_meta)}")
+        # Filtre familles invalides
+        familles_valides = []
+        for nom in familles:
+            nom = nom.strip()
+            if not nom or len(nom) < 3 or len(nom) > 100:
+                continue
+            if re.match(r'^[\d\-\*\%\#\$\@\!\?\.]+$', nom):
+                continue
+            familles_valides.append(nom)
 
-        nb_cat = nb_four = nb_art = nb_upd = 0
+        articles = []
+        seen = set()
+        for designation, famille_nom, prix, piece in produits:
+            designation = designation.strip()
+            if not designation or len(designation) > 100 or designation in seen:
+                continue
+            seen.add(designation)
 
-        with transaction.atomic():
-            # 1. Catégories (familles) — ignorer vides, chiffres purs, symboles
-            cat_map = {}
-            for nom in familles:
-                nom = nom.strip()
-                if not nom or len(nom) < 3 or len(nom) > 100:
-                    continue
-                if re.match(r'^[\d\-\*\%\#\$\@\!\?\.]+$', nom):
-                    continue
-                cat, created = Categorie.objects.get_or_create(
-                    nom=nom,
-                    boutique=boutique,
-                    defaults={'description': 'Importée depuis dump legacy'},
-                )
-                cat_map[nom] = cat
-                if created:
-                    nb_cat += 1
+            try:
+                prix_f = float(prix) if prix else 0
+            except (TypeError, ValueError):
+                prix_f = 0
+            try:
+                piece_i = int(float(piece)) if piece else 1
+            except (TypeError, ValueError):
+                piece_i = 1
 
-            # 2. Fournisseurs
-            for nom in fournisseurs:
-                nom = nom.strip()
-                if not nom or len(nom) > 200:
-                    continue
-                _, created = Fournisseur.objects.get_or_create(
-                    nom=nom,
-                    commercant=commercant,
-                    defaults={'est_actif': True},
-                )
-                if created:
-                    nb_four += 1
+            meta = achat_meta.get(designation)
+            if meta and meta.get('piece') and meta['piece'] > 0:
+                piece_i = int(meta['piece'])
 
-            # 3. Articles (produits)
-            for designation, famille_nom, prix, piece in produits:
-                designation = designation.strip()
-                if not designation or len(designation) > 100:
-                    continue
+            articles.append({
+                'nom': designation,
+                'famille': (famille_nom or '').strip(),
+                'prix_vente': round(prix_f, 2),
+                'pieces_par_carton': max(1, piece_i),
+            })
 
-                prix = float(prix) if prix else 0
-                piece = int(piece) if piece else 1
+        data = {
+            'source': sql_path.name,
+            'familles': familles_valides,
+            'fournisseurs': sorted({f.strip() for f in fournisseurs if f and f.strip()}),
+            'articles': articles,
+        }
 
-                # Préférer meta achat (dernier achat) pour piece/pau
-                meta = achat_meta.get(designation)
-                if meta:
-                    if meta.get('piece') and meta['piece'] > 0:
-                        piece = int(meta['piece'])
-                    # pau non stocké comme prix_achat principal ici (devise variable)
-
-                cat = cat_map.get((famille_nom or '').strip())
-                code = designation[:50].upper().replace(' ', '_')
-
-                art, created = Article.objects.get_or_create(
-                    code=code,
-                    boutique=boutique,
-                    defaults={
-                        'nom': designation,
-                        'devise': 'CDF',
-                        'prix_vente': round(prix, 2),
-                        'prix_achat': 0,
-                        'categorie': cat,
-                        'quantite_stock': 0,
-                        'est_actif': True,
-                        'pieces_par_carton': max(1, piece),
-                    },
-                )
-                if created:
-                    nb_art += 1
-                else:
-                    # Mettre à jour pieces_par_carton et catégorie si vides
-                    changed_fields = []
-                    if art.pieces_par_carton in (0, 1) and piece > 1:
-                        art.pieces_par_carton = piece
-                        changed_fields.append('pieces_par_carton')
-                    if not art.categorie_id and cat:
-                        art.categorie = cat
-                        changed_fields.append('categorie')
-                    if art.prix_vente == 0 and prix > 0:
-                        art.prix_vente = round(prix, 2)
-                        changed_fields.append('prix_vente')
-                    if changed_fields:
-                        art.save(update_fields=changed_fields)
-                        nb_upd += 1
-
+        out_path = Path(settings.BASE_DIR) / out_rel
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=0),
+            encoding='utf-8',
+        )
         self.stdout.write(self.style.SUCCESS(
-            f"Import terminé: +{nb_cat} catégories, +{nb_four} fournisseurs, "
-            f"+{nb_art} articles, {nb_upd} mis à jour"
+            f"JSON autocomplete: {len(articles)} articles, "
+            f"{len(data['familles'])} familles, {len(data['fournisseurs'])} fournisseurs -> {out_path}"
         ))
 
     # ---------- parsing ----------
 
     def _extract_inserts(self, text: str) -> dict:
-        """Retourne {table: [raw_values_string, ...]}"""
         pattern = re.compile(
             r"INSERT INTO `(\w+)` VALUES\s+(\(.*?\));",
             re.DOTALL | re.IGNORECASE,
@@ -163,7 +152,6 @@ class Command(BaseCommand):
 
     @staticmethod
     def _split_tuples(values_blob: str):
-        """Split MySQL VALUES blob en tuples, en gérant les quotes/escapes."""
         tuples = []
         i = 0
         n = len(values_blob)
@@ -171,7 +159,7 @@ class Command(BaseCommand):
             if values_blob[i] != '(':
                 i += 1
                 continue
-            i += 1  # skip (
+            i += 1
             fields = []
             buf = []
             in_str = False
@@ -217,7 +205,6 @@ class Command(BaseCommand):
         return noms
 
     def _parse_produit(self, inserts):
-        """designation, famille, prix, piece"""
         out = []
         for blob in inserts:
             for t in self._split_tuples(blob):
@@ -228,32 +215,21 @@ class Command(BaseCommand):
         return out
 
     def _parse_fournisseurs(self, inserts) -> list:
-        """Depuis achat: champ 2 = fournisseur; depuis fournisseur: champ 0 = nom."""
         noms = set()
-        # On re-scan les blobs achat pour champ fournisseur (index 2)
-        # et table fournisseur champ 0
-        # Mais _extract_inserts ne nous donne pas le type ici — on reçoit déjà les blobs mélangés.
-        # On distingue: achat tuples ont un int en premier champ + date; fournisseur commence par string.
         for blob in inserts:
             for t in self._split_tuples(blob):
                 if not t:
                     continue
-                # achat: (id, date, fournisseur, ...)
                 if len(t) >= 3 and re.match(r'^\d+$', t[0]) and re.match(r'^\d{4}-\d{2}-\d{2}$', t[1]):
                     noms.add(t[2].strip())
-                # fournisseur table: (nom, tel, produit, prix, dte)
-                elif len(t) >= 3 and t[0] and not t[0].isdigit():
-                    # éviter de confondre avec produit — fournisseur a 5 champs, 2e non numérique souvent
-                    if len(t) == 5:
-                        noms.add(t[0].strip())
+                elif len(t) == 5 and t[0] and not t[0].isdigit():
+                    noms.add(t[0].strip())
         return [n for n in noms if n]
 
     def _parse_achat_meta(self, inserts) -> dict:
-        """produit -> {piece, pau, fournisseur} du dernier achat (par date)."""
         meta = {}
         for blob in inserts:
             for t in self._split_tuples(blob):
-                # achat: id, dte, fournisseur, facture, famille, produit, piece, qt, pau, pvu, type
                 if len(t) >= 9 and re.match(r'^\d+$', t[0]) and re.match(r'^\d{4}-\d{2}-\d{2}$', t[1]):
                     produit = t[5].strip()
                     dte = t[1]

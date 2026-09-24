@@ -336,18 +336,18 @@
 
 <!-- Datalists -->
 <datalist id="datalistFournisseurs">
-    {% for f in fournisseurs %}
-    <option value="{{ f.nom }}" data-id="{{ f.id }}"></option>
+    {% for nom in autocomplete_fournisseurs_noms %}
+    <option value="{{ nom }}"></option>
     {% endfor %}
 </datalist>
 <datalist id="datalistArticles">
-    {% for art in articles_existants %}
-    <option value="{{ art.nom }}"></option>
+    {% for nom in autocomplete_article_noms %}
+    <option value="{{ nom }}"></option>
     {% endfor %}
 </datalist>
 <datalist id="datalistCategories">
-    {% for cat in categories %}
-    <option value="{{ cat.nom }}"></option>
+    {% for nom in autocomplete_categories_noms %}
+    <option value="{{ nom }}"></option>
     {% endfor %}
 </datalist>
 {% endblock %}
@@ -357,21 +357,9 @@
 <script>
 // === DONNÉES DJANGO ===
 {% localize off %}
-var FACT_FOURNISSEURS = [
-    {% for f in fournisseurs %}
-    { id: {{ f.id }}, nom: "{{ f.nom|escapejs }}" },
-    {% endfor %}
-];
-var FACT_CATEGORIES = [
-    {% for cat in categories %}
-    { id: {{ cat.id }}, nom: "{{ cat.nom|escapejs }}" },
-    {% endfor %}
-];
-var FACT_ARTICLES = [
-    {% for art in articles_existants %}
-    { id: {{ art.id }}, nom: "{{ art.nom|escapejs }}", code: "{{ art.code|escapejs }}", prix_vente: {{ art.prix_vente|default:"0" }}, prix_achat: {{ art.prix_achat|default:"0" }}, devise: "{{ art.devise|default:'CDF' }}", stock: {{ art.quantite_stock|default:"0" }}, categorie_id: "{{ art.categorie_id|default:'' }}", pieces_par_carton: {{ art.pieces_par_carton|default:1 }} },
-    {% endfor %}
-];
+var FACT_FOURNISSEURS = {{ autocomplete_fournisseurs_noms_json|safe }};
+var FACT_CATEGORIES = {{ autocomplete_categories_noms_json|safe }};
+var FACT_ARTICLES = {{ autocomplete_articles_json|safe }};
 
 // Dernières données d'approvisionnement par article (carton, prix, etc.)
 var FACT_DERNIERS_APPROS = {{ derniers_appros_json|safe }};
@@ -703,8 +691,8 @@ function onSaisieArticleInput() {
         }
         if (match) {
             factSelectedArticle = match;
-            getEl('art_id').value = match.id;
-            getEl('art_code').value = match.code;
+            getEl('art_id').value = match.id || '';
+            getEl('art_code').value = match.code || '';
             input.classList.add('input-matched');
 
             // Nettoyer tous les champs numériques avant d'afficher les hints
@@ -728,9 +716,14 @@ function onSaisieArticleInput() {
                         break;
                     }
                 }
+            } else if (match.famille) {
+                getEl('art_categorie').value = match.famille;
+                getEl('art_categorie_id').value = '';
+                getEl('art_categorie_nom').value = match.famille;
+                getEl('art_categorie').classList.add('input-matched');
             }
 
-            var appro = FACT_DERNIERS_APPROS[String(match.id)];
+            var appro = (match.id && FACT_DERNIERS_APPROS) ? FACT_DERNIERS_APPROS[String(match.id)] : null;
             
             // Les prix stockés sont TOUJOURS en FC
             // Si la devise actuelle est USD, on doit convertir FC → USD
