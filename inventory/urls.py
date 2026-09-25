@@ -56,6 +56,7 @@ urlpatterns = [
     
     # ===== VUES SUPER ADMINISTRATEUR =====
     path('superadmin/dashboard/', admin_views.admin_dashboard, name='admin_dashboard'),
+    path('superadmin/sauvegardes/telecharger/', admin_views.telecharger_sauvegarde_scalingo, name='admin_telecharger_sauvegarde_scalingo'),
     path('superadmin/commercants/', admin_views.gestion_commercants, name='admin_gestion_commercants'),
     path('superadmin/commercants/ajouter/', admin_views.ajouter_commercant, name='admin_ajouter_commercant'),
     path('superadmin/commercants/<int:commercant_id>/', admin_views.details_commercant, name='admin_details_commercant'),

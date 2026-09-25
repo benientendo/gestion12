@@ -25,6 +25,24 @@
     "BASE_URL": {
       "description": "URL publique de l'application (liens QR/PDF)",
       "value": "https://gestionnumerique.osc-fr1.scalingo.io"
+    },
+    "SCALINGO_API_URL": {
+      "description": "URL de l'API principale Scalingo",
+      "value": "https://api.scalingo.com"
+    },
+    "SCALINGO_APP": {
+      "description": "Nom de l'application Scalingo",
+      "value": "gestionnumerique"
+    },
+    "SCALINGO_DB_API_URL": {
+      "description": "URL de l'API Database Scalingo pour la région de l'application",
+      "value": "https://db-api.osc-fr1.scalingo.com"
+    },
+    "SCALINGO_DB_ADDON_ID": {
+      "description": "Identifiant de l'addon PostgreSQL à sauvegarder"
+    },
+    "SCALINGO_API_TOKEN": {
+      "description": "Jeton API Scalingo secret, à définir dans les variables d'environnement Scalingo"
     }
   },
   "formation": {

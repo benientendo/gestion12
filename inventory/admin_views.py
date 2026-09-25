@@ -3,11 +3,13 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.models import User
 from django.contrib import messages
 from django.db import transaction, connection
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseRedirect
 from django.core.paginator import Paginator
 from django.db.models import Count, Sum
+from django.views.decorators.http import require_GET
 from .models import Client, Commercant, Boutique, Article, Vente, LigneVente, VenteRejetee
 from .forms import ClientForm, CommercantForm
+from .services.scalingo_backups import ScalingoBackupError, is_configured, latest_backup_download_url
 import logging
 import secrets
 import string
@@ -75,9 +77,25 @@ def admin_dashboard(request):
         'nb_bannieres_total': nb_bannieres_total,
         'nb_bannieres_actives': nb_bannieres_actives,
         'nb_messages_non_lus': nb_messages_non_lus,
+        'scalingo_backup_configured': is_configured(),
     }
     
     return render(request, 'inventory/admin/dashboard.html', context)
+
+
+@login_required
+@user_passes_test(is_superuser)
+@require_GET
+def telecharger_sauvegarde_scalingo(request):
+    try:
+        download_url = latest_backup_download_url()
+    except ScalingoBackupError as exc:
+        messages.error(request, str(exc))
+        return redirect('inventory:admin_dashboard')
+
+    response = HttpResponseRedirect(download_url)
+    response['Cache-Control'] = 'no-store'
+    return response
 
 
 @login_required
