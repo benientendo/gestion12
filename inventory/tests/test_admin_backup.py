@@ -9,7 +9,7 @@ from inventory.services.scalingo_backups import ScalingoBackupError, is_configur
 
 class ScalingoBackupServiceTests(SimpleTestCase):
     configuration = {
-        'SCALINGO_API_URL': 'https://api.scalingo.com',
+        'SCALINGO_API_URL': 'https://api.osc-fr1.scalingo.com',
         'SCALINGO_APP': 'gestionnumerique',
         'SCALINGO_API_TOKEN': 'api-token',
         'SCALINGO_DB_API_URL': 'https://db-api.osc-fr1.scalingo.com',

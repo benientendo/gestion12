@@ -28,7 +28,7 @@
     },
     "SCALINGO_API_URL": {
       "description": "URL de l'API principale Scalingo",
-      "value": "https://api.scalingo.com"
+      "value": "https://api.osc-fr1.scalingo.com"
     },
     "SCALINGO_APP": {
       "description": "Nom de l'application Scalingo",

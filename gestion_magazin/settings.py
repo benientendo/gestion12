@@ -77,7 +77,7 @@ DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
 DEEPSEEK_API_URL = os.environ.get('DEEPSEEK_API_URL', 'https://api.deepseek.com/v1/chat/completions')
 DEEPSEEK_MODEL = os.environ.get('DEEPSEEK_MODEL', 'deepseek-chat')
 
-SCALINGO_API_URL = os.environ.get('SCALINGO_API_URL', 'https://api.scalingo.com')
+SCALINGO_API_URL = os.environ.get('SCALINGO_API_URL', 'https://api.osc-fr1.scalingo.com')
 SCALINGO_APP = os.environ.get('SCALINGO_APP', '')
 SCALINGO_API_TOKEN = os.environ.get('SCALINGO_API_TOKEN', '')
 SCALINGO_DB_API_URL = os.environ.get('SCALINGO_DB_API_URL', '')
