@@ -1537,7 +1537,19 @@ def rapport_ca_quotidien(request, boutique_id):
     ).select_related('client_maui').prefetch_related('lignes__article')
 
     total_ventes = ventes.count()
-    
+
+    # 🎫 Ventes ANNULÉES de la journée — affichées mais BARRÉES (hors totaux)
+    ventes_annulees = Vente.objects.filter(
+        boutique=boutique,
+        date_vente__date=date_cible,
+        est_annulee=True
+    ).select_related('client_maui').order_by('date_vente')
+    nb_annulees = ventes_annulees.count()
+    montant_annule_cdf = ventes_annulees.filter(devise='CDF').aggregate(
+        total=Sum('montant_total'))['total'] or 0
+    montant_annule_usd = ventes_annulees.filter(devise='USD').aggregate(
+        total=Sum('montant_total_usd'))['total'] or 0
+
     # CA en CDF (ventes en CDF)
     ventes_cdf = ventes.filter(devise='CDF')
     total_ca_cdf = ventes_cdf.aggregate(total=Sum('montant_total'))['total'] or 0
@@ -1620,6 +1632,11 @@ def rapport_ca_quotidien(request, boutique_id):
         'marge_beneficiaire': marge_beneficiaire,
         'benefice_incomplet': benefice_incomplet,
         'articles_sans_prix_achat': articles_sans_prix_achat,
+        # 🎫 Annulations du jour (hors totaux)
+        'ventes_annulees': ventes_annulees,
+        'nb_annulees': nb_annulees,
+        'montant_annule_cdf': montant_annule_cdf,
+        'montant_annule_usd': montant_annule_usd,
     }
 
     return render(request, 'inventory/commercant/rapport_ca_quotidien.html', context)
@@ -3738,11 +3755,12 @@ def ventes_boutique(request, boutique_id):
     # Catégories disponibles pour le filtre
     categories = boutique.categories.all().order_by('nom')
 
-    # Statistiques globales
+    # Statistiques globales (⭐ hors ventes annulées — elles s'affichent mais barrées)
     stats = ventes.aggregate(
-        total_ventes=Count('id'),
-        chiffre_affaires=Sum('montant_total')
+        total_ventes=Count('id', filter=Q(est_annulee=False)),
+        chiffre_affaires=Sum('montant_total', filter=Q(est_annulee=False))
     )
+    nb_annulees = ventes.filter(est_annulee=True).count()
 
     # ⚡ OPTIMISATION: Pagination AVANT prefetch_related
     paginator = Paginator(ventes, 50)  # 50 ventes par page
@@ -3850,6 +3868,7 @@ def ventes_boutique(request, boutique_id):
         'ventes_groupees': ventes_groupees_triees,
         'total_ventes': stats['total_ventes'] or 0,
         'chiffre_affaires': stats['chiffre_affaires'] or 0,
+        'nb_annulees': nb_annulees,
         'date_debut': date_debut,
         'date_fin': date_fin,
         'terminaux': terminaux,

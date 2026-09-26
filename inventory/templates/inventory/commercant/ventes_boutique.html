@@ -19,6 +19,23 @@
         background-color: #f8f9fa;
         border-bottom: 1px solid #dee2e6;
     }
+    /*  Vente annulée : affichée mais BARRÉE (hors totaux) */
+    .vente-annulee {
+        border-left: 4px solid #dc3545;
+        background: #fff5f5;
+        opacity: 0.85;
+    }
+    .vente-annulee .vente-header {
+        background-color: #ffe3e3;
+    }
+    .vente-annulee .vente-header strong,
+    .vente-annulee .card-body .col-md-8,
+    .vente-annulee .montant-principal {
+        text-decoration: line-through;
+    }
+    .vente-annulee .montant-principal {
+        color: #c92a2a;
+    }
     .montant-principal {
         font-size: 1.5rem;
         font-weight: 700;
@@ -143,7 +160,7 @@
 
     <!-- Statistiques Compactes -->
     <div class="row mb-4">
-        <div class="col-md-6">
+        <div class="col-md-4">
             <div class="card border-primary">
                 <div class="card-body text-center">
                     <h2 class="text-primary mb-0">{{ total_ventes }}</h2>
@@ -151,11 +168,19 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-4">
             <div class="card border-success">
                 <div class="card-body text-center">
                     <h2 class="text-success mb-0">{{ chiffre_affaires|format_cdf:0 }}</h2>
                     <small class="text-muted">CDF{% if categorie_selected %} — catégorie filtrée{% endif %}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-danger">
+                <div class="card-body text-center">
+                    <h2 class="text-danger mb-0">{{ nb_annulees }}</h2>
+                    <small class="text-muted"><i class="fas fa-ban"></i> Annulée{{ nb_annulees|pluralize }} (hors totaux)</small>
                 </div>
             </div>
         </div>
@@ -242,14 +267,16 @@
         </div>
         
         {% for vente in ventes_periode %}
-        <div class="card vente-card">
+        <div class="card vente-card {% if vente.est_annulee %}vente-annulee{% endif %}">
             <div class="card-header vente-header d-flex justify-content-between align-items-center">
                 <div>
                     <strong class="text-primary">{{ vente.numero_facture }}</strong>
                     <span class="ms-3 text-muted">{{ vente.date_vente|format_date_vente }}</span>
                 </div>
                 <div>
-                    {% if vente.paye %}
+                    {% if vente.est_annulee %}
+                        <span class="badge bg-danger"><i class="fas fa-ban"></i> Annulée</span>
+                    {% elif vente.paye %}
                         <span class="badge bg-success">Payé</span>
                     {% else %}
                         <span class="badge bg-warning text-dark">En attente</span>
@@ -304,6 +331,14 @@
                             <p><strong>Mode:</strong> {{ vente.get_mode_paiement_display }}</p>
                         </div>
 
+                        {% if vente.est_annulee %}
+                        <div class="alert alert-danger">
+                            <i class="fas fa-ban me-1"></i><strong>Vente annulée</strong>
+                            {% if vente.date_annulation %} — {{ vente.date_annulation|format_date_vente }}{% endif %}
+                            {% if vente.motif_annulation %}<br><small>Motif: {{ vente.motif_annulation }}</small>{% endif %}
+                        </div>
+                        {% endif %}
+
                         <!-- Articles -->
                         <h6 class="mb-3">Articles ({{ vente.lignes.count }})</h6>
                         <table class="table table-sm">
@@ -340,7 +375,7 @@
                             <tfoot>
                                 <tr class="fw-bold">
                                     <td colspan="3" class="text-end">TOTAL:</td>
-                                    <td class="text-end text-success">{{ vente.montant_total|format_cdf:0 }} CDF</td>
+                                    <td class="text-end {% if vente.est_annulee %}text-danger text-decoration-line-through{% else %}text-success{% endif %}">{{ vente.montant_total|format_cdf:0 }} CDF{% if vente.est_annulee %} (annulée){% endif %}</td>
                                 </tr>
                             </tfoot>
                         </table>
