@@ -30,6 +30,18 @@ class ScalingoBackupServiceTests(SimpleTestCase):
     def test_latest_backup_download_url(self, post, get):
         exchange_response = Mock(status_code=200)
         exchange_response.json.return_value = {'token': 'bearer-token'}
+        addons_response = Mock(status_code=200)
+        addons_response.json.return_value = {
+            'addons': [
+                {
+                    'id': 'discovered-addon',
+                    'resource_id': 'gestionnume_7160',
+                    'deprovisioned_at': None,
+                    'addon_provider': {'id': 'scalingo-postgresql', 'name': 'Scalingo PostgreSQL'},
+                    'plan': {'name': 'postgresql-starter-512'},
+                },
+            ],
+        }
         token_response = Mock(status_code=200)
         token_response.json.return_value = {'addon': {'token': 'database-token'}}
         list_response = Mock(status_code=200)
@@ -45,7 +57,7 @@ class ScalingoBackupServiceTests(SimpleTestCase):
             'download_url': 'https://db-api.osc-fr1.scalingo.com/api/backups/latest/download?token=secret',
         }
         post.side_effect = [exchange_response, token_response]
-        get.side_effect = [list_response, archive_response]
+        get.side_effect = [addons_response, list_response, archive_response]
 
         self.assertEqual(
             latest_backup_download_url(),
@@ -53,13 +65,15 @@ class ScalingoBackupServiceTests(SimpleTestCase):
         )
         self.assertEqual(post.call_count, 2)
         self.assertIn('/v1/tokens/exchange', post.call_args_list[0].args[0])
+        self.assertIn('/addons/discovered-addon/token', post.call_args_list[1].args[0])
         self.assertEqual(
             post.call_args_list[1].kwargs['headers']['Authorization'],
             'Bearer bearer-token',
         )
-        self.assertEqual(get.call_count, 2)
-        self.assertIn('/backups', get.call_args_list[0].args[0])
-        self.assertIn('/backups/latest/archive', get.call_args_list[1].args[0])
+        self.assertEqual(get.call_count, 3)
+        self.assertIn('/v1/apps/gestionnumerique/addons', get.call_args_list[0].args[0])
+        self.assertIn('/backups', get.call_args_list[1].args[0])
+        self.assertIn('/backups/latest/archive', get.call_args_list[2].args[0])
 
     @override_settings(**configuration)
     @patch('inventory.services.scalingo_backups.requests.get')
@@ -84,6 +98,8 @@ class ScalingoBackupServiceTests(SimpleTestCase):
     def test_rejects_non_https_download_url(self, post, get):
         exchange_response = Mock(status_code=200)
         exchange_response.json.return_value = {'token': 'bearer-token'}
+        addons_response = Mock(status_code=200)
+        addons_response.json.return_value = {'addons': [{'id': 'addon-id', 'addon_provider': {'id': 'scalingo-postgresql'}}]}
         token_response = Mock(status_code=200)
         token_response.json.return_value = {'addon': {'token': 'database-token'}}
         list_response = Mock(status_code=200)
@@ -97,7 +113,7 @@ class ScalingoBackupServiceTests(SimpleTestCase):
             'download_url': 'https://example.com/backup.sql',
         }
         post.side_effect = [exchange_response, token_response]
-        get.side_effect = [list_response, archive_response]
+        get.side_effect = [addons_response, list_response, archive_response]
 
         with self.assertRaises(ScalingoBackupError):
             latest_backup_download_url()
@@ -108,6 +124,8 @@ class ScalingoBackupServiceTests(SimpleTestCase):
     def test_raises_when_no_completed_backup(self, post, get):
         exchange_response = Mock(status_code=200)
         exchange_response.json.return_value = {'token': 'bearer-token'}
+        addons_response = Mock(status_code=200)
+        addons_response.json.return_value = {'addons': [{'id': 'addon-id', 'addon_provider': {'id': 'scalingo-postgresql'}}]}
         token_response = Mock(status_code=200)
         token_response.json.return_value = {'addon': {'token': 'database-token'}}
         list_response = Mock(status_code=200)
@@ -117,7 +135,7 @@ class ScalingoBackupServiceTests(SimpleTestCase):
             ],
         }
         post.side_effect = [exchange_response, token_response]
-        get.return_value = list_response
+        get.side_effect = [addons_response, list_response]
 
         with self.assertRaises(ScalingoBackupError):
             latest_backup_download_url()

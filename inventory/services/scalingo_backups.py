@@ -23,7 +23,6 @@ def _configuration():
         'SCALINGO_APP': app,
         'SCALINGO_API_TOKEN': api_token,
         'SCALINGO_DB_API_URL': database_api_url,
-        'SCALINGO_DB_ADDON_ID': database_id,
     }
     missing = [name for name, value in values.items() if not value]
     if missing:
@@ -88,11 +87,72 @@ def _exchange_api_token(configuration):
     return bearer_token
 
 
-def _get_database_token(configuration):
-    bearer_token = _exchange_api_token(configuration)
+def _is_postgresql_addon(addon):
+    provider = addon.get('addon_provider') or {}
+    plan = addon.get('plan') or {}
+    provider_label = ' '.join(str(provider.get(key) or '') for key in ('id', 'name'))
+    plan_name = str(plan.get('name') or '')
+
+    return 'postgresql' in provider_label.lower() or plan_name.lower().startswith('postgresql')
+
+
+def _find_postgresql_addon_id(configuration, bearer_token):
     app = quote(configuration['app'], safe='')
-    database_id = quote(configuration['database_id'], safe='')
-    url = f"{configuration['api_url']}/v1/apps/{app}/addons/{database_id}/token"
+    url = f'{configuration["api_url"]}/v1/apps/{app}/addons'
+    try:
+        response = requests.get(
+            url,
+            headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {bearer_token}',
+            },
+            timeout=10,
+        )
+    except requests.RequestException as exc:
+        logger.warning('Scalingo: liste des addons impossible: %s', type(exc).__name__)
+        raise ScalingoBackupError('Le service Scalingo est momentanément indisponible.') from exc
+
+    if response.status_code in (401, 403):
+        raise ScalingoBackupError('Accès Scalingo refusé. Vérifiez le jeton API.')
+    if response.status_code == 404:
+        raise ScalingoBackupError('L’application Scalingo est introuvable.')
+    if response.status_code >= 400:
+        logger.warning('Scalingo: liste des addons refusée avec le statut %s', response.status_code)
+        raise ScalingoBackupError('Scalingo n’a pas pu lister les addons de l’application.')
+
+    try:
+        payload = response.json()
+    except (TypeError, ValueError) as exc:
+        raise ScalingoBackupError('Réponse Scalingo invalide pour la liste des addons.') from exc
+
+    addons = payload.get('addons') or []
+    postgresql_addons = [
+        addon for addon in addons
+        if addon.get('id') and not addon.get('deprovisioned_at') and _is_postgresql_addon(addon)
+    ]
+    if not postgresql_addons:
+        raise ScalingoBackupError('Scalingo n’a trouvé aucun addon PostgreSQL sur cette application.')
+
+    configured_id = configuration.get('database_id')
+    if configured_id:
+        for addon in postgresql_addons:
+            if configured_id in (addon.get('id'), addon.get('resource_id')):
+                return addon['id']
+
+    if len(postgresql_addons) == 1:
+        return postgresql_addons[0]['id']
+
+    raise ScalingoBackupError(
+        'Plusieurs addons PostgreSQL sont présents. Définissez SCALINGO_DB_ADDON_ID avec le bon identifiant.'
+    )
+
+
+def _get_database_context(configuration):
+    bearer_token = _exchange_api_token(configuration)
+    database_id = _find_postgresql_addon_id(configuration, bearer_token)
+    addon_id = quote(database_id, safe='')
+    url = f"{configuration['api_url']}/v1/apps/{quote(configuration['app'], safe='')}/addons/{addon_id}/token"
     try:
         response = requests.post(
             url,
@@ -110,7 +170,7 @@ def _get_database_token(configuration):
     if response.status_code in (401, 403):
         raise ScalingoBackupError('Accès Scalingo refusé. Vérifiez le jeton API et l’identifiant de l’addon.')
     if response.status_code == 404:
-        raise ScalingoBackupError('L’application Scalingo ou l’identifiant de l’addon est incorrect.')
+        raise ScalingoBackupError('L’identifiant de l’addon PostgreSQL est introuvable.')
     if response.status_code == 429:
         raise ScalingoBackupError('Scalingo a trop de requêtes en attente. Réessayez dans quelques instants.')
     if response.status_code >= 400:
@@ -126,7 +186,7 @@ def _get_database_token(configuration):
     if not token:
         raise ScalingoBackupError('Scalingo n’a pas renvoyé de jeton de base de données.')
 
-    return token
+    return database_id, token
 
 
 def _database_request(configuration, database_token, path):
@@ -166,8 +226,8 @@ def _validate_download_url(url, configuration):
 
 def latest_backup_download_url():
     configuration = _configuration()
-    database_token = _get_database_token(configuration)
-    database_id = quote(configuration['database_id'], safe='')
+    database_id, database_token = _get_database_context(configuration)
+    database_id = quote(database_id, safe='')
     payload = _database_request(
         configuration,
         database_token,
