@@ -71,6 +71,8 @@ urlpatterns = [
     
     path('articles-negocies', api_views_v2_simple.creer_article_negocie_simple, name='articles_negocies_create_no_slash'),
     path('articles-negocies/', api_views_v2_simple.creer_article_negocie_simple, name='articles_negocies_create'),
+    path('articles-negocies/<int:trace_id>', api_views_v2_simple.modifier_article_negocie_simple, name='articles_negocies_update_no_slash'),
+    path('articles-negocies/<int:trace_id>/', api_views_v2_simple.modifier_article_negocie_simple, name='articles_negocies_update'),
     path('retours-articles', api_views_v2_simple.creer_retour_article_simple, name='retours_articles_create_no_slash'),
     path('retours-articles/', api_views_v2_simple.creer_retour_article_simple, name='retours_articles_create'),
     path('articles-negocies/historique/', api_views_v2_simple.historique_articles_negocies_simple, name='articles_negocies_history'),

@@ -646,7 +646,6 @@ class ArticleNegocieSerializer(serializers.ModelSerializer):
     terminal_nom = serializers.CharField(source='terminal.nom_terminal', read_only=True)
     terminal_serial = serializers.CharField(source='terminal.numero_serie', read_only=True)
     article_id = serializers.IntegerField(source='article.id', read_only=True)
-    article_nom = serializers.CharField(source='article.nom', read_only=True)
 
     class Meta:
         model = ArticleNegocie
@@ -657,9 +656,17 @@ class ArticleNegocieSerializer(serializers.ModelSerializer):
             'article_id', 'article_nom',
             'code_article', 'quantite', 'montant_negocie', 'devise', 'date_operation',
             'motif', 'reference_vente',
+            'source', 'prix_original', 'montant_reduction', 'pourcentage_reduction',
             'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Nom libre saisi par le terminal, sinon nom de l'article lie
+        if not data.get('article_nom') and instance.article_id:
+            data['article_nom'] = instance.article.nom
+        return data
 
 
 class RetourArticleSerializer(serializers.ModelSerializer):

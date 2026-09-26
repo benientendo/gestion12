@@ -363,15 +363,19 @@ def dashboard_commercant(request):
         quantite_stock__lte=5  # Seuil par défaut
     ).select_related('boutique')[:10]
     
-    # 💰 NÉGOCIATIONS - Statistiques des prix négociés ce mois
+    # 💰 NÉGOCIATIONS - Statistiques des prix négociés ce mois (⭐ hors annulées)
     from .models import LigneVente
     lignes_negociees_mois = LigneVente.objects.filter(
         Q(vente__boutique__in=boutiques) | Q(vente__client_maui__boutique__in=boutiques),
         vente__date_vente__gte=debut_mois,
+        vente__est_annulee=False,
         est_negocie=True
     ).aggregate(
         nombre=Count('id'),
-        total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
+        total_reduction=Sum(
+            (F('prix_original') - F('prix_unitaire')) * F('quantite'),
+            output_field=OrmDecimalField()
+        )
     )
     negociations_mois = lignes_negociees_mois['nombre'] or 0
     montant_negocie_mois = lignes_negociees_mois['total_reduction'] or 0
@@ -1313,26 +1317,34 @@ def entrer_boutique(request, boutique_id):
     debut_mois = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     aujourd_hui = timezone.localdate()
     
-    # Négociations du jour
+    # Négociations du jour (⭐ hors ventes annulées : réductions annulées aussi)
     lignes_negociees_jour = LigneVente.objects.filter(
         vente__boutique=boutique,
         vente__date_vente__date=aujourd_hui,
+        vente__est_annulee=False,
         est_negocie=True
     ).aggregate(
         nombre=Count('id'),
-        total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
+        total_reduction=Sum(
+            (F('prix_original') - F('prix_unitaire')) * F('quantite'),
+            output_field=OrmDecimalField()
+        )
     )
     negociations_jour = lignes_negociees_jour['nombre'] or 0
     montant_negocie_jour = lignes_negociees_jour['total_reduction'] or 0
     
-    # Négociations du mois
+    # Négociations du mois (⭐ hors ventes annulées)
     lignes_negociees_mois = LigneVente.objects.filter(
         vente__boutique=boutique,
         vente__date_vente__gte=debut_mois,
+        vente__est_annulee=False,
         est_negocie=True
     ).aggregate(
         nombre=Count('id'),
-        total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
+        total_reduction=Sum(
+            (F('prix_original') - F('prix_unitaire')) * F('quantite'),
+            output_field=OrmDecimalField()
+        )
     )
     negociations_mois = lignes_negociees_mois['nombre'] or 0
     montant_negocie_mois = lignes_negociees_mois['total_reduction'] or 0
@@ -1341,6 +1353,7 @@ def entrer_boutique(request, boutique_id):
     articles_negocies_jour = LigneVente.objects.filter(
         vente__boutique=boutique,
         vente__date_vente__date=aujourd_hui,
+        vente__est_annulee=False,
         est_negocie=True
     ).select_related('article', 'vente').order_by('-vente__date_vente')
     
@@ -1348,6 +1361,7 @@ def entrer_boutique(request, boutique_id):
     articles_negocies_mois = LigneVente.objects.filter(
         vente__boutique=boutique,
         vente__date_vente__gte=debut_mois,
+        vente__est_annulee=False,
         est_negocie=True
     ).select_related('article', 'vente').order_by('-vente__date_vente')
     
@@ -1780,7 +1794,8 @@ def articles_negocies_boutique(request, boutique_id):
 
     terminaux = boutique.clients.all().order_by('nom_terminal')
 
-    stats = articles.aggregate(total_montant=Sum('montant_negocie'))
+    # ⭐ Total négocié : hors traces ANNULATION (réductions annulées avec leur vente)
+    stats = articles.exclude(source='ANNULATION').aggregate(total_montant=Sum('montant_negocie'))
     total_montant = stats['total_montant'] or 0
 
     # Notifications de rapports non lus (style "Facebook")

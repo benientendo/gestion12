@@ -59,6 +59,7 @@
                         <tr>
                             <th>Date opération</th>
                             <th>Terminal</th>
+                            <th>Source</th>
                             <th>Article</th>
                             <th>Code article</th>
                             <th class="text-end">Quantité</th>
@@ -93,6 +94,15 @@
                                     <span class="badge bg-info">{{ a.terminal.nom_terminal }}</span>
                                 {% else %}
                                     <span class="badge bg-secondary">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if a.source == 'ANNULATION' %}
+                                    <span class="badge bg-danger" title="Réduction annulée (vente annulée)"><i class="fas fa-ban"></i> Annulation</span>
+                                {% elif a.source == 'MANUEL' %}
+                                    <span class="badge bg-warning text-dark" title="Saisie manuelle depuis le back-office">Manuel</span>
+                                {% else %}
+                                    <span class="badge bg-primary" title="Négociation accordée en caisse">Caisse</span>
                                 {% endif %}
                             </td>
                             <td>

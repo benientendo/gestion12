@@ -13,7 +13,7 @@ from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from django.db.models import Sum, Q
+from django.db.models import Sum, Q, Count, F, DecimalField
 from django.db import transaction, IntegrityError  # ⭐ Pour les transactions atomiques et gestion des doublons
 from django.conf import settings
 import json
@@ -1333,7 +1333,11 @@ def create_vente_simple(request):
         vente_data = request.data.copy()
         
         # Générer numéro de facture si absent
-        numero_facture = vente_data.get('numero_facture')
+        # ⭐ MAUI envoie 'reference' (et pas toujours 'numero_facture') : on
+        # l'utilise tel quel pour que numero_facture == référence MAUI.
+        # Indispensable pour l'annulation et pour lier les traces de reduction
+        # (ArticleNegocie.reference_vente) à la bonne vente.
+        numero_facture = vente_data.get('numero_facture') or vente_data.get('reference') or vente_data.get('Reference')
         if not numero_facture:
             from datetime import datetime
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
@@ -1859,22 +1863,30 @@ def statistiques_boutique_simple(request):
             quantite_stock__lte=boutique.alerte_stock_bas
         ).count()
 
-        # 💰 NÉGOCIATIONS
+        # 💰 NÉGOCIATIONS (⭐ hors ventes annulées, réduction totale × quantité)
         lignes_negociees_jour = LigneVente.objects.filter(
             vente__boutique=boutique,
             vente__date_vente__date=aujourd_hui,
+            vente__est_annulee=False,
             est_negocie=True
         ).aggregate(
             nombre=Count('id'),
-            total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
+            total_reduction=Sum(
+                (F('prix_original') - F('prix_unitaire')) * F('quantite'),
+                output_field=DecimalField()
+            )
         )
         lignes_negociees_mois = LigneVente.objects.filter(
             vente__boutique=boutique,
             vente__date_vente__date__gte=debut_mois,
+            vente__est_annulee=False,
             est_negocie=True
         ).aggregate(
             nombre=Count('id'),
-            total_reduction=Sum(F('prix_original') - F('prix_unitaire'))
+            total_reduction=Sum(
+                (F('prix_original') - F('prix_unitaire')) * F('quantite'),
+                output_field=DecimalField()
+            )
         )
 
         return Response({
@@ -1882,7 +1894,7 @@ def statistiques_boutique_simple(request):
             'boutique': {
                 'id': boutique.id,
                 'nom': boutique.nom,
-                'type': boutique.type_boutique,
+                'type': boutique.type_commerce,
                 'ville': boutique.ville
             },
             'statistiques': {
@@ -2791,6 +2803,16 @@ def creer_article_negocie_simple(request):
         est_actif=True
     ).first()
 
+    #  Champs supplementaires envoyes par MAUI (tracabilite reductions / annulations)
+    def _dec(key):
+        try:
+            return data.get(key) or 0
+        except (TypeError, ValueError):
+            return 0
+
+    source = (data.get('source') or 'CAISSE').strip()[:20]
+    article_nom_libre = (data.get('article_nom') or '').strip()[:200]
+
     obj = ArticleNegocie.objects.create(
         boutique=boutique,
         terminal=terminal,
@@ -2802,9 +2824,87 @@ def creer_article_negocie_simple(request):
         date_operation=date_operation,
         motif=data.get('motif') or '',
         reference_vente=data.get('reference_vente') or '',
+        article_nom=article_nom_libre,
+        source=source,
+        prix_original=_dec('prix_original'),
+        montant_reduction=_dec('montant_reduction'),
+        pourcentage_reduction=_dec('pourcentage_reduction'),
     )
 
     return Response({'id': obj.id}, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT'])
+@permission_classes([AllowAny])
+def modifier_article_negocie_simple(request, trace_id):
+    """
+    ⭐ Mise à jour d'une trace de négociation déjà synchronisée (MAUI).
+    Évite les doublons quand le terminal renvoie une trace modifiée
+    (ex: source CAISSE → ANNULATION après annulation de vente).
+    """
+    numero_serie = (
+        request.headers.get('X-Device-Serial')
+        or request.headers.get('Device-Serial')
+        or request.headers.get('Serial-Number')
+        or request.META.get('HTTP_X_DEVICE_SERIAL')
+        or request.META.get('HTTP_DEVICE_SERIAL')
+    )
+
+    if not numero_serie:
+        return Response({
+            'error': 'Numéro de série du terminal requis dans les headers',
+            'code': 'MISSING_SERIAL'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    terminal = Client.objects.select_related('boutique').filter(
+        numero_serie=numero_serie,
+        est_actif=True
+    ).first()
+
+    if not terminal or not terminal.boutique:
+        return Response({
+            'error': 'Terminal non trouvé ou sans boutique',
+            'code': 'TERMINAL_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        obj = ArticleNegocie.objects.get(id=trace_id, boutique=terminal.boutique)
+    except ArticleNegocie.DoesNotExist:
+        return Response({
+            'error': f'Trace {trace_id} introuvable',
+            'code': 'TRACE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    data = request.data
+
+    def _dec(key, default=0):
+        try:
+            return data.get(key) if data.get(key) is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    if 'source' in data and data.get('source'):
+        obj.source = str(data.get('source'))[:20]
+    if 'motif' in data:
+        obj.motif = str(data.get('motif') or '')[:255]
+    if 'article_nom' in data:
+        obj.article_nom = str(data.get('article_nom') or '')[:200]
+    if 'prix_original' in data:
+        obj.prix_original = _dec('prix_original', obj.prix_original)
+    if 'montant_reduction' in data:
+        obj.montant_reduction = _dec('montant_reduction', obj.montant_reduction)
+    if 'pourcentage_reduction' in data:
+        obj.pourcentage_reduction = _dec('pourcentage_reduction', obj.pourcentage_reduction)
+    if 'montant_negocie' in data:
+        obj.montant_negocie = _dec('montant_negocie', obj.montant_negocie)
+
+    obj.save()
+
+    logger.info(
+        f"✏️ Trace négociation #{obj.id} mise à jour ({obj.code_article} → source={obj.source}) "
+        f"par {terminal.nom_terminal}"
+    )
+    return Response({'id': obj.id, 'success': True}, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])
@@ -3208,18 +3308,59 @@ def annuler_vente_simple(request):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # ⭐ VÉRIFIER LE DÉLAI D'ANNULATION (1 HEURE)
+        # Le terminal MAUI est la SOURCE DE VÉRITÉ du délai : si le terminal
+        # prouve (horodatage transmis) avoir INITIÉ l'annulation dans l'heure
+        # qui suivait la vente, on accepte PEU IMPORT l'heure de reconnexion.
+        # Le délai serveur ne s'applique que si aucune preuve MAUI n'est fournie.
         from datetime import timedelta
         delai_annulation = timedelta(hours=1)
         temps_ecoule = timezone.now() - vente.date_vente
-        
+
+        horodatage_maui = (
+            data.get('horodatage_annulation')
+            or data.get('HorodatageAnnulation')
+        )
+
         if temps_ecoule > delai_annulation:
-            return Response({
-                'error': 'Le délai d\'annulation (1 heure) est dépassé',
-                'code': 'CANCELLATION_TIMEOUT',
-                'date_vente': to_local_iso(vente.date_vente),
-                'temps_ecoule_minutes': int(temps_ecoule.total_seconds() / 60),
-                'delai_max_minutes': 60
-            }, status=status.HTTP_400_BAD_REQUEST)
+            preuve_valide = False
+            delai_maui_minutes = None
+
+            if horodatage_maui:
+                try:
+                    dt_maui = parse_datetime(str(horodatage_maui))
+                    if dt_maui and timezone.is_naive(dt_maui):
+                        dt_maui = timezone.make_aware(dt_maui)
+                except (ValueError, TypeError):
+                    dt_maui = None
+
+                if dt_maui:
+                    ecart_vente_annulation = dt_maui - vente.date_vente
+                    marge_horloge = timedelta(minutes=10)
+
+                    # Cohérence : annulation initiée entre la vente et le délai max,
+                    # et pas dans le futur (tolérance marge d'horloge terminal)
+                    if (ecart_vente_annulation >= -marge_horloge
+                            and ecart_vente_annulation <= delai_annulation
+                            and dt_maui <= timezone.now() + marge_horloge):
+                        preuve_valide = True
+                        delai_maui_minutes = max(
+                            0, int(ecart_vente_annulation.total_seconds() / 60)
+                        )
+                        logger.info(
+                            f"   ⏱️ Délai serveur dépassé ({int(temps_ecoule.total_seconds() / 60)} min) "
+                            f"mais annulation INITIÉE par le MAUI à {delai_maui_minutes} min "
+                            f"de la vente → ACCEPTÉE (le terminal fait foi)"
+                        )
+
+            if not preuve_valide:
+                return Response({
+                    'error': 'Le délai d\'annulation (1 heure) est dépassé',
+                    'code': 'CANCELLATION_TIMEOUT',
+                    'date_vente': to_local_iso(vente.date_vente),
+                    'temps_ecoule_minutes': int(temps_ecoule.total_seconds() / 60),
+                    'delai_max_minutes': 60,
+                    'preuve_maui': bool(horodatage_maui)
+                }, status=status.HTTP_400_BAD_REQUEST)
         
         # ⭐ TRANSACTION ATOMIQUE : Annulation + Restauration stock
         with transaction.atomic():
@@ -3264,6 +3405,48 @@ def annuler_vente_simple(request):
             vente.motif_annulation = motif
             vente.annulee_par = terminal.nom_terminal
             vente.save(update_fields=['est_annulee', 'date_annulation', 'motif_annulation', 'annulee_par'])
+
+            #  TOUT REDEVIENT COMME AVANT : neutraliser les traces de reduction
+            # de cette vente (source CAISSE -> ANNULATION). Le terminal MAUI
+            # fait de meme de son cote ; on le refait ici pour garantir la
+            # coherence meme si le terminal etait hors-ligne.
+            traces_list = list(ArticleNegocie.objects.filter(
+                boutique=boutique,
+                reference_vente=vente.numero_facture,
+                source='CAISSE'
+            ))
+            for t in traces_list:
+                t.source = 'ANNULATION'
+                t.motif = f"Reduction annulee avec la vente {vente.numero_facture} - {motif}"[:255]
+                t.save(update_fields=['source', 'motif', 'updated_at'])
+            if traces_list:
+                logger.info(f"   ↩️ {len(traces_list)} trace(s) de reduction annulee(s)")
+
+            #  TRACE D'ANNULATION VISIBLE COTE BACK-OFFICE
+            if not ArticleNegocie.objects.filter(
+                boutique=boutique,
+                reference_vente=vente.numero_facture,
+                code_article=vente.numero_facture,
+                source='ANNULATION'
+            ).exists():
+                ArticleNegocie.objects.create(
+                    boutique=boutique,
+                    terminal=terminal,
+                    article=None,
+                    code_article=vente.numero_facture,
+                    quantite=1,
+                    montant_negocie=0,
+                    devise=vente.devise or boutique.devise,
+                    date_operation=timezone.now(),
+                    motif=f"Vente annulee: {motif}"[:255],
+                    reference_vente=vente.numero_facture,
+                    article_nom=f"ANNULATION vente {vente.numero_facture}"[:200],
+                    source='ANNULATION',
+                    prix_original=vente.montant_total or 0,
+                    montant_reduction=0,
+                    pourcentage_reduction=0,
+                )
+                logger.info(f"   🏷️ Trace d'annulation creee pour {vente.numero_facture}")
             
             logger.info(f"✅ Vente {numero_facture} annulée avec succès")
         
@@ -3953,9 +4136,11 @@ def rapport_negociations_simple(request):
     try:
         boutique = get_object_or_404(Boutique, id=boutique_id, est_active=True)
         
-        # Filtrer les lignes négociées
+        # Filtrer les lignes négociées (⭐ hors ventes annulées : une annulation
+        # annule aussi ses réductions — « tout redevient comme avant »)
         lignes_query = LigneVente.objects.filter(
             vente__boutique=boutique,
+            vente__est_annulee=False,
             est_negocie=True
         ).select_related('vente', 'article').order_by('-vente__date_vente')
         
@@ -3965,10 +4150,13 @@ def rapport_negociations_simple(request):
         if date_fin:
             lignes_query = lignes_query.filter(vente__date_vente__date__lte=date_fin)
         
-        # Statistiques globales
+        # Statistiques globales (⭐ réduction TOTALE = écart × quantité, hors ventes annulées)
         stats = lignes_query.aggregate(
             total_lignes=Count('id'),
-            total_reduction=Sum(F('prix_original') - F('prix_unitaire')),
+            total_reduction=Sum(
+                (F('prix_original') - F('prix_unitaire')) * F('quantite'),
+                output_field=DecimalField()
+            ),
             total_quantite=Sum('quantite')
         )
         
@@ -3988,7 +4176,10 @@ def rapport_negociations_simple(request):
                     'id': ligne.vente.id,
                     'numero_facture': ligne.vente.numero_facture,
                     'date': to_local_iso(ligne.vente.date_vente),
-                    'nom_client': ligne.vente.nom_client or 'Client anonyme'
+                    'nom_client': (
+                        ligne.vente.client_maui.nom_terminal
+                        if ligne.vente.client_maui else 'Client anonyme'
+                    )
                 },
                 'article': {
                     'id': ligne.article.id,

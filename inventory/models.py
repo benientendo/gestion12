@@ -796,11 +796,22 @@ class ArticleNegocie(models.Model):
     motif = models.CharField(max_length=255, blank=True)
     reference_vente = models.CharField(max_length=100, blank=True)
 
+    #  TRACABILITE DES REDUCTIONS / ANNULATIONS (envoyes par MAUI)
+    article_nom = models.CharField(max_length=200, blank=True, help_text="Nom libre envoye par le terminal")
+    source = models.CharField(max_length=20, default='CAISSE',
+                              help_text="CAISSE = negociation caisse, MANUEL = saisie back-office, ANNULATION = reduction ou vente annulee")
+    prix_original = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    montant_reduction = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    pourcentage_reduction = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-date_operation', '-created_at']
+
+    def __str__(self):
+        return f"{self.code_article} - {self.montant_negocie} ({self.source})"
 
 
 class RetourArticle(models.Model):

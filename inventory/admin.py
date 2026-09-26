@@ -289,9 +289,11 @@ class MouvementStockAdmin(admin.ModelAdmin):
 
 @admin.register(ArticleNegocie)
 class ArticleNegocieAdmin(admin.ModelAdmin):
-    list_display = ('boutique', 'terminal', 'code_article', 'montant_negocie', 'devise', 'date_operation', 'reference_vente')
-    list_filter = ('boutique', 'devise', 'date_operation')
-    search_fields = ('code_article', 'reference_vente', 'motif')
+    list_display = ('boutique', 'terminal', 'source', 'code_article', 'article_nom', 'montant_negocie',
+                    'montant_reduction', 'devise', 'date_operation', 'reference_vente')
+    list_filter = ('boutique', 'source', 'devise', 'date_operation')
+    search_fields = ('code_article', 'reference_vente', 'motif', 'article_nom')
+    date_hierarchy = 'date_operation'
 
 @admin.register(RetourArticle)
 class RetourArticleAdmin(admin.ModelAdmin):
