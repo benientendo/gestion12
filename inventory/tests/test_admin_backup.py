@@ -28,6 +28,8 @@ class ScalingoBackupServiceTests(SimpleTestCase):
     @patch('inventory.services.scalingo_backups.requests.get')
     @patch('inventory.services.scalingo_backups.requests.post')
     def test_latest_backup_download_url(self, post, get):
+        exchange_response = Mock(status_code=200)
+        exchange_response.json.return_value = {'token': 'bearer-token'}
         token_response = Mock(status_code=200)
         token_response.json.return_value = {'addon': {'token': 'database-token'}}
         list_response = Mock(status_code=200)
@@ -42,12 +44,18 @@ class ScalingoBackupServiceTests(SimpleTestCase):
         archive_response.json.return_value = {
             'download_url': 'https://db-api.osc-fr1.scalingo.com/api/backups/latest/download?token=secret',
         }
-        post.return_value = token_response
+        post.side_effect = [exchange_response, token_response]
         get.side_effect = [list_response, archive_response]
 
         self.assertEqual(
             latest_backup_download_url(),
             'https://db-api.osc-fr1.scalingo.com/api/backups/latest/download?token=secret',
+        )
+        self.assertEqual(post.call_count, 2)
+        self.assertIn('/v1/tokens/exchange', post.call_args_list[0].args[0])
+        self.assertEqual(
+            post.call_args_list[1].kwargs['headers']['Authorization'],
+            'Bearer bearer-token',
         )
         self.assertEqual(get.call_count, 2)
         self.assertIn('/backups', get.call_args_list[0].args[0])
@@ -56,7 +64,26 @@ class ScalingoBackupServiceTests(SimpleTestCase):
     @override_settings(**configuration)
     @patch('inventory.services.scalingo_backups.requests.get')
     @patch('inventory.services.scalingo_backups.requests.post')
+    def test_rejects_invalid_api_token(self, post, get):
+        exchange_response = Mock(status_code=401)
+        exchange_response.json.return_value = {'error': 'unauthorized'}
+        post.return_value = exchange_response
+
+        with self.assertRaises(ScalingoBackupError) as context:
+            latest_backup_download_url()
+
+        self.assertEqual(
+            str(context.exception),
+            'Le jeton API Scalingo est invalide ou expiré.',
+        )
+        get.assert_not_called()
+
+    @override_settings(**configuration)
+    @patch('inventory.services.scalingo_backups.requests.get')
+    @patch('inventory.services.scalingo_backups.requests.post')
     def test_rejects_non_https_download_url(self, post, get):
+        exchange_response = Mock(status_code=200)
+        exchange_response.json.return_value = {'token': 'bearer-token'}
         token_response = Mock(status_code=200)
         token_response.json.return_value = {'addon': {'token': 'database-token'}}
         list_response = Mock(status_code=200)
@@ -69,7 +96,7 @@ class ScalingoBackupServiceTests(SimpleTestCase):
         archive_response.json.return_value = {
             'download_url': 'https://example.com/backup.sql',
         }
-        post.return_value = token_response
+        post.side_effect = [exchange_response, token_response]
         get.side_effect = [list_response, archive_response]
 
         with self.assertRaises(ScalingoBackupError):
@@ -79,6 +106,8 @@ class ScalingoBackupServiceTests(SimpleTestCase):
     @patch('inventory.services.scalingo_backups.requests.get')
     @patch('inventory.services.scalingo_backups.requests.post')
     def test_raises_when_no_completed_backup(self, post, get):
+        exchange_response = Mock(status_code=200)
+        exchange_response.json.return_value = {'token': 'bearer-token'}
         token_response = Mock(status_code=200)
         token_response.json.return_value = {'addon': {'token': 'database-token'}}
         list_response = Mock(status_code=200)
@@ -87,7 +116,7 @@ class ScalingoBackupServiceTests(SimpleTestCase):
                 {'id': 'pending', 'status': 'pending', 'created_at': '2026-01-02T00:00:00Z'},
             ],
         }
-        post.return_value = token_response
+        post.side_effect = [exchange_response, token_response]
         get.return_value = list_response
 
         with self.assertRaises(ScalingoBackupError):

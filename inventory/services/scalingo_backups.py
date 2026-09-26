@@ -48,7 +48,48 @@ def is_configured():
     return True
 
 
+def _exchange_api_token(configuration):
+    auth_api_url = getattr(settings, 'SCALINGO_AUTH_API_URL', 'https://auth.scalingo.com').rstrip('/')
+    if not auth_api_url:
+        auth_api_url = 'https://auth.scalingo.com'
+
+    url = f'{auth_api_url}/v1/tokens/exchange'
+    try:
+        response = requests.post(
+            url,
+            headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            },
+            auth=('', configuration['api_token']),
+            timeout=10,
+        )
+    except requests.RequestException as exc:
+        logger.warning('Scalingo: échange du jeton impossible: %s', type(exc).__name__)
+        raise ScalingoBackupError('Le service d’authentification Scalingo est momentanément indisponible.') from exc
+
+    if response.status_code in (401, 403):
+        raise ScalingoBackupError('Le jeton API Scalingo est invalide ou expiré.')
+    if response.status_code == 429:
+        raise ScalingoBackupError('Scalingo a trop de requêtes en attente. Réessayez dans quelques instants.')
+    if response.status_code >= 400:
+        logger.warning('Scalingo: échange du jeton refusé avec le statut %s', response.status_code)
+        raise ScalingoBackupError('Scalingo a refusé le jeton API fourni.')
+
+    try:
+        payload = response.json()
+        bearer_token = payload.get('token')
+    except (TypeError, ValueError) as exc:
+        raise ScalingoBackupError('Réponse Scalingo invalide lors de l’authentification.') from exc
+
+    if not bearer_token:
+        raise ScalingoBackupError('Scalingo n’a pas renvoyé de jeton Bearer.')
+
+    return bearer_token
+
+
 def _get_database_token(configuration):
+    bearer_token = _exchange_api_token(configuration)
     app = quote(configuration['app'], safe='')
     database_id = quote(configuration['database_id'], safe='')
     url = f"{configuration['api_url']}/v1/apps/{app}/addons/{database_id}/token"
@@ -58,7 +99,7 @@ def _get_database_token(configuration):
             headers={
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
-                'Authorization': f"Bearer {configuration['api_token']}",
+                'Authorization': f'Bearer {bearer_token}',
             },
             timeout=10,
         )
@@ -66,9 +107,15 @@ def _get_database_token(configuration):
         logger.warning('Scalingo: impossible de demander le jeton de la base: %s', type(exc).__name__)
         raise ScalingoBackupError('Le service Scalingo est momentanément indisponible.') from exc
 
+    if response.status_code in (401, 403):
+        raise ScalingoBackupError('Accès Scalingo refusé. Vérifiez le jeton API et l’identifiant de l’addon.')
+    if response.status_code == 404:
+        raise ScalingoBackupError('L’application Scalingo ou l’identifiant de l’addon est incorrect.')
+    if response.status_code == 429:
+        raise ScalingoBackupError('Scalingo a trop de requêtes en attente. Réessayez dans quelques instants.')
     if response.status_code >= 400:
-        logger.warning('Scalingo: échange du jeton refusé avec le statut %s', response.status_code)
-        raise ScalingoBackupError('Le jeton API Scalingo est invalide ou expiré.')
+        logger.warning('Scalingo: jeton addon refusé avec le statut %s', response.status_code)
+        raise ScalingoBackupError('Scalingo n’a pas pu autoriser l’accès à la base de données.')
 
     try:
         payload = response.json()
