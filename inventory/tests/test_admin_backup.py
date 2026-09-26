@@ -110,13 +110,41 @@ class ScalingoBackupServiceTests(SimpleTestCase):
         }
         archive_response = Mock(status_code=200)
         archive_response.json.return_value = {
-            'download_url': 'https://example.com/backup.sql',
+            'download_url': 'http://example.com/backup.sql',
         }
         post.side_effect = [exchange_response, token_response]
         get.side_effect = [addons_response, list_response, archive_response]
 
         with self.assertRaises(ScalingoBackupError):
             latest_backup_download_url()
+
+    @override_settings(**configuration)
+    @patch('inventory.services.scalingo_backups.requests.get')
+    @patch('inventory.services.scalingo_backups.requests.post')
+    def test_allows_https_download_url_on_other_host(self, post, get):
+        exchange_response = Mock(status_code=200)
+        exchange_response.json.return_value = {'token': 'bearer-token'}
+        addons_response = Mock(status_code=200)
+        addons_response.json.return_value = {'addons': [{'id': 'addon-id', 'addon_provider': {'id': 'scalingo-postgresql'}}]}
+        token_response = Mock(status_code=200)
+        token_response.json.return_value = {'addon': {'token': 'database-token'}}
+        list_response = Mock(status_code=200)
+        list_response.json.return_value = {
+            'database_backups': [
+                {'id': 'latest', 'status': 'done', 'created_at': '2026-01-03T00:00:00Z'},
+            ],
+        }
+        archive_response = Mock(status_code=200)
+        archive_response.json.return_value = {
+            'download_url': 'https://storage.osc-fr1.scalingo.com/backup.sql?token=secret',
+        }
+        post.side_effect = [exchange_response, token_response]
+        get.side_effect = [addons_response, list_response, archive_response]
+
+        self.assertEqual(
+            latest_backup_download_url(),
+            'https://storage.osc-fr1.scalingo.com/backup.sql?token=secret',
+        )
 
     @override_settings(**configuration)
     @patch('inventory.services.scalingo_backups.requests.get')

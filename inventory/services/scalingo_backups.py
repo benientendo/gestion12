@@ -217,9 +217,16 @@ def _database_request(configuration, database_token, path):
 
 def _validate_download_url(url, configuration):
     parsed = urlparse(url)
-    expected_host = urlparse(configuration['database_api_url']).hostname
-    if parsed.scheme != 'https' or parsed.hostname != expected_host or not parsed.netloc:
+    if parsed.scheme != 'https' or not parsed.hostname:
         raise ScalingoBackupError('Scalingo a renvoyé une URL de téléchargement non sécurisée.')
+
+    expected_host = urlparse(configuration['database_api_url']).hostname
+    if parsed.hostname != expected_host:
+        logger.warning(
+            'Scalingo: URL de téléchargement sur l’hôte %s (hôte de l’API: %s)',
+            parsed.hostname,
+            expected_host,
+        )
 
     return url
 
