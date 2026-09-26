@@ -146,6 +146,48 @@ def enregistrer_modification_prix(boutique, impact_valeur, date=None):
     _incrementer(boutique, 'impact_modification_prix', impact_valeur, date)
 
 
+def maj_reductions_journal(boutique, date_debut, date_fin):
+    """
+    Recalcule montant_reductions du journal pour une période.
+    Réduction = (prix_original − prix_unitaire) × quantité sur les lignes négociées CDF
+    des ventes non annulées de la boutique.
+    """
+    from decimal import Decimal
+    from django.db.models import Q, Sum, F, ExpressionWrapper, DecimalField
+    from .models import JournalValeurStock, LigneVente
+
+    reductions = (
+        LigneVente.objects.filter(
+            Q(vente__boutique=boutique) | Q(vente__client_maui__boutique=boutique),
+            vente__date_vente__date__gte=date_debut,
+            vente__date_vente__date__lte=date_fin,
+            vente__est_annulee=False,
+            prix_original__isnull=False,
+            devise='CDF',
+        )
+        .annotate(jour=F('vente__date_vente__date'))
+        .values('jour')
+        .annotate(total=Sum(ExpressionWrapper(
+            (F('prix_original') - F('prix_unitaire')) * F('quantite'),
+            output_field=DecimalField(max_digits=18, decimal_places=2),
+        )))
+        .filter(total__gt=0)
+    )
+    par_jour = {r['jour']: r['total'] or Decimal('0') for r in reductions}
+
+    lignes = JournalValeurStock.objects.filter(
+        boutique=boutique,
+        date__gte=date_debut,
+        date__lte=date_fin,
+    )
+    for ligne in lignes:
+        nouveau = par_jour.get(ligne.date, Decimal('0'))
+        if ligne.montant_reductions != nouveau:
+            ligne.montant_reductions = nouveau
+            ligne.save(update_fields=['montant_reductions', 'updated_at'])
+    return par_jour
+
+
 def recalculer_tout_depuis_debut(boutique):
     """
     Recalcule toutes les lignes du journal dans l'ordre chronologique

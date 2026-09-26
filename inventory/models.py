@@ -1930,6 +1930,10 @@ class JournalValeurStock(models.Model):
         max_digits=18, decimal_places=2, default=0,
         help_text="Valeur (au prix de vente) des articles vendus"
     )
+    montant_reductions = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="Total des réductions accordées sur les ventes du jour ((prix original − prix négocié) × quantité, CDF)"
+    )
 
     # --- Valeur de clôture ---
     valeur_stock_restant = models.DecimalField(

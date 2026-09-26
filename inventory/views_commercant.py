@@ -8181,6 +8181,10 @@ def journal_valeur_stock_boutique(request, boutique_id):
         boutique=boutique, date=aujourd_hui
     ).update(valeur_stock_reel=valeur_stock_live)
 
+    # Recalculer les réductions (négociations) de la période affichée
+    from .journal_valeur_stock import maj_reductions_journal
+    maj_reductions_journal(boutique, date_debut, date_fin)
+
     lignes = JournalValeurStock.objects.filter(
         boutique=boutique,
         date__gte=date_debut,

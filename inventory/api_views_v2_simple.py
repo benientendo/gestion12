@@ -4333,6 +4333,18 @@ def journal_valeur_stock_simple(request):
     if date_fin:
         qs = qs.filter(date__lte=date_fin)
 
+    # Recalculer les réductions de la période (négociations ventes CDF)
+    from datetime import date as _date
+    from inventory.journal_valeur_stock import maj_reductions_journal
+    try:
+        d_deb = _date.fromisoformat(date_debut) if date_debut else (qs.last().date if qs else aujourd_hui)
+        d_fin = _date.fromisoformat(date_fin) if date_fin else aujourd_hui
+        if d_deb and d_fin:
+            maj_reductions_journal(boutique, d_deb, d_fin)
+            qs = qs.filter()  # rafraîchir après update
+    except (ValueError, TypeError):
+        pass
+
     try:
         limit = int(request.GET.get('limit', 90))
         limit = max(1, min(limit, 365))
@@ -4355,6 +4367,7 @@ def journal_valeur_stock_simple(request):
             'valeur_stock_sorti': str(j.valeur_stock_sorti),
             'valeur_transfert_sortant': str(j.valeur_transfert_sortant),
             'valeur_ventes': str(j.valeur_ventes),
+            'montant_reductions': str(j.montant_reductions),
             'valeur_stock_restant': str(j.valeur_stock_restant),
             'valeur_stock_reel': str(stock_reel),
         })
