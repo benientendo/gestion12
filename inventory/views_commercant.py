@@ -2,6 +2,7 @@
 # Vues pour l'interface commerçant multi-boutiques
 
 from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
@@ -4040,6 +4041,13 @@ def detail_depot(request, depot_id):
         depot_source=depot
     ).select_related('article', 'boutique_destination').order_by('-date_transfert')[:20]
     
+    # Dernières factures enregistrées (avec leurs articles)
+    factures_recentes = FactureApprovisionnement.objects.filter(
+        depot=depot
+    ).select_related('fournisseur').prefetch_related(
+        'lignes__article'
+    ).order_by('-date_facture', '-date_creation')[:10]
+    
     # Boutiques de destination disponibles (non-dépôts)
     boutiques_destination = commercant.boutiques.filter(est_depot=False, est_active=True)
     
@@ -4054,6 +4062,7 @@ def detail_depot(request, depot_id):
         'valeur_stock_usd': valeur_stock_usd,
         'articles_stock_bas': articles_stock_bas,
         'transferts_recents': transferts_recents,
+        'factures_recentes': factures_recentes,
         'boutiques_destination': boutiques_destination,
         'search_q': search_q,
     }
@@ -4986,11 +4995,33 @@ def transfert_multiple(request, depot_id):
     commercant = request.user.profil_commercant
     depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
     
+    # Filtre par date de facture : n'afficher que les articles approvisionnés ce jour-là
+    date_facture_str = request.GET.get('date_facture', '').strip()
+    date_facture = None
+    if date_facture_str:
+        try:
+            date_facture = datetime.strptime(date_facture_str, '%Y-%m-%d').date()
+        except ValueError:
+            date_facture_str = ''
+    
     # Articles disponibles dans le dépôt (avec stock > 0)
     articles = depot.articles.filter(
         est_actif=True,
         quantite_stock__gt=0
-    ).select_related('categorie').order_by('nom')
+    )
+    
+    factures_du_jour = FactureApprovisionnement.objects.none()
+    if date_facture:
+        # Cibler uniquement les articles des factures enregistrées à cette date
+        articles = articles.filter(
+            lignes_approvisionnement__facture__depot=depot,
+            lignes_approvisionnement__facture__date_facture=date_facture,
+        ).distinct()
+        factures_du_jour = FactureApprovisionnement.objects.filter(
+            depot=depot, date_facture=date_facture
+        ).select_related('fournisseur').order_by('date_creation')
+    
+    articles = articles.select_related('categorie').order_by('nom')
     
     # Boutiques de destination
     boutiques_destination = commercant.boutiques.filter(est_depot=False, est_active=True)
@@ -4999,9 +5030,15 @@ def transfert_multiple(request, depot_id):
         boutique_dest_id = request.POST.get('boutique_destination')
         commentaire_global = request.POST.get('commentaire', '')
         
+        # Préserver le filtre date (repassé en query string après POST)
+        date_retour = request.GET.get('date_facture', '').strip()
+        url_retour = reverse('inventory:transfert_multiple', args=[depot.id])
+        if date_retour:
+            url_retour += f'?date_facture={date_retour}'
+        
         if not boutique_dest_id:
             messages.error(request, "Veuillez sélectionner une boutique de destination")
-            return redirect('inventory:transfert_multiple', depot_id=depot.id)
+            return redirect(url_retour)
         
         boutique_dest = get_object_or_404(Boutique, id=boutique_dest_id, commercant=commercant, est_depot=False)
         
@@ -5010,7 +5047,7 @@ def transfert_multiple(request, depot_id):
         
         if not articles_selectionnes:
             messages.error(request, "Veuillez sélectionner au moins un article à transférer")
-            return redirect('inventory:transfert_multiple', depot_id=depot.id)
+            return redirect(url_retour)
         
         transferts_crees = []
         erreurs = []
@@ -5079,7 +5116,7 @@ def transfert_multiple(request, depot_id):
         except Exception as e:
             for erreur in erreurs:
                 messages.error(request, erreur)
-            return redirect('inventory:transfert_multiple', depot_id=depot.id)
+            return redirect(url_retour)
         
         for erreur in erreurs:
             messages.warning(request, erreur)
@@ -5094,6 +5131,9 @@ def transfert_multiple(request, depot_id):
         'depot': depot,
         'articles': articles,
         'boutiques_destination': boutiques_destination,
+        'date_facture': date_facture,
+        'date_facture_str': date_facture_str,
+        'factures_du_jour': factures_du_jour,
     }
     
     return render(request, 'inventory/commercant/transfert_multiple.html', context)

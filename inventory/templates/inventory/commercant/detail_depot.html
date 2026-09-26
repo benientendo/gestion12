@@ -459,6 +459,58 @@
                 </div>
             </div>
         </div>
+
+        <!-- Dernières factures enregistrées + leurs articles -->
+        <div class="col-12">
+            <div class="card shadow-sm mt-4">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-file-invoice"></i> Dernières factures enregistrées</h5>
+                    <a href="{% url 'inventory:liste_toutes_factures_commercant' %}?boutique={{ depot.id }}" class="btn btn-sm btn-outline-light">
+                        <i class="fas fa-list"></i> Toutes les factures
+                    </a>
+                </div>
+                <div class="card-body">
+                    {% for facture in factures_recentes %}
+                    <div class="border rounded p-3 mb-3">
+                        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                            <div>
+                                <strong class="text-primary">{{ facture.numero_facture }}</strong>
+                                &mdash; {{ facture.date_facture|date:"d/m/Y" }}
+                                &mdash; {% if facture.fournisseur %}{{ facture.fournisseur.nom }}{% else %}{{ facture.fournisseur_nom|default:"Fournisseur non spécifié" }}{% endif %}
+                                <br>
+                                <small class="text-muted">{{ facture.lignes.count }} article(s) &bull; {{ facture.montant_total|floatformat:0 }} {{ facture.devise }}</small>
+                            </div>
+                            <div class="text-end">
+                                <a href="{% url 'inventory:detail_facture_depot' depot.id facture.id %}" class="btn btn-sm btn-outline-primary" title="Voir la facture">
+                                    <i class="fas fa-eye"></i> Détail
+                                </a>
+                                <a href="{% url 'inventory:transfert_multiple' depot.id %}?date_facture={{ facture.date_facture|date:'Y-m-d' }}" class="btn btn-sm btn-warning" title="Distribuer ces articles vers un point de vente">
+                                    <i class="fas fa-exchange-alt"></i> Distribuer
+                                </a>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            {% for ligne in facture.lignes.all %}
+                            <span class="badge bg-light text-dark border me-1 mb-1" style="font-weight:500;">
+                                {{ ligne.article.nom }}{% if ligne.quantite_unites %} &times; {{ ligne.quantite_unites }}{% endif %}
+                            </span>
+                            {% empty %}
+                            <span class="text-muted small">Aucun article</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center text-muted py-3">
+                        <i class="fas fa-file-invoice fa-2x mb-2"></i>
+                        <p class="mb-0">Aucune facture enregistrée pour ce dépôt.</p>
+                        <a href="{% url 'inventory:approvisionner_facture' depot.id %}" class="btn btn-primary btn-sm mt-2">
+                            <i class="fas fa-plus"></i> Enregistrer une facture
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
     </div>
         </div>
     </div>

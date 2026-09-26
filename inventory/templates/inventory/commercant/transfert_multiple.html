@@ -170,6 +170,51 @@
         </div>
     </div>
 
+    <!-- Filtre : date d'enregistrement de la facture -->
+    <form method="get" class="mb-4">
+        <div class="card shadow-sm border-primary">
+            <div class="card-body py-2">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label for="date_facture" class="form-label mb-1 fw-bold">
+                            <i class="fas fa-calendar-alt me-1"></i>Date d'enregistrement de la facture
+                        </label>
+                        <input type="date" class="form-control" name="date_facture" id="date_facture"
+                               value="{{ date_facture_str }}">
+                    </div>
+                    <div class="col-md-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search me-1"></i> Appeler les articles
+                        </button>
+                        {% if date_facture_str %}
+                        <a href="?" class="btn btn-outline-secondary">
+                            <i class="fas fa-times me-1"></i> Tout afficher
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3 text-md-end">
+                        {% if date_facture %}
+                        <span class="badge bg-success fs-6">
+                            <i class="fas fa-file-invoice me-1"></i>
+                            {{ factures_du_jour|length }} facture(s) le {{ date_facture|date:"d/m/Y" }}
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if date_facture %}
+                <div class="mt-2 small">
+                    {% for f in factures_du_jour %}
+                    <span class="badge bg-light text-dark border me-1">{{ f.numero_facture }}
+                        ({% if f.fournisseur %}{{ f.fournisseur.nom }}{% else %}{{ f.fournisseur_nom|default:"-" }}{% endif %})</span>
+                    {% empty %}
+                    <span class="text-warning"><i class="fas fa-exclamation-triangle me-1"></i>Aucune facture enregistrée à cette date — la liste affiche tous les articles.</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+
     <form method="post" id="transfertForm">
         {% csrf_token %}
         
@@ -178,7 +223,14 @@
             <div class="col-lg-8">
                 <div class="card shadow-sm mb-4">
                     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="fas fa-boxes"></i> Articles disponibles ({{ articles|length }})</h5>
+                        <h5 class="mb-0">
+                            <i class="fas fa-boxes"></i>
+                            {% if date_facture %}
+                                Articles de la facture du {{ date_facture|date:"d/m/Y" }} ({{ articles|length }})
+                            {% else %}
+                                Articles disponibles ({{ articles|length }})
+                            {% endif %}
+                        </h5>
                         <div>
                             <button type="button" class="btn btn-sm btn-select-all" id="selectAll">
                                 <i class="fas fa-check-double"></i> Tout sélectionner
@@ -298,8 +350,14 @@
                             {% empty %}
                             <div class="text-center py-5">
                                 <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                                {% if date_facture %}
+                                <h5 class="text-muted">Aucun article pour cette date</h5>
+                                <p class="text-muted">Aucun article en stock ne provient d'une facture enregistrée le {{ date_facture|date:"d/m/Y" }}.</p>
+                                <a href="?" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times me-1"></i> Tout afficher</a>
+                                {% else %}
                                 <h5 class="text-muted">Aucun article disponible</h5>
                                 <p class="text-muted">Le dépôt ne contient aucun article avec du stock disponible.</p>
+                                {% endif %}
                             </div>
                             {% endfor %}
                         </div>
