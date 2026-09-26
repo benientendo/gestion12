@@ -311,6 +311,28 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- 🎫 Tickets annulés -->
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <a href="{% url 'inventory:commercant_ventes_annulees_boutique' boutique.id %}" class="text-decoration-none">
+                            <div class="card bg-danger text-white card-hover">
+                                <div class="card-body py-2">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h4 class="mb-0"><i class="fas fa-ticket-alt me-2"></i>{{ annulations_jour }} ticket{{ annulations_jour|pluralize }} annulé{{ annulations_jour|pluralize }} aujourd'hui</h4>
+                                            <small>{{ annulations_mois }} annulé{{ annulations_mois|pluralize }} ce mois — Voir la traçabilité</small>
+                                        </div>
+                                        <div class="text-end">
+                                            <h4 class="mb-0"><span class="sensitive-amount">-{{ montant_annule_mois|floatformat:0 }} CDF</span></h4>
+                                            <small>Montant annulé ce mois</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

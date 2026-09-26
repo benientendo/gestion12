@@ -275,6 +275,15 @@
                                 <div class="small-stat-number sensitive-amount" style="color: #ffc9c9;">-{{ montant_negocie_mois|floatformat:0|intcomma }} CDF</div>
                                 <div class="small-stat-label">Réductions accordées</div>
                             </div>
+                            <!-- 🎫 Annulations (tickets annulés) -->
+                            <div class="col-6 mt-1">
+                                <div class="small-stat-number" style="color: #ffa8a8;">{{ annulations_mois }}</div>
+                                <div class="small-stat-label">Tickets annulés (mois)</div>
+                            </div>
+                            <div class="col-6 mt-1">
+                                <div class="small-stat-number sensitive-amount" style="color: #ffc9c9;">-{{ montant_annule_mois|floatformat:0|intcomma }} CDF</div>
+                                <div class="small-stat-label">Montant annulé (mois)</div>
+                            </div>
                         </div>
                     </div>
                 </div>

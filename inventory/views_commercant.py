@@ -379,7 +379,25 @@ def dashboard_commercant(request):
     )
     negociations_mois = lignes_negociees_mois['nombre'] or 0
     montant_negocie_mois = lignes_negociees_mois['total_reduction'] or 0
-    
+
+    # 🎫 ANNULATIONS - Tickets annulés (jour + mois) — traçabilité MAUI/back-office
+    ventes_annulees_mois = Vente.objects.filter(
+        Q(boutique__in=boutiques) | Q(client_maui__boutique__in=boutiques),
+        est_annulee=True,
+        date_annulation__gte=debut_mois
+    ).distinct()
+    ventes_annulees_jour_qs = Vente.objects.filter(
+        Q(boutique__in=boutiques) | Q(client_maui__boutique__in=boutiques),
+        est_annulee=True,
+        date_annulation__date=aujourd_hui
+    ).distinct()
+    annulations_mois = ventes_annulees_mois.count()
+    montant_annule_mois = ventes_annulees_mois.filter(devise='CDF').aggregate(
+        total=Sum('montant_total'))['total'] or 0
+    annulations_jour = ventes_annulees_jour_qs.count()
+    montant_annule_jour = ventes_annulees_jour_qs.filter(devise='CDF').aggregate(
+        total=Sum('montant_total'))['total'] or 0
+
     context = {
         'commercant': commercant,
         'boutiques': boutiques,  # Ajouter la liste des boutiques
@@ -404,6 +422,11 @@ def dashboard_commercant(request):
         # 💰 Négociations
         'negociations_mois': negociations_mois,
         'montant_negocie_mois': montant_negocie_mois,
+        # 🎫 Annulations (tickets annulés)
+        'annulations_jour': annulations_jour,
+        'montant_annule_jour': montant_annule_jour,
+        'annulations_mois': annulations_mois,
+        'montant_annule_mois': montant_annule_mois,
     }
     
     return render(request, 'inventory/commercant/dashboard.html', context)
@@ -554,7 +577,26 @@ def detail_boutique(request, boutique_id):
                 total_potentiel_refusees += Decimal(str(montant))
         except (TypeError, ValueError, KeyError):
             pass
-    
+
+    # 🎫 Compteur des TICKETS ANNULES (jour + mois) — traçabilité annulations
+    ventes_annulees_jour_qs = Vente.objects.filter(
+        Q(boutique=boutique) | Q(client_maui__boutique=boutique),
+        est_annulee=True,
+        date_annulation__date=aujourd_hui
+    ).distinct()
+    nb_ventes_annulees_jour = ventes_annulees_jour_qs.count()
+    total_annule_jour = ventes_annulees_jour_qs.filter(devise='CDF').aggregate(
+        total=Sum('montant_total'))['total'] or Decimal('0')
+    debut_mois = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    ventes_annulees_mois_qs = Vente.objects.filter(
+        Q(boutique=boutique) | Q(client_maui__boutique=boutique),
+        est_annulee=True,
+        date_annulation__gte=debut_mois
+    ).distinct()
+    nb_ventes_annulees_mois = ventes_annulees_mois_qs.count()
+    total_annule_mois = ventes_annulees_mois_qs.filter(devise='CDF').aggregate(
+        total=Sum('montant_total'))['total'] or Decimal('0')
+
     context = {
         'boutique': boutique,
         'nb_ventes': nb_ventes,
@@ -571,7 +613,12 @@ def detail_boutique(request, boutique_id):
         'chiffre_affaires_usd': ca_usd_30j,
         'ventes_recentes': ventes_recentes_display,
         'nb_ventes_refusees_jour': nb_ventes_refusees_jour,
-        'total_potentiel_refusees': total_potentiel_refusees
+        'total_potentiel_refusees': total_potentiel_refusees,
+        # 🎫 Annulations
+        'nb_ventes_annulees_jour': nb_ventes_annulees_jour,
+        'total_annule_jour': total_annule_jour,
+        'nb_ventes_annulees_mois': nb_ventes_annulees_mois,
+        'total_annule_mois': total_annule_mois
     }
     
     return render(request, 'inventory/commercant/details_boutique.html', context)
@@ -1364,7 +1411,25 @@ def entrer_boutique(request, boutique_id):
         vente__est_annulee=False,
         est_negocie=True
     ).select_related('article', 'vente').order_by('-vente__date_vente')
-    
+
+    # 🎫 ANNULATIONS - Tickets annulés (jour + mois) — traçabilité MAUI/back-office
+    ventes_annulees_mois_qs = Vente.objects.filter(
+        boutique=boutique,
+        est_annulee=True,
+        date_annulation__gte=debut_mois
+    )
+    ventes_annulees_jour_qs = Vente.objects.filter(
+        boutique=boutique,
+        est_annulee=True,
+        date_annulation__date=aujourd_hui
+    )
+    annulations_mois = ventes_annulees_mois_qs.count()
+    montant_annule_mois = ventes_annulees_mois_qs.filter(devise='CDF').aggregate(
+        total=Sum('montant_total'))['total'] or 0
+    annulations_jour = ventes_annulees_jour_qs.count()
+    montant_annule_jour = ventes_annulees_jour_qs.filter(devise='CDF').aggregate(
+        total=Sum('montant_total'))['total'] or 0
+
     context = {
         'boutique': boutique,
         'nb_articles': nb_articles,
@@ -1399,6 +1464,11 @@ def entrer_boutique(request, boutique_id):
         'montant_negocie_mois': montant_negocie_mois,
         'articles_negocies_jour': articles_negocies_jour,
         'articles_negocies_mois': articles_negocies_mois,
+        # 🎫 Annulations (tickets annulés)
+        'annulations_jour': annulations_jour,
+        'montant_annule_jour': montant_annule_jour,
+        'annulations_mois': annulations_mois,
+        'montant_annule_mois': montant_annule_mois,
         # 📦 Dépôt du commerçant (pour lien rapide)
         'depot': Boutique.objects.filter(commercant=request.user.profil_commercant, est_depot=True).first(),
     }
@@ -3904,6 +3974,72 @@ def ventes_refusees_boutique(request, boutique_id):
     }
     
     return render(request, 'inventory/commercant/ventes_refusees_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def ventes_annulees_boutique(request, boutique_id):
+    """🎫 Traçabilité des TICKETS ANNULÉS de la boutique (annulations MAUI + back-office)"""
+    boutique = request.boutique
+    aujourd_hui = timezone.localdate()
+    debut_mois = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    ventes_base = Vente.objects.filter(
+        Q(boutique=boutique) | Q(client_maui__boutique=boutique),
+        est_annulee=True
+    ).select_related('client_maui', 'boutique').distinct()
+
+    # Filtre par date d'annulation
+    date_filter = request.GET.get('date', '')
+    ventes_annulees = ventes_base.order_by('-date_annulation', '-date_vente')
+    if date_filter:
+        try:
+            date_obj = datetime.strptime(date_filter, '%Y-%m-%d').date()
+            ventes_annulees = ventes_annulees.filter(date_annulation__date=date_obj)
+        except ValueError:
+            pass
+
+    # Statistiques
+    def _stats(qs):
+        nb = qs.count()
+        cdf = qs.filter(devise='CDF').aggregate(total=Sum('montant_total'))['total'] or Decimal('0')
+        usd = qs.filter(devise='USD').aggregate(total=Sum('montant_total'))['total'] or Decimal('0')
+        return nb, cdf, usd
+
+    nb_jour, cdf_jour, usd_jour = _stats(ventes_base.filter(date_annulation__date=aujourd_hui))
+    nb_mois, cdf_mois, usd_mois = _stats(ventes_base.filter(date_annulation__gte=debut_mois))
+    nb_total, cdf_total, usd_total = _stats(ventes_annulees)
+
+    # Détail des tickets annulés (articles)
+    ventes_details = []
+    for vente in ventes_annulees[:100]:
+        lignes = list(vente.lignes.all()[:10])
+        ventes_details.append({
+            'vente': vente,
+            'lignes': lignes,
+            'nb_articles': vente.lignes.count(),
+        })
+
+    context = {
+        'boutique': boutique,
+        'ventes_annulees': ventes_annulees,
+        'ventes_details': ventes_details,
+        'nb_jour': nb_jour,
+        'cdf_jour': cdf_jour,
+        'usd_jour': usd_jour,
+        'nb_mois': nb_mois,
+        'cdf_mois': cdf_mois,
+        'usd_mois': usd_mois,
+        'nb_total': nb_total,
+        'cdf_total': cdf_total,
+        'usd_total': usd_total,
+        'date_filter': date_filter,
+        'aujourd_hui': aujourd_hui.strftime('%Y-%m-%d'),
+    }
+
+    return render(request, 'inventory/commercant/ventes_annulees_boutique.html', context)
+
 
 @login_required
 @commercant_required

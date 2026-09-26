@@ -1,0 +1,165 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Tickets Annulés - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stats-card { border-radius: 10px; transition: transform 0.2s; }
+    .stats-card:hover { transform: translateY(-2px); }
+    .stats-annules { background: linear-gradient(135deg, #e03131 0%, #c92a2a 100%); color: white; }
+    .stats-mois { background: linear-gradient(135deg, #f08c00 0%, #d9480f 100%); color: white; }
+    .stats-total { background: linear-gradient(135deg, #495057 0%, #343a40 100%); color: white; }
+    .stat-value { font-size: 1.45rem; font-weight: 700; }
+    .stat-label { font-size: 0.85rem; opacity: 0.9; }
+    .vente-annulee-card { border-left: 4px solid #e03131; margin-bottom: 10px; transition: all 0.2s; }
+    .vente-annulee-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .filter-section { background: #f8f9fa; border-radius: 10px; padding: 15px; margin-bottom: 20px; }
+    .article-list { font-size: 0.85rem; color: #666; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center flex-wrap">
+                <div>
+                    <h1><i class="fas fa-ticket-alt text-danger"></i> Tickets Annulés</h1>
+                    <p class="text-muted mb-0">{{ boutique.nom }} - Traçabilité des annulations (caisse MAUI + back-office)</p>
+                </div>
+                <div class="mt-2 mt-md-0">
+                    <a href="{% url 'inventory:commercant_detail_boutique' boutique.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour à la boutique
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistiques -->
+    <div class="row mb-4">
+        <div class="col-md-4 mb-3">
+            <div class="card stats-card stats-annules">
+                <div class="card-body text-center">
+                    <div class="stat-value">{{ nb_jour }} ticket{{ nb_jour|pluralize }}</div>
+                    <div class="stat-label">
+                        <i class="fas fa-ban"></i> Annulés aujourd'hui
+                        {% if cdf_jour %}<span class="badge bg-light text-dark ms-1">{{ cdf_jour|floatformat:0|intcomma }} CDF</span>{% endif %}
+                        {% if usd_jour %}<span class="badge bg-light text-dark ms-1">${{ usd_jour|floatformat:2 }}</span>{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card stats-card stats-mois">
+                <div class="card-body text-center">
+                    <div class="stat-value">{{ nb_mois }} ticket{{ nb_mois|pluralize }}</div>
+                    <div class="stat-label">
+                        <i class="fas fa-calendar-alt"></i> Annulés ce mois
+                        {% if cdf_mois %}<span class="badge bg-light text-dark ms-1">{{ cdf_mois|floatformat:0|intcomma }} CDF</span>{% endif %}
+                        {% if usd_mois %}<span class="badge bg-light text-dark ms-1">${{ usd_mois|floatformat:2 }}</span>{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card stats-card stats-total">
+                <div class="card-body text-center">
+                    <div class="stat-value">{{ nb_total }} ticket{{ nb_total|pluralize }}</div>
+                    <div class="stat-label">
+                        <i class="fas fa-list"></i> Total affichés
+                        {% if cdf_total %}<span class="badge bg-light text-dark ms-1">{{ cdf_total|floatformat:0|intcomma }} CDF</span>{% endif %}
+                        {% if usd_total %}<span class="badge bg-light text-dark ms-1">${{ usd_total|floatformat:2 }}</span>{% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filtre par date -->
+    <div class="filter-section">
+        <form method="get" class="row align-items-end">
+            <div class="col-md-4">
+                <label for="date" class="form-label"><i class="fas fa-calendar"></i> Filtrer par date d'annulation</label>
+                <input type="date" name="date" id="date" class="form-control"
+                       value="{{ date_filter }}" max="{{ aujourd_hui }}">
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-filter"></i> Filtrer</button>
+                {% if date_filter %}
+                <a href="{% url 'inventory:commercant_ventes_annulees_boutique' boutique.id %}" class="btn btn-outline-secondary ms-2">
+                    <i class="fas fa-times"></i> Réinitialiser
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Liste des tickets annulés -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fas fa-list"></i> Historique des tickets annulés
+                <span class="badge bg-danger ms-2">{{ nb_total }}</span>
+            </h5>
+        </div>
+        <div class="card-body">
+            {% if ventes_details %}
+                {% for detail in ventes_details %}
+                <div class="card vente-annulee-card">
+                    <div class="card-body py-3">
+                        <div class="row align-items-center">
+                            <div class="col-md-3">
+                                <small class="text-muted"><i class="fas fa-clock"></i> Vente: {{ detail.vente.date_vente|date:"d/m/Y H:i" }}</small>
+                                <div class="fw-bold">{{ detail.vente.numero_facture }}</div>
+                                {% if detail.vente.date_annulation %}
+                                <small class="text-danger"><i class="fas fa-ban"></i> Annulée: {{ detail.vente.date_annulation|date:"d/m/Y H:i" }}</small>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-3">
+                                <span class="badge bg-danger">{{ detail.vente.devise }} {{ detail.vente.montant_total|floatformat:2|intcomma }}</span>
+                                <div class="small text-muted mt-1">
+                                    <i class="fas fa-mobile-alt"></i>
+                                    {% if detail.vente.client_maui %}{{ detail.vente.client_maui.nom_terminal }}{% else %}Back-office{% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="article-list">
+                                    {% for ligne in detail.lignes|slice:":3" %}
+                                    <div>{{ ligne.article.nom|default:"Article" }} x{{ ligne.quantite }}</div>
+                                    {% empty %}
+                                    <span class="text-muted">Détails non disponibles</span>
+                                    {% endfor %}
+                                    {% if detail.nb_articles > 3 %}
+                                    <div class="text-muted">+{{ detail.nb_articles|add:"-3" }} autres...</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-3 text-end">
+                                <span class="badge bg-secondary">{{ detail.nb_articles }} article{{ detail.nb_articles|pluralize }}</span>
+                            </div>
+                        </div>
+                        {% if detail.vente.motif_annulation %}
+                        <div class="mt-2 p-2 bg-light rounded small">
+                            <i class="fas fa-info-circle text-muted"></i> Motif: {{ detail.vente.motif_annulation|truncatechars:150 }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
+                    <h5>Aucun ticket annulé</h5>
+                    <p class="text-muted">
+                        {% if date_filter %}Aucun ticket annulé pour cette date.{% else %}Aucune annulation enregistrée pour cette boutique.{% endif %}
+                    </p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

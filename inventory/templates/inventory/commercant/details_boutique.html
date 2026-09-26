@@ -27,6 +27,15 @@
                         <span class="badge bg-warning text-dark ms-1">{{ total_potentiel_refusees|floatformat:0|intcomma }} FC</span>
                         {% endif %}
                     </a>
+                    <a href="{% url 'inventory:commercant_ventes_annulees_boutique' boutique.id %}" class="btn btn-outline-danger me-2">
+                        <i class="fas fa-ticket-alt"></i> Tickets Annulés
+                        {% if nb_ventes_annulees_jour > 0 %}
+                        <span class="badge bg-danger">{{ nb_ventes_annulees_jour }}</span>
+                        {% endif %}
+                        {% if total_annule_jour > 0 %}
+                        <span class="badge bg-light text-danger ms-1">-{{ total_annule_jour|floatformat:0|intcomma }} FC</span>
+                        {% endif %}
+                    </a>
                     <a href="{% url 'inventory:commercant_alertes_stock' boutique.id %}" class="btn btn-warning me-2">
                         <i class="fas fa-exclamation-triangle"></i> Alertes Stock
                     </a>
