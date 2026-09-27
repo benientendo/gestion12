@@ -5704,6 +5704,49 @@ def historique_mouvements_stock(request, boutique_id):
 
 # ===== APPROVISIONNEMENT PAR FACTURE =====
 
+def _derniers_appros_par_article(articles_qs):
+    """Dernier appro de chaque article, indexé par couple (article, fournisseur).
+
+    Le prix d'achat dépend du fournisseur : même article, fournisseurs
+    différents = prix différents. On renvoie aussi une entrée ``global``
+    (dernier achat tous fournisseurs) servant de repli.
+    """
+    derniers_appros = {}
+    last_lignes = LigneApprovisionnement.objects.filter(
+        article__in=articles_qs
+    ).select_related('article', 'facture', 'facture__fournisseur').order_by('article_id', '-date_creation')
+
+    def cle_fournisseur(facture):
+        if facture is None:
+            return None
+        if facture.fournisseur_id:
+            return 'id:%s' % facture.fournisseur_id
+        if facture.fournisseur_nom:
+            return 'nom:%s' % facture.fournisseur_nom.strip().lower()
+        return None
+
+    for ligne in last_lignes:
+        facture = ligne.facture
+        entree = derniers_appros.setdefault(ligne.article_id, {'global': None, 'par_fournisseur': {}})
+        donnees = {
+            'type_quantite': ligne.type_quantite,
+            'nombre_cartons': ligne.nombre_cartons,
+            'pieces_par_carton': ligne.pieces_par_carton,
+            'prix_achat_carton': float(ligne.prix_achat_carton),
+            'prix_achat_unitaire': float(ligne.prix_achat_unitaire),
+            'prix_vente_unitaire': float(ligne.prix_vente_unitaire or 0),
+            'quantite_unites': ligne.quantite_unites,
+            'devise_saisie': facture.devise if facture else 'CDF',
+            'date': facture.date_facture.isoformat() if facture and facture.date_facture else '',
+        }
+        if entree['global'] is None:
+            entree['global'] = donnees
+        cle = cle_fournisseur(facture)
+        if cle and cle not in entree['par_fournisseur']:
+            entree['par_fournisseur'][cle] = donnees
+    return derniers_appros
+
+
 @login_required
 @commercant_required
 def approvisionner_facture(request, depot_id):
@@ -5726,25 +5769,8 @@ def approvisionner_facture(request, depot_id):
             categories_noms.append(nom)
     articles_existants = articles_qs
     
-    # Récupérer les dernières données d'approvisionnement par article (pour pré-remplissage)
-    derniers_appros = {}
-    last_lignes = LigneApprovisionnement.objects.filter(
-        article__in=articles_existants
-    ).select_related('article', 'facture').order_by('article_id', '-date_creation')
-    seen_ids = set()
-    for ligne in last_lignes:
-        if ligne.article_id not in seen_ids:
-            seen_ids.add(ligne.article_id)
-            # Devise de la facture: CDF = FC, USD = USD
-            devise_facture = ligne.facture.devise if ligne.facture else 'CDF'
-            derniers_appros[ligne.article_id] = {
-                'type_quantite': ligne.type_quantite,
-                'nombre_cartons': ligne.nombre_cartons,
-                'pieces_par_carton': ligne.pieces_par_carton,
-                'prix_achat_carton': float(ligne.prix_achat_carton),
-                'prix_achat_unitaire': float(ligne.prix_achat_unitaire),
-                'devise_saisie': devise_facture,  # Devise utilisée lors du dernier appro
-            }
+    # Dernières données d'appro par couple (article, fournisseur) pour pré-remplissage
+    derniers_appros = _derniers_appros_par_article(articles_existants)
     
     if request.method == 'POST':
         try:
@@ -5980,25 +6006,8 @@ def approvisionner_facture_boutique(request, boutique_id):
             categories_noms.append(nom)
     articles_existants = articles_qs
     
-    # Récupérer les dernières données d'approvisionnement par article (pour pré-remplissage)
-    derniers_appros = {}
-    last_lignes = LigneApprovisionnement.objects.filter(
-        article__in=articles_existants
-    ).select_related('article', 'facture').order_by('article_id', '-date_creation')
-    seen_ids = set()
-    for ligne in last_lignes:
-        if ligne.article_id not in seen_ids:
-            seen_ids.add(ligne.article_id)
-            # Devise de la facture: CDF = FC, USD = USD
-            devise_facture = ligne.facture.devise if ligne.facture else 'CDF'
-            derniers_appros[ligne.article_id] = {
-                'type_quantite': ligne.type_quantite,
-                'nombre_cartons': ligne.nombre_cartons,
-                'pieces_par_carton': ligne.pieces_par_carton,
-                'prix_achat_carton': float(ligne.prix_achat_carton),
-                'prix_achat_unitaire': float(ligne.prix_achat_unitaire),
-                'devise_saisie': devise_facture,
-            }
+    # Dernières données d'appro par couple (article, fournisseur) pour pré-remplissage
+    derniers_appros = _derniers_appros_par_article(articles_existants)
     
     if request.method == 'POST':
         try:

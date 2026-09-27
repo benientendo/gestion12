@@ -367,6 +367,89 @@ var FACT_ARTICLES = {{ autocomplete_articles_json|safe }};
 var FACT_DERNIERS_APPROS = {{ derniers_appros_json|safe }};
 {% endlocalize %}
 
+// === DERNIER APPRO : COUPLE (ARTICLE, FOURNISSEUR) ===
+// Le prix dépend du fournisseur : on prend l'entrée du fournisseur courant,
+// sinon repli sur le dernier achat tous fournisseurs (global).
+function factDernierAppro(articleId) {
+    if (!articleId || !FACT_DERNIERS_APPROS) return null;
+    var entree = FACT_DERNIERS_APPROS[String(articleId)];
+    if (!entree) return null;
+    var fidEl = getEl('fournisseur_id');
+    var fnomEl = getEl('fournisseur_input');
+    var fid = fidEl ? fidEl.value : '';
+    var fnom = fnomEl ? fnomEl.value.trim().toLowerCase() : '';
+    var parF = entree.par_fournisseur || {};
+    if (fid && parF['id:' + fid]) return parF['id:' + fid];
+    if (fnom && parF['nom:' + fnom]) return parF['nom:' + fnom];
+    return entree.global || null;
+}
+
+// Valeurs pré-remplies à chaque nouvel appro, écrasées par toute saisie manuelle
+var factPrefillVals = null;
+
+function factPrefillModifie() {
+    if (!factPrefillVals) return true;
+    var champs = ['art_nb_cartons', 'art_pcs_carton', 'art_pcs_sup', 'art_prix_carton', 'art_prix_vente'];
+    for (var i = 0; i < champs.length; i++) {
+        var v = getEl(champs[i]);
+        if (!v || String(v.value) !== String(factPrefillVals[champs[i]])) return true;
+    }
+    return false;
+}
+
+// Pré-remplit les champs de l'article avec les valeurs du dernier achat
+function factPrefillValeurs(match) {
+    if (!match) return;
+    try {
+        var appro = factDernierAppro(match.id);
+        var deviseActuelle = getDevise();
+        var taux = factGetTaux();
+        function versDevise(prixFc) {
+            if (deviseActuelle === 'USD' && taux > 0) return Math.round((prixFc / taux) * 100) / 100;
+            return prixFc;
+        }
+        var nb = (appro && appro.nombre_cartons > 0) ? appro.nombre_cartons : 0;
+        var ppc = 0;
+        if (appro && appro.pieces_par_carton > 0) ppc = appro.pieces_par_carton;
+        else if (match.pieces_par_carton > 0) ppc = match.pieces_par_carton;
+        if (!(ppc > 0)) ppc = 1;
+        var psup = 0;
+        if (appro && appro.quantite_unites > 0) {
+            var calc = appro.quantite_unites - (nb * ppc);
+            if (calc > 0) psup = calc;
+        }
+        getEl('art_nb_cartons').value = nb;
+        getEl('art_pcs_carton').value = ppc;
+        getEl('art_pcs_sup').value = psup;
+        var prixCartonFc = 0;
+        if (appro && appro.prix_achat_carton > 0) prixCartonFc = appro.prix_achat_carton;
+        else if (!appro && match.prix_achat > 0) prixCartonFc = match.prix_achat * ppc;
+        getEl('art_prix_carton').value = prixCartonFc > 0 ? versDevise(prixCartonFc) : 0;
+        var pvFc = (appro && appro.prix_vente_unitaire > 0) ? appro.prix_vente_unitaire : (match.prix_vente || 0);
+        getEl('art_prix_vente').value = pvFc;
+        factPrefillVals = {
+            art_nb_cartons: getEl('art_nb_cartons').value,
+            art_pcs_carton: getEl('art_pcs_carton').value,
+            art_pcs_sup: getEl('art_pcs_sup').value,
+            art_prix_carton: getEl('art_prix_carton').value,
+            art_prix_vente: getEl('art_prix_vente').value
+        };
+        calculerSaisie();
+    } catch(err) { console.error('Prefill error:', err); }
+}
+
+// Article actuellement saisi (champ nom lié)
+function factArticleCourant() {
+    if (factSelectedArticle) return factSelectedArticle;
+    var idEl = getEl('art_id');
+    var id = idEl ? idEl.value : '';
+    if (!id || id === '0') return null;
+    for (var i = 0; i < FACT_ARTICLES.length; i++) {
+        if (String(FACT_ARTICLES[i].id) === String(id)) return FACT_ARTICLES[i];
+    }
+    return null;
+}
+
 // === HELPER FORMATAGE NOMBRE ===
 function formatNumber(num) {
     if (num === null || num === undefined) return '0';
@@ -718,6 +801,7 @@ function onSaisieArticleInput() {
             getEl('art_prix_achat').value = '0';
             getEl('art_prix_vente').value = '0';
             hideAllHints();
+            factSelectedArticle = match;
 
             // Catégorie
             if (match.categorie_id) {
@@ -737,7 +821,7 @@ function onSaisieArticleInput() {
                 getEl('art_categorie').classList.add('input-matched');
             }
 
-            var appro = (match.id && FACT_DERNIERS_APPROS) ? FACT_DERNIERS_APPROS[String(match.id)] : null;
+            var appro = factDernierAppro(match.id);
             
             // Les prix stockés sont TOUJOURS en FC
             // Si la devise actuelle est USD, on doit convertir FC → USD
@@ -796,6 +880,9 @@ function onSaisieArticleInput() {
 
             // Hint stock actuel
             showHint('hint_qte', match.stock, '');
+
+            // Pré-remplir avec le dernier achat de ce couple (article, fournisseur)
+            factPrefillValeurs(match);
 
             calculerSaisie();
         } else {
@@ -1254,6 +1341,12 @@ function onFournisseurInput() {
             getEl('fournisseur_nom').value = val;
             input.classList.remove('input-matched');
         }
+        // Le prix dépend du fournisseur : réappliquer les valeurs du dernier
+        // achat de ce couple (article, fournisseur) tant que rien n'a été saisi
+        var artCourant = factArticleCourant();
+        if (artCourant && !factPrefillModifie()) {
+            factPrefillValeurs(artCourant);
+        }
     } catch(err) { console.error('Fournisseur error:', err); }
 }
 
@@ -1411,7 +1504,7 @@ function displayLocalSuggestions(articles) {
     var listHtml = '';
     for (var i = 0; i < articles.length; i++) {
         var art = articles[i];
-        var appro = FACT_DERNIERS_APPROS[String(art.id)] || {};
+        var appro = factDernierAppro(art.id) || {};
         listHtml += '<div style="padding:10px;border-bottom:1px solid #eee;cursor:pointer;transition:background 0.2s;" ' +
             'onmouseover="this.style.background=\'#e3f2fd\'" onmouseout="this.style.background=\'white\'" ' +
             'onclick="applyLocalSuggestion(' + art.id + ')">' +
@@ -1476,33 +1569,9 @@ function applyLocalSuggestion(articleId) {
         getEl('art_categorie').classList.add('input-matched');
     }
     
-    // Prix (conversion si USD)
-    var appro = (art.id && FACT_DERNIERS_APPROS) ? FACT_DERNIERS_APPROS[String(art.id)] : null;
-    var deviseActuelle = getDevise();
-    var taux = factGetTaux();
-    
-    function convertirPrix(prixFC) {
-        if (deviseActuelle === 'USD' && taux > 0) {
-            return Math.round((prixFC / taux) * 100) / 100;
-        }
-        return prixFC;
-    }
-    
-    // Prix d'achat
-    var prixAchat = (appro && appro.prix_achat_unitaire) || art.prix_achat || 0;
-    if (prixAchat > 0) getEl('art_prix_achat').value = convertirPrix(prixAchat);
-    
-    // Prix de vente (toujours en FC)
-    if (art.prix_vente > 0) getEl('art_prix_vente').value = art.prix_vente;
-    
-    // Carton: appro récent, sinon pièce/carton legacy
-    if (appro && appro.type_quantite === 'CARTON') {
-        if (appro.nombre_cartons > 0) getEl('art_nb_cartons').value = appro.nombre_cartons;
-        if (appro.pieces_par_carton > 0) getEl('art_pcs_carton').value = appro.pieces_par_carton;
-        if (appro.prix_achat_carton > 0) getEl('art_prix_carton').value = convertirPrix(appro.prix_achat_carton);
-    } else if (art.pieces_par_carton > 0) {
-        getEl('art_pcs_carton').value = art.pieces_par_carton;
-    }
+    // Prix & quantités : dernier achat du couple (article, fournisseur courant)
+    factSelectedArticle = art;
+    factPrefillValeurs(art);
     
     // Fermer modal et recalculer
     var modal = document.getElementById('suggestionModal');
