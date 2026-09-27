@@ -5714,7 +5714,7 @@ def _derniers_appros_par_article(articles_qs):
     derniers_appros = {}
     last_lignes = LigneApprovisionnement.objects.filter(
         article__in=articles_qs
-    ).select_related('article', 'facture', 'facture__fournisseur').order_by('article_id', '-date_creation')
+    ).select_related('article', 'facture', 'facture__fournisseur', 'categorie').order_by('article_id', '-date_creation')
 
     def cle_fournisseur(facture):
         if facture is None:
@@ -5736,6 +5736,8 @@ def _derniers_appros_par_article(articles_qs):
             'prix_achat_unitaire': float(ligne.prix_achat_unitaire),
             'prix_vente_unitaire': float(ligne.prix_vente_unitaire or 0),
             'quantite_unites': ligne.quantite_unites,
+            'categorie_id': ligne.categorie_id,
+            'categorie_nom': ligne.categorie.nom if ligne.categorie else '',
             'devise_saisie': facture.devise if facture else 'CDF',
             'date': facture.date_facture.isoformat() if facture and facture.date_facture else '',
         }

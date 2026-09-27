@@ -389,7 +389,7 @@ var factPrefillVals = null;
 
 function factPrefillModifie() {
     if (!factPrefillVals) return true;
-    var champs = ['art_nb_cartons', 'art_pcs_carton', 'art_pcs_sup', 'art_prix_carton', 'art_prix_vente'];
+    var champs = ['art_categorie', 'art_nb_cartons', 'art_pcs_carton', 'art_pcs_sup', 'art_prix_carton', 'art_prix_vente'];
     for (var i = 0; i < champs.length; i++) {
         var v = getEl(champs[i]);
         if (!v || String(v.value) !== String(factPrefillVals[champs[i]])) return true;
@@ -427,7 +427,27 @@ function factPrefillValeurs(match) {
         getEl('art_prix_carton').value = prixCartonFc > 0 ? versDevise(prixCartonFc) : 0;
         var pvFc = (appro && appro.prix_vente_unitaire > 0) ? appro.prix_vente_unitaire : (match.prix_vente || 0);
         getEl('art_prix_vente').value = pvFc;
+
+        // Famille (catégorie) : celle du dernier achat, sinon celle de l'article
+        var catId = (appro && appro.categorie_id) ? appro.categorie_id : (match.categorie_id || '');
+        var catNom = (appro && appro.categorie_nom) ? appro.categorie_nom : (match.famille || '');
+        if (catId) {
+            for (var k = 0; k < FACT_CATEGORIES.length; k++) {
+                if (String(FACT_CATEGORIES[k].id) === String(catId)) {
+                    catNom = FACT_CATEGORIES[k].nom;
+                    break;
+                }
+            }
+        }
+        if (catId || catNom) {
+            getEl('art_categorie').value = catNom;
+            getEl('art_categorie').classList.add('input-matched');
+            getEl('art_categorie_id').value = catId || '';
+            getEl('art_categorie_nom').value = catId ? '' : catNom;
+        }
+
         factPrefillVals = {
+            art_categorie: getEl('art_categorie').value,
             art_nb_cartons: getEl('art_nb_cartons').value,
             art_pcs_carton: getEl('art_pcs_carton').value,
             art_pcs_sup: getEl('art_pcs_sup').value,
