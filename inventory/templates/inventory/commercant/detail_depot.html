@@ -350,8 +350,9 @@
                     <form method="get" class="row g-2 align-items-end mb-3">
                         <div class="col-12 col-md-4">
                             <label class="form-label small mb-1" for="searchDate">Date d'achat (facture)</label>
-                            <input type="date" class="form-control form-control-sm" name="date" id="searchDate"
-                                   value="{{ search_date_str }}">
+                            <input type="text" class="form-control form-control-sm" name="date" id="searchDate"
+                                   placeholder="JJ/MM/AAAA" maxlength="10" inputmode="numeric"
+                                   autocomplete="off" value="{{ search_date_str }}">
                         </div>
                         <div class="col-12 col-md-4">
                             <label class="form-label small mb-1" for="searchFacture">N&deg; facture</label>
@@ -756,6 +757,39 @@ function openTransfertModal(articleId, articleNom, articleStock) {
 document.addEventListener('DOMContentLoaded', function() {
     var input = document.getElementById('searchFacture');
     if (input && !input.value) { input.focus(); }
+});
+
+// Date d'achat : saisie directe avec séparateur automatique (JJ/MM/AAAA)
+document.addEventListener('DOMContentLoaded', function() {
+    var dateInput = document.getElementById('searchDate');
+    if (!dateInput) { return; }
+
+    function formatdateFr(valeur) {
+        var chiffres = String(valeur).replace(/[^0-9]/g, '').slice(0, 8);
+        var sortie = chiffres.slice(0, 2);
+        if (chiffres.length > 2) { sortie += '/' + chiffres.slice(2, 4); }
+        if (chiffres.length > 4) { sortie += '/' + chiffres.slice(4, 8); }
+        return sortie;
+    }
+
+    dateInput.addEventListener('input', function() {
+        var curseurFin = dateInput.selectionStart >= dateInput.value.length;
+        var formate = formatdateFr(dateInput.value);
+        if (formate !== dateInput.value) {
+            dateInput.value = formate;
+            if (curseurFin) {
+                dateInput.setSelectionRange(formate.length, formate.length);
+            }
+        }
+    });
+
+    dateInput.addEventListener('paste', function(evenement) {
+        var texte = (evenement.clipboardData || window.clipboardData).getData('text');
+        if (texte) {
+            evenement.preventDefault();
+            dateInput.value = formatdateFr(texte);
+        }
+    });
 });
 
 var approTargetArticleId = null;

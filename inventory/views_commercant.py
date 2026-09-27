@@ -4213,10 +4213,16 @@ def detail_depot(request, depot_id):
     search_date = None
     date_error = ''
     if search_date_str:
-        try:
-            search_date = datetime.strptime(search_date_str, '%Y-%m-%d').date()
-        except ValueError:
-            date_error = 'Format de date invalide (AAAA-MM-JJ).'
+        # Saisie principale : JJ/MM/AAAA (séparateur automatique côté navigateur)
+        # + compatibilité AAAA-MM-JJ (anciens liens de pagination)
+        for date_format in ('%d/%m/%Y', '%Y-%m-%d'):
+            try:
+                search_date = datetime.strptime(search_date_str, date_format).date()
+                break
+            except ValueError:
+                continue
+        if search_date is None:
+            date_error = 'Format de date invalide (JJ/MM/AAAA).'
 
     has_search = bool(numero_facture or search_date_str)
     recherche_valide = has_search and not (search_date_str and not search_date)
@@ -4314,7 +4320,8 @@ def detail_depot(request, depot_id):
     if numero_facture:
         search_params['numero_facture'] = numero_facture
     if search_date_str:
-        search_params['date'] = search_date_str
+        # Format ISO dans les URL (liens propres), la page accepte les deux formats
+        search_params['date'] = search_date.isoformat() if search_date else search_date_str
     search_qs = urlencode(search_params)
 
     # Boutiques de destination disponibles (non-dépôts)
