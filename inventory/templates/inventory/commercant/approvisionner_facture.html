@@ -158,6 +158,12 @@
         {% csrf_token %}
         <input type="hidden" name="articles_json" id="articles_json" value="[]">
 
+        <!-- Facture déjà enregistrée : on continue d'y ajouter des articles -->
+        <div id="factureOuverteBanner" style="display:none;margin:8px 12px 0;padding:8px 12px;background:#e8f5e9;border:1px solid #4caf50;border-radius:8px;font-size:.82rem;align-items:center;justify-content:space-between;gap:10px;">
+            <span id="factureOuverteMsg"><i class="fas fa-check-circle me-1" style="color:#2e7d32;"></i>Facture enregistrée — ajoutez les articles oubliés puis cliquez à nouveau sur <em>Enregistrer</em>.</span>
+            <button type="button" class="btn btn-outline-success btn-sm" style="font-size:.72rem;white-space:nowrap;" onclick="factNouvelleFacture()"><i class="fas fa-file-medical me-1"></i>Nouvelle facture</button>
+        </div>
+
         <div class="facture-left">
             <!-- Infos facture -->
             <div class="sec">
@@ -1379,6 +1385,44 @@ function validerFormulaire() {
     return false;
 }
 
+// =============================================
+// FACTURE OUVERTE (continue de saisir après enregistrement)
+// =============================================
+function factAfficherFactureOuverte(message, factureId) {
+    var b = getEl('factureOuverteBanner');
+    if (!b) return;
+    var msg = getEl('factureOuverteMsg');
+    if (msg) {
+        msg.innerHTML = '<i class="fas fa-check-circle me-1" style="color:#2e7d32;"></i>' +
+            factEscapeHtml(message || 'Facture enregistrée') +
+            ' — <em>ajoutez les articles oubliés puis cliquez à nouveau sur Enregistrer</em>.';
+    }
+    b.dataset.numero = getEl('numero_facture').value.trim();
+    b.dataset.factureId = factureId || '';
+    b.style.display = 'flex';
+}
+
+function factMasquerFactureOuverte() {
+    var b = getEl('factureOuverteBanner');
+    if (b) b.style.display = 'none';
+}
+
+// Repartir sur une facture neuve (changer de numéro)
+function factNouvelleFacture() {
+    getEl('numero_facture').value = '';
+    getEl('date_facture').value = factFormatDateFr(new Date().toISOString().slice(0, 10));
+    getEl('fournisseur_input').value = '';
+    getEl('fournisseur_input').classList.remove('input-matched');
+    getEl('fournisseur_id').value = '';
+    getEl('fournisseur_nom').value = '';
+    var notesField = document.querySelector('input[name="notes"]');
+    if (notesField) notesField.value = '';
+    factMasquerFactureOuverte();
+    factViderChamps();
+    factSaveState();
+    setTimeout(function() { getEl('fournisseur_input').focus(); }, 100);
+}
+
 function soumettreFactureAjax() {
     if (factArticlesAjoutes.length === 0) { alert('Veuillez ajouter au moins un article'); return; }
     if (!getEl('numero_facture').value.trim()) { alert('Le num\u00e9ro de facture est obligatoire'); getEl('numero_facture').focus(); return; }
@@ -1399,11 +1443,12 @@ function soumettreFactureAjax() {
     .then(function(resp) { return resp.json().then(function(data) { return {ok: resp.ok, data: data}; }); })
     .then(function(result) {
         if (result.ok && result.data.success) {
-            // Succès: vider les articles, garder l'en-tête
+            // Succès: la facture reste OUVERTE (en-tête conservé),
+            // on vide seulement la liste des articles pour en ajouter d'autres
             factArticlesAjoutes = [];
             factRafraichirTableau();
             factMajResume();
-            factClearState();
+            factSaveState();  // brouillon = en-tête seul (restaurable au rechargement)
             // Message succès
             var ind = getEl('saveIndicator');
             if (ind) {
@@ -1413,17 +1458,10 @@ function soumettreFactureAjax() {
                 clearTimeout(window._saveTimer);
                 window._saveTimer = setTimeout(function() { ind.style.display = 'none'; }, 6000);
             }
-            // Vider TOUS les champs: en-tête + article
-            getEl('numero_facture').value = '';
-            getEl('date_facture').value = factFormatDateFr(new Date().toISOString().slice(0, 10));
-            getEl('fournisseur_input').value = '';
-            getEl('fournisseur_input').classList.remove('input-matched');
-            getEl('fournisseur_id').value = '';
-            getEl('fournisseur_nom').value = '';
-            var notesField = document.querySelector('input[name="notes"]');
-            if (notesField) notesField.value = '';
+            // Bannière: facture enregistrée, on peut continuer à y ajouter des articles
+            factAfficherFactureOuverte(result.data.message, result.data.facture_id);
             factViderChamps();
-            setTimeout(function() { getEl('fournisseur_input').focus(); }, 150);
+            setTimeout(function() { getEl('art_nom').focus(); }, 150);
         } else {
             alert('Erreur: ' + (result.data.message || 'Erreur inconnue'));
         }
@@ -1450,6 +1488,15 @@ document.addEventListener('DOMContentLoaded', function() {
             var el = getEl(headerFields[i]);
             if (el) el.addEventListener('change', factSaveState);
         }
+
+        // Numéro modifié après enregistrement = nouvelle facture : masquer la bannière
+        var numEl = getEl('numero_facture');
+        if (numEl) numEl.addEventListener('input', function() {
+            var b = getEl('factureOuverteBanner');
+            if (b && b.style.display !== 'none' && numEl.value.trim() !== (b.dataset.numero || '')) {
+                factMasquerFactureOuverte();
+            }
+        });
 
         // Date facture : séparateur automatique pendant la saisie
         var dateEl = getEl('date_facture');

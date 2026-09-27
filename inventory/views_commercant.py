@@ -5811,25 +5811,24 @@ def approvisionner_facture(request, depot_id):
                         except ValueError:
                             continue
                 
-                # Vérifier unicité du numéro de facture
-                if FactureApprovisionnement.objects.filter(numero_facture=numero_facture, depot=depot).exists():
-                    msg = f"Le numéro de facture '{numero_facture}' existe déjà."
-                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                        return JsonResponse({'success': False, 'message': msg}, status=400)
-                    messages.error(request, msg)
-                    return redirect('inventory:approvisionner_facture', depot_id=depot.id)
+                # Facture déjà enregistrée (même numéro) : continuer d'y ajouter
+                # les articles oubliés au lieu de refuser la saisie
+                facture = FactureApprovisionnement.objects.filter(
+                    numero_facture=numero_facture, depot=depot).first()
+                facture_deja_existante = facture is not None
                 
-                # Créer la facture
-                facture = FactureApprovisionnement.objects.create(
-                    numero_facture=numero_facture,
-                    fournisseur=fournisseur,
-                    fournisseur_nom=fournisseur_nom if not fournisseur else '',
-                    depot=depot,
-                    date_facture=date_facture,
-                    devise=devise,
-                    notes=notes,
-                    created_by=request.user.username
-                )
+                # Créer la facture si elle n'existe pas encore
+                if facture is None:
+                    facture = FactureApprovisionnement.objects.create(
+                        numero_facture=numero_facture,
+                        fournisseur=fournisseur,
+                        fournisseur_nom=fournisseur_nom if not fournisseur else '',
+                        depot=depot,
+                        date_facture=date_facture,
+                        devise=devise,
+                        notes=notes,
+                        created_by=request.user.username
+                    )
                 
                 # Traiter les lignes d'articles
                 articles_json_str = request.POST.get('articles_json', '[]')
@@ -5947,15 +5946,23 @@ def approvisionner_facture(request, depot_id):
                 # Recalculer le montant total
                 facture.calculer_montant_total()
                 
+                # Message: création ou ajout d'articles à la facture existante
+                msg_succes = (
+                    f"Facture {numero_facture} : {len(articles_data)} article(s) ajouté(s)"
+                    if facture_deja_existante else
+                    f"Facture {numero_facture} enregistrée avec {len(articles_data)} article(s)"
+                )
+                
                 # Si requête AJAX, retourner JSON sans rediriger
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                     return JsonResponse({
                         'success': True,
-                        'message': f"Facture {numero_facture} enregistrée avec {len(articles_data)} article(s)",
+                        'message': msg_succes,
                         'facture_id': facture.id,
+                        'existe_deja': facture_deja_existante,
                     })
                 
-                messages.success(request, f"Facture {numero_facture} enregistrée avec {len(articles_data)} article(s)")
+                messages.success(request, msg_succes)
                 return redirect('inventory:detail_depot', depot_id=depot.id)
                 
         except Exception as e:
@@ -6048,25 +6055,24 @@ def approvisionner_facture_boutique(request, boutique_id):
                         except ValueError:
                             continue
                 
-                # Vérifier unicité du numéro de facture pour cette boutique
-                if FactureApprovisionnement.objects.filter(numero_facture=numero_facture, depot=boutique).exists():
-                    msg = f"Le numéro de facture '{numero_facture}' existe déjà."
-                    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                        return JsonResponse({'success': False, 'message': msg}, status=400)
-                    messages.error(request, msg)
-                    return redirect('inventory:approvisionner_facture_boutique', boutique_id=boutique.id)
+                # Facture déjà enregistrée (même numéro) : continuer d'y ajouter
+                # les articles oubliés au lieu de refuser la saisie
+                facture = FactureApprovisionnement.objects.filter(
+                    numero_facture=numero_facture, depot=boutique).first()
+                facture_deja_existante = facture is not None
                 
-                # Créer la facture (utiliser le champ depot même pour une boutique)
-                facture = FactureApprovisionnement.objects.create(
-                    numero_facture=numero_facture,
-                    fournisseur=fournisseur,
-                    fournisseur_nom=fournisseur_nom if not fournisseur else '',
-                    depot=boutique,  # Boutique stockée dans le champ depot
-                    date_facture=date_facture,
-                    devise=devise,
-                    notes=notes,
-                    created_by=request.user.username
-                )
+                # Créer la facture si elle n'existe pas encore (champ depot = boutique)
+                if facture is None:
+                    facture = FactureApprovisionnement.objects.create(
+                        numero_facture=numero_facture,
+                        fournisseur=fournisseur,
+                        fournisseur_nom=fournisseur_nom if not fournisseur else '',
+                        depot=boutique,  # Boutique stockée dans le champ depot
+                        date_facture=date_facture,
+                        devise=devise,
+                        notes=notes,
+                        created_by=request.user.username
+                    )
                 
                 # Traiter les lignes d'articles
                 articles_json_str = request.POST.get('articles_json', '[]')
@@ -6179,15 +6185,23 @@ def approvisionner_facture_boutique(request, boutique_id):
                 # Recalculer le montant total
                 facture.calculer_montant_total()
                 
+                # Message: création ou ajout d'articles à la facture existante
+                msg_succes = (
+                    f"Facture {numero_facture} : {len(articles_data)} article(s) ajouté(s)"
+                    if facture_deja_existante else
+                    f"Facture {numero_facture} enregistrée avec {len(articles_data)} article(s)"
+                )
+                
                 # Si requête AJAX, retourner JSON
                 if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                     return JsonResponse({
                         'success': True,
-                        'message': f"Facture {numero_facture} enregistrée avec {len(articles_data)} article(s)",
+                        'message': msg_succes,
                         'facture_id': facture.id,
+                        'existe_deja': facture_deja_existante,
                     })
                 
-                messages.success(request, f"Facture {numero_facture} enregistrée avec {len(articles_data)} article(s)")
+                messages.success(request, msg_succes)
                 return redirect('inventory:detail_boutique', boutique_id=boutique.id)
                 
         except Exception as e:
