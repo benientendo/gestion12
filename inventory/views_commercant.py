@@ -5773,11 +5773,15 @@ def approvisionner_facture(request, depot_id):
                         defaults={'est_actif': True}
                     )
                 
-                # Date de facture
-                try:
-                    date_facture = datetime.strptime(date_facture_str, '%Y-%m-%d').date() if date_facture_str else timezone.localdate()
-                except ValueError:
-                    date_facture = timezone.localdate()
+                # Date de facture (JJ/MM/AAAA saisi, ancien format AAAA-MM-JJ accepté)
+                date_facture = timezone.localdate()
+                if date_facture_str:
+                    for date_format in ('%d/%m/%Y', '%Y-%m-%d'):
+                        try:
+                            date_facture = datetime.strptime(date_facture_str, date_format).date()
+                            break
+                        except ValueError:
+                            continue
                 
                 # Vérifier unicité du numéro de facture
                 if FactureApprovisionnement.objects.filter(numero_facture=numero_facture, depot=depot).exists():
@@ -5947,7 +5951,7 @@ def approvisionner_facture(request, depot_id):
             [{'id': 0, 'nom': n} for n in categories_noms]
         ),
         'derniers_appros_json': json.dumps(derniers_appros),
-        'today': timezone.localdate().isoformat(),
+        'today': timezone.localdate(),
     }
     
     return render(request, 'inventory/commercant/approvisionner_facture.html', context)
@@ -6023,11 +6027,15 @@ def approvisionner_facture_boutique(request, boutique_id):
                         defaults={'est_actif': True}
                     )
                 
-                # Date de facture
-                try:
-                    date_facture = datetime.strptime(date_facture_str, '%Y-%m-%d').date() if date_facture_str else timezone.localdate()
-                except ValueError:
-                    date_facture = timezone.localdate()
+                # Date de facture (JJ/MM/AAAA saisi, ancien format AAAA-MM-JJ accepté)
+                date_facture = timezone.localdate()
+                if date_facture_str:
+                    for date_format in ('%d/%m/%Y', '%Y-%m-%d'):
+                        try:
+                            date_facture = datetime.strptime(date_facture_str, date_format).date()
+                            break
+                        except ValueError:
+                            continue
                 
                 # Vérifier unicité du numéro de facture pour cette boutique
                 if FactureApprovisionnement.objects.filter(numero_facture=numero_facture, depot=boutique).exists():
@@ -6193,7 +6201,7 @@ def approvisionner_facture_boutique(request, boutique_id):
             [{'id': 0, 'nom': n} for n in categories_noms]
         ),
         'derniers_appros_json': json.dumps(derniers_appros),
-        'today': timezone.localdate().isoformat(),
+        'today': timezone.localdate(),
     }
     
     return render(request, 'inventory/commercant/approvisionner_facture.html', context)

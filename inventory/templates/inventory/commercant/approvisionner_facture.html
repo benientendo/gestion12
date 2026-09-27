@@ -176,7 +176,9 @@
                         </div>
                         <div class="col-2 mb-1x">
                             <label class="form-label">Date facture *</label>
-                            <input type="date" class="form-control form-control-sm nav-field" name="date_facture" id="date_facture" value="{{ today }}" required>
+                            <input type="text" class="form-control form-control-sm nav-field" name="date_facture" id="date_facture"
+       value="{{ today|date:'d/m/Y' }}" placeholder="JJ/MM/AAAA" maxlength="10"
+       inputmode="numeric" autocomplete="off" required>
                         </div>
                         <div class="col-3 mb-1x">
                             <label class="form-label">Devise</label>
@@ -419,6 +421,18 @@ function onDeviseChange() {
 var factArticlesAjoutes = [];
 var FACT_STORAGE_KEY = 'facture_brouillon_{{ depot.id }}';
 
+// Date facture : saisie directe avec séparateur automatique (JJ/MM/AAAA)
+function factFormatDateFr(valeur) {
+    var texte = String(valeur || '').trim();
+    var iso = texte.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (iso) { return iso[3] + '/' + iso[2] + '/' + iso[1]; }
+    var chiffres = texte.replace(/[^0-9]/g, '').slice(0, 8);
+    var sortie = chiffres.slice(0, 2);
+    if (chiffres.length > 2) { sortie += '/' + chiffres.slice(2, 4); }
+    if (chiffres.length > 4) { sortie += '/' + chiffres.slice(4, 8); }
+    return sortie;
+}
+
 // === PERSISTANCE localStorage ===
 function factSaveState() {
     try {
@@ -463,7 +477,7 @@ function factLoadState() {
             if (state && state.header) {
                 var h = state.header;
                 if (h.numero_facture) getEl('numero_facture').value = h.numero_facture;
-                if (h.date_facture) getEl('date_facture').value = h.date_facture;
+                if (h.date_facture) getEl('date_facture').value = factFormatDateFr(h.date_facture);
                 if (h.devise) setDevise(h.devise);
                 if (h.fournisseur_input) {
                     getEl('fournisseur_input').value = h.fournisseur_input;
@@ -483,7 +497,7 @@ function factLoadState() {
         if (state.header) {
             var h = state.header;
             if (h.numero_facture) getEl('numero_facture').value = h.numero_facture;
-            if (h.date_facture) getEl('date_facture').value = h.date_facture;
+            if (h.date_facture) getEl('date_facture').value = factFormatDateFr(h.date_facture);
             if (h.devise) {
                 setDevise(h.devise);
                 getEl('info_conversion').style.display = h.devise === 'USD' ? 'block' : 'none';
@@ -1288,7 +1302,7 @@ function soumettreFactureAjax() {
             }
             // Vider TOUS les champs: en-tête + article
             getEl('numero_facture').value = '';
-            getEl('date_facture').value = new Date().toISOString().slice(0, 10);
+            getEl('date_facture').value = factFormatDateFr(new Date().toISOString().slice(0, 10));
             getEl('fournisseur_input').value = '';
             getEl('fournisseur_input').classList.remove('input-matched');
             getEl('fournisseur_id').value = '';
@@ -1322,6 +1336,26 @@ document.addEventListener('DOMContentLoaded', function() {
         for (var i = 0; i < headerFields.length; i++) {
             var el = getEl(headerFields[i]);
             if (el) el.addEventListener('change', factSaveState);
+        }
+
+        // Date facture : séparateur automatique pendant la saisie
+        var dateEl = getEl('date_facture');
+        if (dateEl) {
+            dateEl.addEventListener('input', function() {
+                var curseurFin = dateEl.selectionStart >= dateEl.value.length;
+                var formate = factFormatDateFr(dateEl.value);
+                if (formate !== dateEl.value) {
+                    dateEl.value = formate;
+                    if (curseurFin) { dateEl.setSelectionRange(formate.length, formate.length); }
+                }
+            });
+            dateEl.addEventListener('paste', function(evenement) {
+                var texte = (evenement.clipboardData || window.clipboardData).getData('text');
+                if (texte) {
+                    evenement.preventDefault();
+                    dateEl.value = factFormatDateFr(texte);
+                }
+            });
         }
         var notesEl = document.querySelector('input[name="notes"]');
         if (notesEl) notesEl.addEventListener('change', factSaveState);
