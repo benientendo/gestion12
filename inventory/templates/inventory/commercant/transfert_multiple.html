@@ -193,7 +193,12 @@
                         {% endif %}
                     </div>
                     <div class="col-md-3 text-md-end">
-                        {% if date_facture %}
+                        {% if facture_cible %}
+                        <span class="badge bg-primary fs-6">
+                            <i class="fas fa-file-invoice me-1"></i>
+                            1 facture cibl&eacute;e
+                        </span>
+                        {% elif date_facture %}
                         <span class="badge bg-success fs-6">
                             <i class="fas fa-file-invoice me-1"></i>
                             {{ factures_du_jour|length }} facture(s) le {{ date_facture|date:"d/m/Y" }}
@@ -201,7 +206,15 @@
                         {% endif %}
                     </div>
                 </div>
-                {% if date_facture %}
+                {% if facture_cible %}
+                <div class="mt-2 small d-flex align-items-center flex-wrap gap-2">
+                    <span class="badge bg-light text-dark border">
+                        {{ facture_cible.numero_facture }} &mdash; {{ facture_cible.date_facture|date:"d/m/Y" }}
+                        ({% if facture_cible.fournisseur %}{{ facture_cible.fournisseur.nom }}{% else %}{{ facture_cible.fournisseur_nom|default:"-" }}{% endif %})
+                    </span>
+                    <a href="?" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times me-1"></i> Tout afficher</a>
+                </div>
+                {% elif date_facture %}
                 <div class="mt-2 small">
                     {% for f in factures_du_jour %}
                     <span class="badge bg-light text-dark border me-1">{{ f.numero_facture }}
@@ -225,7 +238,9 @@
                     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">
                             <i class="fas fa-boxes"></i>
-                            {% if date_facture %}
+                            {% if facture_cible %}
+                                Articles de la facture {{ facture_cible.numero_facture }} ({{ articles|length }})
+                            {% elif date_facture %}
                                 Articles de la facture du {{ date_facture|date:"d/m/Y" }} ({{ articles|length }})
                             {% else %}
                                 Articles disponibles ({{ articles|length }})
@@ -350,7 +365,11 @@
                             {% empty %}
                             <div class="text-center py-5">
                                 <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                                {% if date_facture %}
+                                {% if facture_cible %}
+                                <h5 class="text-muted">Aucun article en stock</h5>
+                                <p class="text-muted">Les articles de la facture {{ facture_cible.numero_facture }} n'ont plus de stock dans le dépôt.</p>
+                                <a href="?" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times me-1"></i> Tout afficher</a>
+                                {% elif date_facture %}
                                 <h5 class="text-muted">Aucun article pour cette date</h5>
                                 <p class="text-muted">Aucun article en stock ne provient d'une facture enregistrée le {{ date_facture|date:"d/m/Y" }}.</p>
                                 <a href="?" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times me-1"></i> Tout afficher</a>

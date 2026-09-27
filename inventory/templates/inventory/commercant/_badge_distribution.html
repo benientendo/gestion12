@@ -1,0 +1,11 @@
+{% if etat %}
+{% if etat.statut == 'TOUT' %}
+<span class="badge bg-success"><i class="fas fa-check-double me-1"></i>Tout distribu&eacute;</span>
+{% elif etat.statut == 'PARTIEL' %}
+<span class="badge bg-warning text-dark"><i class="fas fa-pie-chart me-1"></i>Partiellement distribu&eacute; ({{ etat.distribue }}/{{ etat.recu }})</span>
+{% elif etat.statut == 'AUCUN' %}
+<span class="badge bg-danger"><i class="fas fa-hourglass-half me-1"></i>Non distribu&eacute;</span>
+{% elif etat.statut == 'VIDE' %}
+<span class="badge bg-secondary">Aucun article</span>
+{% endif %}
+{% endif %}

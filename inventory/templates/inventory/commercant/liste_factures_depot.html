@@ -256,6 +256,9 @@
                             </td>
                             <td>
                                 <span class="badge-articles">{{ facture.lignes.all|length }}</span>
+                                {% if facture.depot.est_depot %}
+                                <div class="mt-1">{% include "inventory/commercant/_badge_distribution.html" with etat=facture.etat %}</div>
+                                {% endif %}
                                 <span class="articles-list">
                                     {% for ligne in facture.lignes.all %}{% if forloop.counter <= 3 %}{% if not forloop.first %}, {% endif %}{{ ligne.article.nom }}{% endif %}{% endfor %}{% if facture.lignes.all|length > 3 %} +{{ facture.lignes.all|length|add:"-3" }}{% endif %}
                                 </span>

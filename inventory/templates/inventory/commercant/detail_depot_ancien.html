@@ -308,24 +308,23 @@
         </div>
     </div>
 
-    <!-- Statistiques (uniquement avec des résultats de recherche) -->
-    {% if stats %}
+    <!-- Statistiques -->
     <div class="row mb-4">
         <div class="col-6 col-md-3">
             <div class="stat-card">
-                <div class="stat-value">{{ stats.total_articles }}</div>
+                <div class="stat-value">{{ total_articles }}</div>
                 <div class="stat-label">ARTICLES EN STOCK</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
             <div class="stat-card">
-                <div class="stat-value">{{ stats.valeur_stock|floatformat:0 }} CDF</div>
+                <div class="stat-value">{{ valeur_stock|floatformat:0 }} CDF</div>
                 <div class="stat-label">VALEUR DU STOCK</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
             <div class="stat-card">
-                <div class="stat-value">{{ stats.articles_stock_bas }}</div>
+                <div class="stat-value">{{ articles_stock_bas }}</div>
                 <div class="stat-label">ARTICLES EN STOCK BAS</div>
             </div>
         </div>
@@ -337,7 +336,6 @@
             </div>
         </div>
     </div>
-    {% endif %}
 
     <div class="row">
         <!-- Liste des articles -->
@@ -347,171 +345,116 @@
                     <h5 class="mb-0"><i class="fas fa-boxes"></i> Articles du dépôt</h5>
                 </div>
                 <div class="card-body">
-                    <form method="get" class="row g-2 align-items-end mb-3">
-                        <div class="col-12 col-md-4">
-                            <label class="form-label small mb-1" for="searchDate">Date d'achat (facture)</label>
-                            <input type="date" class="form-control form-control-sm" name="date" id="searchDate"
-                                   value="{{ search_date_str }}">
+                    <form method="get" class="row g-2 align-items-center mb-3">
+                        <div class="col-12 col-md-6 col-lg-5">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" class="form-control" name="q" id="searchArticle"
+                                       placeholder="Rechercher (nom ou code)"
+                                       value="{{ search_q }}" autofocus>
+                                <button class="btn btn-primary" type="submit"><i class="fas fa-search"></i></button>
+                                {% if search_q %}
+                                <a href="?" class="btn btn-outline-secondary" title="Effacer"><i class="fas fa-times"></i> Effacer</a>
+                                {% endif %}
+                            </div>
                         </div>
-                        <div class="col-12 col-md-4">
-                            <label class="form-label small mb-1" for="searchFacture">N&deg; facture</label>
-                            <input type="text" class="form-control form-control-sm" name="numero_facture" id="searchFacture"
-                                   placeholder="Ex: FAC-2026-001" value="{{ numero_facture }}">
-                        </div>
-                        <div class="col-12 col-md-4">
-                            <button class="btn btn-primary w-100" type="submit">
-                                <i class="fas fa-search"></i> Rechercher les factures
-                            </button>
-                        </div>
-                        {% if has_search %}
-                        <div class="col-12 d-flex align-items-center flex-wrap gap-2">
-                            {% if date_error %}
-                            <span class="badge bg-danger fs-6"><i class="fas fa-exclamation-triangle"></i> {{ date_error }}</span>
-                            {% else %}
-                            <span class="badge bg-info fs-6">{{ resume.factures }} facture(s) &bull; {{ resume.articles }} article(s)</span>
-                            <span class="badge bg-success fs-6">{{ resume.tout }} distribu&eacute;e(s)</span>
-                            <span class="badge bg-warning text-dark fs-6">{{ resume.partiel }} partielle(s)</span>
-                            <span class="badge bg-danger fs-6">{{ resume.aucun }} non distribu&eacute;e(s)</span>
-                            {% endif %}
-                            <a href="?" class="btn btn-outline-secondary btn-sm"><i class="fas fa-times"></i> Effacer</a>
+                        {% if search_q %}
+                        <div class="col-auto">
+                            <span class="badge bg-info fs-6">{{ page_obj.paginator.count }} résultat(s) pour "{{ search_q }}"</span>
                         </div>
                         {% endif %}
                     </form>
-                    {% if recherche_valide %}
-                    {% for res in resultats %}
-                    <!-- Facture trouvée + ses articles à distribuer -->
-                    <div class="border rounded mb-3 overflow-hidden">
-                        <div class="bg-light border-bottom p-3 d-flex justify-content-between align-items-start flex-wrap gap-2">
-                            <div>
-                                <strong class="text-primary">{{ res.facture.numero_facture }}</strong>
-                                &mdash; {{ res.facture.date_facture|date:"d/m/Y" }}
-                                &mdash; {% if res.facture.fournisseur %}{{ res.facture.fournisseur.nom }}{% else %}{{ res.facture.fournisseur_nom|default:"Fournisseur non spécifié" }}{% endif %}
-                                <br>
-                                <small class="text-muted">{{ res.lignes|length }} article(s) &bull; {{ res.facture.montant_total|floatformat:0 }} {{ res.facture.devise }}</small>
-                            </div>
-                            <div class="text-end">
-                                {% include "inventory/commercant/_badge_distribution.html" with etat=res.etat %}
-                                <div class="mt-2">
-                                    <a href="{% url 'inventory:transfert_multiple' depot.id %}?facture={{ res.facture.id }}" class="btn btn-sm btn-warning" title="Distribuer les articles de cette facture vers un point de vente">
-                                        <i class="fas fa-exchange-alt"></i> Distribuer
-                                    </a>
-                                    <a href="{% url 'inventory:detail_facture_depot' depot.id res.facture.id %}" class="btn btn-sm btn-outline-primary" title="Voir la facture">
-                                        <i class="fas fa-eye"></i> Détail
-                                    </a>
-                                </div>
-                            </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-sm depot-articles-table" id="articlesTable">
+                            <thead>
+                                <tr>
+                                    <th>Article</th>
+                                    <th>Code</th>
+                                    <th class="text-center">Stock</th>
+                                    <th class="text-end">Achat</th>
+                                    <th class="text-end">Vente</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for article in articles %}
+                                <tr class="article-row" data-article-id="{{ article.id }}">
+                                    <td>
+                                        <strong>{{ article.nom }}</strong>
+                                        {% if article.categorie %}
+                                        <br><small class="text-muted">{{ article.categorie.nom }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td><code>{{ article.code }}</code></td>
+                                    <td class="text-center">
+                                        {% if article.quantite_stock == 0 %}
+                                        <span class="stock-badge stock-zero">{{ article.quantite_stock }}</span>
+                                        {% elif article.quantite_stock <= depot.alerte_stock_bas %}
+                                        <span class="stock-badge stock-bas">{{ article.quantite_stock }}</span>
+                                        {% else %}
+                                        <span class="stock-badge stock-ok">{{ article.quantite_stock }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">{{ article.prix_achat|floatformat:0 }} CDF</td>
+                                    <td class="text-end">{{ article.prix_vente|floatformat:0 }} CDF</td>
+                                    <td class="text-center">
+                                        <div class="article-actions">
+                                            <button type="button" class="btn btn-success" title="Ajouter stock" aria-label="Ajouter stock"
+                                                    onclick="openApprovisionnementForArticle({{ article.id }})">
+                                                <i class="fas fa-plus"></i>
+                                            </button>
+                                            <a href="{% url 'inventory:modifier_article_depot' depot.id article.id %}" class="btn btn-warning" title="Modifier" aria-label="Modifier">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            <a href="{% url 'inventory:supprimer_article_depot' depot.id article.id %}" class="btn btn-danger" title="Supprimer" aria-label="Supprimer"
+                                               onclick="return confirm('Supprimer cet article du dépôt ?');">
+                                                <i class="fas fa-trash"></i>
+                                            </a>
+                                            <button type="button" class="btn btn-primary" title="Transférer" aria-label="Transférer"
+                                                    onclick="openTransfertModal({{ article.id }}, '{{ article.nom|escapejs }}', {{ article.quantite_stock }})">
+                                                <i class="fas fa-exchange-alt"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted py-4">
+                                        Aucun article dans ce dépôt
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% if not articles %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Aucun article trouvé{% if search_q %} pour "{{ search_q }}"{% endif %}.
                         </div>
-                        <div class="table-responsive">
-                            <table class="table table-hover table-sm depot-articles-table mb-0" id="articlesTable">
-                                <thead>
-                                    <tr>
-                                        <th>Article</th>
-                                        <th class="text-center">Re&ccedil;u</th>
-                                        <th class="text-center">Distribu&eacute;</th>
-                                        <th class="text-center">Restant</th>
-                                        <th class="text-center">Stock d&eacute;p&ocirc;t</th>
-                                        <th class="text-center">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for item in res.lignes %}
-                                    <tr class="article-row" data-article-id="{{ item.article.id }}">
-                                        <td>
-                                            <strong>{{ item.article.nom }}</strong><br>
-                                            <code>{{ item.article.code }}</code>
-                                        </td>
-                                        <td class="text-center">{{ item.recu }}</td>
-                                        <td class="text-center">
-                                            {% if item.recu and item.distribue >= item.recu %}
-                                            <span class="badge bg-success">{{ item.distribue }}</span>
-                                            {% elif item.distribue %}
-                                            <span class="badge bg-warning text-dark">{{ item.distribue }}</span>
-                                            {% else %}
-                                            <span class="badge bg-secondary">0</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="text-center">{{ item.restant }}</td>
-                                        <td class="text-center">
-                                            {% if item.article.quantite_stock == 0 %}
-                                            <span class="stock-badge stock-zero">{{ item.article.quantite_stock }}</span>
-                                            {% elif item.article.quantite_stock <= depot.alerte_stock_bas %}
-                                            <span class="stock-badge stock-bas">{{ item.article.quantite_stock }}</span>
-                                            {% else %}
-                                            <span class="stock-badge stock-ok">{{ item.article.quantite_stock }}</span>
-                                            {% endif %}
-                                        </td>
-                                        <td class="text-center">
-                                            <div class="article-actions">
-                                                <button type="button" class="btn btn-success" title="Ajouter stock" aria-label="Ajouter stock"
-                                                        onclick="openApprovisionnementForArticle({{ item.article.id }})">
-                                                    <i class="fas fa-plus"></i>
-                                                </button>
-                                                <a href="{% url 'inventory:modifier_article_depot' depot.id item.article.id %}" class="btn btn-warning" title="Modifier" aria-label="Modifier">
-                                                    <i class="fas fa-edit"></i>
-                                                </a>
-                                                <a href="{% url 'inventory:supprimer_article_depot' depot.id item.article.id %}" class="btn btn-danger" title="Supprimer" aria-label="Supprimer"
-                                                   onclick="return confirm('Supprimer cet article du dépôt ?');">
-                                                    <i class="fas fa-trash"></i>
-                                                </a>
-                                                <button type="button" class="btn btn-primary" title="Transférer" aria-label="Transférer"
-                                                        onclick="openTransfertModal({{ item.article.id }}, '{{ item.article.nom|escapejs }}', {{ item.article.quantite_stock }})">
-                                                    <i class="fas fa-exchange-alt"></i>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                    {% empty %}
-                                    <tr>
-                                        <td colspan="6" class="text-center text-muted py-3">
-                                            Cette facture ne contient aucun article
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
+                        {% endif %}
                     </div>
-                    {% empty %}
-                    <div class="alert alert-warning">
-                        <i class="fas fa-exclamation-circle me-2"></i>
-                        Aucune facture trouv&eacute;e pour ces crit&egrave;res.
-                    </div>
-                    {% endfor %}
                     {% if page_obj.paginator.num_pages > 1 %}
-                    <nav aria-label="Pagination factures" class="mt-2">
+                    <nav aria-label="Pagination articles" class="mt-2">
                         <ul class="pagination pagination-sm justify-content-center mb-0">
                             {% if page_obj.has_previous %}
                             <li class="page-item">
-                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_qs %}&amp;{{ search_qs }}{% endif %}">&#8249; Pr&eacute;c.</a>
+                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_q %}&q={{ search_q }}{% endif %}">&#8249; Préc.</a>
                             </li>
                             {% else %}
-                            <li class="page-item disabled"><span class="page-link">&#8249; Pr&eacute;c.</span></li>
+                            <li class="page-item disabled"><span class="page-link">&#8249; Préc.</span></li>
                             {% endif %}
                             <li class="page-item disabled">
-                                <span class="page-link">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} &mdash; {{ page_obj.paginator.count }} facture(s)</span>
+                                <span class="page-link">Page {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} &mdash; {{ page_obj.paginator.count }} articles</span>
                             </li>
                             {% if page_obj.has_next %}
                             <li class="page-item">
-                                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_qs %}&amp;{{ search_qs }}{% endif %}">Suiv. &#8250;</a>
+                                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_q %}&q={{ search_q }}{% endif %}">Suiv. &#8250;</a>
                             </li>
                             {% else %}
                             <li class="page-item disabled"><span class="page-link">Suiv. &#8250;</span></li>
                             {% endif %}
                         </ul>
                     </nav>
-                    {% endif %}
-                    {% elif has_search %}
-                    <div class="alert alert-danger mb-0">
-                        <i class="fas fa-exclamation-triangle me-2"></i>
-                        {{ date_error }}
-                    </div>
-                    {% else %}
-                    <div class="alert alert-info mb-0">
-                        <i class="fas fa-search me-2"></i>
-                        <strong>Recherchez une facture</strong> : les articles de ce d&eacute;p&ocirc;t ne s'affichent pas automatiquement.
-                        Entrez une <strong>date d'achat</strong> ou un <strong>n&deg; de facture</strong>, puis cliquez sur <strong>Rechercher</strong>
-                        pour afficher les articles &agrave; distribuer.
-                    </div>
                     {% endif %}
                 </div>
             </div>
@@ -536,15 +479,12 @@
                                 &mdash; {% if facture.fournisseur %}{{ facture.fournisseur.nom }}{% else %}{{ facture.fournisseur_nom|default:"Fournisseur non spécifié" }}{% endif %}
                                 <br>
                                 <small class="text-muted">{{ facture.lignes.count }} article(s) &bull; {{ facture.montant_total|floatformat:0 }} {{ facture.devise }}</small>
-                                <div class="mt-1">
-                                    {% include "inventory/commercant/_badge_distribution.html" with etat=facture.etat %}
-                                </div>
                             </div>
                             <div class="text-end">
                                 <a href="{% url 'inventory:detail_facture_depot' depot.id facture.id %}" class="btn btn-sm btn-outline-primary" title="Voir la facture">
                                     <i class="fas fa-eye"></i> Détail
                                 </a>
-                                <a href="{% url 'inventory:transfert_multiple' depot.id %}?facture={{ facture.id }}" class="btn btn-sm btn-warning" title="Distribuer les articles de cette facture vers un point de vente">
+                                <a href="{% url 'inventory:transfert_multiple' depot.id %}?date_facture={{ facture.date_facture|date:'Y-m-d' }}" class="btn btn-sm btn-warning" title="Distribuer ces articles vers un point de vente">
                                     <i class="fas fa-exchange-alt"></i> Distribuer
                                 </a>
                             </div>
@@ -754,7 +694,7 @@ function openTransfertModal(articleId, articleNom, articleStock) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    var input = document.getElementById('searchFacture');
+    var input = document.getElementById('searchArticle');
     if (input && !input.value) { input.focus(); }
 });
 

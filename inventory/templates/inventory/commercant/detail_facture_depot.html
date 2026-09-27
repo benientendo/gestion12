@@ -37,6 +37,9 @@
                 <i class="fas fa-arrow-left"></i> Retour aux factures
             </a>
             <h2><i class="fas fa-file-invoice me-2"></i>Facture {{ facture.numero_facture }}</h2>
+            <div class="mb-2">
+                {% include "inventory/commercant/_badge_distribution.html" with etat=facture.etat %}
+            </div>
         </div>
         <div class="col-md-4 text-end">
             <button class="btn btn-outline-primary me-2" onclick="window.print()">

@@ -14,6 +14,7 @@ from django.views.decorators.http import require_POST
 from django.core.cache import cache
 from decimal import Decimal
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 import json
 import csv
 from io import BytesIO
@@ -22,6 +23,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
+from .distribution import etat_distribution
 import json
 import io
 
@@ -29,6 +31,21 @@ import io
 import uuid
 from pathlib import Path
 from django.core.files.base import ContentFile
+
+
+# --- Nouvelle maquette « dépôt » (recherche par facture + badges d'état) ------
+# Encore limitée à KIYAMBU en production (et au compte de développement local) :
+# les autres commerçants gardent l'ancienne page inchangée.
+# Pour généraliser l'évolution, il suffit de modifier cette fonction.
+KIYAMBU_COMMERCANT_ID = 22
+_NOUVELLE_MAQUETTE_USERS_DEV = ('horizon',)
+
+
+def nouvelle_maquette_depot(commercant):
+    """Vrai si ce commerçant bénéficie de la nouvelle maquette du dépôt."""
+    if commercant.id == KIYAMBU_COMMERCANT_ID:
+        return True
+    return commercant.user.username in _NOUVELLE_MAQUETTE_USERS_DEV
 
 
 def _load_autocomplete_legacy():
@@ -4173,10 +4190,162 @@ def liste_depots(request):
 @login_required
 @commercant_required
 def detail_depot(request, depot_id):
-    """Détail d'un dépôt avec ses articles et statistiques"""
+    """Détail d'un dépôt.
+
+    La page reste vide tant qu'aucune recherche n'est faite : les articles
+    n'apparaissent qu'après une recherche par date d'achat ou par numéro de
+    facture. Les résultats sont regroupés par facture, avec l'état de
+    distribution (tout / partie / rien), pour être distribués vers les PDV.
+    """
     commercant = request.user.profil_commercant
     depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
     
+    # Ancienne interface conservée pour les autres commerçants
+    if not nouvelle_maquette_depot(commercant):
+        return detail_depot_ancien(request, depot, commercant)
+    
+    # Base queryset (tous les articles actifs)
+    articles_base = depot.articles.filter(est_actif=True)
+    
+    # --- Critères : date d'achat de la facture et/ou numéro de facture ---
+    numero_facture = request.GET.get('numero_facture', '').strip()
+    search_date_str = request.GET.get('date', '').strip()
+    search_date = None
+    date_error = ''
+    if search_date_str:
+        try:
+            search_date = datetime.strptime(search_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            date_error = 'Format de date invalide (AAAA-MM-JJ).'
+
+    has_search = bool(numero_facture or search_date_str)
+    recherche_valide = has_search and not (search_date_str and not search_date)
+
+    factures_qs = FactureApprovisionnement.objects.filter(depot=depot).select_related(
+        'fournisseur', 'depot'
+    ).prefetch_related(
+        Prefetch('lignes', queryset=LigneApprovisionnement.objects.select_related('article'))
+    ).order_by('-date_facture', '-id')
+
+    if not recherche_valide:
+        # Aucun critère (ou date invalide) : rien ne s'affiche
+        factures_qs = FactureApprovisionnement.objects.none()
+    else:
+        if search_date:
+            factures_qs = factures_qs.filter(date_facture=search_date)
+        if numero_facture:
+            factures_qs = factures_qs.filter(numero_facture__icontains=numero_facture)
+
+    # Pagination : 20 factures par page
+    paginator = Paginator(factures_qs, 20)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+    factures_page = list(page_obj.object_list)
+
+    # Dernières factures enregistrées (carte « liste des factures »)
+    factures_recentes = list(FactureApprovisionnement.objects.filter(
+        depot=depot
+    ).select_related('fournisseur', 'depot').prefetch_related(
+        'lignes__article'
+    ).order_by('-date_facture', '-date_creation')[:10])
+
+    # État de distribution calculé en une passe sur les factures affichées
+    # et les dernières factures (le contexte FIFO inclut de toute façon toutes
+    # les lignes du dépôt pour les articles concernés)
+    a_calculer = {f.id: f for f in factures_page}
+    for facture in factures_recentes:
+        a_calculer.setdefault(facture.id, facture)
+    etat_factures, etat_lignes = etat_distribution(a_calculer.values())
+
+    # Résultats regroupés par facture
+    resultats = []
+    resume = {'factures': 0, 'articles': 0, 'tout': 0, 'partiel': 0, 'aucun': 0}
+    for facture in factures_page:
+        lignes = []
+        for ligne in facture.lignes.all():
+            info = etat_lignes.get(ligne.id, {})
+            recu = ligne.quantite_unites or 0
+            lignes.append({
+                'ligne': ligne,
+                'article': ligne.article,
+                'recu': info.get('recu', recu),
+                'distribue': info.get('distribue', 0),
+                'restant': info.get('restant', recu),
+            })
+        etat = etat_factures.get(facture.id)
+        resultats.append({'facture': facture, 'etat': etat, 'lignes': lignes})
+        resume['factures'] += 1
+        resume['articles'] += len(lignes)
+        if etat:
+            if etat['statut'] == 'TOUT':
+                resume['tout'] += 1
+            elif etat['statut'] == 'PARTIEL':
+                resume['partiel'] += 1
+            elif etat['statut'] == 'AUCUN':
+                resume['aucun'] += 1
+
+    # Articles pour le select du modal appro. : uniquement les résultats affichés
+    articles_modal = [
+        {'id': item['article'].id, 'nom': item['article'].nom,
+         'code': item['article'].code, 'quantite_stock': item['article'].quantite_stock}
+        for resultat in resultats for item in resultat['lignes']
+    ]
+
+    # Statistiques du dépôt (affichées avec les résultats)
+    stats = None
+    if recherche_valide:
+        valeur_stock_cdf = articles_base.filter(devise='CDF').aggregate(
+            total=Sum(F('quantite_stock') * F('prix_achat'))
+        )['total'] or 0
+        valeur_stock_usd = articles_base.filter(devise='USD').aggregate(
+            total=Sum(F('quantite_stock') * F('prix_achat'))
+        )['total'] or 0
+        stats = {
+            'total_articles': articles_base.count(),
+            'valeur_stock_cdf': valeur_stock_cdf,
+            'valeur_stock_usd': valeur_stock_usd,
+            'valeur_stock': valeur_stock_cdf,
+            'articles_stock_bas': articles_base.filter(
+                quantite_stock__lte=depot.alerte_stock_bas
+            ).count(),
+        }
+
+    # Critères à conserver dans les liens de pagination
+    search_params = {}
+    if numero_facture:
+        search_params['numero_facture'] = numero_facture
+    if search_date_str:
+        search_params['date'] = search_date_str
+    search_qs = urlencode(search_params)
+
+    # Boutiques de destination disponibles (non-dépôts)
+    boutiques_destination = commercant.boutiques.filter(est_depot=False, est_active=True)
+    
+    context = {
+        'depot': depot,
+        'resultats': resultats,
+        'resume': resume,
+        'articles_modal': articles_modal,
+        'page_obj': page_obj,
+        'stats': stats,
+        'factures_recentes': factures_recentes,
+        'boutiques_destination': boutiques_destination,
+        'numero_facture': numero_facture,
+        'search_date_str': search_date_str,
+        'has_search': has_search,
+        'recherche_valide': recherche_valide,
+        'search_qs': search_qs,
+        'date_error': date_error,
+    }
+    
+    return render(request, 'inventory/commercant/detail_depot.html', context)
+
+
+def detail_depot_ancien(request, depot, commercant):
+    """Ancienne page de détail du dépôt (articles + statistiques).
+
+    Conservée telle quelle pour les commerçants qui n'ont pas encore la
+    nouvelle maquette (voir nouvelle_maquette_depot).
+    """
     # Base queryset (tous les articles actifs)
     articles_base = depot.articles.filter(est_actif=True)
     
@@ -4237,7 +4406,8 @@ def detail_depot(request, depot_id):
         'search_q': search_q,
     }
     
-    return render(request, 'inventory/commercant/detail_depot.html', context)
+    return render(request, 'inventory/commercant/detail_depot_ancien.html', context)
+
 
 @login_required
 @commercant_required
@@ -5165,7 +5335,15 @@ def transfert_multiple(request, depot_id):
     commercant = request.user.profil_commercant
     depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
     
-    # Filtre par date de facture : n'afficher que les articles approvisionnés ce jour-là
+    # Filtre par facture précise (?facture=ID) ou par date de facture
+    # (?date_facture=AAAA-MM-JJ) : n'afficher que les articles à distribuer
+    facture_cible = None
+    facture_str = request.GET.get('facture', '').strip()
+    if facture_str and nouvelle_maquette_depot(commercant):
+        facture_cible = get_object_or_404(
+            FactureApprovisionnement, id=facture_str, depot=depot
+        )
+
     date_facture_str = request.GET.get('date_facture', '').strip()
     date_facture = None
     if date_facture_str:
@@ -5181,7 +5359,15 @@ def transfert_multiple(request, depot_id):
     )
     
     factures_du_jour = FactureApprovisionnement.objects.none()
-    if date_facture:
+    if facture_cible:
+        # Cibler uniquement les articles de la facture demandée
+        articles = articles.filter(
+            lignes_approvisionnement__facture=facture_cible,
+        ).distinct()
+        factures_du_jour = FactureApprovisionnement.objects.filter(
+            id=facture_cible.id
+        ).select_related('fournisseur')
+    elif date_facture:
         # Cibler uniquement les articles des factures enregistrées à cette date
         articles = articles.filter(
             lignes_approvisionnement__facture__depot=depot,
@@ -5200,11 +5386,17 @@ def transfert_multiple(request, depot_id):
         boutique_dest_id = request.POST.get('boutique_destination')
         commentaire_global = request.POST.get('commentaire', '')
         
-        # Préserver le filtre date (repassé en query string après POST)
-        date_retour = request.GET.get('date_facture', '').strip()
+        # Préserver les filtres (repassés en query string après POST)
         url_retour = reverse('inventory:transfert_multiple', args=[depot.id])
+        params_retour = {}
+        date_retour = request.GET.get('date_facture', '').strip()
+        facture_retour = request.GET.get('facture', '').strip()
         if date_retour:
-            url_retour += f'?date_facture={date_retour}'
+            params_retour['date_facture'] = date_retour
+        if facture_retour:
+            params_retour['facture'] = facture_retour
+        if params_retour:
+            url_retour += '?' + urlencode(params_retour)
         
         if not boutique_dest_id:
             messages.error(request, "Veuillez sélectionner une boutique de destination")
@@ -5301,6 +5493,7 @@ def transfert_multiple(request, depot_id):
         'depot': depot,
         'articles': articles,
         'boutiques_destination': boutiques_destination,
+        'facture_cible': facture_cible,
         'date_facture': date_facture,
         'date_facture_str': date_facture_str,
         'factures_du_jour': factures_du_jour,
@@ -6092,6 +6285,10 @@ def liste_factures_depot(request, depot_id):
     page_num = request.GET.get('page', 1)
     page_obj = paginator.get_page(page_num)
 
+    # État de distribution (tout / partie / rien) attaché à chaque facture
+    if nouvelle_maquette_depot(commercant):
+        etat_distribution(list(page_obj))
+
     # Stats rapides (toutes les factures du commerçant)
     stats = FactureApprovisionnement.objects.filter(
         depot__commercant=commercant
@@ -6215,6 +6412,10 @@ def liste_toutes_factures_commercant(request):
     page_num = request.GET.get('page', 1)
     page_obj = paginator.get_page(page_num)
     
+    # État de distribution (tout / partie / rien) attaché à chaque facture
+    if nouvelle_maquette_depot(commercant):
+        etat_distribution(list(page_obj))
+    
     # Stats globales (toutes les factures sont en CDF)
     stats = FactureApprovisionnement.objects.filter(depot__commercant=commercant).aggregate(
         total_montant=Sum('montant_total'),  # Toutes les factures sont en CDF
@@ -6317,6 +6518,10 @@ def detail_facture_depot(request, depot_id, facture_id):
     else:
         pourcentage_global = Decimal('0')
     
+    # État de distribution (tout / partie / rien)
+    if nouvelle_maquette_depot(commercant):
+        etat_distribution([facture])
+    
     context = {
         'depot': depot,
         'facture': facture,
@@ -6386,6 +6591,10 @@ def detail_facture_flexible(request, facture_id):
         pourcentage_global = (total_benefice / total_achat) * 100
     else:
         pourcentage_global = Decimal('0')
+    
+    # État de distribution (tout / partie / rien)
+    if nouvelle_maquette_depot(commercant):
+        etat_distribution([facture])
     
     context = {
         'depot': depot,
