@@ -285,7 +285,7 @@
                                     Montant (CDF) {% if tri == '-montant_total' %}<i class="fas fa-sort-down sort-icon"></i>{% elif tri == 'montant_total' %}<i class="fas fa-sort-up sort-icon"></i>{% endif %}
                                 </a>
                             </th>
-                            <th class="text-center" style="width:70px;">Action</th>
+                            <th class="text-center" style="width:110px;">Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -319,9 +319,21 @@
                             </td>
                             <td class="text-end montant cdf">{{ facture.montant_total|format_number }} FC</td>
                             <td class="text-center" onclick="event.stopPropagation();">
+                                {% if facture.depot.est_depot %}
+                                <a href="{% url 'inventory:approvisionner_facture' facture.depot.id %}?facture={{ facture.id }}" class="btn btn-sm btn-outline-success btn-voir" title="Compléter la facture (ajouter des articles oubliés)">
+                                    <i class="fas fa-plus"></i>
+                                </a>
                                 <a href="{% url 'inventory:detail_facture_depot' facture.depot.id facture.id %}" class="btn btn-sm btn-outline-primary btn-voir">
                                     <i class="fas fa-eye"></i>
                                 </a>
+                                {% else %}
+                                <a href="{% url 'inventory:approvisionner_facture_boutique' facture.depot.id %}?facture={{ facture.id }}" class="btn btn-sm btn-outline-success btn-voir" title="Compléter la facture (ajouter des articles oubliés)">
+                                    <i class="fas fa-plus"></i>
+                                </a>
+                                <a href="{% url 'inventory:detail_facture_depot' facture.depot.id facture.id %}" class="btn btn-sm btn-outline-primary btn-voir">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                {% endif %}
                             </td>
                         </tr>
                         {% empty %}

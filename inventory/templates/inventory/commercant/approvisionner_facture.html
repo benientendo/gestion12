@@ -371,6 +371,9 @@ var FACT_ARTICLES = {{ autocomplete_articles_json|safe }};
 
 // Dernières données d'approvisionnement par article (carton, prix, etc.)
 var FACT_DERNIERS_APPROS = {{ derniers_appros_json|safe }};
+
+// Facture déjà enregistrée ouverte en édition (?facture=<id>) ou null
+var FACT_FACTURE_EDIT = {{ facture_edit_json|safe }};
 {% endlocalize %}
 
 // === DERNIER APPRO : COUPLE (ARTICLE, FOURNISSEUR) ===
@@ -1186,16 +1189,19 @@ function factRafraichirTableau() {
         var totalVente = a.quantite_unites * a.prix_vente;
         var typeLabel = a.type_quantite === 'CARTON' ? a.nombre_cartons + ' crt (' + a.quantite_unites + ' pcs)' : 'Unité';
         var prixAchat = a.prix_achat_unitaire;
-        html += '<tr ondblclick="factEditerLigne(' + i + ')" title="Double-clic pour éditer">';
+        var deja = !!a.deja_enregistre;
+        html += '<tr' + (deja ? ' style="opacity:.75;background:#f5f7fa;" ondblclick="alert(\'Article déjà enregistré - il ne peut pas être modifié ici\')"' : ' ondblclick="factEditerLigne(' + i + ')"') + ' title="' + (deja ? 'Article déjà enregistré sur cette facture' : 'Double-clic pour éditer') + '">';
         html += '<td>' + (i + 1) + '</td>';
-        html += '<td><strong id="nom_art_' + i + '">' + factEscapeHtml(a.nom) + '</strong>' + (a.article_id ? ' <span class="badge bg-success" style="font-size:.55rem;">existant</span>' : ' <span class="badge bg-warning text-dark" style="font-size:.55rem;">nouveau</span>') + ' <button type="button" class="btn btn-link btn-sm p-0 ms-1" onclick="factModifierNomArticle(' + i + ')" title="Modifier le nom" tabindex="-1"><i class="fas fa-pen" style="font-size:.65rem;color:#6c757d;"></i></button></td>';
+        html += '<td><strong id="nom_art_' + i + '">' + factEscapeHtml(a.nom) + '</strong>' + (deja ? ' <span class="badge bg-secondary" style="font-size:.55rem;">enregistré</span>' : (a.article_id ? ' <span class="badge bg-success" style="font-size:.55rem;">existant</span>' : ' <span class="badge bg-warning text-dark" style="font-size:.55rem;">nouveau</span>')) + (deja ? '' : ' <button type="button" class="btn btn-link btn-sm p-0 ms-1" onclick="factModifierNomArticle(' + i + ')" title="Modifier le nom" tabindex="-1"><i class="fas fa-pen" style="font-size:.65rem;color:#6c757d;"></i></button>') + '</td>';
         html += '<td>' + typeLabel + '</td>';
         html += '<td class="text-end">' + a.quantite_unites + '</td>';
         html += '<td class="text-end" style="color:#0d6efd;">' + factFormatNumber(prixAchat) + '</td>';
         html += '<td class="text-end" style="color:#0d6efd;"><strong>' + factFormatNumber(totalAchat) + '</strong></td>';
         html += '<td class="text-end" style="color:#198754;">' + factFormatNumber(a.prix_vente) + '</td>';
         html += '<td class="text-end" style="color:#198754;"><strong>' + factFormatNumber(totalVente) + '</strong></td>';
-        html += '<td><button type="button" class="btn btn-outline-danger btn-sm" onclick="factSupprimerArticle(' + i + ')" tabindex="-1"><i class="fas fa-trash"></i></button></td>';
+        html += '<td>' + (deja
+            ? '<span class="text-muted" title="Déjà enregistré sur la facture"><i class="fas fa-lock" style="font-size:.7rem;"></i></span>'
+            : '<button type="button" class="btn btn-outline-danger btn-sm" onclick="factSupprimerArticle(' + i + ')" tabindex="-1"><i class="fas fa-trash"></i></button>') + '</td>';
         html += '</tr>';
     }
     html += '</tbody></table>';
@@ -1205,6 +1211,10 @@ function factRafraichirTableau() {
 function factSupprimerArticle(index) {
     try {
         if (index < 0 || index >= factArticlesAjoutes.length) { console.warn('Index invalide:', index); return; }
+        if (factArticlesAjoutes[index].deja_enregistre) {
+            alert('Cet article est déjà enregistré sur la facture.\nSuppression possible depuis le détail de la facture.');
+            return;
+        }
         var nom = factArticlesAjoutes[index].nom || 'Article';
         if (!confirm('Supprimer "' + nom + '" de la liste ?')) return;
         factArticlesAjoutes.splice(index, 1);
@@ -1218,6 +1228,10 @@ function factSupprimerArticle(index) {
 function factEditerLigne(index) {
     try {
         if (index < 0 || index >= factArticlesAjoutes.length) return;
+        if (factArticlesAjoutes[index].deja_enregistre) {
+            alert('Cet article est déjà enregistré sur la facture.');
+            return;
+        }
         var a = factArticlesAjoutes[index];
         
         // Les prix dans l'article sont TOUJOURS en CDF (stockés après conversion)
@@ -1388,14 +1402,18 @@ function validerFormulaire() {
 // =============================================
 // FACTURE OUVERTE (continue de saisir après enregistrement)
 // =============================================
-function factAfficherFactureOuverte(message, factureId) {
+function factAfficherFactureOuverte(message, factureId, brut) {
     var b = getEl('factureOuverteBanner');
     if (!b) return;
     var msg = getEl('factureOuverteMsg');
     if (msg) {
-        msg.innerHTML = '<i class="fas fa-check-circle me-1" style="color:#2e7d32;"></i>' +
-            factEscapeHtml(message || 'Facture enregistrée') +
-            ' — <em>ajoutez les articles oubliés puis cliquez à nouveau sur Enregistrer</em>.';
+        var icone = '<i class="fas fa-check-circle me-1" style="color:#2e7d32;"></i>';
+        if (brut) {
+            msg.innerHTML = icone + (message || '');
+        } else {
+            msg.innerHTML = icone + factEscapeHtml(message || 'Facture enregistrée') +
+                ' — <em>ajoutez les articles oubliés puis cliquez à nouveau sur Enregistrer</em>.';
+        }
     }
     b.dataset.numero = getEl('numero_facture').value.trim();
     b.dataset.factureId = factureId || '';
@@ -1418,16 +1436,66 @@ function factNouvelleFacture() {
     var notesField = document.querySelector('input[name="notes"]');
     if (notesField) notesField.value = '';
     factMasquerFactureOuverte();
+    FACT_FACTURE_EDIT = null;   // on repart sur une facture neuve
+    factArticlesAjoutes = [];
+    factRafraichirTableau();
+    factMajResume();
     factViderChamps();
     factSaveState();
     setTimeout(function() { getEl('fournisseur_input').focus(); }, 100);
 }
 
+// =============================================
+// ÉDITION D'UNE FACTURE DÉJÀ ENREGISTRÉE
+// =============================================
+function factAppliquerEdition() {
+    if (!FACT_FACTURE_EDIT) return false;
+    try {
+        var f = FACT_FACTURE_EDIT;
+        getEl('numero_facture').value = f.numero_facture || '';
+        if (f.date_facture) getEl('date_facture').value = factFormatDateFr(f.date_facture);
+        if (f.devise) {
+            setDevise(f.devise);
+            var ic = getEl('info_conversion');
+            if (ic) ic.style.display = f.devise === 'USD' ? 'block' : 'none';
+        }
+        if (f.fournisseur_input) {
+            var fi = getEl('fournisseur_input');
+            fi.value = f.fournisseur_input;
+            fi.classList.add('input-matched');
+            getEl('fournisseur_id').value = f.fournisseur_id || '';
+            getEl('fournisseur_nom').value = f.fournisseur_id ? '' : f.fournisseur_input;
+        }
+        if (f.notes) {
+            var nf = document.querySelector('input[name="notes"]');
+            if (nf) nf.value = f.notes;
+        }
+        factArticlesAjoutes = f.lignes || [];
+        factRafraichirTableau();
+        factMajResume();
+        factAfficherFactureOuverte(
+            '<i class="fas fa-pen me-1"></i>Édition de la facture <strong>' +
+            factEscapeHtml(f.numero_facture || '') + '</strong> : ' +
+            factArticlesAjoutes.length + ' article(s) déjà enregistré(s). ' +
+            'Ajoutez ceux qui manquent puis cliquez sur Enregistrer.',
+            f.id,
+            true
+        );
+        return true;
+    } catch(err) { console.error('Edition facture error:', err); return false; }
+}
+
 function soumettreFactureAjax() {
     if (factArticlesAjoutes.length === 0) { alert('Veuillez ajouter au moins un article'); return; }
+    // Ne jamais ré-envoyer les articles déjà enregistrés (édition de facture)
+    var nouveauxArticles = factArticlesAjoutes.filter(function(a) { return !a.deja_enregistre; });
+    if (nouveauxArticles.length === 0) {
+        alert('Tous les articles de cette facture sont déjà enregistrés.\nAjoutez d\'abord l\'article qui manque.');
+        return;
+    }
     if (!getEl('numero_facture').value.trim()) { alert('Le num\u00e9ro de facture est obligatoire'); getEl('numero_facture').focus(); return; }
 
-    getEl('articles_json').value = JSON.stringify(factArticlesAjoutes);
+    getEl('articles_json').value = JSON.stringify(nouveauxArticles);
     var btn = getEl('btnEnregistrer');
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Enregistrement en cours...';
@@ -1443,9 +1511,17 @@ function soumettreFactureAjax() {
     .then(function(resp) { return resp.json().then(function(data) { return {ok: resp.ok, data: data}; }); })
     .then(function(result) {
         if (result.ok && result.data.success) {
-            // Succès: la facture reste OUVERTE (en-tête conservé),
-            // on vide seulement la liste des articles pour en ajouter d'autres
-            factArticlesAjoutes = [];
+            // Succès: la facture reste OUVERTE (en-tête conservé)
+            if (FACT_FACTURE_EDIT) {
+                // Édition: les articles envoyés deviennent "déjà enregistrés"
+                // et restent affichés dans le tableau de la facture
+                for (var k = 0; k < factArticlesAjoutes.length; k++) {
+                    if (!factArticlesAjoutes[k].deja_enregistre) factArticlesAjoutes[k].deja_enregistre = true;
+                }
+            } else {
+                // Nouvelle facture: on vide la liste pour en ajouter d'autres
+                factArticlesAjoutes = [];
+            }
             factRafraichirTableau();
             factMajResume();
             factSaveState();  // brouillon = en-tête seul (restaurable au rechargement)
@@ -1495,6 +1571,7 @@ document.addEventListener('DOMContentLoaded', function() {
             var b = getEl('factureOuverteBanner');
             if (b && b.style.display !== 'none' && numEl.value.trim() !== (b.dataset.numero || '')) {
                 factMasquerFactureOuverte();
+                FACT_FACTURE_EDIT = null;  // plus en édition de cette facture
             }
         });
 
@@ -1525,6 +1602,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Restaurer le brouillon
         var restored = factLoadState();
+        // Édition d'une facture existante (?facture=<id>) : prioritaire sur le brouillon
+        factAppliquerEdition();
         getEl('fournisseur_input').focus();
 
         console.log('✅ Facture JS OK - Articles:', FACT_ARTICLES.length, '- Catégories:', FACT_CATEGORIES.length, '- Fournisseurs:', FACT_FOURNISSEURS.length);

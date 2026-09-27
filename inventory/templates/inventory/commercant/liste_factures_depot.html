@@ -232,7 +232,7 @@
                                     Montant (CDF) {% if tri == '-montant_total' %}<i class="fas fa-sort-down sort-icon"></i>{% elif tri == 'montant_total' %}<i class="fas fa-sort-up sort-icon"></i>{% endif %}
                                 </a>
                             </th>
-                            <th class="text-center" style="width:80px;">Action</th>
+                            <th class="text-center" style="width:120px;">Action</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -267,6 +267,9 @@
                                 {{ facture.montant_total|format_number }} FC
                             </td>
                             <td class="text-center" onclick="event.stopPropagation();">
+                                <a href="{% url 'inventory:approvisionner_facture' facture.depot.id %}?facture={{ facture.id }}" class="btn btn-sm btn-outline-success btn-voir" title="Compléter la facture (ajouter des articles oubliés)">
+                                    <i class="fas fa-plus"></i>
+                                </a>
                                 <a href="{% url 'inventory:detail_facture_depot' facture.depot.id facture.id %}" class="btn btn-sm btn-outline-primary btn-voir">
                                     <i class="fas fa-eye"></i>
                                 </a>

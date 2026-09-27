@@ -5774,6 +5774,48 @@ def approvisionner_facture(request, depot_id):
     # Dernières données d'appro par couple (article, fournisseur) pour pré-remplissage
     derniers_appros = _derniers_appros_par_article(articles_existants)
     
+    # Édition: ouvrir une facture déjà enregistrée (?facture=<id>) pour la compléter
+    facture_edit_json = None
+    facture_param = request.GET.get('facture', '')
+    if request.method == 'GET' and facture_param.isdigit():
+        facture_edit = FactureApprovisionnement.objects.filter(
+            id=int(facture_param), depot=depot
+        ).select_related('fournisseur').first()
+        if facture_edit:
+            lignes_edit = []
+            for ligne_edit in facture_edit.lignes.select_related('article').all():
+                lignes_edit.append({
+                    'article_id': ligne_edit.article_id,
+                    'code': ligne_edit.article.code,
+                    'nom': ligne_edit.article.nom,
+                    'categorie_id': ligne_edit.categorie_id,
+                    'type_quantite': ligne_edit.type_quantite,
+                    'nombre_cartons': ligne_edit.nombre_cartons,
+                    'pieces_par_carton': ligne_edit.pieces_par_carton,
+                    'pieces_supplementaires': (
+                        max(0, ligne_edit.quantite_unites - (ligne_edit.nombre_cartons * ligne_edit.pieces_par_carton))
+                        if ligne_edit.type_quantite == 'CARTON' else 0
+                    ),
+                    'quantite_unites': ligne_edit.quantite_unites,
+                    'prix_achat_carton': float(ligne_edit.prix_achat_carton),
+                    'prix_achat_unitaire': float(ligne_edit.prix_achat_unitaire),
+                    'prix_piece_sup': float(ligne_edit.prix_achat_unitaire),
+                    'prix_vente': float(ligne_edit.prix_vente_unitaire),
+                    'deja_enregistre': True,
+                    'ligne_id': ligne_edit.id,
+                })
+            fournisseur_edit = facture_edit.fournisseur
+            facture_edit_json = json.dumps({
+                'id': facture_edit.id,
+                'numero_facture': facture_edit.numero_facture,
+                'date_facture': facture_edit.date_facture.isoformat(),
+                'devise': facture_edit.devise,
+                'notes': facture_edit.notes,
+                'fournisseur_id': fournisseur_edit.id if fournisseur_edit else '',
+                'fournisseur_input': fournisseur_edit.nom if fournisseur_edit else facture_edit.fournisseur_nom,
+                'lignes': lignes_edit,
+            })
+    
     if request.method == 'POST':
         try:
             with transaction.atomic():
@@ -5781,7 +5823,7 @@ def approvisionner_facture(request, depot_id):
                 numero_facture = request.POST.get('numero_facture', '').strip()
                 fournisseur_id = request.POST.get('fournisseur_id', '').strip()
                 fournisseur_nom = request.POST.get('fournisseur_nom', '').strip()
-                date_facture_str = request.POST.get('date_facture', '')
+                date_facture_str = request.POST.get('date_facture', '').strip()
                 devise = request.POST.get('devise', 'CDF')
                 notes = request.POST.get('notes', '')
                 
@@ -5986,6 +6028,7 @@ def approvisionner_facture(request, depot_id):
             [{'id': 0, 'nom': n} for n in categories_noms]
         ),
         'derniers_appros_json': json.dumps(derniers_appros),
+        'facture_edit_json': facture_edit_json or 'null',
         'today': timezone.localdate(),
     }
     
@@ -6017,6 +6060,48 @@ def approvisionner_facture_boutique(request, boutique_id):
     
     # Dernières données d'appro par couple (article, fournisseur) pour pré-remplissage
     derniers_appros = _derniers_appros_par_article(articles_existants)
+    
+    # Édition: ouvrir une facture déjà enregistrée (?facture=<id>) pour la compléter
+    facture_edit_json = None
+    facture_param = request.GET.get('facture', '')
+    if request.method == 'GET' and facture_param.isdigit():
+        facture_edit = FactureApprovisionnement.objects.filter(
+            id=int(facture_param), depot=boutique
+        ).select_related('fournisseur').first()
+        if facture_edit:
+            lignes_edit = []
+            for ligne_edit in facture_edit.lignes.select_related('article').all():
+                lignes_edit.append({
+                    'article_id': ligne_edit.article_id,
+                    'code': ligne_edit.article.code,
+                    'nom': ligne_edit.article.nom,
+                    'categorie_id': ligne_edit.categorie_id,
+                    'type_quantite': ligne_edit.type_quantite,
+                    'nombre_cartons': ligne_edit.nombre_cartons,
+                    'pieces_par_carton': ligne_edit.pieces_par_carton,
+                    'pieces_supplementaires': (
+                        max(0, ligne_edit.quantite_unites - (ligne_edit.nombre_cartons * ligne_edit.pieces_par_carton))
+                        if ligne_edit.type_quantite == 'CARTON' else 0
+                    ),
+                    'quantite_unites': ligne_edit.quantite_unites,
+                    'prix_achat_carton': float(ligne_edit.prix_achat_carton),
+                    'prix_achat_unitaire': float(ligne_edit.prix_achat_unitaire),
+                    'prix_piece_sup': float(ligne_edit.prix_achat_unitaire),
+                    'prix_vente': float(ligne_edit.prix_vente_unitaire),
+                    'deja_enregistre': True,
+                    'ligne_id': ligne_edit.id,
+                })
+            fournisseur_edit = facture_edit.fournisseur
+            facture_edit_json = json.dumps({
+                'id': facture_edit.id,
+                'numero_facture': facture_edit.numero_facture,
+                'date_facture': facture_edit.date_facture.isoformat(),
+                'devise': facture_edit.devise,
+                'notes': facture_edit.notes,
+                'fournisseur_id': fournisseur_edit.id if fournisseur_edit else '',
+                'fournisseur_input': fournisseur_edit.nom if fournisseur_edit else facture_edit.fournisseur_nom,
+                'lignes': lignes_edit,
+            })
     
     if request.method == 'POST':
         try:
@@ -6226,6 +6311,7 @@ def approvisionner_facture_boutique(request, boutique_id):
             [{'id': 0, 'nom': n} for n in categories_noms]
         ),
         'derniers_appros_json': json.dumps(derniers_appros),
+        'facture_edit_json': facture_edit_json or 'null',
         'today': timezone.localdate(),
     }
     
