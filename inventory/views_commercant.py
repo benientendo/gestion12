@@ -4598,8 +4598,9 @@ def approvisionner_depot(request, depot_id):
                     messages.error(request, f"Un article avec le code '{code}' existe déjà dans ce dépôt")
                     return redirect('inventory:detail_depot', depot_id=depot.id)
                 
-                # Créer l'article
-                article = Article.objects.create(
+                # Créer l'article (le mouvement d'ouverture automatique est désactivé :
+                # le mouvement ci-dessous porte la référence APPRO et l'utilisateur)
+                article = Article(
                     code=code,
                     nom=nom,
                     description=description,
@@ -4612,6 +4613,8 @@ def approvisionner_depot(request, depot_id):
                     boutique=depot,
                     est_actif=True
                 )
+                article.sans_mouvement_initial = True
+                article.save(force_insert=True)
                 
                 # Enregistrer le mouvement de stock
                 MouvementStock.objects.create(

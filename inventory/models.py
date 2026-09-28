@@ -146,7 +146,8 @@ class Article(models.Model):
 
     def save(self, *args, **kwargs):
         logger = logging.getLogger(__name__)
-        
+        est_nouveau = self.pk is None
+
         # Incrémenter la version à chaque modification (sauf création)
         if self.pk:
             try:
@@ -171,6 +172,23 @@ class Article(models.Model):
         
         # Call the original save method
         super(Article, self).save(*args, **kwargs)
+
+        # Mouvement d'ouverture : un article cree avec un stock initial doit avoir
+        # un mouvement, sinon le premier mouvement reel affiche "stock avant: 0"
+        # alors que le stock reel est deja non nul (historique incoherent).
+        # Les flux qui creent leur propre mouvement (approvisionnement) passent
+        # l'attribut `sans_mouvement_initial = True` avant l'enregistrement.
+        if (est_nouveau and self.quantite_stock
+                and not getattr(self, 'sans_mouvement_initial', False)):
+            MouvementStock.objects.create(
+                article=self,
+                type_mouvement='ENTREE',
+                quantite=self.quantite_stock,
+                stock_avant=0,
+                stock_apres=self.quantite_stock,
+                commentaire='Solde initial a la creation',
+                reference_document=f'INIT-{self.pk}',
+            )
     
     @property
     def a_variantes(self):
