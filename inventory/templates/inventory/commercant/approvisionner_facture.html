@@ -309,7 +309,12 @@
             <div class="sec" style="flex:1;display:flex;flex-direction:column;min-height:0;">
                 <div class="sec-h">
                     <span><i class="fas fa-list me-1"></i>Articles ajoutés (<span id="nbArticlesHeader">0</span>)<span id="nbEnregistresHeader" class="text-muted" style="font-weight:normal;font-size:.72rem;"></span></span>
-                    <span id="saveIndicator" style="font-size:.7rem;color:#198754;display:none;"><i class="fas fa-check-circle me-1"></i>Brouillon sauvegardé</span>
+                    <span style="display:flex;align-items:center;gap:12px;">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnNouvelleFacture" style="font-size:.72rem;padding:2px 9px;" onclick="factNouvelleFacture()" title="Vider tout et commencer une nouvelle facture">
+                            <i class="fas fa-file-medical me-1"></i>Nouvelle facture
+                        </button>
+                        <span id="saveIndicator" style="font-size:.7rem;color:#198754;display:none;"><i class="fas fa-check-circle me-1"></i>Brouillon sauvegardé</span>
+                    </span>
                 </div>
                 <div class="table-articles-zone" id="tableArticlesZone">
                 </div>
@@ -554,8 +559,10 @@ function factFormatDateFr(valeur) {
 // === PERSISTANCE localStorage ===
 function factSaveState() {
     try {
+        // On ne persiste JAMAIS les lignes déjà enregistrées : elles vivent côté serveur
+        var articlesBrouillon = factArticlesAjoutes.filter(function(a) { return !a.deja_enregistre; });
         var state = {
-            articles: factArticlesAjoutes,
+            articles: articlesBrouillon,
             header: {
                 numero_facture: getEl('numero_facture').value,
                 date_facture: getEl('date_facture').value,
@@ -572,11 +579,11 @@ function factSaveState() {
         var ind = getEl('saveIndicator');
         if (ind) {
             ind.style.display = 'inline';
-            ind.textContent = '\u2713 Brouillon sauvegardé (' + factArticlesAjoutes.length + ' art.)';
+            ind.textContent = '\u2713 Brouillon sauvegardé (' + articlesBrouillon.length + ' art.)';
             clearTimeout(window._saveTimer);
             window._saveTimer = setTimeout(function() { ind.style.display = 'none'; }, 3000);
         }
-        console.log('\ud83d\udcbe Sauvegardé:', factArticlesAjoutes.length, 'articles');
+        console.log('\ud83d\udcbe Sauvegardé:', articlesBrouillon.length, 'articles');
     } catch(err) { console.warn('Save state error:', err); }
 }
 
@@ -590,7 +597,15 @@ function factLoadState() {
         var raw = localStorage.getItem(FACT_STORAGE_KEY);
         if (!raw) return false;
         var state = JSON.parse(raw);
-        if (!state || !state.articles || state.articles.length === 0) {
+        if (!state) return false;
+        // Brouillon issu d'une édition (lignes "déjà enregistrées") : on l'ignore
+        // entièrement pour repartir d'une facture propre
+        if (state.articles && state.articles.some(function(a) { return a && a.deja_enregistre; })) {
+            factClearState();
+            console.log('\ud83d\udeab Brouillon d\'édition ignoré : nouvelle saisie possible');
+            return false;
+        }
+        if (!state.articles || state.articles.length === 0) {
             // Restaurer seulement l'en-tête s'il y a des données
             if (state && state.header) {
                 var h = state.header;
@@ -1458,7 +1473,9 @@ function factNouvelleFacture() {
     factRafraichirTableau();
     factMajResume();
     factViderChamps();
-    factSaveState();
+    factClearState();           // brouillon effacé : on ne retombe plus dessus
+    var ind = getEl('saveIndicator');
+    if (ind) { ind.style.display = 'none'; }
     setTimeout(function() { getEl('fournisseur_input').focus(); }, 100);
 }
 
@@ -1487,7 +1504,9 @@ function factAppliquerEdition() {
             var nf = document.querySelector('input[name="notes"]');
             if (nf) nf.value = f.notes;
         }
-        factArticlesAjoutes = f.lignes || [];
+        // Lignes déjà enregistrées de la facture + articles ajoutés pendant la session
+        var nouveaux = factArticlesAjoutes.filter(function(a) { return !a.deja_enregistre; });
+        factArticlesAjoutes = (f.lignes || []).concat(nouveaux);
         factRafraichirTableau();
         factMajResume();
         factAfficherFactureOuverte(
