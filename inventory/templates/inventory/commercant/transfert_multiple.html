@@ -503,8 +503,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateCartonTotal(card) {
-        const nb  = parseInt(card.querySelector('.nb-cartons-input').value)  || 0;
-        const pcs = parseInt(card.querySelector('.pcs-par-carton-input').value) || 1;
+        const stock = parseInt(card.dataset.stock, 10) || 0;
+        let nb  = parseInt(card.querySelector('.nb-cartons-input').value)  || 0;
+        let pcs = parseInt(card.querySelector('.pcs-par-carton-input').value) || 1;
+        // Jamais plus que le stock disponible au dépôt
+        if (stock > 0) {
+            if (pcs > stock) {
+                pcs = stock;
+                card.querySelector('.pcs-par-carton-input').value = pcs;
+            }
+            const maxNb = Math.floor(stock / pcs);
+            if (nb > maxNb) {
+                nb = maxNb;
+                card.querySelector('.nb-cartons-input').value = nb;
+            }
+        }
         const tot = nb * pcs;
         card.querySelector('.total-pcs-display').textContent = tot + ' pcs';
         card.querySelector('.quantite-input').value    = tot;
@@ -591,7 +604,11 @@ document.addEventListener('DOMContentLoaded', function() {
             // Saisie directe → auto-coche l'article
             pInput.addEventListener('focus', () => activerCarte(card));
             pInput.addEventListener('input', () => {
-                card.querySelector('.quantite-input').value = parseInt(pInput.value) || 0;
+                // Jamais plus que le stock disponible au dépôt
+                const stock = parseInt(card.dataset.stock, 10) || 0;
+                let v = parseInt(pInput.value) || 0;
+                if (stock > 0 && v > stock) { pInput.value = stock; v = stock; }
+                card.querySelector('.quantite-input').value = v;
                 updateSummary();
             });
             // Entrée → passer à l'article suivant
@@ -646,6 +663,27 @@ document.addEventListener('DOMContentLoaded', function() {
             cb.checked = !cb.checked;
             cb.dispatchEvent(new Event('change'));
         });
+    });
+
+    // Refuser l'envoi si la quantité dépasse le stock restant du dépôt
+    document.getElementById('transfertForm').addEventListener('submit', function(e) {
+        let erreur = null;
+        checkboxes.forEach(cb => {
+            if (!cb.checked || erreur) return;
+            const card = cb.closest('.article-select-card');
+            const stock = parseInt(card.dataset.stock, 10) || 0;
+            const qte = parseInt(card.querySelector('.quantite-input').value, 10) || 0;
+            if (stock <= 0) {
+                erreur = card.dataset.articleName + ' : stock épuisé au dépôt, distribution impossible.';
+            } else if (qte > stock) {
+                erreur = card.dataset.articleName + ' : stock insuffisant au dépôt (disponible '
+                         + stock + ', demandé ' + qte + ').';
+            }
+        });
+        if (erreur) {
+            e.preventDefault();
+            alert(erreur);
+        }
     });
 });
 </script>

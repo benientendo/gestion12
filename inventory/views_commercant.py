@@ -10,6 +10,7 @@ from django.db.models import Q, Sum, Count, F, Avg, Max, Min, Prefetch, Expressi
 from django.db import transaction
 from django.utils import timezone
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
+from django.core.exceptions import ValidationError
 from django.views.decorators.http import require_POST
 from django.core.cache import cache
 from decimal import Decimal
@@ -5481,7 +5482,14 @@ def transfert_multiple(request, depot_id):
                             statut='EN_ATTENTE'
                         )
                         # Validation directe - mise à jour des stocks
-                        article_destination = transfert.valider_transfert(request.user.username)
+                        try:
+                            article_destination = transfert.valider_transfert(request.user.username)
+                        except ValidationError as exc:
+                            # Stock épuisé entre-temps (concurrent) : on annule
+                            # le transfert et on prévient l'utilisateur
+                            transfert.delete()
+                            erreurs.append(f"{article.nom}: {' '.join(exc.messages)}")
+                            continue
                         transferts_crees.append(transfert)
                         
                         # Mettre à jour le prix de vente sur l'article RÉELLEMENT
