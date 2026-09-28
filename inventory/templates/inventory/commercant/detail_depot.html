@@ -379,9 +379,19 @@
                         {% endif %}
                     </form>
                     {% if recherche_valide %}
+                    <!-- Recherche d'article : filtre UNIQUEMENT les resultats deja affiches -->
+                    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap" id="filtreArticlesDepot">
+                        <label class="mb-0 small fw-bold" for="searchArticleListe">
+                            <i class="fas fa-filter me-1"></i>Rechercher un article
+                        </label>
+                        <input type="text" class="form-control form-control-sm" id="searchArticleListe"
+                               placeholder="Nom ou code, dans les resultats de la date d'achat"
+                               style="max-width: 340px;" autocomplete="off">
+                        <span class="badge bg-light text-dark border" id="compteArticlesListe"></span>
+                    </div>
                     {% for res in resultats %}
                     <!-- Facture trouvée + ses articles à distribuer -->
-                    <div class="border rounded mb-3 overflow-hidden">
+                    <div class="border rounded mb-3 overflow-hidden facture-bloc">
                         <div class="bg-light border-bottom p-3 d-flex justify-content-between align-items-start flex-wrap gap-2">
                             <div>
                                 <strong class="text-primary">{{ res.facture.numero_facture }}</strong>
@@ -416,7 +426,8 @@
                                 </thead>
                                 <tbody>
                                     {% for item in res.lignes %}
-                                    <tr class="article-row" data-article-id="{{ item.article.id }}">
+                                    <tr class="article-row" data-article-id="{{ item.article.id }}"
+                                        data-search="{{ item.article.nom|lower }} {{ item.article.code|lower }}">
                                         <td>
                                             <strong>{{ item.article.nom }}</strong><br>
                                             <code>{{ item.article.code }}</code>
@@ -514,6 +525,38 @@
                         pour afficher les articles &agrave; distribuer.
                     </div>
                     {% endif %}
+                    <script>
+                    (function () {
+                        var champ = document.getElementById('searchArticleListe');
+                        if (!champ) return;
+                        var lignes = Array.prototype.slice.call(document.querySelectorAll('tr.article-row'));
+                        var blocs = Array.prototype.slice.call(document.querySelectorAll('.facture-bloc'));
+                        var compte = document.getElementById('compteArticlesListe');
+                        function maj() {
+                            var terme = (champ.value || '').toLowerCase().trim();
+                            var visibles = 0;
+                            lignes.forEach(function (ligne) {
+                                var ok = !terme || (ligne.getAttribute('data-search') || '').indexOf(terme) !== -1;
+                                ligne.style.display = ok ? '' : 'none';
+                                if (ok) visibles++;
+                            });
+                            if (compte) compte.textContent = visibles + ' / ' + lignes.length;
+                            if (!terme) {
+                                blocs.forEach(function (bloc) { bloc.style.display = ''; });
+                                return;
+                            }
+                            blocs.forEach(function (bloc) {
+                                var auMoinsUne = false;
+                                bloc.querySelectorAll('tr.article-row').forEach(function (l) {
+                                    if (l.style.display !== 'none') auMoinsUne = true;
+                                });
+                                bloc.style.display = auMoinsUne ? '' : 'none';
+                            });
+                        }
+                        champ.addEventListener('input', maj);
+                        maj();
+                    })();
+                    </script>
                 </div>
             </div>
         </div>

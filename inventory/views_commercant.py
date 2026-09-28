@@ -5516,6 +5516,34 @@ def transfert_multiple(request, depot_id):
         
         return redirect('inventory:detail_depot', depot_id=depot.id)
     
+    # Recherche d'une facture cible (champ "cible" de la distribution).
+    # Accepte un numero de facture, un nom de fournisseur ou une date
+    # (JJ/MM/AAAA ou AAAA-MM-JJ) ; les resultats se choisissent par clic.
+    q_cible = request.GET.get('q', '').strip()
+    factures_proposees = []
+    if q_cible:
+        date_cible = None
+        for fmt in ('%d/%m/%Y', '%Y-%m-%d'):
+            try:
+                date_cible = datetime.strptime(q_cible, fmt).date()
+                break
+            except ValueError:
+                continue
+        qs_cible = FactureApprovisionnement.objects.filter(
+            depot=depot
+        ).annotate(nb_articles=Count('lignes'))
+        if date_cible:
+            qs_cible = qs_cible.filter(date_facture=date_cible)
+        else:
+            qs_cible = qs_cible.filter(
+                Q(numero_facture__icontains=q_cible)
+                | Q(fournisseur_nom__icontains=q_cible)
+                | Q(fournisseur__nom__icontains=q_cible)
+            )
+        factures_proposees = list(qs_cible.order_by('-date_facture', '-id')[:10])
+        if factures_proposees:
+            etat_distribution(factures_proposees)
+    
     context = {
         'depot': depot,
         'articles': articles,
@@ -5524,6 +5552,8 @@ def transfert_multiple(request, depot_id):
         'date_facture': date_facture,
         'date_facture_str': date_facture_str,
         'factures_du_jour': factures_du_jour,
+        'factures_proposees': factures_proposees,
+        'q_cible': q_cible,
     }
     
     return render(request, 'inventory/commercant/transfert_multiple.html', context)

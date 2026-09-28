@@ -228,6 +228,50 @@
         </div>
     </form>
 
+    <!-- Recherche d'une facture cible -->
+    <form method="get" class="mb-4">
+        <div class="card shadow-sm">
+            <div class="card-body py-2">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label mb-1 fw-bold" for="searchFactureCible">
+                            <i class="fas fa-bullseye me-1"></i>Facture cible (n&deg;, fournisseur ou date)
+                        </label>
+                        <input type="text" class="form-control" name="q" id="searchFactureCible"
+                               placeholder="Ex: FAC-2026-001, Nom fournisseur, 12/09/2026"
+                               value="{{ q_cible }}" autocomplete="off">
+                    </div>
+                    <div class="col-md-4">
+                        <button type="submit" class="btn btn-outline-primary w-100">
+                            <i class="fas fa-search me-1"></i> Chercher la facture
+                        </button>
+                    </div>
+                </div>
+                {% if factures_proposees %}
+                <div class="list-group mt-2" id="facturesProposees">
+                    {% for f in factures_proposees %}
+                    <a href="?facture={{ f.id }}"
+                       class="list-group-item list-group-item-action py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <span>
+                            <strong>{{ f.numero_facture }}</strong> &mdash; {{ f.date_facture|date:"d/m/Y" }}
+                            &mdash; {% if f.fournisseur %}{{ f.fournisseur.nom }}{% else %}{{ f.fournisseur_nom|default:"-" }}{% endif %}
+                        </span>
+                        <span>
+                            {% include "inventory/commercant/_badge_distribution.html" with etat=f.etat %}
+                            <span class="badge bg-secondary">{{ f.nb_articles }} article(s)</span>
+                        </span>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% elif q_cible %}
+                <div class="alert alert-warning py-1 mt-2 mb-0 small" id="aucuneFactureCible">
+                    <i class="fas fa-exclamation-triangle me-1"></i>Aucune facture ne correspond &laquo;&nbsp;{{ q_cible }}&nbsp;&raquo;.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+
     <form method="post" id="transfertForm">
         {% csrf_token %}
         
