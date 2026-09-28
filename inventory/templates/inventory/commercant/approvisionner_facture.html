@@ -16,6 +16,11 @@
 
     /* === SECTIONS === */
     .sec { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.07); margin-bottom: 5px; }
+
+    /* === BANDEAU FACTURE ENREGISTREE / EDITION === */
+    .facture-banniere { display: none; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 6px; padding: 9px 14px; background: #e8f5e9; border: 1px solid #a5d6a7; border-left: 4px solid #2e7d32; border-radius: 8px; font-size: .87rem; color: #1b5e20; }
+    .facture-banniere .facture-banniere-msg { line-height: 1.35; }
+    .facture-banniere .btn { white-space: nowrap; }
     .sec-h { background: #f8f9fa; padding: 4px 14px; border-bottom: 1px solid #e9ecef; font-weight: 600; font-size: .9rem; display: flex; align-items: center; justify-content: space-between; }
     .sec-b { padding: 6px 14px; }
 
@@ -154,15 +159,16 @@
         </div>
     </div>
 
+    <!-- Facture déjà enregistrée : bandeau pleine largeur, hors de la ligne flex du formulaire -->
+    <div id="factureOuverteBanner" class="facture-banniere">
+        <span id="factureOuverteMsg" class="facture-banniere-msg"><i class="fas fa-check-circle me-1"></i>Facture enregistrée — ajoutez les articles oubliés puis cliquez à nouveau sur <em>Enregistrer</em>.</span>
+        <button type="button" class="btn btn-outline-success btn-sm" onclick="factNouvelleFacture()"><i class="fas fa-file-medical me-1"></i>Nouvelle facture</button>
+    </div>
+
     <form method="post" id="factureForm" onsubmit="return validerFormulaire()" class="facture-body">
         {% csrf_token %}
         <input type="hidden" name="articles_json" id="articles_json" value="[]">
 
-        <!-- Facture déjà enregistrée : on continue d'y ajouter des articles -->
-        <div id="factureOuverteBanner" style="display:none;margin:8px 12px 0;padding:8px 12px;background:#e8f5e9;border:1px solid #4caf50;border-radius:8px;font-size:.82rem;align-items:center;justify-content:space-between;gap:10px;">
-            <span id="factureOuverteMsg"><i class="fas fa-check-circle me-1" style="color:#2e7d32;"></i>Facture enregistrée — ajoutez les articles oubliés puis cliquez à nouveau sur <em>Enregistrer</em>.</span>
-            <button type="button" class="btn btn-outline-success btn-sm" style="font-size:.72rem;white-space:nowrap;" onclick="factNouvelleFacture()"><i class="fas fa-file-medical me-1"></i>Nouvelle facture</button>
-        </div>
 
         <div class="facture-left">
             <!-- Infos facture -->
@@ -302,7 +308,7 @@
             <!-- Tableau articles ajoutés -->
             <div class="sec" style="flex:1;display:flex;flex-direction:column;min-height:0;">
                 <div class="sec-h">
-                    <span><i class="fas fa-list me-1"></i>Articles ajoutés (<span id="nbArticlesHeader">0</span>)</span>
+                    <span><i class="fas fa-list me-1"></i>Articles ajoutés (<span id="nbArticlesHeader">0</span>)<span id="nbEnregistresHeader" class="text-muted" style="font-weight:normal;font-size:.72rem;"></span></span>
                     <span id="saveIndicator" style="font-size:.7rem;color:#198754;display:none;"><i class="fas fa-check-circle me-1"></i>Brouillon sauvegardé</span>
                 </div>
                 <div class="table-articles-zone" id="tableArticlesZone">
@@ -1109,7 +1115,6 @@ function ajouterArticle() {
         // Prix carton: utiliser hint si champ vide (valeur en FC)
         art.prix_achat_carton = getValeurOuHint('art_prix_carton', 'hint_prix_carton', 0);
         art.prix_achat_unitaire = art.pieces_par_carton > 0 ? art.prix_achat_carton / art.pieces_par_carton : 0;
-        art.prix_piece_sup = art.prix_achat_unitaire;
         art.quantite_unites = (art.nombre_cartons * art.pieces_par_carton) + art.pieces_supplementaires;
 
         if (art.quantite_unites <= 0) { alert('La quantité doit être supérieure à 0'); return; }
@@ -1121,6 +1126,9 @@ function ajouterArticle() {
             art.prix_achat_carton = Math.round(art.prix_achat_carton * taux * 100) / 100;
                         // prix_vente reste en FC (la vente s'effectue toujours en FC)
         }
+
+        // Pièce supplémentaire : TOUJOURS en FC, donc APRÈS conversion
+        art.prix_piece_sup = art.prix_achat_unitaire;
 
         factArticlesAjoutes.unshift(art);
         factViderChamps();
@@ -1175,8 +1183,8 @@ function factRafraichirTableau() {
     if (factArticlesAjoutes.length === 0) { zone.innerHTML = ''; return; }
     var html = '<table class="table-articles"><thead><tr>';
     html += '<th>#</th><th>Article</th><th>Type</th><th class="text-end">Qté</th>';
-    html += '<th class="text-end" style="color:#0d6efd;">P.A. Unit.</th>';
-    html += '<th class="text-end" style="color:#0d6efd;">Total Achat</th>';
+    html += '<th class="text-end" style="color:#0d6efd;">P.A. Unit. (FC)</th>';
+    html += '<th class="text-end" style="color:#0d6efd;">Total Achat (FC)</th>';
     html += '<th class="text-end" style="color:#198754;">P.V. Unit. (FC)</th>';
     html += '<th class="text-end" style="color:#198754;">Total Vente (FC)</th>';
     html += '<th></th>';
@@ -1184,15 +1192,15 @@ function factRafraichirTableau() {
     for (var i = 0; i < factArticlesAjoutes.length; i++) {
         var a = factArticlesAjoutes[i];
         var totalAchat = a.type_quantite === 'CARTON'
-            ? (a.nombre_cartons * a.prix_achat_carton) + (a.pieces_supplementaires * (a.prix_piece_sup || a.prix_achat_unitaire))
+            ? (a.nombre_cartons * a.prix_achat_carton) + (a.pieces_supplementaires * (a.prix_achat_unitaire || a.prix_piece_sup))
             : a.quantite_unites * a.prix_achat_unitaire;
         var totalVente = a.quantite_unites * a.prix_vente;
         var typeLabel = a.type_quantite === 'CARTON' ? a.nombre_cartons + ' crt (' + a.quantite_unites + ' pcs)' : 'Unité';
         var prixAchat = a.prix_achat_unitaire;
         var deja = !!a.deja_enregistre;
-        html += '<tr' + (deja ? ' style="opacity:.75;background:#f5f7fa;" ondblclick="alert(\'Article déjà enregistré - il ne peut pas être modifié ici\')"' : ' ondblclick="factEditerLigne(' + i + ')"') + ' title="' + (deja ? 'Article déjà enregistré sur cette facture' : 'Double-clic pour éditer') + '">';
+        html += '<tr' + (deja ? ' style="background:#f6f8fa;box-shadow:inset 3px 0 0 #9aa0a6;" ondblclick="alert(\'Article déjà enregistré - il ne peut pas être modifié ici\')"' : ' ondblclick="factEditerLigne(' + i + ')"') + ' title="' + (deja ? 'Article déjà enregistré sur cette facture' : 'Double-clic pour éditer') + '">';
         html += '<td>' + (i + 1) + '</td>';
-        html += '<td><strong id="nom_art_' + i + '">' + factEscapeHtml(a.nom) + '</strong>' + (deja ? ' <span class="badge bg-secondary" style="font-size:.55rem;">enregistré</span>' : (a.article_id ? ' <span class="badge bg-success" style="font-size:.55rem;">existant</span>' : ' <span class="badge bg-warning text-dark" style="font-size:.55rem;">nouveau</span>')) + (deja ? '' : ' <button type="button" class="btn btn-link btn-sm p-0 ms-1" onclick="factModifierNomArticle(' + i + ')" title="Modifier le nom" tabindex="-1"><i class="fas fa-pen" style="font-size:.65rem;color:#6c757d;"></i></button>') + '</td>';
+        html += '<td><strong id="nom_art_' + i + '">' + factEscapeHtml(a.nom) + '</strong>' + (deja ? ' <span class="badge bg-secondary" style="font-size:.66rem;">enregistré</span>' : (a.article_id ? ' <span class="badge bg-success" style="font-size:.66rem;">existant</span>' : ' <span class="badge bg-warning text-dark" style="font-size:.66rem;">nouveau</span>')) + (deja ? '' : ' <button type="button" class="btn btn-link btn-sm p-0 ms-1" onclick="factModifierNomArticle(' + i + ')" title="Modifier le nom" tabindex="-1"><i class="fas fa-pen" style="font-size:.65rem;color:#6c757d;"></i></button>') + '</td>';
         html += '<td>' + typeLabel + '</td>';
         html += '<td class="text-end">' + a.quantite_unites + '</td>';
         html += '<td class="text-end" style="color:#0d6efd;">' + factFormatNumber(prixAchat) + '</td>';
@@ -1346,7 +1354,7 @@ function factMajResume() {
         var a = factArticlesAjoutes[i];
         totalU += a.quantite_unites || 0;
         if (a.type_quantite === 'CARTON') {
-            montant += (a.nombre_cartons * a.prix_achat_carton) + (a.pieces_supplementaires * (a.prix_piece_sup || a.prix_achat_unitaire));
+            montant += (a.nombre_cartons * a.prix_achat_carton) + (a.pieces_supplementaires * (a.prix_achat_unitaire || a.prix_piece_sup));
         } else {
             montant += a.quantite_unites * a.prix_achat_unitaire;
         }
@@ -1354,6 +1362,15 @@ function factMajResume() {
     var el;
     if ((el = getEl('nbArticles'))) el.textContent = factArticlesAjoutes.length;
     if ((el = getEl('nbArticlesHeader'))) el.textContent = factArticlesAjoutes.length;
+    if ((el = getEl('nbEnregistresHeader'))) {
+        var nbReg = 0;
+        for (var j = 0; j < factArticlesAjoutes.length; j++) {
+            if (factArticlesAjoutes[j].deja_enregistre) nbReg++;
+        }
+        el.textContent = nbReg
+            ? ' — ' + nbReg + ' déjà enregistré(s), ' + (factArticlesAjoutes.length - nbReg) + ' nouveau(x)'
+            : '';
+    }
     if ((el = getEl('totalUnites'))) el.textContent = totalU;
     if ((el = getEl('montantTotal'))) el.textContent = factFormatNumber(montant);
     if ((el = getEl('deviseTotal'))) el.textContent = 'FC';

@@ -1236,11 +1236,14 @@ class LigneApprovisionnement(models.Model):
     def save(self, *args, **kwargs):
         # Calcul automatique des quantités et prix
         if self.type_quantite == 'CARTON' and self.nombre_cartons > 0 and self.pieces_par_carton > 0:
-            self.quantite_unites = self.nombre_cartons * self.pieces_par_carton
+            # Conserver les pièces supplémentaires (quantité déjà reçue = cartons + pièces en +)
+            unites_cartons = self.nombre_cartons * self.pieces_par_carton
+            pieces_sup = max(int(self.quantite_unites or 0) - unites_cartons, 0)
+            self.quantite_unites = unites_cartons + pieces_sup
             if self.prix_achat_carton > 0:
                 self.prix_achat_unitaire = self.prix_achat_carton / self.pieces_par_carton
         
-        # Calcul du prix total
+        # Calcul du prix total (toujours en FC)
         self.prix_achat_total = self.quantite_unites * self.prix_achat_unitaire
         
         super().save(*args, **kwargs)
