@@ -3094,18 +3094,19 @@ def importer_articles_entre_boutiques(request, boutique_id):
     if source_id:
         boutique_source = autres_boutiques.filter(id=source_id).first()
         if boutique_source:
-            # Codes déjà présents dans la boutique destination
-            codes_existants = set(Article.objects.filter(
-                boutique=boutique, est_actif=True
-            ).values_list('code', flat=True))
+            # Codes + noms deja presents dans la boutique destination
+            articles_dest = Article.objects.filter(boutique=boutique, est_actif=True)
+            codes_existants = set(articles_dest.values_list('code', flat=True))
+            noms_existants = {(a.nom or '').strip().casefold() for a in articles_dest}
             
             articles_source = Article.objects.filter(
                 boutique=boutique_source, est_actif=True
             ).select_related('categorie').order_by('nom')
             
-            # Marquer ceux déjà présents
+            # Marquer ceux deja presents (par code ou par nom identique)
             for art in articles_source:
-                art.deja_present = art.code in codes_existants
+                art.deja_present = (art.code in codes_existants
+                                    or (art.nom or '').strip().casefold() in noms_existants)
     
     if request.method == 'POST':
         source_post_id = request.POST.get('boutique_source')
@@ -3136,8 +3137,16 @@ def importer_articles_entre_boutiques(request, boutique_id):
                     try:
                         art_src = Article.objects.get(id=article_id, boutique=boutique_src)
                         
-                        if art_src.code in codes_existants:
-                            erreurs.append(f"{art_src.nom} (code: {art_src.code}): existe déjà")
+                        # Deja present dans la destination : par code ou par
+                        # nom identique (meme regle que les transferts)
+                        existant, _ = trouver_article_destination(
+                            art_src, boutique, creer_si_absent=False)
+                        if existant is not None:
+                            if existant.code and existant.code == art_src.code:
+                                erreurs.append(f"{art_src.nom} (code: {art_src.code}): existe déjà")
+                            else:
+                                erreurs.append(
+                                    f"{art_src.nom}: existe déjà (même nom) dans {boutique.nom}")
                             continue
                         
                         # Copier ou récupérer la catégorie dans la boutique destination
@@ -4792,10 +4801,15 @@ def importer_articles_vers_depot(request, depot_id):
         est_actif=True
     ).values_list('code', flat=True))
     
+    # Noms deja presents dans le depot (meme regle que les transferts)
+    noms_depot = {(a.nom or '').strip().casefold()
+                  for a in Article.objects.filter(boutique=depot, est_actif=True)}
+    
     # Grouper par nom d'article pour éviter les doublons visuels
     articles_uniques = {}
     for article in articles_boutiques:
-        if article.code not in codes_depot:
+        nom_norm = (article.nom or '').strip().casefold()
+        if article.code not in codes_depot and nom_norm not in noms_depot:
             if article.nom not in articles_uniques:
                 articles_uniques[article.nom] = {
                     'article': article,
@@ -4828,8 +4842,14 @@ def importer_articles_vers_depot(request, depot_id):
                             continue
                         
                         # Vérifier si l'article existe déjà dans le dépôt
-                        if Article.objects.filter(code=article_source.code, boutique=depot).exists():
-                            erreurs.append(f"{article_source.nom} (code: {article_source.code}): existe déjà dans le dépôt")
+                        # (par code ou par nom identique : pas de doublon)
+                        existant_dep, _ = trouver_article_destination(
+                            article_source, depot, creer_si_absent=False)
+                        if existant_dep is not None:
+                            if existant_dep.code and existant_dep.code == article_source.code:
+                                erreurs.append(f"{article_source.nom} (code: {article_source.code}): existe déjà dans le dépôt")
+                            else:
+                                erreurs.append(f"{article_source.nom}: existe déjà (même nom) dans le dépôt")
                             continue
                         
                         # Créer l'article dans le dépôt

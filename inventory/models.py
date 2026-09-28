@@ -910,7 +910,8 @@ class VenteRejetee(models.Model):
         ]
 
 
-def trouver_article_destination(article_source, boutique, avec_categorie=True):
+def trouver_article_destination(article_source, boutique, avec_categorie=True,
+                                creer_si_absent=True):
     """Retrouve l'article correspondant dans la boutique de destination.
 
     Priorité :
@@ -918,8 +919,9 @@ def trouver_article_destination(article_source, boutique, avec_categorie=True):
     2. le nom identique, insensible à la casse et aux espaces
        (même règle que l'autocomplétion de la saisie de facture).
 
-    Retourne (article, cree) où cree=True si aucun article n'a été trouvé
-    (l'article est alors créé dans la boutique de destination).
+    Avec creer_si_absent=False, sert uniquement de recherche : retourne
+    (None, False) au lieu de créer un article.
+    Retourne (article, cree) où cree=True si l'article a été créé.
     """
     # 1. Par code
     if article_source.code:
@@ -934,6 +936,9 @@ def trouver_article_destination(article_source, boutique, avec_categorie=True):
         for article in candidats:
             if (article.nom or '').strip().casefold() == nom_source:
                 return article, False
+
+    if not creer_si_absent:
+        return None, False
 
     # 3. Création : on recopie un maximum d'informations (devise, pcs/carton...)
     code = article_source.code
