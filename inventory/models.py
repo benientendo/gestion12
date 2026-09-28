@@ -910,6 +910,52 @@ class VenteRejetee(models.Model):
         ]
 
 
+def trouver_article_destination(article_source, boutique, avec_categorie=True):
+    """Retrouve l'article correspondant dans la boutique de destination.
+
+    Priorité :
+    1. le code (règle historique, identique entre dépôt et boutique) ;
+    2. le nom identique, insensible à la casse et aux espaces
+       (même règle que l'autocomplétion de la saisie de facture).
+
+    Retourne (article, cree) où cree=True si aucun article n'a été trouvé
+    (l'article est alors créé dans la boutique de destination).
+    """
+    # 1. Par code
+    if article_source.code:
+        article = Article.objects.filter(code=article_source.code, boutique=boutique).first()
+        if article:
+            return article, False
+
+    # 2. Par nom (articles actifs uniquement, sans fusion approximative)
+    nom_source = (article_source.nom or '').strip().casefold()
+    if nom_source:
+        candidats = Article.objects.filter(boutique=boutique, est_actif=True).order_by('id')
+        for article in candidats:
+            if (article.nom or '').strip().casefold() == nom_source:
+                return article, False
+
+    # 3. Création : on recopie un maximum d'informations (devise, pcs/carton...)
+    code = article_source.code
+    if not code:
+        # code vide = pas d'unicité possible (unique_together code/boutique)
+        code = f"ART-{uuid.uuid4().hex[:8].upper()}"
+    article = Article.objects.create(
+        code=code,
+        nom=article_source.nom,
+        description=article_source.description,
+        devise=article_source.devise,
+        prix_vente=article_source.prix_vente,
+        prix_achat=article_source.prix_achat,
+        pieces_par_carton=article_source.pieces_par_carton,
+        categorie=article_source.categorie if avec_categorie else None,
+        boutique=boutique,
+        quantite_stock=0,
+        est_actif=True
+    )
+    return article, True
+
+
 class TransfertStock(models.Model):
     """Transfert de stock du dépôt vers une boutique."""
     
@@ -973,26 +1019,13 @@ class TransfertStock(models.Model):
             utilisateur=valide_par_user
         )
         
-        try:
-            article_boutique = Article.objects.get(code=article_depot.code, boutique=self.boutique_destination)
-            self.stock_boutique_avant = article_boutique.quantite_stock
-            article_boutique.quantite_stock += self.quantite
-            article_boutique.save()
-            self.stock_boutique_apres = article_boutique.quantite_stock
-        except Article.DoesNotExist:
-            article_boutique = Article.objects.create(
-                code=article_depot.code,
-                nom=article_depot.nom,
-                description=article_depot.description,
-                prix_vente=article_depot.prix_vente,
-                prix_achat=article_depot.prix_achat,
-                categorie=article_depot.categorie,
-                boutique=self.boutique_destination,
-                quantite_stock=self.quantite,
-                est_actif=True
-            )
-            self.stock_boutique_avant = 0
-            self.stock_boutique_apres = self.quantite
+        # Article de destination : par code, sinon par nom identique
+        # (évite les doublons quand le point de vente a déjà le même article)
+        article_boutique, cree = trouver_article_destination(article_depot, self.boutique_destination)
+        self.stock_boutique_avant = 0 if cree else article_boutique.quantite_stock
+        article_boutique.quantite_stock += self.quantite
+        article_boutique.save()
+        self.stock_boutique_apres = article_boutique.quantite_stock
         
         MouvementStock.objects.create(
             article=article_boutique,
@@ -1009,6 +1042,7 @@ class TransfertStock(models.Model):
         self.date_validation = timezone.now()
         self.valide_par = valide_par_user
         self.save()
+        return article_boutique
     
     class Meta:
         verbose_name = "Transfert de stock"

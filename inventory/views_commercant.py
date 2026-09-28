@@ -21,7 +21,7 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 from .distribution import etat_distribution
 import json
@@ -5461,18 +5461,18 @@ def transfert_multiple(request, depot_id):
                             statut='EN_ATTENTE'
                         )
                         # Validation directe - mise à jour des stocks
-                        transfert.valider_transfert(request.user.username)
+                        article_destination = transfert.valider_transfert(request.user.username)
                         transferts_crees.append(transfert)
                         
-                        # Mettre à jour le prix de vente dans la boutique destination
+                        # Mettre à jour le prix de vente sur l'article RÉELLEMENT
+                        # utilisé en destination (code ou nom identique) : le prix
+                        # saisi écrase le précédent, seule la quantité s'ajoutait
                         if prix_vente_str:
                             try:
                                 nouveau_pv = Decimal(prix_vente_str)
                                 if nouveau_pv >= 0:
-                                    Article.objects.filter(
-                                        code=article.code,
-                                        boutique=boutique_dest
-                                    ).update(prix_vente=nouveau_pv)
+                                    article_destination.prix_vente = nouveau_pv
+                                    article_destination.save()
                             except Exception:
                                 pass
                         
@@ -8100,19 +8100,9 @@ def transfert_entre_boutiques(request, boutique_id):
                     continue
                 
                 # Trouver ou créer l'article dans la boutique de destination
-                article_dest, created = Article.objects.get_or_create(
-                    boutique=boutique_dest,
-                    code=article_source.code,
-                    defaults={
-                        'nom': article_source.nom,
-                        'description': article_source.description,
-                        'devise': article_source.devise,
-                        'prix_vente': article_source.prix_vente,
-                        'prix_achat': article_source.prix_achat,
-                        'categorie': None,  # Catégorie peut être différente
-                        'quantite_stock': 0,
-                        'est_actif': True,
-                    }
+                # (par code, sinon par nom identique : pas de doublon)
+                article_dest, _cree = trouver_article_destination(
+                    article_source, boutique_dest, avec_categorie=False
                 )
                 
                 # Décrémenter le stock source
