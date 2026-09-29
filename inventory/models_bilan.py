@@ -195,15 +195,25 @@ class BilanGeneral(models.Model):
         
         # 7. Valeur du stock
         # Stock initial (début de période)
+        # Les mouvements de regularisation d'historique (INIT-/REGL-) sont des
+        # corrections de bookkeeping, pas de vrais flux : ne pas les compter.
         mouvements_entree_avant = MouvementStock.objects.filter(
             article__in=articles_qs,
             type_mouvement='ENTREE',
             date_mouvement__lt=self.date_debut
+        ).exclude(
+            reference_document__startswith='INIT-'
+        ).exclude(
+            reference_document__startswith='REGL-'
         )
         mouvements_sortie_avant = MouvementStock.objects.filter(
             article__in=articles_qs,
             type_mouvement='SORTIE',
             date_mouvement__lt=self.date_debut
+        ).exclude(
+            reference_document__startswith='INIT-'
+        ).exclude(
+            reference_document__startswith='REGL-'
         )
         
         total_entree_avant = mouvements_entree_avant.aggregate(total=Sum('quantite'))['total'] or 0
@@ -308,6 +318,10 @@ class BilanGeneral(models.Model):
             article__in=articles_qs,
             date_mouvement__gte=date_debut,
             date_mouvement__lte=date_fin
+        ).exclude(
+            reference_document__startswith='INIT-'
+        ).exclude(
+            reference_document__startswith='REGL-'
         )
         
         entrees = mouvements.filter(type_mouvement='ENTREE').aggregate(total=Sum('quantite'))['total'] or 0

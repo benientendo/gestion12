@@ -8406,7 +8406,12 @@ def analyse_ia_mouvements(request, boutique_id):
     # --- QuerySets ---
     articles_qs  = Article.objects.filter(boutique=boutique, est_actif=True)
     mouvements_qs = MouvementStock.objects.filter(
-        article__boutique=boutique, date_mouvement__gte=debut, date_mouvement__lte=fin)
+        article__boutique=boutique, date_mouvement__gte=debut, date_mouvement__lte=fin
+    ).exclude(
+        reference_document__startswith='INIT-'
+    ).exclude(
+        reference_document__startswith='REGL-'
+    )
     ventes_qs = Vente.objects.filter(
         boutique=boutique, date_vente__gte=debut, date_vente__lte=fin, est_annulee=False)
     alertes_qs = AlerteStock.objects.filter(boutique=boutique, statut='EN_ATTENTE')

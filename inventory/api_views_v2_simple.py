@@ -3646,6 +3646,10 @@ def analyse_mouvements_simple(request):
             article__boutique=boutique,
             date_mouvement__gte=debut,
             date_mouvement__lte=fin
+        ).exclude(
+            reference_document__startswith='INIT-'
+        ).exclude(
+            reference_document__startswith='REGL-'
         )
         ventes_qs = Vente.objects.filter(
             boutique=boutique,
@@ -3965,6 +3969,10 @@ def analyse_mouvements_simple(request):
                     article=art,
                     date_mouvement__gte=debut,
                     date_mouvement__lte=fin
+                ).exclude(
+                    reference_document__startswith='INIT-'
+                ).exclude(
+                    reference_document__startswith='REGL-'
                 ).aggregate(
                     qte_vendue=Sum('quantite', filter=Q(type_mouvement='VENTE')),
                     qte_entree=Sum('quantite', filter=Q(type_mouvement='ENTREE')),

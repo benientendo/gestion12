@@ -20,7 +20,12 @@ def creer_notification_stock(sender, instance, created, **kwargs):
     """
     if not created:
         return
-    
+
+    # Regularisation d'historique (INIT-/REGL-) : ce ne sont pas de vrais
+    # mouvements de stock, inutile de notifier les terminaux MAUI.
+    if (instance.reference_document or '').startswith(('INIT-', 'REGL-')):
+        return
+
     article = instance.article
     if not article or not article.boutique:
         return
@@ -254,6 +259,12 @@ def alimenter_journal_valeur_stock(sender, instance, created, **kwargs):
     ref = instance.reference_document or ''
     type_mouv = instance.type_mouvement
 
+    # Regularisation d'historique (INIT-/REGL-) : mouvements de bookkeeping
+    # (ouverture de solde et correction de chaine), pas de vrais flux de valeur.
+    # Les comptabiliser en doublerait la valeur deja presente dans le journal.
+    if ref.startswith(('INIT-', 'REGL-')):
+        return
+
     try:
         date_mouv = instance.date_mouvement.date()
     except Exception:
@@ -301,6 +312,11 @@ def synchroniser_inventaire_en_cours(sender, instance, created, **kwargs):
     pour que l'inventaire reste synchronisé avec les ventes.
     """
     if not created:
+        return
+
+    # Regularisation d'historique (INIT-/REGL-) : le stock reel n'a pas bouge,
+    # inutile de toucher aux inventaires ouverts.
+    if (instance.reference_document or '').startswith(('INIT-', 'REGL-')):
         return
 
     article = instance.article
