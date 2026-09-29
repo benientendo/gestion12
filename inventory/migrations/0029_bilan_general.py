@@ -85,21 +85,8 @@ class Migration(migrations.Migration):
             },
         ),
 
-        # Ajout des index pour optimiser les performances
-        migrations.RunSQL(
-            "CREATE INDEX IF NOT EXISTS bilan_commercant_periode_idx ON inventory_bilangeneral (commercant_id, periode, date_generation);",
-            reverse_sql="DROP INDEX IF EXISTS bilan_commercant_periode_idx;"
-        ),
-
-        migrations.RunSQL(
-            "CREATE INDEX IF NOT EXISTS bilan_boutique_date_idx ON inventory_bilangeneral (boutique_id, date_generation);",
-            reverse_sql="DROP INDEX IF EXISTS bilan_boutique_date_idx;"
-        ),
-
-        migrations.RunSQL(
-            "CREATE INDEX IF NOT EXISTS bilan_statut_date_idx ON inventory_bilangeneral (statut, date_generation);",
-            reverse_sql="DROP INDEX IF EXISTS bilan_statut_date_idx;"
-        ),
+        # Index BilanGénéral créés par la migration 0031 (AddIndex, mêmes noms)
+        # — ne pas les recréer ici : conflit « index already exists » sur DB fraîche.
 
         migrations.RunSQL(
             "CREATE INDEX IF NOT EXISTS indicateur_client_lue_date_idx ON inventory_indicateurperformance (commercant_id, categorie, nom);",

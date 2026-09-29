@@ -21,7 +21,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Prefetch
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner, CodeCloture
 from .serializers import ArticleSerializer, ArticleAvecVariantesSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created, notify_dashboard_stats
 
@@ -4719,3 +4719,74 @@ def merchant_messages_mark_read(request, message_id):
             'error': 'Erreur interne du serveur',
             'code': 'INTERNAL_ERROR'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verifier_code_cloture_simple(request):
+    """
+    POST /api/v2/simple/cloture/verifier-code/
+
+    Vérifie le code de clôture de la journée généré par le commerçant (back-office).
+    Body: {"boutique_id": 5, "code": "123456"}
+    Réponse: {"success": true, "valide": bool, "code": CODE, "message": str}
+    """
+    boutique_id = request.data.get('boutique_id')
+    code = (request.data.get('code') or '').strip()
+    numero_serie = request.data.get('numero_serie') or request.headers.get('X-Device-Serial')
+
+    if not code:
+        return Response({
+            'error': "Le champ 'code' est requis",
+            'code': 'MISSING_CODE'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # Résolution de la boutique: body ou header device serial
+    boutique = None
+    if boutique_id:
+        boutique = get_object_or_404(Boutique, id=boutique_id)
+    elif numero_serie:
+        try:
+            terminal = Client.objects.get(numero_serie=numero_serie)
+            boutique = terminal.boutique
+        except Client.DoesNotExist:
+            return Response({
+                'error': 'Terminal non trouvé',
+                'code': 'TERMINAL_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    if boutique is None:
+        return Response({
+            'error': "Le champ 'boutique_id' est requis",
+            'code': 'MISSING_BOUTIQUE'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    today = timezone.localdate()
+    code_obj = CodeCloture.objects.filter(
+        boutique=boutique,
+        date_jour=today,
+        actif=True
+    ).order_by('-date_generation').first()
+
+    if code_obj is None:
+        return Response({
+            'success': True,
+            'valide': False,
+            'code': 'NO_CODE',
+            'message': "Aucun code de clôture n'a été généré pour aujourd'hui. Contactez le commerçant."
+        })
+
+    if code_obj.code.upper() != code.upper():
+        return Response({
+            'success': True,
+            'valide': False,
+            'code': 'CODE_INVALID',
+            'message': 'Code de clôture incorrect.'
+        })
+
+    return Response({
+        'success': True,
+        'valide': True,
+        'code': 'CODE_OK',
+        'message': 'Code vérifié — clôture autorisée.'
+    })

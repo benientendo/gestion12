@@ -93,6 +93,7 @@ urlpatterns = [
     path('commercant/boutiques/creer/', views_commercant.creer_boutique, name='commercant_creer_boutique'),
     path('commercant/boutiques/<int:boutique_id>/', views_commercant.detail_boutique, name='commercant_detail_boutique'),
     path('commercant/boutiques/<int:boutique_id>/modifier/', views_commercant.modifier_boutique, name='modifier_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/generer-code-cloture/', views_commercant.generer_code_cloture, name='generer_code_cloture'),
     path('commercant/boutiques/<int:boutique_id>/supprimer/', views_commercant.supprimer_boutique, name='supprimer_boutique'),
     path('commercant/boutiques/<int:boutique_id>/toggle-pos/', views_commercant.toggle_boutique_pos, name='toggle_boutique_pos'),
     path('commercant/boutiques/<int:boutique_id>/entrer/', views_commercant.entrer_boutique, name='entrer_boutique'),

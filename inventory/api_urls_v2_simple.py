@@ -98,4 +98,8 @@ urlpatterns = [
     # ===== MESSAGES COMMERCANT =====
     path('merchant-messages/', api_views_v2_simple.merchant_messages_list, name='merchant_messages_list'),
     path('merchant-messages/<int:message_id>/read/', api_views_v2_simple.merchant_messages_mark_read, name='merchant_messages_mark_read'),
+
+    # ===== CLÔTURE DE JOURNÉE =====
+    path('cloture/verifier-code/', api_views_v2_simple.verifier_code_cloture_simple, name='verifier_code_cloture'),
+    path('cloture/verifier-code', api_views_v2_simple.verifier_code_cloture_simple, name='verifier_code_cloture_no_slash'),
 ]

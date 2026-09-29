@@ -45,6 +45,13 @@
                     <a href="{% url 'inventory:modifier_boutique' boutique.id %}" class="btn btn-primary me-2">
                         <i class="fas fa-edit"></i> Modifier
                     </a>
+                    <form method="post" action="{% url 'inventory:generer_code_cloture' boutique.id %}" class="d-inline"
+                          onsubmit="return confirm('Générer un nouveau code de clôture ?\nL\u2019ancien code sera immédiatement invalidé.');">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-outline-warning me-2">
+                            <i class="fas fa-key"></i> Code de clôture
+                        </button>
+                    </form>
                     <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-success">
                         <i class="fas fa-sign-in-alt"></i> Entrer dans la Boutique
                     </a>
@@ -129,6 +136,19 @@
                     <div class="mb-3">
                         <strong>Code Boutique:</strong><br>
                         <span class="text-muted">{{ boutique.code }}</span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>🔑 Code de clôture du jour:</strong><br>
+                        {% if code_cloture_dujour %}
+                            <span class="badge bg-success fs-6" style="letter-spacing:2px;">{{ code_cloture_dujour.code }}</span>
+                            <small class="text-muted d-block mt-1">
+                                Généré le {{ code_cloture_dujour.date_generation|date:"d/m/Y H:i" }} —
+                                à saisir sur le terminal pour valider la clôture.
+                            </small>
+                        {% else %}
+                            <span class="text-muted">Aucun code généré pour aujourd'hui.</span><br>
+                            <small class="text-muted">Cliquez sur « Code de clôture » pour en générer un.</small>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
                         <strong>Type de Commerce:</strong><br>

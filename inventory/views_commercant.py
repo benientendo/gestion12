@@ -22,7 +22,7 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination, CodeCloture
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 from .distribution import etat_distribution
 import json
@@ -636,10 +636,43 @@ def detail_boutique(request, boutique_id):
         'nb_ventes_annulees_jour': nb_ventes_annulees_jour,
         'total_annule_jour': total_annule_jour,
         'nb_ventes_annulees_mois': nb_ventes_annulees_mois,
-        'total_annule_mois': total_annule_mois
+        'total_annule_mois': total_annule_mois,
+        # 🔑 Code de clôture du jour (terminal MAUI)
+        'code_cloture_dujour': CodeCloture.objects.filter(
+            boutique=boutique,
+            date_jour=aujourd_hui,
+            actif=True
+        ).order_by('-date_generation').first()
     }
     
     return render(request, 'inventory/commercant/details_boutique.html', context)
+
+@login_required
+@commercant_required
+@boutique_access_required
+@require_POST
+def generer_code_cloture(request, boutique_id):
+    """Génère (ou régénère) le code de clôture de la journée pour une boutique."""
+    import secrets
+    boutique = request.boutique
+
+    # Un seul code actif à la fois : on invalide l'ancien
+    CodeCloture.objects.filter(boutique=boutique, actif=True).update(actif=False)
+
+    code = f"{secrets.randbelow(1000000):06d}"
+    CodeCloture.objects.create(
+        boutique=boutique,
+        code=code,
+        date_jour=timezone.localdate(),
+        actif=True,
+        genere_par=request.user
+    )
+    messages.success(
+        request,
+        f"🔑 Code de clôture du jour généré : {code} — "
+        f"transmettez-le au terminal pour valider la clôture de la journée."
+    )
+    return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
 
 # ===== GESTION DES ARTICLES =====
 
