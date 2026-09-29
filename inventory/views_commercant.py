@@ -4483,8 +4483,14 @@ def detail_transfert(request, transfert_id):
         messages.error(request, "Accès non autorisé")
         return redirect('inventory:commercant_dashboard')
     
+    article_destination = None
+    if transfert.statut == 'VALIDE':
+        article_destination, _ = trouver_article_destination(
+            transfert.article, transfert.boutique_destination, creer_si_absent=False)
+    
     context = {
         'transfert': transfert,
+        'article_destination': article_destination,
     }
     
     return render(request, 'inventory/commercant/detail_transfert.html', context)
@@ -4506,12 +4512,10 @@ def valider_transfert(request, transfert_id):
             with transaction.atomic():
                 transfert.valider_transfert(request.user.username)
             
-            from .websocket_utils import _push_fcm
-            _push_fcm(
+            from .websocket_utils import _push_fcm, notify_sync_required
+            notify_sync_required(
                 transfert.boutique_destination.id,
-                "Transfert reçu",
-                f"{transfert.quantite} x {transfert.article.nom} transféré depuis {transfert.depot_source.nom}.",
-                data={'type': 'transfer_received', 'article_id': transfert.article.id}
+                f"{transfert.quantite} x {transfert.article.nom} reçu de {transfert.depot_source.nom} - en attente de validation côté client"
             )
             _push_fcm(
                 transfert.depot_source.id,
@@ -5523,6 +5527,16 @@ def transfert_multiple(request, depot_id):
         
         # Rediriger vers le bon de transfert imprimable
         if transferts_crees:
+            from .websocket_utils import notify_sync_required
+            totaux = {}
+            for transfert in transferts_crees:
+                dest_id = transfert.boutique_destination_id
+                totaux[dest_id] = totaux.get(dest_id, 0) + transfert.quantite
+            for dest_id, total in totaux.items():
+                notify_sync_required(
+                    dest_id,
+                    f"{total} unité(s) reçue(s) du dépôt - en attente de validation côté client"
+                )
             return redirect('inventory:bon_transfert', depot_id=depot.id, reference_lot=reference_lot)
         
         return redirect('inventory:detail_depot', depot_id=depot.id)
@@ -5636,12 +5650,14 @@ def valider_transferts_multiples(request, depot_id):
         
         valides = 0
         erreurs = []
+        transferts_valides = []
         
         for transfert_id in transferts_ids:
             try:
                 transfert = TransfertStock.objects.get(id=transfert_id, depot_source=depot, statut='EN_ATTENTE')
                 with transaction.atomic():
                     transfert.valider_transfert(request.user.username)
+                transferts_valides.append(transfert)
                 valides += 1
             except TransfertStock.DoesNotExist:
                 erreurs.append(f"Transfert {transfert_id} introuvable ou déjà traité")
@@ -5650,6 +5666,16 @@ def valider_transferts_multiples(request, depot_id):
         
         if valides:
             messages.success(request, f"{valides} transfert(s) validé(s) avec succès")
+            from .websocket_utils import notify_sync_required
+            totaux = {}
+            for transfert in transferts_valides:
+                dest_id = transfert.boutique_destination_id
+                totaux[dest_id] = totaux.get(dest_id, 0) + transfert.quantite
+            for dest_id, total in totaux.items():
+                notify_sync_required(
+                    dest_id,
+                    f"{total} unité(s) reçue(s) du dépôt - en attente de validation côté client"
+                )
         for erreur in erreurs:
             messages.warning(request, erreur)
     

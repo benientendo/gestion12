@@ -775,6 +775,33 @@ class Boutique(models.Model):
         unique_together = ['commercant', 'nom']  # Nom unique par commerçant
 
 
+class CodeCloture(models.Model):
+    """
+    Code de clôture de journée généré par le commerçant (back-office).
+    Le terminal MAUI doit saisir ce code pour valider la clôture de la journée.
+    """
+    boutique = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name='codes_cloture',
+                                 help_text="Boutique concernée par ce code")
+    code = models.CharField(max_length=20, help_text="Code à saisir sur le terminal")
+    date_jour = models.DateField(help_text="Jour d'application du code (jour de la clôture)")
+    actif = models.BooleanField(default=True, help_text="Seul le dernier code actif est accepté")
+    genere_par = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                                   related_name='codes_cloture_generes',
+                                   help_text="Commerçant ayant généré le code")
+    date_generation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Code de clôture"
+        verbose_name_plural = "Codes de clôture"
+        ordering = ['-date_generation']
+        indexes = [
+            models.Index(fields=['boutique', 'date_jour', 'actif']),
+        ]
+
+    def __str__(self):
+        return f"Clôture {self.boutique.code_boutique} du {self.date_jour} : {self.code}"
+
+
 class RapportCaisse(models.Model):
     """Rapport de caisse quotidien lié à une boutique et un terminal MAUI (Client)."""
 
@@ -1049,21 +1076,13 @@ class TransfertStock(models.Model):
         # (évite les doublons quand le point de vente a déjà le même article)
         article_boutique, cree = trouver_article_destination(article_depot, self.boutique_destination)
         self.stock_boutique_avant = 0 if cree else article_boutique.quantite_stock
-        article_boutique.quantite_stock += self.quantite
+
+        article_boutique.est_valide_client = False
+        article_boutique.quantite_envoyee = (article_boutique.quantite_envoyee or 0) + self.quantite
+        article_boutique.date_envoi = timezone.now()
         article_boutique.save()
         self.stock_boutique_apres = article_boutique.quantite_stock
-        
-        MouvementStock.objects.create(
-            article=article_boutique,
-            type_mouvement='ENTREE',
-            quantite=self.quantite,
-            stock_avant=self.stock_boutique_avant,
-            stock_apres=self.stock_boutique_apres,
-            commentaire=f"Transfert depuis {self.depot_source.nom}",
-            reference_document=f"TRANSFERT-{self.id}",
-            utilisateur=valide_par_user
-        )
-        
+
         self.statut = 'VALIDE'
         self.date_validation = timezone.now()
         self.valide_par = valide_par_user

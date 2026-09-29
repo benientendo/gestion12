@@ -150,6 +150,21 @@
                     <span class="info-label">Stock boutique après:</span>
                     <span class="info-value">{{ transfert.stock_boutique_apres }}</span>
                 </div>
+                
+                {% if article_destination %}
+                <div class="info-row">
+                    <span class="info-label">Côté client MAUI:</span>
+                    <span class="info-value">
+                        {% if article_destination.est_valide_client %}
+                            <span class="badge bg-success">Validé</span>
+                            {% if article_destination.date_validation %}le {{ article_destination.date_validation|date:"d/m/Y à H:i" }}{% endif %}
+                        {% else %}
+                            <span class="badge bg-warning text-dark">En attente de validation</span>
+                            {{ article_destination.quantite_envoyee }} unité(s)
+                        {% endif %}
+                    </span>
+                </div>
+                {% endif %}
             </div>
             {% endif %}
 
