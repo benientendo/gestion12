@@ -176,6 +176,9 @@ class Article(models.Model):
         # Mouvement d'ouverture : un article cree avec un stock initial doit avoir
         # un mouvement, sinon le premier mouvement reel affiche "stock avant: 0"
         # alors que le stock reel est deja non nul (historique incoherent).
+        # Prefixe OUVERTURE- (et pas INIT-) : c'est un vrai flux de stock, il
+        # compte dans les bilans ; INIT-/REGL- est reserve aux corrections de
+        # l'historique, exclues des signaux et des agregats.
         # Les flux qui creent leur propre mouvement (approvisionnement) passent
         # l'attribut `sans_mouvement_initial = True` avant l'enregistrement.
         if (est_nouveau and self.quantite_stock
@@ -187,7 +190,7 @@ class Article(models.Model):
                 stock_avant=0,
                 stock_apres=self.quantite_stock,
                 commentaire='Solde initial a la creation',
-                reference_document=f'INIT-{self.pk}',
+                reference_document=f'OUVERTURE-{self.pk}',
             )
     
     @property

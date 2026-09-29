@@ -194,43 +194,42 @@ class BilanGeneral(models.Model):
         self.resultat_net = self.resultat_operationnel  # Simplifié - pas d'impôts pour le moment
         
         # 7. Valeur du stock
-        # Stock initial (début de période)
-        # Les mouvements de regularisation d'historique (INIT-/REGL-) sont des
-        # corrections de bookkeeping, pas de vrais flux : ne pas les compter.
-        mouvements_entree_avant = MouvementStock.objects.filter(
-            article__in=articles_qs,
-            type_mouvement='ENTREE',
-            date_mouvement__lt=self.date_debut
-        ).exclude(
-            reference_document__startswith='INIT-'
-        ).exclude(
-            reference_document__startswith='REGL-'
-        )
-        mouvements_sortie_avant = MouvementStock.objects.filter(
-            article__in=articles_qs,
-            type_mouvement='SORTIE',
-            date_mouvement__lt=self.date_debut
-        ).exclude(
-            reference_document__startswith='INIT-'
-        ).exclude(
-            reference_document__startswith='REGL-'
-        )
-        
-        total_entree_avant = mouvements_entree_avant.aggregate(total=Sum('quantite'))['total'] or 0
-        total_sortie_avant = mouvements_sortie_avant.aggregate(total=Sum('quantite'))['total'] or 0
-        
-        # Calcul de la valeur du stock initial
+        # Flux par article depuis une date : delta = stock_apres - stock_avant
+        # (seule convention fiable : le signe de `quantite` varie selon les types).
+        # Les regularisations INIT/REGL sont exclues : ce sont des corrections
+        # de donnees, pas de vrais flux de stock.
+        def flux_depuis(date_limite):
+            mvts = MouvementStock.objects.filter(
+                article__in=articles_qs,
+                date_mouvement__gte=date_limite,
+            ).exclude(
+                reference_document__startswith='INIT-'
+            ).exclude(
+                reference_document__startswith='REGL-'
+            )
+            return {
+                art_id: delta or 0
+                for art_id, delta in mvts.values_list('article_id').annotate(
+                    delta=Sum(F('stock_apres') - F('stock_avant')))
+            }
+
+        # Stock au debut / a la fin de la periode, CHAQUE article avec SES
+        # propres mouvements :  stock(t) = stock actuel - flux entre t et maintenant
+        flux_debut = flux_depuis(self.date_debut)
+        flux_fin = flux_depuis(self.date_fin)
+
         self.valeur_stock_initiale = Decimal('0')
+        self.valeur_stock_finale = Decimal('0')
         for article in articles_qs:
-            stock_initial = article.quantite_stock - (total_entree_avant - total_sortie_avant)
-            if stock_initial > 0 and article.prix_achat:
-                self.valeur_stock_initiale += stock_initial * article.prix_achat
-        
-        # Stock final (fin de période)
-        self.valeur_stock_finale = articles_qs.aggregate(
-            total=Sum(F('quantite_stock') * F('prix_achat'))
-        )['total'] or 0
-        
+            if not article.prix_achat:
+                continue
+            stock_debut = article.quantite_stock - flux_debut.get(article.id, 0)
+            stock_fin = article.quantite_stock - flux_fin.get(article.id, 0)
+            if stock_debut > 0:
+                self.valeur_stock_initiale += stock_debut * article.prix_achat
+            if stock_fin > 0:
+                self.valeur_stock_finale += stock_fin * article.prix_achat
+
         self.variation_stock = self.valeur_stock_finale - self.valeur_stock_initiale
         
         # 8. Données détaillées pour analyse
@@ -260,7 +259,7 @@ class BilanGeneral(models.Model):
             nb_ventes=Count('id'),
             ca_total=Sum('montant_total'),
             ca_usd_total=Sum('montant_total_usd')
-        ).order('jour')
+        ).order_by('jour')
         
         return [
             {
