@@ -62,11 +62,16 @@
     .bon-engagement h6 { margin: 0 0 8px; font-weight: 700; font-size: .9rem; }
     .bon-engagement p { margin: 0; font-size: .85rem; color: #333; line-height: 1.6; }
 
+    /* Note / observation */
+    .bon-note { background: #f5f8ff; border: 1px dashed #667eea; border-left: 4px solid #667eea; border-radius: 6px; padding: 14px 18px; margin-bottom: 25px; page-break-inside: avoid; }
+    .bon-note-title { font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #667eea; margin-bottom: 6px; }
+    .bon-note-text { font-size: .92rem; color: #333; line-height: 1.65; word-break: break-word; }
+
     /* Signatures */
-    .bon-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 30px; page-break-inside: avoid; }
+    .bon-signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; margin-top: 30px; page-break-inside: avoid; }
     .bon-sig-bloc { text-align: center; }
     .bon-sig-bloc .sig-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; color: #555; margin-bottom: 5px; letter-spacing: .5px; }
-    .bon-sig-bloc .sig-name { font-size: .92rem; font-weight: 600; margin-bottom: 40px; }
+    .bon-sig-bloc .sig-name { font-size: .9rem; font-weight: 600; margin-bottom: 34px; min-height: 1.3em; word-break: break-word; }
     .bon-sig-bloc .sig-line { border-top: 1px solid #333; padding-top: 8px; font-size: .78rem; color: #888; }
 
     /* Footer */
@@ -128,6 +133,14 @@
                 <div class="val">{{ valide_par|default:"—" }}</div>
             </div>
         </div>
+
+        <!-- NOTE / OBSERVATION -->
+        {% if note %}
+        <div class="bon-note">
+            <div class="bon-note-title"><i class="fas fa-sticky-note me-1"></i>Note / Observation</div>
+            <div class="bon-note-text">{{ note|linebreaksbr }}</div>
+        </div>
+        {% endif %}
 
         <!-- TABLEAU DES ARTICLES -->
         <table class="bon-table">
@@ -210,6 +223,11 @@
                 <div class="sig-title"><i class="fas fa-store me-1"></i>Le Réceptionnaire (Vendeur)</div>
                 <div class="sig-name">______________________________</div>
                 <div class="sig-line">Nom, signature et date de réception</div>
+            </div>
+            <div class="bon-sig-bloc">
+                <div class="sig-title"><i class="fas fa-user-tie me-1"></i>Le Gérant</div>
+                <div class="sig-name">{{ commercant.nom_responsable|default:commercant.user.get_full_name|default:"______________________________" }}</div>
+                <div class="sig-line">Signature et cachet du gérant</div>
             </div>
         </div>
 

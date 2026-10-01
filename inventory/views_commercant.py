@@ -5650,6 +5650,13 @@ def bon_transfert(request, depot_id, reference_lot):
         total_quantite += t.quantite
         total_cout_vente += t.cout_vente_ligne
     
+    note = ''
+    for t in transferts_list:
+        commentaire = (t.commentaire or '').strip()
+        if commentaire:
+            note = commentaire
+            break
+    
     context = {
         'depot': depot,
         'transferts': transferts_list,
@@ -5662,6 +5669,7 @@ def bon_transfert(request, depot_id, reference_lot):
         'total_quantite': total_quantite,
         'total_cout_vente': total_cout_vente,
         'commercant': commercant,
+        'note': note,
     }
     
     return render(request, 'inventory/commercant/bon_transfert.html', context)
