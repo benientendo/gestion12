@@ -8916,6 +8916,215 @@ def journal_valeur_stock_boutique(request, boutique_id):
     return render(request, 'inventory/boutique/journal_valeur_stock.html', context)
 
 
+# Libellés et descriptions des colonnes cliquables du journal de valeur
+LIBELLES_DETAIL_JOURNAL = {
+    'valeur_stock_precedent': (
+        'Stock préc.',
+        'Valeur du stock en fin de journée précédente, reprise en ouverture de la journée.',
+    ),
+    'montant_inventaire': (
+        'Inventaire',
+        "Impact des régularisations d'inventaire (mouvements AJUSTEMENT) sur la journée.",
+    ),
+    'valeur_stock_ajoute': (
+        'Stock ajouté',
+        'Entrées de stock, retours clients et validations de transfert reçues ce jour.',
+    ),
+    'valeur_transfert_entrant': (
+        'Transfert IN',
+        'Entrées de transfert provenant d\'un autre point de vente (référence TRANSFERT-).',
+    ),
+    'impact_modification_prix': (
+        'Modif. prix',
+        'Variation de valeur causée par les changements de prix de vente : '
+        '(nouveau PV − ancien PV) × quantité en stock.',
+    ),
+    'valeur_transfert_sortant': (
+        'Transfert OUT',
+        'Sorties de transfert envoyées vers un autre point de vente (référence TRANSFERT-).',
+    ),
+    'valeur_stock_sorti': (
+        'Stock sorti',
+        'Sorties manuelles, pertes et casse hors transfert.',
+    ),
+    'valeur_ventes': (
+        'Ventes',
+        'Articles vendus ce jour, valorisés au prix de vente catalogue.',
+    ),
+    'montant_reductions': (
+        'Réduction',
+        'Écart de négociation sur les ventes : (prix original − prix vendu) × quantité.',
+    ),
+    'valeur_stock_reel': (
+        'Stock réel',
+        'Détail du stock en rayon : quantité × prix de vente de chaque article actif en CDF.',
+    ),
+}
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def detail_valeur_journal(request, boutique_id, journal_id, champ):
+    """Détail d'une valeur cliquable de la ligne du journal de valeur du stock."""
+    boutique = request.boutique
+
+    if champ not in LIBELLES_DETAIL_JOURNAL:
+        messages.error(request, "Cette valeur n'existe pas dans le journal.")
+        return redirect('inventory:journal_valeur_stock_boutique', boutique_id=boutique_id)
+
+    journal = get_object_or_404(JournalValeurStock, id=journal_id, boutique=boutique)
+    libelle, description = LIBELLES_DETAIL_JOURNAL[champ]
+    valeur = getattr(journal, champ) or Decimal('0')
+    jour = journal.date
+
+    lignes = []
+    total_lignes = Decimal('0')
+    mode_table = 'mouvements'
+    info_sup = None
+    articles_stock = None
+    ligne_veille = None
+
+    if champ == 'valeur_stock_reel':
+        mode_table = 'articles'
+        articles_stock = list(
+            boutique.articles.filter(
+                est_actif=True, quantite_stock__gt=0, devise='CDF'
+            ).order_by('nom')
+        )
+        for art in articles_stock:
+            lignes.append({
+                'nom': art.nom,
+                'quantite': art.quantite_stock,
+                'prix': art.prix_vente,
+                'valeur': Decimal(str(art.quantite_stock)) * Decimal(str(art.prix_vente or 0)),
+            })
+            total_lignes += lignes[-1]['valeur']
+
+    elif champ == 'montant_reductions':
+        mode_table = 'reductions'
+        from django.db.models import DecimalField, ExpressionWrapper
+        reduites = (
+            LigneVente.objects.filter(
+                Q(vente__boutique=boutique) | Q(vente__client_maui__boutique=boutique),
+                vente__date_vente__date=jour,
+                vente__est_annulee=False,
+                prix_original__isnull=False,
+                devise='CDF',
+            )
+            .annotate(ecart=ExpressionWrapper(
+                (F('prix_original') - F('prix_unitaire')) * F('quantite'),
+                output_field=DecimalField(max_digits=18, decimal_places=2),
+            ))
+            .filter(ecart__gt=0)
+            .select_related('vente', 'article')
+            .order_by('vente__date_vente')
+        )
+        for lv in reduites:
+            lignes.append({
+                'numero_facture': lv.vente.numero_facture,
+                'nom': lv.article.nom,
+                'quantite': lv.quantite,
+                'prix_original': lv.prix_original,
+                'prix_unitaire': lv.prix_unitaire,
+                'motif': lv.motif_reduction,
+                'valeur': lv.ecart,
+            })
+            total_lignes += lv.ecart
+
+    elif champ == 'valeur_stock_precedent':
+        mode_table = 'info'
+        ligne_veille = (
+            JournalValeurStock.objects
+            .filter(boutique=boutique, date__lt=jour)
+            .order_by('-date')
+            .first()
+        )
+        info_sup = (
+            "La valeur du stock précédent n'est pas un mouvement : c'est la "
+            "valeur réelle du stock enregistrée en fin de journée du jour précédent."
+        )
+
+    elif champ == 'impact_modification_prix':
+        mode_table = 'info'
+        info_sup = (
+            "Les changements de prix de vente sont appliqués directement sur les "
+            "articles : le journal enregistre seulement l'impact total du jour "
+            "((nouveau PV − ancien PV) × quantité en stock), sans détail par article."
+        )
+
+    else:
+        base_qs = (
+            MouvementStock.objects
+            .filter(article__boutique=boutique, date_mouvement__date=jour)
+            .exclude(reference_document__startswith=('INIT-', 'REGL-'))
+            .select_related('article')
+            .order_by('date_mouvement')
+        )
+
+        if champ == 'valeur_ventes':
+            qs = base_qs.filter(type_mouvement='VENTE')
+        elif champ == 'valeur_transfert_entrant':
+            qs = base_qs.filter(
+                type_mouvement='ENTREE',
+                reference_document__startswith='TRANSFERT-',
+            )
+        elif champ == 'valeur_stock_ajoute':
+            qs = base_qs.filter(
+                type_mouvement__in=('ENTREE', 'RETOUR')
+            ).exclude(reference_document__startswith='TRANSFERT-')
+        elif champ == 'valeur_transfert_sortant':
+            qs = base_qs.filter(
+                type_mouvement='SORTIE',
+                reference_document__startswith='TRANSFERT-',
+            )
+        elif champ == 'valeur_stock_sorti':
+            qs = base_qs.filter(
+                type_mouvement='SORTIE'
+            ).exclude(reference_document__startswith='TRANSFERT-')
+        elif champ == 'montant_inventaire':
+            qs = base_qs.filter(type_mouvement='AJUSTEMENT')
+        else:
+            qs = base_qs.none()
+
+        for m in qs:
+            pv = Decimal(str(m.article.prix_vente or 0))
+            if m.type_mouvement == 'AJUSTEMENT':
+                val = pv * Decimal(str(m.quantite))
+            else:
+                val = pv * Decimal(str(abs(m.quantite)))
+            lignes.append({
+                'heure': m.date_mouvement,
+                'nom': m.article.nom,
+                'type_mouvement': m.get_type_mouvement_display(),
+                'quantite': m.quantite,
+                'reference': m.reference_document,
+                'commentaire': m.commentaire,
+                'utilisateur': m.utilisateur,
+                'valeur': val,
+            })
+            total_lignes += val
+
+    ecart = total_lignes - valeur if mode_table in ('mouvements', 'articles', 'reductions') else None
+
+    context = {
+        'boutique': boutique,
+        'journal': journal,
+        'champ': champ,
+        'libelle': libelle,
+        'description': description,
+        'valeur': valeur,
+        'mode_table': mode_table,
+        'lignes': lignes,
+        'total_lignes': total_lignes,
+        'ecart': ecart,
+        'info_sup': info_sup,
+        'articles_stock': articles_stock,
+        'ligne_veille': ligne_veille,
+    }
+    return render(request, 'inventory/boutique/detail_valeur_journal.html', context)
+
+
 # ===== SCANNER GLOBAL - Recherche code-barres toutes boutiques =====
 
 @login_required

@@ -50,6 +50,20 @@
         color: white;
         border-radius: 12px;
     }
+    a.journal-valeur {
+        color: inherit;
+        text-decoration: none;
+        border-radius: 3px;
+        padding: 1px 3px;
+        cursor: pointer;
+    }
+    a.journal-valeur:hover, a.journal-valeur:focus {
+        text-decoration: underline;
+        text-decoration-style: dotted;
+        text-underline-offset: 3px;
+        background-color: rgba(255, 111, 0, 0.14);
+        outline: none;
+    }
     @media (max-width: 576px) {
         .journal-table {
             font-size: 0.75rem;
@@ -116,7 +130,10 @@
             <div class="card">
                 <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="fas fa-table me-2"></i>Journal des mouvements de valeur</h5>
-                    <span class="badge bg-light text-dark">{{ lignes|length }} ligne{{ lignes|length|pluralize:"s" }}</span>
+                    <span class="d-flex align-items-center gap-2">
+                        <span class="badge bg-light text-dark"><i class="fas fa-mouse-pointer me-1"></i>Cliquez sur une valeur pour voir le détail</span>
+                        <span class="badge bg-light text-dark">{{ lignes|length }} ligne{{ lignes|length|pluralize:"s" }}</span>
+                    </span>
                 </div>
                 <div class="card-body p-0">
                     {% if lignes %}
@@ -141,30 +158,50 @@
                                 {% for l in lignes %}
                                 <tr>
                                     <td><strong>{{ l.date|date:"d/m/Y" }}</strong></td>
-                                    <td class="text-end">{{ l.valeur_stock_precedent|floatformat:0|intcomma }}</td>
-                                    <td class="text-end">{{ l.montant_inventaire|floatformat:0|intcomma }}</td>
-                                    <td class="text-end text-increase">{{ l.valeur_stock_ajoute|floatformat:0|intcomma }}</td>
-                                    <td class="text-end" style="color:#1565C0;">{{ l.valeur_transfert_entrant|floatformat:0|intcomma }}</td>
                                     <td class="text-end">
-                                        {% if l.impact_modification_prix > 0 %}
-                                            <span class="text-increase">+{{ l.impact_modification_prix|floatformat:0|intcomma }}</span>
-                                        {% elif l.impact_modification_prix < 0 %}
-                                            <span class="text-decrease">{{ l.impact_modification_prix|floatformat:0|intcomma }}</span>
-                                        {% else %}
-                                            <span class="text-neutral">0</span>
-                                        {% endif %}
+                                        <a class="journal-valeur" title="Voir le détail : Stock précédent" href="{% url 'inventory:detail_valeur_journal' boutique.id l.id 'valeur_stock_precedent' %}">{{ l.valeur_stock_precedent|floatformat:0|intcomma }}</a>
                                     </td>
-                                    <td class="text-end" style="color:#E65100;">{{ l.valeur_transfert_sortant|floatformat:0|intcomma }}</td>
-                                    <td class="text-end text-decrease">{{ l.valeur_stock_sorti|floatformat:0|intcomma }}</td>
-                                    <td class="text-end text-decrease">{{ l.valeur_ventes|floatformat:0|intcomma }}</td>
+                                    <td class="text-end">
+                                        <a class="journal-valeur" title="Voir le détail : Inventaire" href="{% url 'inventory:detail_valeur_journal' boutique.id l.id 'montant_inventaire' %}">{{ l.montant_inventaire|floatformat:0|intcomma }}</a>
+                                    </td>
+                                    <td class="text-end text-increase">
+                                        <a class="journal-valeur" title="Voir le détail : Stock ajouté" href="{% url 'inventory:detail_valeur_journal' boutique.id l.id 'valeur_stock_ajoute' %}">{{ l.valeur_stock_ajoute|floatformat:0|intcomma }}</a>
+                                    </td>
+                                    <td class="text-end" style="color:#1565C0;">
+                                        <a class="journal-valeur" title="Voir le détail : Transfert IN" href="{% url 'inventory:detail_valeur_journal' boutique.id l.id 'valeur_transfert_entrant' %}">{{ l.valeur_transfert_entrant|floatformat:0|intcomma }}</a>
+                                    </td>
+                                    <td class="text-end">
+                                        <a class="journal-valeur" title="Voir le détail : Modification de prix" href="{% url 'inventory:detail_valeur_journal' boutique.id l.id 'impact_modification_prix' %}">
+                                            {% if l.impact_modification_prix > 0 %}
+                                                <span class="text-increase">+{{ l.impact_modification_prix|floatformat:0|intcomma }}</span>
+                                            {% elif l.impact_modification_prix < 0 %}
+                                                <span class="text-decrease">{{ l.impact_modification_prix|floatformat:0|intcomma }}</span>
+                                            {% else %}
+                                                <span class="text-neutral">0</span>
+                                            {% endif %}
+                                        </a>
+                                    </td>
+                                    <td class="text-end" style="color:#E65100;">
+                                        <a class="journal-valeur" title="Voir le détail : Transfert OUT" href="{% url 'inventory:detail_valeur_journal' boutique.id l.id 'valeur_transfert_sortant' %}">{{ l.valeur_transfert_sortant|floatformat:0|intcomma }}</a>
+                                    </td>
+                                    <td class="text-end text-decrease">
+                                        <a class="journal-valeur" title="Voir le détail : Stock sorti" href="{% url 'inventory:detail_valeur_journal' boutique.id l.id 'valeur_stock_sorti' %}">{{ l.valeur_stock_sorti|floatformat:0|intcomma }}</a>
+                                    </td>
+                                    <td class="text-end text-decrease">
+                                        <a class="journal-valeur" title="Voir le détail : Ventes" href="{% url 'inventory:detail_valeur_journal' boutique.id l.id 'valeur_ventes' %}">{{ l.valeur_ventes|floatformat:0|intcomma }}</a>
+                                    </td>
                                     <td class="text-end" style="color:#6A1B9A;">
-                                        {% if l.montant_reductions > 0 %}
-                                            <span class="text-decrease">-{{ l.montant_reductions|floatformat:0|intcomma }}</span>
-                                        {% else %}
-                                            <span class="text-neutral">0</span>
-                                        {% endif %}
+                                        <a class="journal-valeur" title="Voir le détail : Réduction" href="{% url 'inventory:detail_valeur_journal' boutique.id l.id 'montant_reductions' %}">
+                                            {% if l.montant_reductions > 0 %}
+                                                <span class="text-decrease">-{{ l.montant_reductions|floatformat:0|intcomma }}</span>
+                                            {% else %}
+                                                <span class="text-neutral">0</span>
+                                            {% endif %}
+                                        </a>
                                     </td>
-                                    <td class="text-end stock-reel">{{ l.valeur_stock_reel|floatformat:0|intcomma }}</td>
+                                    <td class="text-end stock-reel">
+                                        <a class="journal-valeur" title="Voir le détail : Stock réel" href="{% url 'inventory:detail_valeur_journal' boutique.id l.id 'valeur_stock_reel' %}">{{ l.valeur_stock_reel|floatformat:0|intcomma }}</a>
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>

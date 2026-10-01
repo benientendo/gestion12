@@ -1,0 +1,246 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Détail {{ libelle }} - {{ boutique.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .detail-table {
+        font-size: 0.85rem;
+    }
+    .detail-table th {
+        background: #3949AB;
+        color: white;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        white-space: nowrap;
+        padding: 10px 12px;
+    }
+    .detail-table td {
+        padding: 8px 12px;
+        white-space: nowrap;
+    }
+    .detail-table tfoot td {
+        font-weight: 700;
+        background: #E8EAF6;
+    }
+    .valeur-detail-card {
+        background: linear-gradient(135deg, #3949AB 0%, #5C6BC0 100%);
+        color: white;
+        border-radius: 12px;
+    }
+    .text-increase { color: #2E7D32; font-weight: 600; }
+    .text-decrease { color: #C62828; font-weight: 600; }
+    .text-neutral { color: #757575; }
+    @media (max-width: 576px) {
+        .detail-table { font-size: 0.75rem; }
+        .detail-table th, .detail-table td { padding: 6px 8px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- En-tête -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h2 class="mb-0"><i class="fas fa-search-dollar text-primary"></i> Détail : {{ libelle }}</h2>
+                    <p class="text-muted mb-0">{{ boutique.nom }} — Journal du {{ journal.date|date:"d/m/Y" }}</p>
+                </div>
+                <a href="{% url 'inventory:journal_valeur_stock_boutique' boutique.id %}?date_debut={{ journal.date|date:'Y-m-d' }}&date_fin={{ journal.date|date:'Y-m-d' }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Retour au journal
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Valeur sélectionnée -->
+    <div class="row mb-3">
+        <div class="col-md-5">
+            <div class="valeur-detail-card p-3 text-center">
+                <p class="mb-1"><i class="fas fa-coins me-1"></i> {{ libelle }} du {{ journal.date|date:"d/m/Y" }} (CDF)</p>
+                <h2 class="mb-0">{{ valeur|floatformat:0|intcomma }} FC</h2>
+                <small>{{ description }}</small>
+            </div>
+        </div>
+        <div class="col-md-7">
+            <div class="card h-100">
+                <div class="card-body">
+                    {% if ecart is not None %}
+                        {% if ecart == 0 %}
+                        <p class="mb-2"><i class="fas fa-check-circle text-success me-1"></i>
+                            <strong>Coherent :</strong> le détail ci-dessous totalise exactement {{ total_lignes|floatformat:0|intcomma }} FC.
+                        </p>
+                        {% else %}
+                        <p class="mb-2"><i class="fas fa-exclamation-triangle text-warning me-1"></i>
+                            Détail = {{ total_lignes|floatformat:0|intcomma }} FC pour une valeur journal de {{ valeur|floatformat:0|intcomma }} FC
+                            (écart {{ ecart|floatformat:0|intcomma }} FC : mouvements d'initiation INIT-/REGL- et soldes initiaux exclus).
+                        </p>
+                        {% endif %}
+                    {% endif %}
+                    <p class="mb-0 text-muted small">
+                        Les valeurs du journal sont recalculées automatiquement à partir des mouvements enregistrés ce jour.
+                        Les mouvements <code>INIT-</code> et <code>REGL-</code> (régularisations d'historique) n'alimentent pas le journal.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Détail -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-list me-2"></i>Composition de la valeur</h5>
+                    <span class="badge bg-light text-dark">{{ lignes|length }} ligne{{ lignes|length|pluralize:"s" }}</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if mode_table == 'info' %}
+                    <div class="p-3">
+                        <div class="alert alert-info mb-0">
+                            <i class="fas fa-info-circle me-1"></i> {{ info_sup }}
+                            {% if champ == 'valeur_stock_precedent' and ligne_veille %}
+                            <hr class="my-2">
+                            <p class="mb-1">Valeur de fin de journée du <strong>{{ ligne_veille.date|date:"d/m/Y" }}</strong> :
+                                <strong>{{ ligne_veille.valeur_stock_reel|floatformat:0|intcomma }} FC</strong>
+                            </p>
+                            <a class="btn btn-sm btn-outline-primary"
+                               href="{% url 'inventory:journal_valeur_stock_boutique' boutique.id %}?date_debut={{ ligne_veille.date|date:'Y-m-d' }}&date_fin={{ ligne_veille.date|date:'Y-m-d' }}">
+                                <i class="fas fa-calendar-day"></i> Voir cette journée dans le journal
+                            </a>
+                            {% elif champ == 'valeur_stock_precedent' %}
+                            <hr class="my-2">
+                            <p class="mb-0">Aucune journée antérieure : c'est la première ligne du journal de la boutique.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% elif mode_table == 'articles' %}
+                    <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                        <table class="table table-sm table-hover detail-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Article</th>
+                                    <th class="text-end">Stock</th>
+                                    <th class="text-end">Prix vente</th>
+                                    <th class="text-end">Valeur</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for a in lignes %}
+                                <tr>
+                                    <td><strong>{{ a.nom }}</strong></td>
+                                    <td class="text-end">{{ a.quantite|intcomma }}</td>
+                                    <td class="text-end">{{ a.prix|floatformat:0|intcomma }}</td>
+                                    <td class="text-end">{{ a.valeur|floatformat:0|intcomma }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="4" class="text-center text-muted py-4">Aucun article en stock ce jour-là.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                            {% if lignes %}
+                            <tfoot>
+                                <tr>
+                                    <td colspan="3" class="text-end">Total</td>
+                                    <td class="text-end">{{ total_lignes|floatformat:0|intcomma }}</td>
+                                </tr>
+                            </tfoot>
+                            {% endif %}
+                        </table>
+                    </div>
+
+                    {% elif mode_table == 'reductions' %}
+                    <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                        <table class="table table-sm table-hover detail-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Facture</th>
+                                    <th>Article</th>
+                                    <th class="text-end">Qté</th>
+                                    <th class="text-end">Prix original</th>
+                                    <th class="text-end">Prix vendu</th>
+                                    <th>Motif</th>
+                                    <th class="text-end">Réduction</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for r in lignes %}
+                                <tr>
+                                    <td>{{ r.numero_facture }}</td>
+                                    <td><strong>{{ r.nom }}</strong></td>
+                                    <td class="text-end">{{ r.quantite|intcomma }}</td>
+                                    <td class="text-end">{{ r.prix_original|floatformat:0|intcomma }}</td>
+                                    <td class="text-end">{{ r.prix_unitaire|floatformat:0|intcomma }}</td>
+                                    <td>{{ r.motif|default:"—" }}</td>
+                                    <td class="text-end text-decrease">-{{ r.valeur|floatformat:0|intcomma }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="7" class="text-center text-muted py-4">Aucune réduction négociée ce jour-là.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                            {% if lignes %}
+                            <tfoot>
+                                <tr>
+                                    <td colspan="6" class="text-end">Total</td>
+                                    <td class="text-end">-{{ total_lignes|floatformat:0|intcomma }}</td>
+                                </tr>
+                            </tfoot>
+                            {% endif %}
+                        </table>
+                    </div>
+
+                    {% else %}
+                    <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                        <table class="table table-sm table-hover detail-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Heure</th>
+                                    <th>Article</th>
+                                    <th>Type</th>
+                                    <th class="text-end">Quantité</th>
+                                    <th>Référence</th>
+                                    <th>Commentaire</th>
+                                    <th>Utilisateur</th>
+                                    <th class="text-end">Valeur</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for m in lignes %}
+                                <tr>
+                                    <td>{{ m.heure|date:"d/m/Y H:i" }}</td>
+                                    <td><strong>{{ m.nom }}</strong></td>
+                                    <td>{{ m.type_mouvement }}</td>
+                                    <td class="text-end">{{ m.quantite|intcomma }}</td>
+                                    <td>{{ m.reference|default:"—" }}</td>
+                                    <td>{{ m.commentaire|truncatechars:40|default:"—" }}</td>
+                                    <td>{{ m.utilisateur|default:"—" }}</td>
+                                    <td class="text-end {% if m.valeur > 0 %}text-increase{% elif m.valeur < 0 %}text-decrease{% else %}text-neutral{% endif %}">
+                                        {{ m.valeur|floatformat:0|intcomma }}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="8" class="text-center text-muted py-4">Aucun mouvement de ce type ce jour-là.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                            {% if lignes %}
+                            <tfoot>
+                                <tr>
+                                    <td colspan="7" class="text-end">Total</td>
+                                    <td class="text-end">{{ total_lignes|floatformat:0|intcomma }}</td>
+                                </tr>
+                            </tfoot>
+                            {% endif %}
+                        </table>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

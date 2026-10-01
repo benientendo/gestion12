@@ -168,6 +168,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/rapports-caisse/<int:rapport_id>/supprimer/', views_commercant.supprimer_rapport_caisse, name='supprimer_rapport_caisse'),
 
     path('commercant/boutiques/<int:boutique_id>/journal-valeur-stock/', views_commercant.journal_valeur_stock_boutique, name='journal_valeur_stock_boutique'),
+    path('commercant/boutiques/<int:boutique_id>/journal-valeur-stock/<int:journal_id>/<str:champ>/', views_commercant.detail_valeur_journal, name='detail_valeur_journal'),
     path('commercant/boutiques/<int:boutique_id>/rapport-ca-quotidien/', views_commercant.rapport_ca_quotidien, name='rapport_ca_quotidien'),
     path('commercant/boutiques/<int:boutique_id>/rapport-ca-mensuel/', views_commercant.rapport_ca_mensuel, name='rapport_ca_mensuel'),
     path('commercant/boutiques/<int:boutique_id>/export-ca-pdf/', views_commercant.exporter_ca_quotidien_pdf, name='exporter_ca_quotidien_pdf'),
