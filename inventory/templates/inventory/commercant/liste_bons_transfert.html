@@ -1,0 +1,139 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Bons de transfert - {{ depot.nom }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .bons-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .bons-table { width: 100%; border-collapse: collapse; margin-bottom: 0; }
+    .bons-table thead th {
+        background: #343a40; color: #fff; padding: 10px 12px;
+        font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; font-weight: 600;
+    }
+    .bons-table tbody td { padding: 11px 12px; border-bottom: 1px solid #e9ecef; font-size: .88rem; vertical-align: middle; }
+    .bons-table tbody tr:nth-child(even) { background: #fafbfc; }
+    .bons-table tbody tr:hover { background: #f0f2ff; }
+    .bons-ref { font-family: monospace; font-weight: 700; color: #495057; }
+    .badge-attente { background-color: #ffc107; color: #000; }
+    .badge-ok { background-color: #28a745; color: #fff; }
+    .badge-partiel { background-color: #17a2b8; color: #fff; }
+
+    @media (max-width: 576px) {
+        .bons-header { padding: 15px; border-radius: 10px; }
+        .bons-header h2 { font-size: 1.2rem; }
+        .bons-table thead { display: none; }
+        .bons-table tbody td { display: block; text-align: right; border: none; padding: 4px 12px; }
+        .bons-table tbody tr { display: block; margin-bottom: 12px; border: 1px solid #dee2e6; border-radius: 8px; padding: 6px 0; }
+        .bons-table tbody td::before {
+            content: attr(data-label); float: left; font-weight: 700; color: #6c757d;
+            font-size: .78rem; text-transform: uppercase;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="bons-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h2><i class="fas fa-file-pdf me-2"></i>Bons de transfert</h2>
+                <p class="mb-0 opacity-75">{{ depot.nom }} — réimpression à tout moment</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="{% url 'inventory:historique_transferts' depot.id %}" class="btn btn-light btn-sm me-2">
+                    <i class="fas fa-history"></i> Historique
+                </a>
+                <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light btn-sm">
+                    <i class="fas fa-arrow-left"></i> Retour au dépôt
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recherche -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-8">
+                    <label for="q" class="form-label">Rechercher un bon (référence ou point de vente)</label>
+                    <input type="text" class="form-control" id="q" name="q"
+                           value="{{ q }}" placeholder="Ex: LOT-20261001... ou KIYAMBU 04">
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary me-2">
+                        <i class="fas fa-search"></i> Rechercher
+                    </button>
+                    <a href="{% url 'inventory:liste_bons_transfert' depot.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-redo"></i> Réinitialiser
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Liste des bons -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list"></i> Bons de transfert ({{ total }})</h5>
+        </div>
+        <div class="card-body p-0">
+            {% if bons %}
+            <div class="table-responsive">
+                <table class="bons-table">
+                    <thead>
+                        <tr>
+                            <th>Référence</th>
+                            <th>Date</th>
+                            <th>Point de vente</th>
+                            <th class="text-center">Articles</th>
+                            <th class="text-center">Quantité</th>
+                            <th class="text-center">État</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in bons %}
+                        <tr>
+                            <td data-label="Référence"><span class="bons-ref">{{ b.reference_lot }}</span></td>
+                            <td data-label="Date"><i class="fas fa-calendar-alt text-muted me-1"></i>{{ b.date_min|date:"d/m/Y H:i" }}</td>
+                            <td data-label="Point de vente">
+                                <i class="fas fa-store text-primary me-1"></i>{{ b.destination|default:"—" }}
+                            </td>
+                            <td data-label="Articles" class="text-center">{{ b.nb_articles }}</td>
+                            <td data-label="Quantité" class="text-center"><strong>{{ b.quantite_totale }}</strong></td>
+                            <td data-label="État" class="text-center">
+                                {% if b.nb_annules == b.nb_articles %}
+                                    <span class="badge badge-secondary">Annulé</span>
+                                {% elif b.nb_en_attente > 0 %}
+                                    <span class="badge badge-attente">{{ b.nb_en_attente }} en attente</span>
+                                {% else %}
+                                    <span class="badge badge-ok">Validé</span>
+                                {% endif %}
+                            </td>
+                            <td data-label="Actions" class="text-center">
+                                <a href="{% url 'inventory:bon_transfert' depot.id b.reference_lot %}"
+                                   class="btn btn-sm btn-primary" title="Ouvrir et réimprimer le bon">
+                                    <i class="fas fa-print"></i> Réimprimer
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+                <p class="text-center text-muted py-4 mb-0">Aucun bon de transfert trouvé</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

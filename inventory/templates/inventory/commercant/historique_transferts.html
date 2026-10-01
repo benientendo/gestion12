@@ -120,6 +120,9 @@
                 <p class="mb-0 opacity-75">{{ depot.nom }}</p>
             </div>
             <div class="col-md-4 text-end">
+                <a href="{% url 'inventory:liste_bons_transfert' depot.id %}" class="btn btn-light me-2" title="Réimprimer un bon de transfert">
+                    <i class="fas fa-print"></i> Bons de transfert
+                </a>
                 <a href="{% url 'inventory:detail_depot' depot.id %}" class="btn btn-light">
                     <i class="fas fa-arrow-left"></i> Retour au dépôt
                 </a>
@@ -222,9 +225,14 @@
                             </span>
                         </div>
                         <div class="col-md-1 text-end">
-                            <a href="{% url 'inventory:detail_transfert' transfert.id %}" class="btn btn-sm btn-outline-primary">
+                            <a href="{% url 'inventory:detail_transfert' transfert.id %}" class="btn btn-sm btn-outline-primary" title="Détail du transfert">
                                 <i class="fas fa-eye"></i>
                             </a>
+                            {% if transfert.reference_lot %}
+                            <a href="{% url 'inventory:bon_transfert' depot.id transfert.reference_lot %}" class="btn btn-sm btn-outline-secondary" title="Réimprimer le bon de transfert">
+                                <i class="fas fa-print"></i>
+                            </a>
+                            {% endif %}
                         </div>
                     </div>
                     {% if transfert.commentaire %}

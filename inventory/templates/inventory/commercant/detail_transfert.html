@@ -60,6 +60,11 @@
                 <p class="mb-0 opacity-75">{{ transfert.article.nom }}</p>
             </div>
             <div class="col-md-4 text-end">
+                {% if transfert.reference_lot %}
+                <a href="{% url 'inventory:bon_transfert' transfert.depot_source_id transfert.reference_lot %}" class="btn btn-light btn-sm me-2" title="Réimprimer le bon de transfert">
+                    <i class="fas fa-print"></i> Bon de transfert
+                </a>
+                {% endif %}
                 <span class="badge badge-{{ transfert.statut|lower }} fs-5">
                     {{ transfert.get_statut_display }}
                 </span>

@@ -4485,6 +4485,7 @@ def creer_transfert_stock(request, depot_id):
                 return redirect('inventory:detail_depot', depot_id=depot.id)
             
             # Créer le transfert
+            reference_lot = f"LOT-{timezone.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6].upper()}"
             transfert = TransfertStock.objects.create(
                 article=article,
                 depot_source=depot,
@@ -4492,6 +4493,7 @@ def creer_transfert_stock(request, depot_id):
                 quantite=quantite,
                 effectue_par=request.user.username,
                 commentaire=commentaire,
+                reference_lot=reference_lot,
                 statut='EN_ATTENTE'
             )
             
@@ -5673,6 +5675,46 @@ def bon_transfert(request, depot_id, reference_lot):
     }
     
     return render(request, 'inventory/commercant/bon_transfert.html', context)
+
+
+@login_required
+@commercant_required
+def liste_bons_transfert(request, depot_id):
+    """Liste des bons de transfert d'un dépôt - réimpression à tout moment"""
+    commercant = request.user.profil_commercant
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    
+    q = (request.GET.get('q', '') or '').strip()
+    
+    bons = list(
+        TransfertStock.objects.filter(depot_source=depot)
+        .exclude(reference_lot='')
+        .values('reference_lot')
+        .annotate(
+            date_min=Min('date_transfert'),
+            nb_articles=Count('id'),
+            quantite_totale=Sum('quantite'),
+            destination=Max('boutique_destination__nom'),
+            nb_en_attente=Count('id', filter=Q(statut='EN_ATTENTE')),
+            nb_annules=Count('id', filter=Q(statut='ANNULE')),
+        )
+        .order_by('-date_min')
+    )
+    
+    if q:
+        motif = q.casefold()
+        bons = [b for b in bons
+                if motif in (b['reference_lot'] or '').casefold()
+                or motif in (b['destination'] or '').casefold()]
+    
+    context = {
+        'depot': depot,
+        'bons': bons,
+        'q': q,
+        'total': len(bons),
+    }
+    
+    return render(request, 'inventory/commercant/liste_bons_transfert.html', context)
 
 
 @login_required
