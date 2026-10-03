@@ -473,7 +473,12 @@
     <!-- Liste des boutiques -->
     <div class="row">
         <div class="col-12 mb-3">
-            <h4><i class="fas fa-store text-success"></i> Mes Points de Vente</h4>
+            <h4>
+                <i class="fas fa-store text-success"></i> Mes Points de Vente
+                <small class="text-muted fs-6 fw-normal">
+                    — {{ nb_boutiques_cloturees }}/{{ total_boutiques }} clôturé(s) aujourd'hui
+                </small>
+            </h4>
         </div>
         {% for boutique in boutiques %}
         <div class="col-12 col-sm-6 col-lg-4 mb-4">
@@ -539,7 +544,32 @@
                             </div>
                         {% endif %}
                     </div>
-                    
+
+                    <!-- Statut de clôture de la journée (terminal MAUI) -->
+                    <div class="mb-3">
+                        {% if boutique.cloture_jour %}
+                            {% if boutique.cloture_jour.est_validee %}
+                                <span class="badge bg-danger"><i class="fas fa-lock"></i> Journée clôturée</span>
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-clock"></i>
+                                    {{ boutique.cloture_jour.date_cloture|date:"d/m/Y H:i" }}
+                                    — {{ boutique.cloture_jour.nombre_ventes }} vente(s),
+                                    {{ boutique.cloture_jour.total_ventes|floatformat:0|intcomma }} FC
+                                </small>
+                            {% else %}
+                                <span class="badge bg-warning text-dark"><i class="fas fa-lock-open"></i> Clôture annulée</span>
+                                <small class="text-muted d-block mt-1">
+                                    <i class="fas fa-clock"></i>
+                                    Annulée le {{ boutique.cloture_jour.date_annulation|date:"d/m/Y H:i" }}
+                                    — Journée rouverte
+                                </small>
+                            {% endif %}
+                        {% else %}
+                            <span class="badge bg-success"><i class="fas fa-lock-open"></i> Journée ouverte</span>
+                            <small class="text-muted d-block mt-1">Aucune clôture enregistrée aujourd'hui</small>
+                        {% endif %}
+                    </div>
+
                     <!-- Actions principales -->
                     <div class="d-grid gap-2">
                         <a href="{% url 'inventory:entrer_boutique' boutique.id %}" 

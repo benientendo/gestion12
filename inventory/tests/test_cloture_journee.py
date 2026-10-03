@@ -4,6 +4,7 @@ Tests de la clôture de journée (terminal MAUI <-> back-office) :
 - Annulation back-office (déblocage du terminal)
 - Blocage des mutations (entrées, prix, suppressions) pendant la clôture
 """
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -358,3 +359,75 @@ class BlocageMutationsClotureTestCase(TestCase):
         )
         self.assertEqual(r.status_code, 200)
         self.assertIn('introuvable', r.json()['message'])
+
+
+class DashboardClotureTestCase(TestCase):
+    """Tableau de bord commerçant : statut de la journée (ouverte / clôturée / annulée)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comm_dash', password='pass1234', email='comm_dash@test.cd'
+        )
+        self.commercant = Commercant.objects.create(
+            nom_entreprise='Dash SARL',
+            nom_responsable='Dash',
+            email='comm_dash@test.cd',
+            user=self.user,
+        )
+        self.boutique = Boutique.objects.create(
+            nom='Boutique Dash',
+            commercant=self.commercant,
+            code_boutique='BT-DSH-001',
+        )
+        self.client_web = TestClient()
+        self.url = reverse('inventory:commercant_dashboard')
+
+    def test_journee_ouverte(self):
+        self.client_web.force_login(self.user)
+        r = self.client_web.get(self.url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'Journée ouverte')
+        self.assertContains(r, '0/1 clôturé(s)')
+
+    def test_journee_cloturee(self):
+        ClotureJournee.objects.create(
+            boutique=self.boutique,
+            date_jour=timezone.localdate(),
+            statut=ClotureJournee.STATUT_VALIDEE,
+            date_cloture=timezone.now(),
+            nombre_ventes=4,
+            total_ventes=Decimal('120000'),
+        )
+        self.client_web.force_login(self.user)
+        r = self.client_web.get(self.url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'Journée clôturée')
+        self.assertContains(r, '4 vente(s)')
+        self.assertContains(r, '1/1 clôturé(s)')
+
+    def test_journee_annulee(self):
+        ClotureJournee.objects.create(
+            boutique=self.boutique,
+            date_jour=timezone.localdate(),
+            statut=ClotureJournee.STATUT_ANNULEE,
+            date_cloture=timezone.now(),
+            date_annulation=timezone.now(),
+        )
+        self.client_web.force_login(self.user)
+        r = self.client_web.get(self.url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'Clôture annulée')
+        self.assertContains(r, 'Journée rouverte')
+        self.assertContains(r, '0/1 clôturé(s)')
+
+    def test_cloture_hier_ignorée(self):
+        ClotureJournee.objects.create(
+            boutique=self.boutique,
+            date_jour=timezone.localdate() - timedelta(days=1),
+            statut=ClotureJournee.STATUT_VALIDEE,
+            date_cloture=timezone.now() - timedelta(days=1),
+        )
+        self.client_web.force_login(self.user)
+        r = self.client_web.get(self.url)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'Journée ouverte')

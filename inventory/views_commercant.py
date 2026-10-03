@@ -264,11 +264,25 @@ def dashboard_commercant(request):
     
     # Ajouter le compteur des ventes refusées du jour pour chaque boutique
     aujourd_hui = timezone.localdate()
+
+    # Clôture de journée du jour (terminal MAUI) : clôturée / annulée / ouverte
+    clotures_du_jour = {}
+    for cl in ClotureJournee.objects.filter(boutique__in=boutiques_list, date_jour=aujourd_hui):
+        clotures_du_jour.setdefault(cl.boutique_id, []).append(cl)
+
     for boutique in boutiques_list:
         boutique.nb_ventes_refusees_jour = VenteRejetee.objects.filter(
             boutique=boutique,
             date_tentative__date=aujourd_hui
         ).count()
+
+        # Statut de clôture : validée > annulée (la plus récente) > aucune = ouverte
+        lignes_cloture = clotures_du_jour.get(boutique.id, [])
+        cloture_validee = next(
+            (cl for cl in lignes_cloture if cl.statut == ClotureJournee.STATUT_VALIDEE),
+            None,
+        )
+        boutique.cloture_jour = cloture_validee or (lignes_cloture[0] if lignes_cloture else None)
     
     boutiques = boutiques_list
     
@@ -448,6 +462,10 @@ def dashboard_commercant(request):
         'boutiques': boutiques,  # Ajouter la liste des boutiques
         'depots': depots_list,  # Ajouter la liste des dépôts
         'total_boutiques': total_boutiques,
+        'nb_boutiques_cloturees': sum(
+            1 for b in boutiques_list
+            if b.cloture_jour is not None and b.cloture_jour.est_validee
+        ),
         'total_ventes': total_ventes,
         'chiffre_affaires_30j': ca_30j_cdf,  # CDF 30 jours
         'chiffre_affaires_30j_usd': ca_30j_usd,  # USD 30 jours
