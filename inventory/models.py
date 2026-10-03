@@ -802,6 +802,47 @@ class CodeCloture(models.Model):
         return f"Clôture {self.boutique.code_boutique} du {self.date_jour} : {self.code}"
 
 
+class ClotureJournee(models.Model):
+    """
+    Clôture de journée d'une boutique, synchronisée depuis le terminal MAUI.
+    Tant qu'une clôture VALIDÉE existe pour le jour, le back-office bloque les
+    entrées et les modifications de prix ; le commerçant peut l'annuler pour
+    rouvrir la journée sur le terminal.
+    """
+    STATUT_VALIDEE = 'VALIDEE'
+    STATUT_ANNULEE = 'ANNULEE'
+
+    boutique = models.ForeignKey(Boutique, on_delete=models.CASCADE, related_name='clotures_journee',
+                                 help_text="Boutique concernée par la clôture")
+    date_jour = models.DateField(help_text="Jour de la clôture")
+    terminal_serial = models.CharField(max_length=100, blank=True, default='',
+                                       help_text="Terminal ayant clôturé")
+    statut = models.CharField(max_length=10, default=STATUT_VALIDEE,
+                              choices=[(STATUT_VALIDEE, 'Validée'), (STATUT_ANNULEE, 'Annulée')])
+    nombre_ventes = models.IntegerField(default=0)
+    total_ventes = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    date_cloture = models.DateTimeField(null=True, blank=True)
+    date_annulation = models.DateTimeField(null=True, blank=True)
+    annulee_par = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL,
+                                    related_name='clotures_journee_annulees',
+                                    help_text="Commerçant ayant annulé la clôture")
+
+    class Meta:
+        verbose_name = "Clôture de journée"
+        verbose_name_plural = "Clôtures de journée"
+        ordering = ['-date_jour', '-date_cloture']
+        indexes = [
+            models.Index(fields=['boutique', 'date_jour', 'statut']),
+        ]
+
+    @property
+    def est_validee(self):
+        return self.statut == self.STATUT_VALIDEE
+
+    def __str__(self):
+        return f"Clôture {self.boutique.code_boutique} du {self.date_jour} [{self.statut}]"
+
+
 class RapportCaisse(models.Model):
     """Rapport de caisse quotidien lié à une boutique et un terminal MAUI (Client)."""
 

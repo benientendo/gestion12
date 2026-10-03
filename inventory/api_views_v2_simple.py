@@ -21,7 +21,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Prefetch
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner, CodeCloture
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner, CodeCloture, ClotureJournee
 from .serializers import ArticleSerializer, ArticleAvecVariantesSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created, notify_dashboard_stats
 
@@ -4790,3 +4790,95 @@ def verifier_code_cloture_simple(request):
         'code': 'CODE_OK',
         'message': 'Code vérifié — clôture autorisée.'
     })
+
+
+def _boutique_depuis_requete(request):
+    """Résolution de la boutique depuis le body ou l'en-tête X-Device-Serial."""
+    boutique_id = request.data.get('boutique_id')
+    numero_serie = request.data.get('numero_serie') or request.headers.get('X-Device-Serial')
+
+    boutique = None
+    if boutique_id:
+        boutique = get_object_or_404(Boutique, id=boutique_id)
+    elif numero_serie:
+        try:
+            terminal = Client.objects.get(numero_serie=numero_serie)
+            boutique = terminal.boutique
+        except Client.DoesNotExist:
+            return None, Response({
+                'error': 'Terminal non trouvé',
+                'code': 'TERMINAL_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+    if boutique is None:
+        return None, Response({
+            'error': "Le champ 'boutique_id' est requis",
+            'code': 'MISSING_BOUTIQUE'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    return boutique, None
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def enregistrer_cloture_simple(request):
+    """
+    POST /api/v2/simple/cloture/enregistrer/
+
+    Le terminal MAUI envoie sa clôture de journée (après vérification du code).
+    Body: {"boutique_id": 5, "nombre_ventes": 3, "total_ventes": 150000}
+    Réponse: {"success": true, "cloturee": true}
+    """
+    boutique, erreur = _boutique_depuis_requete(request)
+    if erreur is not None:
+        return erreur
+
+    today = timezone.localdate()
+    if ClotureJournee.objects.filter(
+        boutique=boutique, date_jour=today, statut=ClotureJournee.STATUT_VALIDEE
+    ).exists():
+        return Response({'success': True, 'cloturee': True, 'code': 'DEJA_CLOTUREE'})
+
+    numero_serie = request.data.get('numero_serie') or request.headers.get('X-Device-Serial') or ''
+    try:
+        nombre_ventes = int(request.data.get('nombre_ventes') or 0)
+    except (TypeError, ValueError):
+        nombre_ventes = 0
+    try:
+        total_ventes = Decimal(str(request.data.get('total_ventes') or 0))
+    except (InvalidOperation, TypeError, ValueError):
+        total_ventes = Decimal('0')
+
+    ClotureJournee.objects.create(
+        boutique=boutique,
+        date_jour=today,
+        terminal_serial=str(numero_serie),
+        statut=ClotureJournee.STATUT_VALIDEE,
+        nombre_ventes=nombre_ventes,
+        total_ventes=total_ventes,
+        date_cloture=timezone.now(),
+    )
+    return Response({'success': True, 'cloturee': True, 'code': 'CLOTURE_OK'})
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def etat_cloture_simple(request):
+    """
+    POST /api/v2/simple/cloture/etat/
+
+    Le terminal MAUI interroge l'état de clôture de sa boutique
+    (annulation par le commerçant, clôture depuis un autre terminal).
+    Body: {"boutique_id": 5} (ou X-Device-Serial)
+    Réponse: {"success": true, "cloturee": bool, "annulee": bool}
+    """
+    boutique, erreur = _boutique_depuis_requete(request)
+    if erreur is not None:
+        return erreur
+
+    today = timezone.localdate()
+    cloturee = ClotureJournee.objects.filter(
+        boutique=boutique, date_jour=today, statut=ClotureJournee.STATUT_VALIDEE
+    ).exists()
+    annulee = ClotureJournee.objects.filter(
+        boutique=boutique, date_jour=today, statut=ClotureJournee.STATUT_ANNULEE
+    ).exists()
+    return Response({'success': True, 'cloturee': cloturee, 'annulee': annulee})

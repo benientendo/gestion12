@@ -157,8 +157,30 @@
                                 </button>
                             </form>
                         {% else %}
-                            <span class="text-muted">Aucun code généré.</span><br>
+                            <span class="text-muted">Aucun code généré pour aujourd'hui.</span><br>
                             <small class="text-muted">Cliquez sur « Code de clôture » pour en générer un.</small>
+                        {% endif %}
+                    </div>
+                    <div class="mb-3">
+                        <strong>📋 Journée:</strong><br>
+                        {% if cloture_journee_dujour %}
+                            <span class="badge bg-danger fs-6">CLÔTURÉE</span>
+                            <small class="text-muted d-block mt-1">
+                                Clôturée le {{ cloture_journee_dujour.date_cloture|date:"d/m/Y H:i" }}
+                                ({{ cloture_journee_dujour.nombre_ventes }} vente(s),
+                                {{ cloture_journee_dujour.total_ventes|floatformat:0|intcomma }} FC) —
+                                ventes bloquées, entrées et prix figés.
+                            </small>
+                            <form method="post" action="{% url 'inventory:annuler_cloture_journee' boutique.id %}"
+                                  class="mt-2"
+                                  onsubmit="return confirm('Annuler la clôture de la journée ?\nLe terminal pourra à nouveau vendre, réceptionner et modifier les prix.');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="fas fa-undo"></i> Annuler la clôture
+                                </button>
+                            </form>
+                        {% else %}
+                            <span class="badge bg-success fs-6">OUVERTE</span>
                         {% endif %}
                     </div>
                     <div class="mb-3">

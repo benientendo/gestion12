@@ -102,4 +102,6 @@ urlpatterns = [
     # ===== CLÔTURE DE JOURNÉE =====
     path('cloture/verifier-code/', api_views_v2_simple.verifier_code_cloture_simple, name='verifier_code_cloture'),
     path('cloture/verifier-code', api_views_v2_simple.verifier_code_cloture_simple, name='verifier_code_cloture_no_slash'),
+    path('cloture/enregistrer/', api_views_v2_simple.enregistrer_cloture_simple, name='enregistrer_cloture'),
+    path('cloture/etat/', api_views_v2_simple.etat_cloture_simple, name='etat_cloture'),
 ]

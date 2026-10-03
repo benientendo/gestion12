@@ -22,7 +22,7 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination, CodeCloture
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination, CodeCloture, ClotureJournee
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 from .distribution import etat_distribution
 import json
@@ -163,6 +163,33 @@ def boutique_access_required(view_func):
                 return view_func(request, boutique_id, *args, **kwargs)
             except Collaborateur.DoesNotExist:
                 return HttpResponseForbidden("Accès non autorisé")
+    return wrapper
+
+
+def journee_non_cloturee(view_func):
+    """Bloque la mutation (entrées, prix, stock) si la journée est clôturée."""
+    def wrapper(request, boutique_id, *args, **kwargs):
+        boutique = getattr(request, 'boutique', None)
+        if boutique is None:
+            boutique = get_object_or_404(Boutique, id=boutique_id)
+        cloturee = ClotureJournee.objects.filter(
+            boutique=boutique,
+            date_jour=timezone.localdate(),
+            statut=ClotureJournee.STATUT_VALIDEE,
+        ).exists()
+        if not cloturee:
+            return view_func(request, boutique_id, *args, **kwargs)
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return JsonResponse({
+                'success': False,
+                'error': 'Journée clôturée : entrées et modifications de prix bloquées.'
+            }, status=403)
+        messages.error(
+            request,
+            "Journée clôturée : entrées, modifications de prix et mutations de stock "
+            "bloquées. Annulez la clôture pour rouvrir la journée."
+        )
+        return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
     return wrapper
 
 # ===== AUTHENTIFICATION =====
@@ -641,7 +668,13 @@ def detail_boutique(request, boutique_id):
         'code_cloture_actif': CodeCloture.objects.filter(
             boutique=boutique,
             actif=True
-        ).order_by('-date_generation').first()
+        ).order_by('-date_generation').first(),
+        # 📋 Clôture de journée (terminal MAUI) du jour
+        'cloture_journee_dujour': ClotureJournee.objects.filter(
+            boutique=boutique,
+            date_jour=aujourd_hui,
+            statut=ClotureJournee.STATUT_VALIDEE
+        ).order_by('-date_cloture').first(),
     }
     
     return render(request, 'inventory/commercant/details_boutique.html', context)
@@ -719,6 +752,35 @@ def modifier_code_cloture(request, boutique_id):
         request,
         f"✏️ Code de clôture mis à jour : {nouveau_code} — "
         f"transmettez-le au terminal pour valider la clôture de la journée."
+    )
+    return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
+
+@login_required
+@commercant_required
+@boutique_access_required
+@require_POST
+def annuler_cloture_journee(request, boutique_id):
+    """Annule la clôture de la journée : le terminal peut à nouveau vendre."""
+    boutique = request.boutique
+    today = timezone.localdate()
+    cloturees = ClotureJournee.objects.filter(
+        boutique=boutique,
+        date_jour=today,
+        statut=ClotureJournee.STATUT_VALIDEE,
+    )
+    if not cloturees.exists():
+        messages.error(request, "Aucune clôture active aujourd'hui à annuler.")
+        return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
+
+    cloturees.update(
+        statut=ClotureJournee.STATUT_ANNULEE,
+        date_annulation=timezone.now(),
+        annulee_par=request.user,
+    )
+    messages.success(
+        request,
+        "✅ Clôture de la journée annulée — le terminal peut à nouveau vendre, "
+        "réceptionner et modifier ses prix."
     )
     return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
 
@@ -2604,6 +2666,7 @@ def verifier_code_barre(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def modifier_article_existant(request, boutique_id):
     """
     Modifier un article ou une variante: ajouter du stock et/ou modifier le prix.
@@ -2768,6 +2831,7 @@ def modifier_article_existant(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def ajouter_article_boutique(request, boutique_id):
     """Ajouter un article à une boutique spécifique (interface commerçant)"""
     from django.http import JsonResponse
@@ -3041,6 +3105,7 @@ def ajouter_article_boutique(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def modifier_article_boutique(request, boutique_id, article_id):
     """Modifier un article d'une boutique spécifique"""
     boutique = request.boutique
@@ -3104,6 +3169,7 @@ def modifier_article_boutique(request, boutique_id, article_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def bulk_delete_articles(request, boutique_id):
     """Suppression multiple d'articles (AJAX POST JSON)"""
     from django.http import JsonResponse
@@ -3158,6 +3224,7 @@ def bulk_delete_articles(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def importer_articles_entre_boutiques(request, boutique_id):
     """Importer des articles depuis un autre point de vente (même commerçant), sans quantité ni prix"""
     commercant = request.user.profil_commercant
@@ -3382,6 +3449,7 @@ def sync_variantes_entre_boutiques(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def ajouter_variante(request, boutique_id, article_id):
     """Ajouter une variante à un article (AJAX POST)"""
     boutique = request.boutique
@@ -3452,6 +3520,7 @@ def ajouter_variante(request, boutique_id, article_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def modifier_variante(request, boutique_id, article_id, variante_id):
     """Modifier une variante d'article (AJAX POST)"""
     boutique = request.boutique
@@ -3523,6 +3592,7 @@ def supprimer_variante(request, boutique_id, article_id, variante_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def ajuster_stock_variante(request, boutique_id, article_id, variante_id):
     """Ajuster le stock d'une variante (AJAX POST)"""
     boutique = request.boutique
@@ -3574,6 +3644,7 @@ def ajuster_stock_variante(request, boutique_id, article_id, variante_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def supprimer_article_boutique(request, boutique_id, article_id):
     """Supprimer un article d'une boutique spécifique (interface commerçant)"""
     boutique = request.boutique
@@ -3600,6 +3671,7 @@ def supprimer_article_boutique(request, boutique_id, article_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def ajuster_stock_article(request, boutique_id, article_id):
     """Ajuster rapidement le stock d'un article avec traçabilité complète"""
     from django.http import JsonResponse
@@ -3682,6 +3754,7 @@ def ajuster_stock_article(request, boutique_id, article_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def modifier_prix_article(request, boutique_id, article_id):
     """Modifier rapidement le prix d'un article"""
     from django.http import JsonResponse
@@ -6257,6 +6330,7 @@ def approvisionner_facture(request, depot_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def approvisionner_facture_boutique(request, boutique_id):
     """Créer une facture d'approvisionnement pour un point de vente (local à la boutique)."""
     boutique = request.boutique
@@ -7483,6 +7557,7 @@ def liste_inventaires_boutique(request, boutique_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def nouvel_inventaire_boutique(request, boutique_id):
     """Créer un nouvel inventaire pour une boutique."""
     boutique = request.boutique
@@ -7569,6 +7644,7 @@ def detail_inventaire_boutique(request, boutique_id, inventaire_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     """Saisir les quantités physiques de l'inventaire d'une boutique."""
     boutique = request.boutique
@@ -8135,6 +8211,7 @@ def tableau_bord_inventaire(request, boutique_id, inventaire_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def terminer_inventaire_boutique(request, boutique_id, inventaire_id):
     """Terminer un inventaire de boutique."""
     boutique = request.boutique
@@ -8159,6 +8236,7 @@ def terminer_inventaire_boutique(request, boutique_id, inventaire_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def regulariser_inventaire_boutique(request, boutique_id, inventaire_id):
     """Régulariser le stock d'une boutique selon l'inventaire."""
     boutique = request.boutique
@@ -8270,6 +8348,7 @@ def supprimer_inventaire_boutique(request, boutique_id, inventaire_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@journee_non_cloturee
 def transfert_entre_boutiques(request, boutique_id):
     """Transférer des articles d'un point de vente vers un autre"""
     commercant = request.user.profil_commercant
@@ -8885,6 +8964,7 @@ def suivi_articles_recents(request, depot_id):
 @commercant_required
 @boutique_access_required
 @require_POST
+@journee_non_cloturee
 def maj_quantite_attribuee_boutique(request, boutique_id, article_id):
     """Met à jour la quantité attribuée d'un article (AJAX)."""
     boutique = request.boutique
