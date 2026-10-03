@@ -78,21 +78,53 @@ class CodeClotureApiTestCase(TestCase):
         self.assertFalse(r.json()['valide'])
         self.assertEqual(r.json()['code'], 'CODE_INVALID')
 
-    def test_aucun_code_du_jour(self):
+    def test_aucun_code(self):
         r = self.api.post(self.url, data={'boutique_id': self.boutique.id, 'code': '123456'},
                           content_type='application/json', **self.entete)
         self.assertEqual(r.status_code, 200)
         self.assertFalse(r.json()['valide'])
         self.assertEqual(r.json()['code'], 'NO_CODE')
 
-    def test_code_jour_precedent_rejete(self):
+    def test_code_jour_precedent_reste_valide(self):
         hier = timezone.localdate() - timedelta(days=1)
         self._creer_code('123456', date_jour=hier)
         r = self.api.post(self.url, data={'boutique_id': self.boutique.id, 'code': '123456'},
                           content_type='application/json', **self.entete)
         self.assertEqual(r.status_code, 200)
-        self.assertFalse(r.json()['valide'])
-        self.assertEqual(r.json()['code'], 'NO_CODE')
+        self.assertTrue(r.json()['valide'])
+        self.assertEqual(r.json()['code'], 'CODE_OK')
+
+    def test_code_ancien_reste_valide(self):
+        # Un code genere il y a plusieurs mois reste valable "pour toujours"
+        ancien = timezone.localdate() - timedelta(days=120)
+        self._creer_code('123456', date_jour=ancien)
+        r = self.api.post(self.url, data={'boutique_id': self.boutique.id, 'code': '123456'},
+                          content_type='application/json', **self.entete)
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()['valide'])
+
+    def test_regeneration_invalide_ancien_code_cote_api(self):
+        # Ancien code : desactive lors de la regeneration
+        CodeCloture.objects.create(
+            boutique=self.boutique, code='111111',
+            date_jour=timezone.localdate() - timedelta(days=1),
+            actif=False, genere_par=self.user,
+        )
+        # Nouveau code : seul actif
+        CodeCloture.objects.create(
+            boutique=self.boutique, code='222222',
+            date_jour=timezone.localdate(), actif=True, genere_par=self.user,
+        )
+
+        r_ancien = self.api.post(self.url, data={'boutique_id': self.boutique.id, 'code': '111111'},
+                                 content_type='application/json', **self.entete)
+        self.assertFalse(r_ancien.json()['valide'])
+        self.assertEqual(r_ancien.json()['code'], 'CODE_INVALID')
+
+        r_nouveau = self.api.post(self.url, data={'boutique_id': self.boutique.id, 'code': '222222'},
+                                  content_type='application/json', **self.entete)
+        self.assertTrue(r_nouveau.json()['valide'])
+        self.assertEqual(r_nouveau.json()['code'], 'CODE_OK')
 
     def test_code_inactif_rejete(self):
         self._creer_code('123456', actif=False)
@@ -179,7 +211,21 @@ class GenerationCodeClotureBackofficeTestCase(TestCase):
         r = self.client_web.get(url_detail)
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, '654321')
-        self.assertIsNotNone(r.context.get('code_cloture_dujour'))
+        self.assertIsNotNone(r.context.get('code_cloture_actif'))
+
+    def test_code_anterieur_affiche_sur_page_boutique(self):
+        # Un code genere il y a un mois reste affiche : il ne change pas tout seul
+        self.client_web.force_login(self.user)
+        CodeCloture.objects.create(
+            boutique=self.boutique, code='987654',
+            date_jour=timezone.localdate() - timedelta(days=30),
+            actif=True, genere_par=self.user,
+        )
+        url_detail = reverse('inventory:commercant_detail_boutique', args=[self.boutique.id])
+        r = self.client_web.get(url_detail)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, '987654')
+        self.assertIsNotNone(r.context.get('code_cloture_actif'))
 
     def test_acces_non_authentifie_redirige(self):
         r = self.client_web.post(self.url)

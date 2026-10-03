@@ -637,10 +637,9 @@ def detail_boutique(request, boutique_id):
         'total_annule_jour': total_annule_jour,
         'nb_ventes_annulees_mois': nb_ventes_annulees_mois,
         'total_annule_mois': total_annule_mois,
-        # 🔑 Code de clôture du jour (terminal MAUI)
-        'code_cloture_dujour': CodeCloture.objects.filter(
+        # 🔑 Code de clôture actif (valable jusqu'à régénération — terminal MAUI)
+        'code_cloture_actif': CodeCloture.objects.filter(
             boutique=boutique,
-            date_jour=aujourd_hui,
             actif=True
         ).order_by('-date_generation').first()
     }
@@ -652,7 +651,11 @@ def detail_boutique(request, boutique_id):
 @boutique_access_required
 @require_POST
 def generer_code_cloture(request, boutique_id):
-    """Génère (ou régénère) le code de clôture de la journée pour une boutique."""
+    """Génère (ou régénère) le code de clôture d'une boutique.
+
+    Le code reste valable indéfiniment ; seule une nouvelle génération
+    (ou une modification) remplace l'ancien, qui est alors invalidé.
+    """
     import secrets
     boutique = request.boutique
 
@@ -672,8 +675,9 @@ def generer_code_cloture(request, boutique_id):
     )
     messages.success(
         request,
-        f"🔑 Code de clôture du jour généré : {code} — "
-        f"transmettez-le au terminal pour valider la clôture de la journée."
+        f"🔑 Code de clôture généré : {code} — "
+        f"transmettez-le au terminal pour valider la clôture. "
+        f"Il reste valable jusqu'à la prochaine génération."
     )
     return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
 

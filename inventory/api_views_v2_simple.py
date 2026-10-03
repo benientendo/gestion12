@@ -4727,7 +4727,8 @@ def verifier_code_cloture_simple(request):
     """
     POST /api/v2/simple/cloture/verifier-code/
 
-    Vérifie le code de clôture de la journée généré par le commerçant (back-office).
+    Vérifie le code de clôture actif de la boutique (généré par le commerçant,
+    valable indéfiniment jusqu'à régénération).
     Body: {"boutique_id": 5, "code": "123456"}
     Réponse: {"success": true, "valide": bool, "code": CODE, "message": str}
     """
@@ -4761,10 +4762,9 @@ def verifier_code_cloture_simple(request):
             'code': 'MISSING_BOUTIQUE'
         }, status=status.HTTP_400_BAD_REQUEST)
 
-    today = timezone.localdate()
+    # Le code reste valable indefiniment jusqu'a regeneration par le commercant
     code_obj = CodeCloture.objects.filter(
         boutique=boutique,
-        date_jour=today,
         actif=True
     ).order_by('-date_generation').first()
 
@@ -4773,7 +4773,7 @@ def verifier_code_cloture_simple(request):
             'success': True,
             'valide': False,
             'code': 'NO_CODE',
-            'message': "Aucun code de clôture n'a été généré pour aujourd'hui. Contactez le commerçant."
+            'message': "Aucun code de clôture n'a été généré. Contactez le commerçant."
         })
 
     if code_obj.code.upper() != code.upper():
