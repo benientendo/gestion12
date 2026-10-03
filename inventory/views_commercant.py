@@ -3654,8 +3654,9 @@ def modifier_prix_article(request, boutique_id, article_id):
             article.prix_vente = nouveau_prix
             article.save()
             
-            from .websocket_utils import notify_price_updated, notify_sync_required
-            notify_price_updated(boutique.id, article.id, nouveau_prix, article_nom=article.nom)
+            from .websocket_utils import notify_sync_required
+            # notify_price_updated (WebSocket + FCM, avec l'ecart de valeur)
+            # est envoye par le signal notifier_ajustement_prix (inventory/signals.py)
             notify_sync_required(boutique.id, f"Prix modifié: {article.nom}")
             
             return JsonResponse({

@@ -187,7 +187,8 @@ def notify_stock_updated(boutique_id, article_id, new_stock, article_nom=None, p
         )
 
 
-def notify_price_updated(boutique_id, article_id, new_price, devise='CDF', article_nom=None):
+def notify_price_updated(boutique_id, article_id, new_price, devise='CDF',
+                         article_nom=None, ancien_prix=None, impact_valeur=None):
     """
     Notifier tous les POS qu'un prix a changé
     
@@ -197,19 +198,27 @@ def notify_price_updated(boutique_id, article_id, new_price, devise='CDF', artic
         new_price: Nouveau prix
         devise: Devise du prix (CDF ou USD)
         article_nom: Nom de l'article (optionnel)
+        ancien_prix: Ancien prix (optionnel, detail de l'ecart)
+        impact_valeur: Impact sur la valeur du stock (nouveau - ancien) x stock
     """
+    payload = {
+        'type': 'price_updated',
+        'article_id': article_id,
+        'new_price': str(new_price),
+        'devise': devise,
+    }
+    if ancien_prix is not None:
+        payload['ancien_prix'] = str(ancien_prix)
+    if impact_valeur is not None:
+        payload['impact_valeur'] = str(impact_valeur)
+
     try:
         channel_layer = get_channel_layer()
         notification_group_name = f'notifications_{boutique_id}'
         
         async_to_sync(channel_layer.group_send)(
             notification_group_name,
-            {
-                'type': 'price_updated',
-                'article_id': article_id,
-                'new_price': str(new_price),
-                'devise': devise
-            }
+            payload
         )
         
         logger.info(f"🔔 WebSocket: Prix article {article_id} → {new_price} {devise} envoyé à boutique {boutique_id}")
@@ -217,11 +226,20 @@ def notify_price_updated(boutique_id, article_id, new_price, devise='CDF', artic
     except Exception as e:
         logger.error(f"❌ Erreur envoi WebSocket price_updated: {e}")
 
+    corps = (
+        f"Le prix de {article_nom or f'#{article_id}'} est maintenant "
+        f"{new_price} {devise}."
+    )
+    if ancien_prix is not None:
+        corps += f" Ancien prix: {ancien_prix} {devise}."
+    if impact_valeur is not None:
+        corps += f" Impact valeur du stock: {impact_valeur} {devise}."
+
     _push_fcm(
         boutique_id,
         "Prix modifié",
-        f"Le prix de {article_nom or f'#{article_id}'} est maintenant {new_price} {devise}.",
-        data={'type': 'price_updated', 'article_id': article_id}
+        corps,
+        data={k: str(v) for k, v in payload.items()}
     )
 
 

@@ -1,11 +1,90 @@
 from decimal import Decimal
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
-from .models import MouvementStock, NotificationStock, Client, Article, Inventaire, LigneInventaire
+from .models import (
+    MouvementStock, NotificationStock, Client, Article, Inventaire,
+    LigneInventaire, TransfertStock,
+)
 from . import journal_valeur_stock as jvs
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _montant_fc(valeur):
+    """Formate un montant CDF pour les messages de notification (1 000 FC)."""
+    try:
+        v = Decimal(str(valeur))
+    except Exception:
+        return str(valeur)
+    if v == v.to_integral_value():
+        return f"{int(v):,}".replace(",", " ")
+    return f"{v:,.2f}".replace(",", " ")
+
+
+def _numerique(valeur):
+    """Forme numerique lisible d'un montant (4000 plutot que 4000.00)."""
+    try:
+        v = Decimal(str(valeur))
+    except Exception:
+        return str(valeur)
+    if v == v.to_integral_value():
+        return str(int(v))
+    return str(v)
+
+
+def _champ_journal(type_mouvement, est_transfert):
+    """Colonne du journal de valeur alimentée par ce mouvement (meme regle que
+    le signal alimenter_journal_valeur_stock)."""
+    if type_mouvement == 'VENTE':
+        return 'valeur_ventes'
+    if type_mouvement == 'AJUSTEMENT':
+        return 'montant_inventaire'
+    if type_mouvement in ('ENTREE', 'RETOUR'):
+        return 'valeur_transfert_entrant' if est_transfert else 'valeur_stock_ajoute'
+    if type_mouvement == 'SORTIE':
+        return 'valeur_transfert_sortant' if est_transfert else 'valeur_stock_sorti'
+    return None
+
+
+def _detail_transfert(ref):
+    """Detail d'un transfert a partir de sa reference TRANSFERT-<id>."""
+    if not ref.startswith('TRANSFERT-'):
+        return None
+    brut = ref.split('-', 1)[1]
+    if not brut.isdigit():
+        return None
+    try:
+        t = TransfertStock.objects.filter(id=int(brut)).select_related(
+            'depot_source', 'boutique_destination').first()
+    except Exception:
+        return None
+    if not t:
+        return None
+    return {
+        'id': t.id,
+        'reference_lot': t.reference_lot or '',
+        'depot_source': t.depot_source.nom if t.depot_source else '',
+        'boutique_destination': t.boutique_destination.nom
+        if t.boutique_destination else '',
+        'quantite': t.quantite,
+        'statut': t.statut,
+    }
+
+
+def _impact_valeur(type_mouvement, prix_vente, quantite):
+    """Impact sur la valeur du stock en FC (meme regle que le journal de valeur) :"""
+    try:
+        pv = Decimal(str(prix_vente or 0))
+        qte = Decimal(str(quantite or 0))
+    except Exception:
+        return Decimal('0')
+    if type_mouvement == 'AJUSTEMENT':
+        return pv * qte
+    impact = pv * abs(qte)
+    if type_mouvement in ('SORTIE', 'VENTE'):
+        return -impact
+    return impact
 
 
 @receiver(post_save, sender=MouvementStock)
@@ -14,9 +93,12 @@ def creer_notification_stock(sender, instance, created, **kwargs):
     Signal pour créer automatiquement des notifications pour les mouvements de stock.
     Notifie tous les clients MAUI associés à la boutique concernée.
     Types de mouvement notifiés:
-    - ENTREE: ajout de stock
-    - SORTIE: retrait de stock
+    - ENTREE: ajout de stock (ou transfert entrant/validé)
+    - SORTIE: retrait de stock (ou transfert sortant)
+    - RETOUR: retour client
     - AJUSTEMENT: ajustement de stock
+    Chaque notification porte l'impact sur la valeur du stock et la colonne
+    du journal de valeur correspondante.
     """
     if not created:
         return
@@ -40,28 +122,81 @@ def creer_notification_stock(sender, instance, created, **kwargs):
     if not clients_boutique.exists():
         logger.info(f"Aucun client actif trouvé pour la boutique {boutique.nom}")
         return
-    
+
+    ref = (instance.reference_document or '').strip()
+    est_transfert = ref.startswith('TRANSFERT-')
+    est_validation = ref.startswith('VALIDATION-')
+    qte = instance.quantite or 0
+    unite = 'FC' if (article.devise or 'CDF') == 'CDF' else article.devise
+
+    # Impact sur la valeur du stock (meme regle que le journal de valeur)
+    impact = _impact_valeur(instance.type_mouvement, article.prix_vente, qte)
+    champ_journal = _champ_journal(instance.type_mouvement, est_transfert)
+    detail_transfert = _detail_transfert(ref) if est_transfert else None
+
     # Déterminer le type de notification et le message selon le mouvement
     if instance.type_mouvement == 'ENTREE':
-        type_notif = 'STOCK_AJOUT'
-        titre = f"Ajout de stock: {article.nom}"
-        message = (
-            f"L'article '{article.nom}' ({article.code}) a été ajouté au stock.\n"
-            f"Quantité ajoutée: +{instance.quantite}\n"
-            f"Stock avant: {instance.stock_avant or 0}\n"
-            f"Stock actuel: {instance.stock_apres or article.quantite_stock}"
-        )
-        action = "ajout"
+        if est_transfert:
+            type_notif = 'STOCK_TRANSFERT'
+            titre = f"Transfert reçu: {article.nom}"
+            message = (
+                f"Transfert entrant: '{article.nom}' ({article.code}) reçu.\n"
+                f"Quantité reçue: +{qte}\n"
+                f"Stock avant: {instance.stock_avant or 0}\n"
+                f"Stock actuel: {instance.stock_apres or article.quantite_stock}"
+            )
+            action = "transfert entrant"
+        elif est_validation:
+            type_notif = 'STOCK_TRANSFERT'
+            titre = f"Transfert validé: {article.nom}"
+            message = (
+                f"Transfert validé côté client: '{article.nom}' ({article.code}).\n"
+                f"Quantité créditée: +{qte}\n"
+                f"Stock avant: {instance.stock_avant or 0}\n"
+                f"Stock actuel: {instance.stock_apres or article.quantite_stock}"
+            )
+            action = "validation de transfert"
+        else:
+            type_notif = 'STOCK_AJOUT'
+            titre = f"Ajout de stock: {article.nom}"
+            message = (
+                f"L'article '{article.nom}' ({article.code}) a été ajouté au stock.\n"
+                f"Quantité ajoutée: +{qte}\n"
+                f"Stock avant: {instance.stock_avant or 0}\n"
+                f"Stock actuel: {instance.stock_apres or article.quantite_stock}"
+            )
+            action = "ajout"
     elif instance.type_mouvement == 'SORTIE':
-        type_notif = 'STOCK_RETRAIT'
-        titre = f"Retrait de stock: {article.nom}"
+        if est_transfert:
+            type_notif = 'STOCK_TRANSFERT'
+            titre = f"Transfert envoyé: {article.nom}"
+            message = (
+                f"Transfert sortant: '{article.nom}' ({article.code}) envoyé.\n"
+                f"Quantité envoyée: {qte}\n"
+                f"Stock avant: {instance.stock_avant or 0}\n"
+                f"Stock actuel: {instance.stock_apres or article.quantite_stock}"
+            )
+            action = "transfert sortant"
+        else:
+            type_notif = 'STOCK_RETRAIT'
+            titre = f"Retrait de stock: {article.nom}"
+            message = (
+                f"L'article '{article.nom}' ({article.code}) a été retiré du stock.\n"
+                f"Quantité retirée: {qte}\n"
+                f"Stock avant: {instance.stock_avant or 0}\n"
+                f"Stock actuel: {instance.stock_apres or article.quantite_stock}"
+            )
+            action = "retrait"
+    elif instance.type_mouvement == 'RETOUR':
+        type_notif = 'STOCK_AJOUT'
+        titre = f"Retour client: {article.nom}"
         message = (
-            f"L'article '{article.nom}' ({article.code}) a été retiré du stock.\n"
-            f"Quantité retirée: {instance.quantite}\n"
+            f"Retour client pour '{article.nom}' ({article.code}).\n"
+            f"Quantité retournée: +{qte}\n"
             f"Stock avant: {instance.stock_avant or 0}\n"
             f"Stock actuel: {instance.stock_apres or article.quantite_stock}"
         )
-        action = "retrait"
+        action = "retour"
     elif instance.type_mouvement == 'AJUSTEMENT':
         type_notif = 'STOCK_AJUSTEMENT'
         titre = f"Ajustement de stock: {article.nom}"
@@ -74,8 +209,26 @@ def creer_notification_stock(sender, instance, created, **kwargs):
         )
         action = "ajustement"
     else:
+        # Vente : le terminal a deja enregistre le ticket, pas de notification
         return
-    
+
+    # Detail du transfert (lot, source -> destination) quand la reference le permet
+    if detail_transfert:
+        message += (
+            f"\n\nTransfert {detail_transfert['reference_lot']}: "
+            f"{detail_transfert['depot_source']} → {detail_transfert['boutique_destination']} "
+            f"({detail_transfert['quantite']} unités, statut {detail_transfert['statut']})"
+        )
+    elif ref:
+        message += f"\n\nRéférence: {ref}"
+
+    # Écart de valeur communiqué au terminal MAUI (colonne du journal de valeur)
+    signe_impact = '+' if impact > 0 else ''
+    message += (
+        f"\nImpact valeur: {signe_impact}{_montant_fc(impact)} {unite} "
+        f"(prix de vente {article.prix_vente} {article.devise})"
+    )
+
     if instance.commentaire:
         message += f"\n\nCommentaire: {instance.commentaire}"
     
@@ -92,6 +245,15 @@ def creer_notification_stock(sender, instance, created, **kwargs):
         'utilisateur': instance.utilisateur,
         'stock_avant': instance.stock_avant or 0,
         'stock_apres': instance.stock_apres or article.quantite_stock,
+        'impact_valeur': _numerique(impact),
+        'impact_valeur_stock': f"{signe_impact}{_montant_fc(impact)} {unite}",
+        'champ_journal': champ_journal,
+        'est_transfert': bool(est_transfert or est_validation),
+        'direction': (
+            'ENTREE' if instance.type_mouvement in ('ENTREE', 'RETOUR')
+            else instance.type_mouvement
+        ),
+        'transfert': detail_transfert,
     }
     
     notifications_creees = 0
@@ -179,6 +341,15 @@ def notifier_ajustement_prix(sender, instance, created, **kwargs):
     variation = prix_nouveau - prix_ancien
     pourcentage = (variation / prix_ancien * 100) if prix_ancien > 0 else 0
     signe = '+' if variation > 0 else ''
+    unite = 'FC' if (instance.devise or 'CDF') == 'CDF' else instance.devise
+
+    # Écart sur la valeur du stock : (nouveau - ancien) x quantité en stock,
+    # la meme valeur que la colonne "Modif. prix" du journal de valeur.
+    try:
+        impact = variation * Decimal(str(instance.quantite_stock or 0))
+    except Exception:
+        impact = Decimal('0')
+    signe_impact = '+' if impact > 0 else ''
     
     type_notif = 'AJUSTEMENT_PRIX'
     titre = f"Ajustement de prix: {instance.nom}"
@@ -186,7 +357,9 @@ def notifier_ajustement_prix(sender, instance, created, **kwargs):
         f"Le prix de l'article '{instance.nom}' ({instance.code}) a été modifié.\n"
         f"Ancien prix: {prix_ancien} {instance.devise}\n"
         f"Nouveau prix: {prix_nouveau} {instance.devise}\n"
-        f"Variation: {signe}{variation} {instance.devise} ({signe}{pourcentage:.1f}%)"
+        f"Variation: {signe}{variation} {instance.devise} ({signe}{pourcentage:.1f}%)\n"
+        f"Impact valeur: {signe_impact}{_montant_fc(impact)} {unite} "
+        f"(stock: {instance.quantite_stock} unités)"
     )
     
     donnees_sup = {
@@ -200,6 +373,9 @@ def notifier_ajustement_prix(sender, instance, created, **kwargs):
         'devise': instance.devise,
         'categorie': instance.categorie.nom if instance.categorie else None,
         'stock_actuel': instance.quantite_stock,
+        'impact_valeur': _numerique(impact),
+        'impact_valeur_stock': f"{signe_impact}{_montant_fc(impact)} {unite}",
+        'champ_journal': 'impact_modification_prix',
     }
     
     notifications_creees = 0
@@ -226,6 +402,21 @@ def notifier_ajustement_prix(sender, instance, created, **kwargs):
         f"💰 {notifications_creees} notification(s) d'ajustement de prix créée(s) "
         f"pour {instance.nom} dans {boutique.nom}"
     )
+
+    # Signal temps réel au terminal MAUI (WebSocket + push FCM) avec l'écart
+    try:
+        from .websocket_utils import notify_price_updated
+        notify_price_updated(
+            boutique.id,
+            instance.id,
+            prix_nouveau,
+            devise=instance.devise,
+            article_nom=instance.nom,
+            ancien_prix=prix_ancien,
+            impact_valeur=impact,
+        )
+    except Exception as e:
+        logger.error(f"✗ Erreur notify_price_updated pour {instance.nom}: {e}")
 
 
 # ──────────────────────────────────────────────────────────────
