@@ -145,6 +145,17 @@
                                 Généré le {{ code_cloture_dujour.date_generation|date:"d/m/Y H:i" }} —
                                 à saisir sur le terminal pour valider la clôture.
                             </small>
+                            <form method="post" action="{% url 'inventory:modifier_code_cloture' boutique.id %}"
+                                  class="d-flex gap-2 mt-2"
+                                  onsubmit="return confirm('Modifier le code de clôture ?\nLe nouveau code devra être transmis au terminal.');">
+                                {% csrf_token %}
+                                <input type="text" name="code" class="form-control form-control-sm"
+                                       maxlength="20" value="{{ code_cloture_dujour.code }}" required
+                                       style="max-width:170px; letter-spacing:2px;">
+                                <button type="submit" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-edit"></i> Modifier
+                                </button>
+                            </form>
                         {% else %}
                             <span class="text-muted">Aucun code généré pour aujourd'hui.</span><br>
                             <small class="text-muted">Cliquez sur « Code de clôture » pour en générer un.</small>

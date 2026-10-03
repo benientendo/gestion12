@@ -659,7 +659,10 @@ def generer_code_cloture(request, boutique_id):
     # Un seul code actif à la fois : on invalide l'ancien
     CodeCloture.objects.filter(boutique=boutique, actif=True).update(actif=False)
 
+    # Unicité : un code actif ne doit jamais être partagé entre deux points de vente
     code = f"{secrets.randbelow(1000000):06d}"
+    while CodeCloture.objects.filter(code__iexact=code, actif=True).exclude(boutique=boutique).exists():
+        code = f"{secrets.randbelow(1000000):06d}"
     CodeCloture.objects.create(
         boutique=boutique,
         code=code,
@@ -670,6 +673,47 @@ def generer_code_cloture(request, boutique_id):
     messages.success(
         request,
         f"🔑 Code de clôture du jour généré : {code} — "
+        f"transmettez-le au terminal pour valider la clôture de la journée."
+    )
+    return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
+
+@login_required
+@commercant_required
+@boutique_access_required
+@require_POST
+def modifier_code_cloture(request, boutique_id):
+    """Modifie le code de clôture actif de la boutique (back-office)."""
+    boutique = request.boutique
+    nouveau_code = (request.POST.get('code') or '').strip()
+
+    code_actif = CodeCloture.objects.filter(
+        boutique=boutique, actif=True
+    ).order_by('-date_generation').first()
+
+    if code_actif is None:
+        messages.error(request, "Aucun code actif : générez d'abord un code de clôture.")
+        return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
+
+    if not nouveau_code:
+        messages.error(request, "Le code de clôture ne peut pas être vide.")
+        return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
+
+    if len(nouveau_code) > 20:
+        messages.error(request, "Code trop long : 20 caractères maximum.")
+        return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
+
+    if CodeCloture.objects.filter(code__iexact=nouveau_code, actif=True).exclude(boutique=boutique).exists():
+        messages.error(
+            request,
+            f"Le code « {nouveau_code} » est déjà utilisé par un autre point de vente."
+        )
+        return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
+
+    code_actif.code = nouveau_code
+    code_actif.save(update_fields=['code'])
+    messages.success(
+        request,
+        f"✏️ Code de clôture mis à jour : {nouveau_code} — "
         f"transmettez-le au terminal pour valider la clôture de la journée."
     )
     return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)

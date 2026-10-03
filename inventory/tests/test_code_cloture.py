@@ -2,8 +2,10 @@
 Tests du code de clôture de journée :
 - Endpoint API /api/v2/simple/cloture/verifier-code/ (terminal MAUI)
 - Vue back-office de génération du code (commerçant)
+- Vue back-office de modification du code (commerçant)
 """
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.test import TestCase, Client as TestClient
 from django.urls import reverse
@@ -183,3 +185,96 @@ class GenerationCodeClotureBackofficeTestCase(TestCase):
         r = self.client_web.post(self.url)
         self.assertEqual(r.status_code, 302)
         self.assertEqual(CodeCloture.objects.count(), 0)
+
+    def test_generation_evite_collision_entre_boutiques(self):
+        autre = Boutique.objects.create(
+            nom='Autre PV', commercant=self.commercant, code_boutique='BT-GEN-002',
+        )
+        CodeCloture.objects.create(
+            boutique=autre, code='999999',
+            date_jour=timezone.localdate(), actif=True, genere_par=self.user,
+        )
+        self.client_web.force_login(self.user)
+        # Premier tirage en collision avec l'autre boutique, second tirage libre
+        with patch('secrets.randbelow', side_effect=[999999, 123456]):
+            self.client_web.post(self.url)
+
+        code = CodeCloture.objects.get(boutique=self.boutique, actif=True)
+        self.assertEqual(code.code, '123456')
+
+
+class ModificationCodeClotureBackofficeTestCase(TestCase):
+    """Tests de la vue back-office de modification du code."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comm_mod', password='pass1234', email='comm_mod@test.cd'
+        )
+        self.commercant = Commercant.objects.create(
+            nom_entreprise='Mod SARL',
+            nom_responsable='Mod',
+            email='comm_mod@test.cd',
+            user=self.user,
+        )
+        self.boutique = Boutique.objects.create(
+            nom='Boutique Mod',
+            commercant=self.commercant,
+            code_boutique='BT-MOD-001',
+        )
+        self.client_web = TestClient()
+        self.url = reverse('inventory:modifier_code_cloture', args=[self.boutique.id])
+
+    def _creer_code_actif(self, code='111111'):
+        return CodeCloture.objects.create(
+            boutique=self.boutique, code=code,
+            date_jour=timezone.localdate(), actif=True, genere_par=self.user,
+        )
+
+    def test_modification_change_le_code(self):
+        ancien = self._creer_code_actif()
+        self.client_web.force_login(self.user)
+        r = self.client_web.post(self.url, {'code': '222222'})
+        self.assertEqual(r.status_code, 302)
+
+        ancien.refresh_from_db()
+        self.assertEqual(ancien.code, '222222')
+        self.assertTrue(ancien.actif)
+        self.assertEqual(
+            CodeCloture.objects.filter(boutique=self.boutique, actif=True).count(), 1
+        )
+
+    def test_modification_refuse_code_dune_autre_boutique(self):
+        ancien = self._creer_code_actif('111111')
+        autre = Boutique.objects.create(
+            nom='Autre PV', commercant=self.commercant, code_boutique='BT-MOD-002',
+        )
+        CodeCloture.objects.create(
+            boutique=autre, code='333333',
+            date_jour=timezone.localdate(), actif=True, genere_par=self.user,
+        )
+        self.client_web.force_login(self.user)
+        self.client_web.post(self.url, {'code': '333333'})
+
+        ancien.refresh_from_db()
+        self.assertEqual(ancien.code, '111111')
+
+    def test_modification_code_vide_rejete(self):
+        ancien = self._creer_code_actif('111111')
+        self.client_web.force_login(self.user)
+        self.client_web.post(self.url, {'code': '   '})
+
+        ancien.refresh_from_db()
+        self.assertEqual(ancien.code, '111111')
+
+    def test_modification_sans_code_actif_ne_cree_pas(self):
+        self.client_web.force_login(self.user)
+        self.client_web.post(self.url, {'code': '444444'})
+        self.assertEqual(CodeCloture.objects.filter(boutique=self.boutique).count(), 0)
+
+    def test_modification_non_authentifiee_redirige(self):
+        ancien = self._creer_code_actif('111111')
+        r = self.client_web.post(self.url, {'code': '555555'})
+        self.assertEqual(r.status_code, 302)
+
+        ancien.refresh_from_db()
+        self.assertEqual(ancien.code, '111111')
