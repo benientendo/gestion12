@@ -208,6 +208,51 @@
 
 {% block content %}
 <div class="container-fluid">
+    <!-- ⏱️ DEMANDES D'ANNULATION EN ATTENTE (alerte clignotante) -->
+    {% if demandes_annulation_en_attente %}
+    <div class="alert banniere-annulation shadow-sm mb-4" id="demandes-annulation" role="alert">
+        <div class="d-flex align-items-center mb-2">
+            <i class="bi bi-envelope-exclamation-fill text-danger fs-4 me-2 blink-annulation"></i>
+            <strong class="fs-6">
+                {{ demandes_annulation_count }} demande(s) d'annulation en attente
+                — le délai d'1 heure est dépassé sur le(s) point(s) de vente
+            </strong>
+        </div>
+        {% for d in demandes_annulation_en_attente %}
+        <div class="bg-white rounded shadow-sm p-2 mb-2 d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
+            <div>
+                <span class="badge bg-danger me-1">{{ d.boutique.nom }}</span>
+                {% if d.terminal %}<span class="badge bg-secondary me-1">{{ d.terminal.nom_terminal }}</span>{% endif %}
+                <span class="fw-bold">{{ d.numero_facture }}</span>
+                {% if d.type_demande == 'LIGNE' %}
+                <span class="badge bg-warning text-dark">article : {{ d.article_nom }}</span>
+                {% else %}
+                <span class="badge bg-primary">facture entière</span>
+                {% endif %}
+                <div class="small text-muted">
+                    Demandée {{ d.date_demande|timesince }} avant
+                    {% if d.motif %}— « {{ d.motif|truncatechars:80 }} »{% endif %}
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <form method="post" action="{% url 'inventory:accorder_extension_annulation' d.boutique_id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="demande_id" value="{{ d.id }}">
+                    <button type="submit" class="btn btn-sm btn-success">
+                        <i class="bi bi-clock-history me-1"></i>Accorder (+1 h)
+                    </button>
+                </form>
+                <form method="post" action="{% url 'inventory:refuser_demande_annulation' d.boutique_id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="demande_id" value="{{ d.id }}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Refuser</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <!-- En-tête Commerçant -->
     <div class="row mb-4">
         <div class="col-12">

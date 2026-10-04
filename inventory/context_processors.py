@@ -99,3 +99,45 @@ def messages_commercant(request):
         pass
 
     return result
+
+
+def demandes_annulation(request):
+    """
+    Injecte les demandes d'annulation EN ATTENTE envoyees par les terminaux
+    MAUI quand le delai d'1 h est depasse (alerte clignotante du back-office).
+    """
+    result = {
+        'demandes_annulation_count': 0,
+        'demandes_annulation_en_attente': [],
+    }
+
+    if not request.user.is_authenticated:
+        return result
+
+    try:
+        from .models import Collaborateur, DemandeAnnulationVente
+
+        try:
+            commercant = request.user.profil_commercant
+            proprietaire = commercant
+        except Exception:
+            collab = Collaborateur.objects.get(user=request.user, est_actif=True)
+            proprietaire = collab.commercant
+
+        boutique_ids = list(
+            Boutique.objects.filter(
+                commercant=proprietaire, est_active=True
+            ).values_list('id', flat=True)
+        )
+
+        qs = DemandeAnnulationVente.objects.filter(
+            boutique_id__in=boutique_ids,
+            statut='EN_ATTENTE'
+        ).select_related('boutique', 'terminal', 'vente', 'ligne__article').order_by('-date_demande')
+
+        result['demandes_annulation_en_attente'] = list(qs[:10])
+        result['demandes_annulation_count'] = qs.count()
+    except Exception:
+        pass
+
+    return result

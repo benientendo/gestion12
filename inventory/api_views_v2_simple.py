@@ -21,7 +21,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Prefetch
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner, CodeCloture, ClotureJournee
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner, CodeCloture, ClotureJournee, DemandeAnnulationVente
 from .serializers import ArticleSerializer, ArticleAvecVariantesSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created, notify_dashboard_stats
 
@@ -3321,6 +3321,7 @@ def annuler_vente_simple(request):
             or data.get('HorodatageAnnulation')
         )
 
+        prolongation = None
         if temps_ecoule > delai_annulation:
             preuve_valide = False
             delai_maui_minutes = None
@@ -3353,14 +3354,31 @@ def annuler_vente_simple(request):
                         )
 
             if not preuve_valide:
-                return Response({
-                    'error': 'Le délai d\'annulation (1 heure) est dépassé',
-                    'code': 'CANCELLATION_TIMEOUT',
-                    'date_vente': to_local_iso(vente.date_vente),
-                    'temps_ecoule_minutes': int(temps_ecoule.total_seconds() / 60),
-                    'delai_max_minutes': 60,
-                    'preuve_maui': bool(horodatage_maui)
-                }, status=status.HTTP_400_BAD_REQUEST)
+                # ⭐ Le commerçant a pu ACCORDER une prolongation (+1 h fixe)
+                prolongation = DemandeAnnulationVente.objects.filter(
+                    vente=vente, statut='ACCEPTEE', expire_le__gt=timezone.now()
+                ).order_by('-date_demande').first()
+
+                if prolongation is None:
+                    en_attente = DemandeAnnulationVente.objects.filter(
+                        vente=vente, statut='EN_ATTENTE'
+                    ).exists()
+                    return Response({
+                        'error': 'Le délai d\'annulation (1 heure) est dépassé',
+                        'code': 'CANCELLATION_TIMEOUT',
+                        'date_vente': to_local_iso(vente.date_vente),
+                        'temps_ecoule_minutes': int(temps_ecoule.total_seconds() / 60),
+                        'delai_max_minutes': 60,
+                        'preuve_maui': bool(horodatage_maui),
+                        'demande_en_attente': en_attente,
+                        'demande_possible': True,
+                        'prolongation_minutes': DemandeAnnulationVente.DELAI_EXTENSION_MINUTES
+                    }, status=status.HTTP_400_BAD_REQUEST)
+
+                logger.info(
+                    f"   ✅ Prolongation accordée par {prolongation.traite_par} "
+                    f"→ annulation acceptée ({prolongation.minutes_restantes} min restantes)"
+                )
         
         # ⭐ TRANSACTION ATOMIQUE : Annulation + Restauration stock
         with transaction.atomic():
@@ -3461,6 +3479,7 @@ def annuler_vente_simple(request):
                 'motif': motif
             },
             'stock_restaure': stock_restaure,
+            'prolongation_utilisee': bool(prolongation),
             'boutique': {
                 'id': boutique.id,
                 'nom': boutique.nom
@@ -3476,6 +3495,452 @@ def annuler_vente_simple(request):
             'code': 'CANCELLATION_ERROR',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# =============================================================================
+# ⏱️ DEMANDE D'ANNULATION (délai dépassé) + ANNULATION D'UN ARTICLE
+# =============================================================================
+# Le délai d'annulation est de 1 heure. Passé ce délai, le terminal MAUI envoie
+# une DEMANDE au commerçant qui peut ACCORDER une prolongation (durée fixe
+# unique) ou REFUSER. Une prolongation accordée et non expirée débloque
+# l'annulation de la facture et/ou de l'article concerné.
+
+def _terminal_annulation(request):
+    """Récupère le terminal (X-Device-Serial) et sa boutique."""
+    numero_serie = (
+        request.headers.get('X-Device-Serial') or
+        request.headers.get('Device-Serial') or
+        request.META.get('HTTP_X_DEVICE_SERIAL')
+    )
+    if not numero_serie:
+        return None, None, Response({
+            'error': 'Numéro de série du terminal requis',
+            'code': 'MISSING_SERIAL'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        terminal = Client.objects.select_related('boutique').get(
+            numero_serie=numero_serie, est_actif=True
+        )
+    except Client.DoesNotExist:
+        return None, None, Response({
+            'error': 'Terminal non trouvé ou inactif',
+            'code': 'TERMINAL_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+    return terminal, terminal.boutique, None
+
+
+def _ligne_annulable(vente, data):
+    """Identifie la ligne (article) à annuler dans la facture."""
+    ids = [
+        data.get('ligne_id') or data.get('LigneId'),
+        data.get('article_id') or data.get('ArticleId') or data.get('article_backend_id'),
+        data.get('code_article') or data.get('CodeArticle'),
+    ]
+    if not any(ids):
+        return None
+    qs = vente.lignes.filter(est_annulee=False).select_related('article', 'variante')
+    if ids[0]:
+        try:
+            return qs.get(pk=int(ids[0]))
+        except (ValueError, TypeError, LigneVente.DoesNotExist):
+            return None
+    if ids[1]:
+        try:
+            return qs.filter(article_id=int(ids[1])).first()
+        except (ValueError, TypeError):
+            return None
+    return qs.filter(article__code=str(ids[2])).first()
+
+
+def _delai_annulation_depasse(vente):
+    from datetime import timedelta
+    return timezone.now() - vente.date_vente > timedelta(hours=1)
+
+
+def _serialize_demande(demande):
+    return {
+        'id': demande.id,
+        'statut': demande.statut,
+        'type_demande': demande.type_demande,
+        'numero_facture': demande.numero_facture,
+        'article_nom': demande.article_nom,
+        'motif': demande.motif,
+        'reponse': demande.reponse,
+        'date_demande': to_local_iso(demande.date_demande),
+        'date_traitement': to_local_iso(demande.date_traitement),
+        'delai_accorde_minutes': demande.delai_accorde_minutes,
+        'expire_le': to_local_iso(demande.expire_le),
+        'minutes_restantes': demande.minutes_restantes,
+        'prolongation_active': demande.prolongation_active,
+    }
+
+
+def _prolongation_active(vente, type_demande=None, ligne=None):
+    qs = DemandeAnnulationVente.objects.filter(
+        vente=vente, statut='ACCEPTEE', expire_le__gt=timezone.now()
+    ).order_by('-date_demande')
+    if type_demande == 'LIGNE' and ligne is not None:
+        qs = qs.filter(ligne=ligne)
+    elif type_demande == 'FACTURE':
+        qs = qs.filter(type_demande='FACTURE')
+    return qs.first()
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def demander_annulation_simple(request):
+    """
+    Le terminal MAUI demande l'annulation d'une facture ou d'un article
+    quand le délai d'1 heure est dépassé.
+    Body: numero_facture, type_demande ('FACTURE'|'LIGNE'),
+          article_id / code_article / ligne_id (pour LIGNE), motif.
+    """
+    terminal, boutique, erreur = _terminal_annulation(request)
+    if erreur:
+        return erreur
+
+    data = request.data
+    numero_facture = data.get('numero_facture') or data.get('NumeroFacture')
+    if not numero_facture:
+        return Response({
+            'error': 'Numéro de facture requis',
+            'code': 'MISSING_NUMERO_FACTURE'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    type_demande = str(data.get('type_demande') or data.get('TypeDemande') or 'FACTURE').upper()
+    if type_demande not in ('FACTURE', 'LIGNE'):
+        type_demande = 'FACTURE'
+
+    try:
+        vente = Vente.objects.select_related('boutique').get(
+            numero_facture=numero_facture, boutique=boutique
+        )
+    except Vente.DoesNotExist:
+        return Response({
+            'error': f'Vente {numero_facture} non trouvée dans cette boutique',
+            'code': 'VENTE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    if vente.est_annulee:
+        return Response({
+            'error': 'Cette vente a déjà été annulée',
+            'code': 'ALREADY_CANCELLED'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    ligne = None
+    if type_demande == 'LIGNE':
+        ligne = _ligne_annulable(vente, data)
+        if ligne is None:
+            return Response({
+                'error': 'Article introuvable ou déjà annulé dans cette facture',
+                'code': 'LIGNE_NOT_FOUND'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    # Prolongation déjà active → le terminal peut annuler directement
+    prolongation = _prolongation_active(vente, type_demande, ligne)
+    if prolongation is not None:
+        return Response({
+            'success': True,
+            'deja_autorise': True,
+            'message': 'Prolongation déjà accordée pour cette facture',
+            'demande': _serialize_demande(prolongation)
+        }, status=status.HTTP_200_OK)
+
+    # Idempotence : une demande EN_ATTENTE existe déjà
+    qs = DemandeAnnulationVente.objects.filter(
+        vente=vente, type_demande=type_demande, statut='EN_ATTENTE'
+    )
+    if type_demande == 'LIGNE':
+        qs = qs.filter(ligne=ligne)
+    demande = qs.order_by('-date_demande').first()
+
+    if demande is None:
+        demande = DemandeAnnulationVente.objects.create(
+            boutique=boutique,
+            terminal=terminal,
+            vente=vente,
+            ligne=ligne,
+            type_demande=type_demande,
+            numero_facture=vente.numero_facture,
+            article_nom=(ligne.article.nom if ligne else ''),
+            motif=str(data.get('motif') or data.get('Motif') or '')[:2000],
+            statut='EN_ATTENTE'
+        )
+        logger.info(
+            f"📨 Demande d'annulation {type_demande} {numero_facture}"
+            f"{' — ' + ligne.article.nom if ligne else ''} "
+            f"par {terminal.nom_terminal} (boutique {boutique.nom})"
+        )
+        code = status.HTTP_201_CREATED
+        deja = False
+    else:
+        code = status.HTTP_200_OK
+        deja = True
+
+    return Response({
+        'success': True,
+        'deja_existante': deja,
+        'message': 'Demande envoyée au commerçant',
+        'prolongation_minutes': DemandeAnnulationVente.DELAI_EXTENSION_MINUTES,
+        'demande': _serialize_demande(demande)
+    }, status=code)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def etat_annulation_simple(request):
+    """
+    État de l'annulation pour une facture (et optionnellement un article).
+    Params: numero_facture, article_id / code_article / ligne_id (optionnel).
+    Le terminal s'en sert pour réactiver le bouton Annuler après accord.
+    """
+    terminal, boutique, erreur = _terminal_annulation(request)
+    if erreur:
+        return erreur
+
+    numero_facture = request.query_params.get('numero_facture') or request.query_params.get('NumeroFacture')
+    if not numero_facture:
+        return Response({
+            'error': 'Numéro de facture requis',
+            'code': 'MISSING_NUMERO_FACTURE'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        vente = Vente.objects.select_related('boutique').get(
+            numero_facture=numero_facture, boutique=boutique
+        )
+    except Vente.DoesNotExist:
+        return Response({
+            'error': f'Vente {numero_facture} non trouvée dans cette boutique',
+            'code': 'VENTE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    type_demande = (request.query_params.get('type_demande') or 'FACTURE').upper()
+    ligne = None
+    if type_demande == 'LIGNE':
+        ligne = _ligne_annulable(vente, request.query_params)
+        type_demande = 'LIGNE'
+
+    qs = DemandeAnnulationVente.objects.filter(vente=vente, type_demande='FACTURE')
+    if type_demande == 'LIGNE':
+        qs = DemandeAnnulationVente.objects.filter(vente=vente, ligne=ligne) if ligne else qs.none()
+    demande = qs.order_by('-date_demande').first()
+
+    prolongation = demande if (demande and demande.prolongation_active) else None
+    delai_depasse = _delai_annulation_depasse(vente)
+    minutes_ecoulees = int((timezone.now() - vente.date_vente).total_seconds() // 60)
+
+    return Response({
+        'success': True,
+        'numero_facture': vente.numero_facture,
+        'vente_annulee': vente.est_annulee,
+        'ligne_annulee': bool(ligne and ligne.est_annulee),
+        'date_vente': to_local_iso(vente.date_vente),
+        'delai_max_minutes': 60,
+        'delai_depasse': delai_depasse,
+        'minutes_depuis_vente': minutes_ecoulees,
+        'delai_disponible': not delai_depasse,
+        'prolongation_minutes': DemandeAnnulationVente.DELAI_EXTENSION_MINUTES,
+        'prolongation_active': bool(prolongation),
+        'minutes_restantes': prolongation.minutes_restantes if prolongation else 0,
+        'peut_annuler': (
+            not vente.est_annulee
+            and not (delai_depasse and prolongation is None)
+        ),
+        'demande': _serialize_demande(demande) if demande else None,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def annuler_ligne_vente_simple(request):
+    """
+    Annule UN ARTICLE d'une facture : restaure le stock de cet article,
+    marque la ligne annulée et retranche son montant du total de la vente.
+    Respecte le délai d'1 heure + preuve MAUI + prolongation accordée.
+    Body: numero_facture, article_id / code_article / ligne_id, motif,
+          horodatage_annulation (optionnel).
+    """
+    terminal, boutique, erreur = _terminal_annulation(request)
+    if erreur:
+        return erreur
+
+    data = request.data
+    numero_facture = data.get('numero_facture') or data.get('NumeroFacture')
+    if not numero_facture:
+        return Response({
+            'error': 'Numéro de facture requis',
+            'code': 'MISSING_NUMERO_FACTURE'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        vente = Vente.objects.select_related('boutique').prefetch_related('lignes__article').get(
+            numero_facture=numero_facture, boutique=boutique
+        )
+    except Vente.DoesNotExist:
+        return Response({
+            'error': f'Vente {numero_facture} non trouvée dans cette boutique',
+            'code': 'VENTE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    if vente.est_annulee:
+        return Response({
+            'error': 'Cette vente a déjà été annulée',
+            'code': 'ALREADY_CANCELLED'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    ligne = _ligne_annulable(vente, data)
+    if ligne is None:
+        return Response({
+            'error': 'Article introuvable ou déjà annulé dans cette facture',
+            'code': 'LIGNE_NOT_FOUND'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+    motif = str(data.get('motif') or data.get('Motif') or 'Annulation article demandée par le terminal')[:255]
+
+    # ⭐ DÉLAI D'ANNULATION : 1 h, preuve MAUI, ou prolongation accordée
+    from datetime import timedelta
+    delai_annulation = timedelta(hours=1)
+    temps_ecoule = timezone.now() - vente.date_vente
+    prolongation = None
+
+    if temps_ecoule > delai_annulation:
+        preuve_valide = False
+        horodatage_maui = data.get('horodatage_annulation') or data.get('HorodatageAnnulation')
+
+        if horodatage_maui:
+            try:
+                dt_maui = parse_datetime(str(horodatage_maui))
+                if dt_maui and timezone.is_naive(dt_maui):
+                    dt_maui = timezone.make_aware(dt_maui)
+            except (ValueError, TypeError):
+                dt_maui = None
+            if dt_maui:
+                ecart = dt_maui - vente.date_vente
+                marge_horloge = timedelta(minutes=10)
+                if (-marge_horloge <= ecart <= delai_annulation
+                        and dt_maui <= timezone.now() + marge_horloge):
+                    preuve_valide = True
+
+        if not preuve_valide:
+            prolongation = _prolongation_active(vente, 'LIGNE', ligne) or _prolongation_active(vente, 'FACTURE')
+            if prolongation is None:
+                en_attente = DemandeAnnulationVente.objects.filter(
+                    Q(vente=vente) & (Q(ligne=ligne) | Q(type_demande='FACTURE')),
+                    statut='EN_ATTENTE'
+                ).exists()
+                return Response({
+                    'error': 'Le délai d\'annulation (1 heure) est dépassé',
+                    'code': 'CANCELLATION_TIMEOUT',
+                    'date_vente': to_local_iso(vente.date_vente),
+                    'temps_ecoule_minutes': int(temps_ecoule.total_seconds() / 60),
+                    'delai_max_minutes': 60,
+                    'demande_en_attente': en_attente,
+                    'demande_possible': True,
+                    'prolongation_minutes': DemandeAnnulationVente.DELAI_EXTENSION_MINUTES
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            logger.info(
+                f"   ✅ Prolongation accordée → annulation de l'article "
+                f"{ligne.article.nom} acceptée"
+            )
+
+    with transaction.atomic():
+        article = ligne.article
+        quantite = ligne.quantite
+        stock_avant = article.quantite_stock
+
+        article.quantite_stock += quantite
+        article.save(update_fields=['quantite_stock'])
+
+        # Journal de valeur (signal): RETOUR → valeur_stock_ajoute
+        MouvementStock.objects.create(
+            article=article,
+            type_mouvement='RETOUR',
+            quantite=quantite,
+            stock_avant=stock_avant,
+            stock_apres=article.quantite_stock,
+            reference_document=f"ANNUL-LIGNE-{vente.numero_facture}",
+            utilisateur=terminal.nom_terminal,
+            commentaire=(
+                f"Annulation article {article.nom} (facture {vente.numero_facture})"
+                f" - Variante: {ligne.variante.nom_variante} - Motif: {motif}"
+                if ligne.variante else
+                f"Annulation article {article.nom} (facture {vente.numero_facture}) - Motif: {motif}"
+            )
+        )
+
+        ligne.est_annulee = True
+        ligne.date_annulation = timezone.now()
+        ligne.motif_annulation = motif
+        ligne.annulee_par = terminal.nom_terminal
+        ligne.save(update_fields=['est_annulee', 'date_annulation', 'motif_annulation', 'annulee_par'])
+
+        # ⭐ Total : retrancher le montant de la ligne (mêmes règles qu'à la création)
+        update_fields = ['montant_total']
+        valeur_devise = (
+            Decimal(ligne.total_ligne_usd or 0) if ligne.devise == 'USD'
+            else Decimal(ligne.total_ligne or 0)
+        )
+        if vente.devise == 'USD':
+            # Pour une vente USD, montant_total contient le montant en $
+            montant_devise = valeur_devise
+            if montant_devise and Decimal(vente.montant_total or 0) > 0:
+                vente.montant_total = max(Decimal('0'), Decimal(vente.montant_total) - montant_devise)
+        else:
+            montant_devise = Decimal(ligne.total_ligne or 0)
+            if montant_devise and Decimal(vente.montant_total or 0) > 0:
+                vente.montant_total = max(Decimal('0'), Decimal(vente.montant_total) - montant_devise)
+
+        if vente.montant_total_usd is not None and valeur_devise > 0:
+            vente.montant_total_usd = max(
+                Decimal('0'), Decimal(vente.montant_total_usd) - valeur_devise
+            )
+            update_fields.append('montant_total_usd')
+
+        vente.save(update_fields=update_fields)
+
+        # ⭐ Neutraliser les traces de réduction de cet article
+        traces = list(ArticleNegocie.objects.filter(
+            boutique=boutique,
+            reference_vente=vente.numero_facture,
+            source='CAISSE'
+        ).filter(Q(code_article=article.code) | Q(article_id=article.pk)))
+        for t in traces:
+            t.source = 'ANNULATION'
+            t.motif = f"Reduction annulee: article {article.nom} annule - {motif}"[:255]
+            t.save(update_fields=['source', 'motif', 'updated_at'])
+
+        lignes_actives = vente.lignes.filter(est_annulee=False).count()
+        logger.info(
+            f"✅ Article {article.nom} annulé sur {vente.numero_facture} "
+            f"(stock {stock_avant} → {article.quantite_stock}, "
+            f"{lignes_actives} ligne(s) restante(s), total {vente.montant_total} {vente.devise})"
+        )
+
+        notify_stock_updated(boutique.id, article.id, article.quantite_stock)
+
+    return Response({
+        'success': True,
+        'message': f'Article {article.nom} annulé avec succès',
+        'prolongation_utilisee': bool(prolongation),
+        'ligne': {
+            'article_id': article.id,
+            'article_nom': article.nom,
+            'code': article.code,
+            'quantite_restauree': quantite,
+            'montant_restitue': str(valeur_devise),
+            'devise': ligne.devise,
+            'stock_avant': stock_avant,
+            'stock_apres': article.quantite_stock,
+        },
+        'vente': {
+            'numero_facture': vente.numero_facture,
+            'montant_total': str(vente.montant_total),
+            'montant_total_usd': str(vente.montant_total_usd) if vente.montant_total_usd is not None else None,
+            'lignes_actives': lignes_actives,
+        }
+    }, status=status.HTTP_200_OK)
 
 
 # =============================================================================

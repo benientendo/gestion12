@@ -28,6 +28,24 @@
          📺 Canal+      : <link rel="stylesheet" href="/static/css/canalplus-theme.css?v=1">
          🟢 WhatsApp Web : <link rel="stylesheet" href="/static/css/whatsapp-theme.css?v=2"> -->
     {% block extra_css %}{% endblock %}
+    <style>
+        /* ⏱️ Alerte clignotante : demande d'annulation en attente */
+        @keyframes blink-annulation {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.15; }
+        }
+        .blink-annulation {
+            animation: blink-annulation 1s step-start infinite;
+        }
+        .banniere-annulation {
+            border-left: 6px solid #dc3545;
+            background: linear-gradient(90deg, #fff5f5 0%, #ffe3e3 100%);
+            animation: blink-annulation 1.2s step-start infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .blink-annulation, .banniere-annulation { animation: none; }
+        }
+    </style>
 </head>
 <body>
     <!-- Loader -->
@@ -114,7 +132,19 @@
                                         {% endif %}
                                     </div>
                                 </li>
-                                
+
+                                <!-- ⏱️ Demandes d'annulation en attente (clignotant) -->
+                                {% if demandes_annulation_count > 0 %}
+                                <li class="nav-item mx-1">
+                                    <a class="nav-link position-relative" href="{% url 'inventory:commercant_dashboard' %}#demandes-annulation" title="Demande(s) d'annulation en attente">
+                                        <i class="bi bi-envelope-exclamation fa-fw text-danger blink-annulation"></i>
+                                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger blink-annulation" style="font-size: 0.65rem;">
+                                            {{ demandes_annulation_count }}
+                                        </span>
+                                    </a>
+                                </li>
+                                {% endif %}
+
                                 {% if user.is_authenticated %}
                                 <!-- Bouton Scanner Global (visible uniquement dans un point de vente) -->
                                 <li class="nav-item mx-1" id="globalScannerBtn" style="display:none;">

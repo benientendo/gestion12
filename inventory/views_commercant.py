@@ -22,7 +22,7 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination, CodeCloture, ClotureJournee
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination, CodeCloture, ClotureJournee, DemandeAnnulationVente
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 from .distribution import etat_distribution
 import json
@@ -801,6 +801,90 @@ def annuler_cloture_journee(request, boutique_id):
         "réceptionner et modifier ses prix."
     )
     return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
+
+# ===== ⏱️ DEMANDES D'ANNULATION (délai de 1 h dépassé) =====
+
+def _retour_dashboard(request):
+    """Retour à la page d'où vient le formulaire (sinon le tableau de bord)."""
+    referer = request.META.get('HTTP_REFERER') or ''
+    if referer.startswith('/') and not referer.startswith('//'):
+        return redirect(referer)
+    return redirect('inventory:commercant_dashboard')
+
+
+def _demande_en_attente(request, demande_id):
+    """Demande EN_ATTENTE appartenant à la boutique connectée (ou None)."""
+    try:
+        demande_id = int(demande_id)
+    except (TypeError, ValueError):
+        return None
+    return DemandeAnnulationVente.objects.filter(
+        id=demande_id,
+        boutique_id=request.boutique.id,
+        statut='EN_ATTENTE',
+    ).select_related('boutique', 'terminal', 'vente', 'ligne__article').first()
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+@require_POST
+def accorder_extension_annulation(request, boutique_id):
+    """
+    Accorde la prolongation (durée fixe unique) : le terminal MAUI peut
+    alors annuler la facture ou l'article concerné.
+    """
+    demande = _demande_en_attente(request, request.POST.get('demande_id'))
+    if demande is None:
+        messages.error(request, "Demande introuvable ou déjà traitée.")
+        return _retour_dashboard(request)
+
+    maintenant = timezone.now()
+    minutes = DemandeAnnulationVente.DELAI_EXTENSION_MINUTES
+    demande.statut = 'ACCEPTEE'
+    demande.delai_accorde_minutes = minutes
+    demande.expire_le = maintenant + timedelta(minutes=minutes)
+    demande.traite_par = request.user
+    demande.date_traitement = maintenant
+    demande.reponse = f"Prolongation de {minutes} min accordée"
+    demande.save(update_fields=[
+        'statut', 'delai_accorde_minutes', 'expire_le',
+        'traite_par', 'date_traitement', 'reponse',
+    ])
+
+    cible = demande.article_nom or demande.numero_facture
+    messages.success(
+        request,
+        f"✅ Prolongation de {minutes} min accordée — le terminal peut "
+        f"annuler « {cible} » jusqu'à {demande.expire_le.strftime('%H:%M')}."
+    )
+    return _retour_dashboard(request)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+@require_POST
+def refuser_demande_annulation(request, boutique_id):
+    """Refuse la demande : le terminal affiche le refus au caissier."""
+    demande = _demande_en_attente(request, request.POST.get('demande_id'))
+    if demande is None:
+        messages.error(request, "Demande introuvable ou déjà traitée.")
+        return _retour_dashboard(request)
+
+    reponse = str(request.POST.get('reponse') or '').strip() or "Annulation refusée par le commerçant"
+    demande.statut = 'REFUSEE'
+    demande.traite_par = request.user
+    demande.date_traitement = timezone.now()
+    demande.reponse = reponse[:255]
+    demande.save(update_fields=['statut', 'traite_par', 'date_traitement', 'reponse'])
+
+    cible = demande.article_nom or demande.numero_facture
+    messages.warning(
+        request,
+        f"🚫 Demande refusée — « {cible} » ne sera pas annulé sur le terminal."
+    )
+    return _retour_dashboard(request)
 
 # ===== GESTION DES ARTICLES =====
 

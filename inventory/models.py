@@ -425,7 +425,13 @@ class LigneVente(models.Model):
     # Prix en dollars USD
     prix_unitaire_usd = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, help_text="Prix unitaire en USD")
     devise = models.CharField(max_length=3, choices=[('CDF', 'Franc Congolais'), ('USD', 'Dollar US')], default='CDF')
-    
+
+    # ⭐ ANNULATION D'UNE LIGNE (article) DE LA VENTE
+    est_annulee = models.BooleanField(default=False, help_text="Ligne annulée (article retiré de la facture)")
+    date_annulation = models.DateTimeField(null=True, blank=True)
+    motif_annulation = models.CharField(max_length=255, blank=True, default='')
+    annulee_par = models.CharField(max_length=100, blank=True, default='')
+
     @property
     def total_ligne(self):
         return self.quantite * self.prix_unitaire
@@ -2196,6 +2202,96 @@ class DemandeResetPdv(models.Model):
         verbose_name = "Demande de réinitialisation PDV"
         verbose_name_plural = "Demandes de réinitialisation PDV"
         ordering = ['-date_demande']
+
+
+class DemandeAnnulationVente(models.Model):
+    """
+    Demande d'annulation envoyée par un terminal MAUI quand le délai
+    d'annulation (1 heure) est dépassé, pour une facture entière ou
+    pour un seul article de la facture.
+    ⚠️ Flux contrôlé : le terminal demande, le commerçant ACCORDE une
+    prolongation (durée fixe unique) ou REFUSE. Une prolongation accordée
+    et non expirée débloque l'annulation côté MAUI et côté API.
+    """
+
+    STATUT_CHOICES = [
+        ('EN_ATTENTE', 'En attente du commerçant'),
+        ('ACCEPTEE', 'Acceptée — prolongation accordée'),
+        ('REFUSEE', 'Refusée'),
+    ]
+
+    TYPE_CHOICES = [
+        ('FACTURE', 'Facture entière'),
+        ('LIGNE', 'Un article de la facture'),
+    ]
+
+    # Durée fixe accordée par le commerçant (un seul clic, une seule durée)
+    DELAI_EXTENSION_MINUTES = 60
+
+    boutique = models.ForeignKey(
+        'Boutique', on_delete=models.CASCADE, related_name='demandes_annulation'
+    )
+    terminal = models.ForeignKey(
+        'Client', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='demandes_annulation'
+    )
+    vente = models.ForeignKey(
+        'Vente', on_delete=models.CASCADE, related_name='demandes_annulation'
+    )
+    ligne = models.ForeignKey(
+        'LigneVente', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='demandes_annulation'
+    )
+
+    type_demande = models.CharField(max_length=10, choices=TYPE_CHOICES, default='FACTURE')
+    numero_facture = models.CharField(max_length=50, db_index=True)
+    article_nom = models.CharField(max_length=200, blank=True, default='')
+    motif = models.TextField(blank=True, help_text="Motif saisi par le terminal MAUI")
+
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_ATTENTE')
+    delai_accorde_minutes = models.PositiveIntegerField(default=0)
+    expire_le = models.DateTimeField(
+        null=True, blank=True, help_text="Fin de validité de la prolongation accordée"
+    )
+
+    traite_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='demandes_annulation_traitees'
+    )
+    date_traitement = models.DateTimeField(null=True, blank=True)
+    reponse = models.CharField(max_length=255, blank=True, default='')
+
+    date_demande = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def prolongation_active(self):
+        """True si une prolongation a été accordée et n'est pas encore expirée."""
+        return (
+            self.statut == 'ACCEPTEE'
+            and self.expire_le is not None
+            and self.expire_le > timezone.now()
+        )
+
+    @property
+    def minutes_restantes(self):
+        if not self.prolongation_active:
+            return 0
+        reste = self.expire_le - timezone.now()
+        return max(0, int(reste.total_seconds() // 60))
+
+    def __str__(self):
+        return (
+            f"Annulation {self.numero_facture} ({self.get_type_demande_display()})"
+            f" — {self.get_statut_display()}"
+        )
+
+    class Meta:
+        verbose_name = "Demande d'annulation de vente"
+        verbose_name_plural = "Demandes d'annulation de ventes"
+        ordering = ['-date_demande']
+        indexes = [
+            models.Index(fields=['boutique', 'statut'], name='idx_demande_annul_bs'),
+        ]
 
 
 class Banner(models.Model):

@@ -53,6 +53,14 @@ urlpatterns = [
     path('ventes/annuler/', api_views_v2_simple.annuler_vente_simple, name='annuler_vente'),
     path('ventes/notifier-rejet', api_views_v2_simple.notifier_rejet_vente_simple, name='notifier_rejet_no_slash'),
     path('ventes/notifier-rejet/', api_views_v2_simple.notifier_rejet_vente_simple, name='notifier_rejet'),
+    path('ventes/annuler-ligne', api_views_v2_simple.annuler_ligne_vente_simple, name='annuler_ligne_vente_no_slash'),
+    path('ventes/annuler-ligne/', api_views_v2_simple.annuler_ligne_vente_simple, name='annuler_ligne_vente'),
+
+    # ===== ⏱️ DEMANDE D'ANNULATION (délai de 1 h dépassé) =====
+    path('annulation/demander', api_views_v2_simple.demander_annulation_simple, name='demander_annulation_no_slash'),
+    path('annulation/demander/', api_views_v2_simple.demander_annulation_simple, name='demander_annulation'),
+    path('annulation/etat', api_views_v2_simple.etat_annulation_simple, name='etat_annulation_no_slash'),
+    path('annulation/etat/', api_views_v2_simple.etat_annulation_simple, name='etat_annulation'),
     
     # ===== ANALYSE IA MOUVEMENTS =====
     path('analyse/mouvements', api_views_v2_simple.analyse_mouvements_simple, name='analyse_mouvements_no_slash'),

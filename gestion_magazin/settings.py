@@ -128,6 +128,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'inventory.context_processors.alertes_stock',
                 'inventory.context_processors.messages_commercant',
+                'inventory.context_processors.demandes_annulation',
             ],
         },
     },
