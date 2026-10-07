@@ -297,6 +297,9 @@
                         <div class="mb-2">
                             <span class="info-label">ARTICLES:</span>
                             <span class="badge bg-primary">{{ vente.lignes.count }} article(s)</span>
+                            {% if vente.lignes_annulees %}
+                            <span class="badge bg-danger"><i class="fas fa-ban"></i> {{ vente.lignes_annulees|length }} annulé(s)</span>
+                            {% endif %}
                         </div>
                         <div>
                             <span class="info-label">MODE PAIEMENT:</span>
@@ -312,6 +315,25 @@
                         </button>
                     </div>
                 </div>
+
+                <!-- ⭐ Articles annulés : nom, quantité, valeur + cas (en rouge) -->
+                {% if vente.lignes_annulees %}
+                <div class="mt-1 p-2 rounded border border-danger" style="background-color:#fff5f5;">
+                    <div class="text-danger fw-bold small mb-1">
+                        <i class="fas fa-ban"></i> Article(s) annulé(s)
+                    </div>
+                    {% for ligne in vente.lignes_annulees %}
+                    <div class="d-flex justify-content-between align-items-start small text-danger">
+                        <span>
+                            <strong>{{ ligne.article.nom }}</strong>
+                            — qté {{ ligne.quantite }}
+                            <span class="badge bg-danger ms-1">{{ ligne.statut_annulation }}</span>
+                        </span>
+                        <span class="fw-bold ms-2 text-nowrap">{{ ligne.total_ligne|format_cdf:0 }} CDF</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -340,7 +362,12 @@
                         {% endif %}
 
                         <!-- Articles -->
-                        <h6 class="mb-3">Articles ({{ vente.lignes.count }})</h6>
+                        <h6 class="mb-3">
+                            Articles ({{ vente.lignes.count }})
+                            {% if vente.lignes_annulees %}
+                            <span class="badge bg-danger ms-1">{{ vente.lignes_annulees|length }} annulé(s)</span>
+                            {% endif %}
+                        </h6>
                         <table class="table table-sm">
                             <thead>
                                 <tr>
@@ -352,23 +379,28 @@
                             </thead>
                             <tbody>
                                 {% for ligne in vente.lignes.all %}
-                                <tr {% if ligne.est_negocie %}class="table-warning"{% endif %}>
+                                <tr {% if ligne.est_annulee %}class="table-danger"{% elif ligne.est_negocie %}class="table-warning"{% endif %}>
                                     <td>
+                                        {% if ligne.est_annulee %}
+                                        <span class="text-danger text-decoration-line-through">{{ ligne.article.nom }}</span>
+                                        <br><span class="badge bg-danger mt-1"><i class="fas fa-ban"></i> {{ ligne.statut_annulation }}</span>
+                                        {% else %}
                                         {{ ligne.article.nom }}
+                                        {% endif %}
                                         {% if ligne.est_negocie %}
                                         <span class="badge bg-warning text-dark ms-1" title="Prix négocié: {{ ligne.prix_original|format_cdf:0 }} → {{ ligne.prix_unitaire|format_cdf:0 }}">
                                             💰 -{{ ligne.reduction_pourcentage|floatformat:0 }}%
                                         </span>
                                         {% endif %}
                                     </td>
-                                    <td class="text-center">{{ ligne.quantite }}</td>
-                                    <td class="text-end">
+                                    <td class="text-center {% if ligne.est_annulee %}text-danger text-decoration-line-through{% endif %}">{{ ligne.quantite }}</td>
+                                    <td class="text-end {% if ligne.est_annulee %}text-danger text-decoration-line-through{% endif %}">
                                         {{ ligne.prix_unitaire|format_cdf:0 }}
                                         {% if ligne.est_negocie %}
                                         <br><small class="text-muted text-decoration-line-through">{{ ligne.prix_original|format_cdf:0 }}</small>
                                         {% endif %}
                                     </td>
-                                    <td class="text-end">{{ ligne.sous_total|format_cdf:0 }}</td>
+                                    <td class="text-end {% if ligne.est_annulee %}text-danger text-decoration-line-through{% endif %}">{{ ligne.total_ligne|format_cdf:0 }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>

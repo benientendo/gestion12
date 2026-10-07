@@ -397,7 +397,17 @@ class Vente(models.Model):
         help_text="Code du motif choisi sur le terminal (ERREUR_COMMANDE / ARTICLE_DEFECTUEUX)"
     )
     annulee_par = models.CharField(max_length=100, blank=True, help_text="Terminal ou utilisateur ayant annulé")
-    
+
+    @property
+    def lignes_annulees(self):
+        """Articles annulés de la facture (bloc rouge sous la facture, historique)."""
+        return [l for l in self.lignes.all() if l.est_annulee]
+
+    @property
+    def nb_articles_actifs(self):
+        """Nombre d'articles encore actifs (non annulés) sur la facture."""
+        return len([l for l in self.lignes.all() if not l.est_annulee])
+
     def __str__(self):
         return f"Vente {self.numero_facture} - {self.date_vente.strftime('%d/%m/%Y')}"
     
@@ -455,6 +465,24 @@ class LigneVente(models.Model):
     @property
     def total_ligne(self):
         return self.quantite * self.prix_unitaire
+
+    @property
+    def remis_en_stock(self):
+        """Cas 1 : annulation repartie en stock. Cas 2 : article défectueux, resté hors stock."""
+        code = (self.motif_annulation_code or '').strip()
+        if code:
+            return code != 'ARTICLE_DEFECTUEUX'
+        motif = (self.motif_annulation or '').lower()
+        return 'défectueux' not in motif and 'defectueux' not in motif
+
+    @property
+    def statut_annulation(self):
+        """Libellé du cas d'annulation (affiché en rouge dans la liste des factures)."""
+        motif = (self.motif_annulation or '').strip()
+        if not motif:
+            motif = 'Article défectueux' if not self.remis_en_stock else 'Achat par erreur du client'
+        consigne = 'remis en stock' if self.remis_en_stock else 'non remis en stock'
+        return f'{motif} — {consigne}'
     
     @property
     def total_ligne_usd(self):

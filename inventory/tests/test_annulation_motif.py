@@ -423,3 +423,64 @@ class AnnulationMotifBackOfficeTestCase(DemandeAnnulationBase):
             - self.journal.valeur_stock_sorti - self.journal.valeur_transfert_sortant
             - self.journal.valeur_ventes,
         )
+
+
+class AnnulationAffichageListeFacturesTestCase(DemandeAnnulationBase):
+    """Articles annulés affichés en ROUGE (nom, quantité, valeur, cas) dans la liste des factures."""
+
+    def setUp(self):
+        super().setUp()
+        self.web.force_login(self.user)
+        self.article.quantite_stock = 8
+        self.article.save(update_fields=['quantite_stock'])
+
+    def _annuler_un_article(self, motif, code):
+        vente = self._creer_vente(
+            articles=[(self.article, 2, Decimal('1000')),
+                      (self.article2, 1, Decimal('500'))]
+        )
+        r = self.api.post(
+            self.url_annuler_ligne,
+            data={
+                'numero_facture': vente.numero_facture,
+                'article_id': self.article.id,
+                'motif': motif,
+                'motif_code': code,
+            },
+            content_type='application/json', **self.entete
+        )
+        self.assertEqual(r.status_code, 200)
+        return vente
+
+    def test_affichage_cas_article_defectueux(self):
+        vente = self._annuler_un_article('Article défectueux', 'ARTICLE_DEFECTUEUX')
+        ligne = vente.lignes.get(article=self.article)
+
+        self.assertFalse(ligne.remis_en_stock)
+        self.assertIn('Article défectueux', ligne.statut_annulation)
+        self.assertIn('non remis en stock', ligne.statut_annulation)
+
+        self.assertEqual([l.id for l in vente.lignes_annulees], [ligne.id])
+        self.assertEqual(vente.nb_articles_actifs, 1)
+
+    def test_affichage_cas_achat_par_erreur(self):
+        vente = self._annuler_un_article('Achat par erreur du client', 'ERREUR_COMMANDE')
+        ligne = vente.lignes.get(article=self.article)
+
+        self.assertTrue(ligne.remis_en_stock)
+        self.assertIn('Achat par erreur du client', ligne.statut_annulation)
+        self.assertIn('remis en stock', ligne.statut_annulation)
+        self.assertNotIn('non remis en stock', ligne.statut_annulation)
+        self.assertEqual(len(vente.lignes_annulees), 1)
+
+    def test_liste_factures_affiche_l_article_annule(self):
+        vente = self._annuler_un_article('Article défectueux', 'ARTICLE_DEFECTUEUX')
+
+        r = self.web.get(reverse(
+            'inventory:commercant_ventes_boutique', args=[self.boutique.id]
+        ))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'Article(s) annulé(s)')
+        self.assertContains(r, self.article.nom)
+        self.assertContains(r, 'non remis en stock')
+        self.assertContains(r, vente.numero_facture)
