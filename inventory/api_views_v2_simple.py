@@ -48,29 +48,42 @@ def to_local_iso(dt):
 def _compute_dashboard_stats(boutique):
     """Calcule les stats recette du jour/mois pour le push WebSocket dashboard."""
     from .models import RapportCaisse
+    from .ca_remboursements import ca_net, remboursements
     today = timezone.localdate()
     premier_jour_mois = today.replace(day=1)
 
+    scope = Q(paye=True) & (Q(boutique=boutique) | Q(client_maui__boutique=boutique))
+    # Perimetre sans date : imputation des remboursements au jour d'annulation
+    perimetre = Vente.objects.filter(scope).distinct()
+    perimetre_cdf = perimetre.filter(devise='CDF')
+    perimetre_usd = perimetre.filter(devise='USD')
+
     ventes_base = Q(paye=True, est_annulee=False) & (Q(boutique=boutique) | Q(client_maui__boutique=boutique))
     ventes_jour = Vente.objects.filter(ventes_base, date_vente__date=today).distinct()
-    ca_jour_brut = ventes_jour.filter(devise='CDF').aggregate(total=Sum('montant_total'))['total'] or 0
-    ca_jour_usd = ventes_jour.filter(devise='USD').aggregate(total=Sum('montant_total'))['total'] or 0
+    ventes_jour_toutes = Vente.objects.filter(scope, date_vente__date=today).distinct()
+    ca_jour_cdf = ca_net(ventes_jour_toutes.filter(devise='CDF'), perimetre_cdf, today, today)
+    ca_jour_usd = ca_net(ventes_jour_toutes.filter(devise='USD'), perimetre_usd, today, today)
+    remboursements_cdf = remboursements(perimetre_cdf, today, today)
+    remboursements_usd = remboursements(perimetre_usd, today, today)
     depenses_jour = RapportCaisse.objects.filter(
         boutique=boutique, date_rapport__date=today, depense_appliquee=True
     ).aggregate(total=Sum('depense'))['total'] or 0
 
     ventes_mois = Vente.objects.filter(ventes_base, date_vente__date__gte=premier_jour_mois).distinct()
-    ca_mois_brut = ventes_mois.filter(devise='CDF').aggregate(total=Sum('montant_total'))['total'] or 0
-    ca_mois_usd = ventes_mois.filter(devise='USD').aggregate(total=Sum('montant_total'))['total'] or 0
+    ventes_mois_toutes = Vente.objects.filter(scope, date_vente__date__gte=premier_jour_mois).distinct()
+    ca_mois_cdf = ca_net(ventes_mois_toutes.filter(devise='CDF'), perimetre_cdf, premier_jour_mois, today)
+    ca_mois_usd = ca_net(ventes_mois_toutes.filter(devise='USD'), perimetre_usd, premier_jour_mois, today)
     depenses_mois = RapportCaisse.objects.filter(
         boutique=boutique, date_rapport__date__gte=premier_jour_mois, date_rapport__date__lte=today, depense_appliquee=True
     ).aggregate(total=Sum('depense'))['total'] or 0
 
     return {
-        'ca_jour': float(ca_jour_brut - depenses_jour),
+        'ca_jour': float(ca_jour_cdf - depenses_jour),
         'ca_jour_usd': float(ca_jour_usd),
-        'ca_mois': float(ca_mois_brut - depenses_mois),
+        'ca_mois': float(ca_mois_cdf - depenses_mois),
         'ca_mois_usd': float(ca_mois_usd),
+        'remboursements_jour': float(remboursements_cdf),
+        'remboursements_jour_usd': float(remboursements_usd),
         'nb_ventes_jour': ventes_jour.count(),
         'nb_ventes_mois': ventes_mois.count(),
     }
@@ -3386,6 +3399,10 @@ def annuler_vente_simple(request):
         # ⭐ TRANSACTION ATOMIQUE : Annulation + Restauration stock
         with transaction.atomic():
             stock_restaure = []
+            # Horodatage unique : lignes et vente portent la MEME date
+            # d'annulation, pour que le CA net sache retrouver le montant
+            # d'origine d'une vente annulee en une seule fois
+            horodatage_annulation = timezone.now()
             
             # Traiter chaque ligne de vente (les lignes déjà annulées individuellement
             # sont ignorées : leur stock a déjà été géré à ce moment-là)
@@ -3447,7 +3464,7 @@ def annuler_vente_simple(request):
 
                 # Traçabilité par article (cohérence facture / réimpression)
                 ligne.est_annulee = True
-                ligne.date_annulation = timezone.now()
+                ligne.date_annulation = horodatage_annulation
                 ligne.motif_annulation = motif
                 ligne.motif_annulation_code = motif_code or ''
                 ligne.annulee_par = terminal.nom_terminal
@@ -3458,7 +3475,7 @@ def annuler_vente_simple(request):
             
             # Marquer la vente comme annulée
             vente.est_annulee = True
-            vente.date_annulation = timezone.now()
+            vente.date_annulation = horodatage_annulation
             vente.motif_annulation = motif
             vente.motif_annulation_code = motif_code or ''
             vente.annulee_par = terminal.nom_terminal

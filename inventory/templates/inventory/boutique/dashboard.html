@@ -251,6 +251,10 @@
                                         <span class="text-danger fw-semibold">Dépenses: <span class="sensitive-amount">{{ depenses_appliquees_ca_jour|format_cdf:0 }} CDF</span></span>
                                     </small>
                                     {% endif %}
+                                    <small class="d-block mt-1" id="stat-remboursements-jour-wrap" {% if not remboursements_jour %}style="display:none"{% endif %}>
+                                        <span class="text-white-50">Remboursé aujourd'hui :</span>
+                                        <span class="fw-semibold sensitive-amount" id="stat-remboursements-jour">-{{ remboursements_jour|format_cdf:0 }} CDF</span>
+                                    </small>
                                 </div>
                             </div>
                         </a>
@@ -678,6 +682,17 @@
                 if (cj) cj.textContent = formatCDF(stats.ca_jour);
                 if (cm) cm.textContent = formatCDF(stats.ca_mois);
                 if (nv) nv.textContent = stats.nb_ventes_jour;
+
+                const rb = document.getElementById('stat-remboursements-jour');
+                const rbWrap = document.getElementById('stat-remboursements-jour-wrap');
+                if (rb && rbWrap) {
+                    if (stats.remboursements_jour > 0) {
+                        rb.textContent = '-' + formatCDF(stats.remboursements_jour);
+                        rbWrap.style.display = '';
+                    } else {
+                        rbWrap.style.display = 'none';
+                    }
+                }
 
                 if (cjUsd && cjUsdWrap) {
                     if (stats.ca_jour_usd > 0) {

@@ -25,6 +25,7 @@ from reportlab.lib.units import cm
 from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination, CodeCloture, ClotureJournee, DemandeAnnulationVente
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 from .distribution import etat_distribution
+from .ca_remboursements import ca_net, remboursements
 import json
 import io
 
@@ -342,6 +343,16 @@ def dashboard_commercant(request):
 
         total_ventes += nb_ventes
     
+    # Perimetre des ventes SANS filtre de date : les remboursements sont
+    # imputes au JOUR d'annulation (une facture d'hier remboursee aujourd'hui
+    # reduit le CA d'aujourd'hui, pas celui de la journee cloturee)
+    perimetre = Vente.objects.filter(
+        Q(boutique__in=boutiques) | Q(client_maui__boutique__in=boutiques),
+        paye=True,
+    ).distinct()
+    perimetre_cdf = perimetre.filter(devise='CDF')
+    perimetre_usd = perimetre.filter(devise='USD')
+
     # Recette du jour - Séparation CDF et USD
     ventes_jour = Vente.objects.filter(
         Q(boutique__in=boutiques) | Q(client_maui__boutique__in=boutiques),
@@ -349,19 +360,32 @@ def dashboard_commercant(request):
         paye=True,
         est_annulee=False
     ).distinct()
-    
+    ventes_jour_toutes = Vente.objects.filter(
+        Q(boutique__in=boutiques) | Q(client_maui__boutique__in=boutiques),
+        date_vente__date=aujourd_hui,
+        paye=True,
+    ).distinct()
+
     # Recette CDF du jour (ventes en CDF uniquement)
     ventes_jour_cdf = ventes_jour.filter(devise='CDF')
-    ca_jour_cdf = ventes_jour_cdf.aggregate(total=Sum('montant_total'))['total'] or 0
-    
+    ca_jour_cdf = ca_net(
+        ventes_jour_toutes.filter(devise='CDF'), perimetre_cdf, aujourd_hui, aujourd_hui
+    )
+
     # Recette USD du jour (ventes en USD uniquement)
     # Pour les ventes USD, montant_total contient le montant en $ (montant_total_usd peut être NULL)
     ventes_jour_usd = ventes_jour.filter(devise='USD')
-    ca_jour_usd = ventes_jour_usd.aggregate(total=Sum('montant_total'))['total'] or 0
-    
+    ca_jour_usd = ca_net(
+        ventes_jour_toutes.filter(devise='USD'), perimetre_usd, aujourd_hui, aujourd_hui
+    )
+
+    # Remboursements imputes au CA du jour (annulations immediates ou differees)
+    remboursements_jour_cdf = remboursements(perimetre_cdf, aujourd_hui, aujourd_hui)
+    remboursements_jour_usd = remboursements(perimetre_usd, aujourd_hui, aujourd_hui)
+
     # Total jour (pour compatibilité, on garde le CDF)
     ca_jour = ca_jour_cdf
-    
+
     # Recette 30 jours - Séparation CDF et USD
     ventes_30j = Vente.objects.filter(
         Q(boutique__in=boutiques) | Q(client_maui__boutique__in=boutiques),
@@ -369,14 +393,23 @@ def dashboard_commercant(request):
         paye=True,
         est_annulee=False
     ).distinct()
-    
+    ventes_30j_toutes = Vente.objects.filter(
+        Q(boutique__in=boutiques) | Q(client_maui__boutique__in=boutiques),
+        date_vente__gte=date_debut,
+        paye=True,
+    ).distinct()
+
     # Recette CDF 30 jours
     ventes_30j_cdf = ventes_30j.filter(devise='CDF')
-    ca_30j_cdf = ventes_30j_cdf.aggregate(total=Sum('montant_total'))['total'] or 0
-    
+    ca_30j_cdf = ca_net(
+        ventes_30j_toutes.filter(devise='CDF'), perimetre_cdf, date_debut.date(), aujourd_hui
+    )
+
     # Recette USD 30 jours
     ventes_30j_usd = ventes_30j.filter(devise='USD')
-    ca_30j_usd = ventes_30j_usd.aggregate(total=Sum('montant_total'))['total'] or 0
+    ca_30j_usd = ca_net(
+        ventes_30j_toutes.filter(devise='USD'), perimetre_usd, date_debut.date(), aujourd_hui
+    )
 
     # Valeur stock PDV — CDF et USD séparés, jamais mélangés
     # Utilise prix_vente (identique au dashboard PDV par boutique)
@@ -471,6 +504,8 @@ def dashboard_commercant(request):
         'chiffre_affaires_30j_usd': ca_30j_usd,  # USD 30 jours
         'recette_jour': ca_jour_cdf,  # CDF du jour
         'recette_jour_usd': ca_jour_usd,  # USD du jour
+        'remboursements_jour': remboursements_jour_cdf,
+        'remboursements_jour_usd': remboursements_jour_usd,
         'nb_ventes_jour_cdf': ventes_jour_cdf.count(),
         'nb_ventes_jour_usd': ventes_jour_usd.count(),
         'valeur_pdv_cdf': valeur_pdv_cdf,
@@ -1282,8 +1317,14 @@ def api_stats_boutique(request, boutique_id):
         except (ValueError, TypeError):
             ventes_aujourd_hui = Vente.objects.none()
         
-        nb_ventes = ventes_aujourd_hui.count()
-        ca_aujourd_hui_brut = ventes_aujourd_hui.aggregate(total=Sum('montant_total'))['total'] or 0
+        nb_ventes = ventes_aujourd_hui.filter(est_annulee=False).count()
+        # CA net du jour : encaisse d'origine - remboursements imputes aujourd'hui
+        perimetre = Vente.objects.filter(
+            Q(boutique=boutique) | Q(client_maui__boutique=boutique),
+            paye=True
+        ).distinct()
+        ca_aujourd_hui_brut = ca_net(ventes_aujourd_hui, perimetre, aujourd_hui, aujourd_hui)
+        remboursements_jour = remboursements(perimetre, aujourd_hui, aujourd_hui)
 
         depenses_appliquees_aujourd_hui = RapportCaisse.objects.filter(
             boutique=boutique,
@@ -1305,6 +1346,7 @@ def api_stats_boutique(request, boutique_id):
                 'ventes_aujourd_hui': nb_ventes,
                 'ca_aujourd_hui': float(ca_aujourd_hui_net),
                 'ca_aujourd_hui_brut': float(ca_aujourd_hui_brut),
+                'remboursements_jour': float(remboursements_jour),
                 'depenses_appliquees_aujourd_hui': float(depenses_appliquees_aujourd_hui),
                 'terminaux_connectes': terminaux_actifs
             }
@@ -1336,22 +1378,36 @@ def api_ca_jour_boutique(request, boutique_id):
         est_annulee=False,
     ).distinct()
 
+    # CA net : encaisse d'origine des ventes du jour - remboursements imputes
+    # au jour d'annulation (annulations differees sur journee cloturee)
+    ventes_jour_toutes = Vente.objects.filter(
+        Q(boutique=boutique) | Q(client_maui__boutique=boutique),
+        date_vente__date=aujourd_hui,
+        paye=True,
+    ).distinct()
+    perimetre = Vente.objects.filter(
+        Q(boutique=boutique) | Q(client_maui__boutique=boutique),
+        paye=True,
+    ).distinct()
+    perimetre_cdf = perimetre.filter(devise='CDF')
+    perimetre_usd = perimetre.filter(devise='USD')
+
     # Agrégats CDF
-    agg_cdf = ventes_qs.filter(devise='CDF').aggregate(
-        total=Sum('montant_total'),
-        nb=Count('id'),
-    )
-    ca_cdf = float(agg_cdf['total'] or 0)
+    agg_cdf = ventes_qs.filter(devise='CDF').aggregate(nb=Count('id'))
+    ca_cdf = float(ca_net(
+        ventes_jour_toutes.filter(devise='CDF'), perimetre_cdf, aujourd_hui, aujourd_hui
+    ))
     nb_cdf = int(agg_cdf['nb'] or 0)
+    remboursements_cdf = float(remboursements(perimetre_cdf, aujourd_hui, aujourd_hui))
 
     # Agrégats USD
     # Pour les ventes USD, montant_total contient le montant en $ (montant_total_usd peut être NULL)
-    agg_usd = ventes_qs.filter(devise='USD').aggregate(
-        total=Sum('montant_total'),
-        nb=Count('id'),
-    )
-    ca_usd = float(agg_usd['total'] or 0)
+    agg_usd = ventes_qs.filter(devise='USD').aggregate(nb=Count('id'))
+    ca_usd = float(ca_net(
+        ventes_jour_toutes.filter(devise='USD'), perimetre_usd, aujourd_hui, aujourd_hui
+    ))
     nb_usd = int(agg_usd['nb'] or 0)
+    remboursements_usd = float(remboursements(perimetre_usd, aujourd_hui, aujourd_hui))
 
     # Dépenses du jour appliquées (rapports de caisse CDF)
     depenses_cdf = float(
@@ -1374,6 +1430,8 @@ def api_ca_jour_boutique(request, boutique_id):
         'ca_cdf':        ca_cdf,
         'ca_cdf_net':    round(ca_cdf - depenses_cdf, 2),
         'ca_usd':        ca_usd,
+        'remboursements_cdf': remboursements_cdf,
+        'remboursements_usd': remboursements_usd,
         'nb_ventes_cdf': nb_cdf,
         'nb_ventes_usd': nb_usd,
         'nb_ventes':     nb_cdf + nb_usd,
@@ -1480,10 +1538,25 @@ def entrer_boutique(request, boutique_id):
             est_annulee=False
         )
         nb_ventes_aujourd_hui = ventes_aujourd_hui.count()
-        ca_aujourd_hui_brut = ventes_aujourd_hui.aggregate(total=Sum('montant_total'))['total'] or 0
+        # CA net du jour : encaisse d'origine des ventes du jour moins les
+        # remboursements imputes au JOUR d'annulation (annulations differees
+        # sur une journee cloturee comprises)
+        ventes_jour_toutes = Vente.objects.filter(
+            boutique=boutique,
+            date_vente__date=date_aujourd_hui,
+            paye=True,
+        )
+        perimetre_boutique = Vente.objects.filter(boutique=boutique, paye=True)
+        ca_aujourd_hui_brut = ca_net(
+            ventes_jour_toutes, perimetre_boutique, date_aujourd_hui, date_aujourd_hui
+        )
+        remboursements_ca_jour = remboursements(
+            perimetre_boutique, date_aujourd_hui, date_aujourd_hui
+        )
     except (ValueError, TypeError):
         nb_ventes_aujourd_hui = 0
         ca_aujourd_hui_brut = 0
+        remboursements_ca_jour = 0
 
     depenses_appliquees_ca_jour = RapportCaisse.objects.filter(
         boutique=boutique,
@@ -1709,6 +1782,7 @@ def entrer_boutique(request, boutique_id):
         'ca_mois_usd': ca_mois_usd,
         'depenses_appliquees_ca_mois': depenses_appliquees_ca_mois,
         'ca_jour': ca_jour,
+        'remboursements_jour': remboursements_ca_jour,
         'valeur_stock_disponible': valeur_stock_disponible,
         'valeur_stock_cdf': valeur_stock_cdf,
         'valeur_stock_usd': valeur_stock_usd,

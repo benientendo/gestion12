@@ -320,7 +320,7 @@
                 {% if vente.lignes_annulees %}
                 <div class="mt-1 p-2 rounded border border-danger" style="background-color:#fff5f5;">
                     <div class="text-danger fw-bold small mb-1">
-                        <i class="fas fa-ban"></i> Article(s) annulé(s)
+                        <i class="fas fa-ban"></i> Article(s) annulé(s) — remboursement imputé au CA du jour d'annulation
                     </div>
                     {% for ligne in vente.lignes_annulees %}
                     <div class="d-flex justify-content-between align-items-start small text-danger">
@@ -328,6 +328,9 @@
                             <strong>{{ ligne.article.nom }}</strong>
                             — qté {{ ligne.quantite }}
                             <span class="badge bg-danger ms-1">{{ ligne.statut_annulation }}</span>
+                            {% if ligne.date_annulation %}
+                            <span class="badge bg-light text-danger border ms-1">Remboursé le {{ ligne.date_annulation|format_date_vente }}</span>
+                            {% endif %}
                         </span>
                         <span class="fw-bold ms-2 text-nowrap">{{ ligne.total_ligne|format_cdf:0 }} CDF</span>
                     </div>

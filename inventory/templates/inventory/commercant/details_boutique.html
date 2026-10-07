@@ -92,6 +92,9 @@
                             <div class="text-muted small mb-1">Recette brute CDF</div>
                             <div id="ca-cdf" class="fw-bold fs-4 text-primary">—</div>
                             <div class="text-muted small"><span id="nb-ventes-cdf">—</span> ventes</div>
+                            <div id="remboursements-ligne" class="small text-danger" style="display:none;">
+                                Remboursé aujourd'hui : <span id="remboursements-cdf">—</span>
+                            </div>
                         </div>
                         <!-- CDF net -->
                         <div class="col-6 col-md-3 text-center border-start">
@@ -304,6 +307,8 @@
     const elDep      = $('depenses-cdf');
     const elHeure    = $('ca-heure-serveur');
     const elDerniere = $('ca-derniere-vente');
+    const elRemb     = $('remboursements-cdf');
+    const elRembLigne= $('remboursements-ligne');
     const elSpinner  = $('ca-spinner');
     const elStatus   = $('ca-status-text');
     const elBadge    = $('ca-status-badge');
@@ -358,6 +363,14 @@
         elNbTotal.textContent = data.nb_ventes;
         elDep.textContent    = fmt(data.depenses_cdf);
         elHeure.textContent  = data.heure_serveur;
+
+        if (data.remboursements_cdf > 0 || data.remboursements_usd > 0) {
+            elRemb.textContent = fmt(data.remboursements_cdf) + ' FC'
+                + (data.remboursements_usd > 0 ? ' / -$' + fmtUsd(data.remboursements_usd) : '');
+            elRembLigne.style.display = 'block';
+        } else {
+            elRembLigne.style.display = 'none';
+        }
 
         if (data.derniere_vente_ts) {
             const d = new Date(data.derniere_vente_ts);

@@ -288,6 +288,12 @@
                             <div class="col-4 mb-2">
                                 <div class="small-stat-number small-stat-number-success sensitive-amount">{{ recette_jour|floatformat:0|intcomma }} CDF</div>
                                 <div class="small-stat-number sensitive-amount" style="font-size:0.8rem; color: #28a745;">$ {{ recette_jour_usd|floatformat:2|default:"0.00" }}</div>
+                                {% if remboursements_jour or remboursements_jour_usd %}
+                                <div class="sensitive-amount" style="font-size:0.72rem; color:#ff6b6b;">
+                                    -{{ remboursements_jour|floatformat:0|intcomma }} CDF{% if remboursements_jour_usd %} / -${{ remboursements_jour_usd|floatformat:2 }}{% endif %}
+                                    remboursés
+                                </div>
+                                {% endif %}
                                 <div class="small-stat-label">Recette jour</div>
                             </div>
                             <div class="w-100"></div>

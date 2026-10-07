@@ -16,9 +16,10 @@ from django.urls import reverse
 from django.utils import timezone
 
 from inventory.models import (
-    Article, Boutique, Client, Commercant, JournalValeurStock, LigneVente,
-    MouvementStock, Vente,
+    Article, Boutique, Client, Commercant, DemandeAnnulationVente,
+    JournalValeurStock, LigneVente, MouvementStock, Vente,
 )
+from inventory.ca_remboursements import ca_net, encaisse_total, remboursements
 from inventory.tests.test_demande_annulation import DemandeAnnulationBase
 
 User = get_user_model()
@@ -484,3 +485,211 @@ class AnnulationAffichageListeFacturesTestCase(DemandeAnnulationBase):
         self.assertContains(r, self.article.nom)
         self.assertContains(r, 'non remis en stock')
         self.assertContains(r, vente.numero_facture)
+
+
+class CaNetAnnulationDifferieeTestCase(DemandeAnnulationBase):
+    """Un remboursement est impute au CA du JOUR d'annulation :
+    la journee de la vente (cloturee) ne bouge pas."""
+
+    def setUp(self):
+        super().setUp()
+        self.web.force_login(self.user)
+
+    def _perimetre(self):
+        return Vente.objects.filter(boutique=self.boutique, paye=True)
+
+    def _annuler_article_differe(self, vente, article, motif, code):
+        """Annule un article d'une vente d'hier (prolongation accordee)."""
+        self._demander(vente, type_demande='LIGNE', article=article)
+        r_web = self.web.post(
+            reverse('inventory:accorder_extension_annulation', args=[self.boutique.id]),
+            {'demande_id': DemandeAnnulationVente.objects.get(vente=vente).id},
+        )
+        self.assertEqual(r_web.status_code, 302)
+        r = self.api.post(
+            self.url_annuler_ligne,
+            data={
+                'numero_facture': vente.numero_facture,
+                'article_id': article.id,
+                'motif': motif,
+                'motif_code': code,
+            },
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 200)
+        return r
+
+    def _annuler_vente_differee(self, vente, motif, code):
+        """Annule toute une vente d'hier (prolongation accordee)."""
+        self._demander(vente)
+        r_web = self.web.post(
+            reverse('inventory:accorder_extension_annulation', args=[self.boutique.id]),
+            {'demande_id': DemandeAnnulationVente.objects.get(vente=vente).id},
+        )
+        self.assertEqual(r_web.status_code, 302)
+        r = self.api.post(
+            self.url_annuler,
+            data={
+                'numero_facture': vente.numero_facture,
+                'motif': motif,
+                'motif_code': code,
+            },
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 200)
+        return r
+
+    def test_annulation_differee_reduit_le_ca_du_jour(self):
+        vente = self._creer_vente(
+            heures_ecoulees=26, articles=[(self.article, 2, Decimal('1000'))]
+        )
+        hier = vente.date_vente.date()
+        aujourd_hui = timezone.localdate()
+        self.assertNotEqual(hier, aujourd_hui)
+
+        self._annuler_article_differe(
+            vente, self.article, 'Article défectueux', 'ARTICLE_DEFECTUEUX'
+        )
+
+        # La journee de la vente (cloturee) reste inchangee
+        self.assertEqual(
+            ca_net(
+                self._perimetre().filter(date_vente__date=hier),
+                self._perimetre(), hier, hier,
+            ),
+            Decimal('2000'),
+        )
+        # Le remboursement est impute au CA d'aujourd'hui
+        self.assertEqual(
+            remboursements(self._perimetre(), aujourd_hui, aujourd_hui),
+            Decimal('2000'),
+        )
+        self.assertEqual(
+            ca_net(
+                self._perimetre().filter(date_vente__date=aujourd_hui),
+                self._perimetre(), aujourd_hui, aujourd_hui,
+            ),
+            Decimal('-2000'),
+        )
+
+    def test_annulation_totale_differee_imputee_au_jour_d_annulation(self):
+        vente = self._creer_vente(
+            heures_ecoulees=26, articles=[(self.article, 2, Decimal('1000'))]
+        )
+        hier = vente.date_vente.date()
+        aujourd_hui = timezone.localdate()
+
+        self._annuler_vente_differee(
+            vente, 'Achat par erreur du client', 'ERREUR_COMMANDE'
+        )
+        vente.refresh_from_db()
+        self.assertTrue(vente.est_annulee)
+        # montant_total n'est pas modifie par une annulation totale
+        self.assertEqual(vente.montant_total, Decimal('2000'))
+
+        self.assertEqual(
+            ca_net(
+                self._perimetre().filter(date_vente__date=hier),
+                self._perimetre(), hier, hier,
+            ),
+            Decimal('2000'),
+        )
+        self.assertEqual(
+            remboursements(self._perimetre(), aujourd_hui, aujourd_hui),
+            Decimal('2000'),
+        )
+        self.assertEqual(
+            ca_net(
+                self._perimetre().filter(date_vente__date=aujourd_hui),
+                self._perimetre(), aujourd_hui, aujourd_hui,
+            ),
+            Decimal('-2000'),
+        )
+
+    def test_annulation_du_jour_conserve_le_ca_net(self):
+        vente = self._creer_vente(articles=[
+            (self.article, 2, Decimal('1000')),
+            (self.article2, 1, Decimal('500')),
+        ])
+        r = self.api.post(
+            self.url_annuler_ligne,
+            data={
+                'numero_facture': vente.numero_facture,
+                'article_id': self.article.id,
+                'motif': 'Article défectueux',
+                'motif_code': 'ARTICLE_DEFECTUEUX',
+            },
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 200)
+
+        # La facture du jour reste au montant encaisse (2500 - 2000 rembourse)
+        aujourd_hui = timezone.localdate()
+        self.assertEqual(
+            ca_net(
+                self._perimetre().filter(date_vente__date=aujourd_hui),
+                self._perimetre(), aujourd_hui, aujourd_hui,
+            ),
+            Decimal('500'),
+        )
+
+    def test_dashboard_commercant_integre_le_remboursement(self):
+        vente = self._creer_vente(
+            heures_ecoulees=26, articles=[(self.article, 2, Decimal('1000'))]
+        )
+        self._annuler_article_differe(
+            vente, self.article, 'Achat par erreur du client', 'ERREUR_COMMANDE'
+        )
+
+        r = self.web.get(reverse('inventory:commercant_dashboard'))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context['recette_jour'], Decimal('-2000'))
+        self.assertEqual(r.context['remboursements_jour'], Decimal('2000'))
+
+    def test_dashboard_boutique_integre_le_remboursement(self):
+        vente = self._creer_vente(
+            heures_ecoulees=26, articles=[(self.article, 2, Decimal('1000'))]
+        )
+        self._annuler_article_differe(
+            vente, self.article, 'Article défectueux', 'ARTICLE_DEFECTUEUX'
+        )
+
+        r = self.web.get(reverse('inventory:entrer_boutique', args=[self.boutique.id]))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.context['ca_jour'], Decimal('-2000'))
+        self.assertEqual(r.context['remboursements_jour'], Decimal('2000'))
+
+    def test_stats_websocket_net_des_remboursements(self):
+        from inventory.api_views_v2_simple import _compute_dashboard_stats
+
+        vente = self._creer_vente(
+            heures_ecoulees=26, articles=[(self.article, 2, Decimal('1000'))]
+        )
+        self._annuler_article_differe(
+            vente, self.article, 'Article défectueux', 'ARTICLE_DEFECTUEUX'
+        )
+
+        stats = _compute_dashboard_stats(self.boutique)
+        self.assertEqual(stats['ca_jour'], -2000.0)
+        self.assertEqual(stats['remboursements_jour'], 2000.0)
+
+    def test_liste_factures_affiche_la_date_de_remboursement(self):
+        vente = self._creer_vente(articles=[(self.article, 2, Decimal('1000'))])
+        r = self.api.post(
+            self.url_annuler_ligne,
+            data={
+                'numero_facture': vente.numero_facture,
+                'article_id': self.article.id,
+                'motif': 'Article défectueux',
+                'motif_code': 'ARTICLE_DEFECTUEUX',
+            },
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 200)
+
+        r = self.web.get(reverse(
+            'inventory:commercant_ventes_boutique', args=[self.boutique.id]
+        ))
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'remboursement imputé au CA du jour')
+        self.assertContains(r, 'Remboursé le')
