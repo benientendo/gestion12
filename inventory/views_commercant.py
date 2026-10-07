@@ -9336,6 +9336,35 @@ def detail_valeur_journal(request, boutique_id, journal_id, champ):
             })
             total_lignes += val
 
+        # ⭐ Annulations « article défectueux » du jour : la valeur est passée
+        #    de la colonne « Ventes » à la colonne « Stock sorti » (mouvement
+        #    ANNUL-DEF-). On la reprend ici en négatif pour que le détail de
+        #    « Ventes » totalise exactement la valeur du journal.
+        if champ == 'valeur_ventes':
+            annulations_defectueuses = LigneVente.objects.filter(
+                article__boutique=boutique,
+                est_annulee=True,
+                motif_annulation_code='ARTICLE_DEFECTUEUX',
+                date_annulation__date=jour,
+            ).select_related('article', 'vente').order_by('date_annulation')
+
+            for lv in annulations_defectueuses:
+                pv = Decimal(str(lv.article.prix_vente or 0))
+                val = pv * Decimal(str(lv.quantite or 0))
+                lignes.append({
+                    'heure': lv.date_annulation,
+                    'nom': lv.article.nom,
+                    'type_mouvement': 'Annulation défectueuse',
+                    'quantite': -lv.quantite,
+                    'reference': lv.vente.numero_facture,
+                    'commentaire': (
+                        f"Article défectueux non remis en stock - {lv.motif_annulation}"
+                    ),
+                    'utilisateur': lv.annulee_par,
+                    'valeur': -val,
+                })
+                total_lignes += -val
+
     ecart = total_lignes - valeur if mode_table in ('mouvements', 'articles', 'reductions') else None
 
     context = {

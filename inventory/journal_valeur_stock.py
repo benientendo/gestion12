@@ -138,6 +138,18 @@ def enregistrer_sortie_manuelle(boutique, valeur, date=None):
     _incrementer(boutique, 'valeur_stock_sorti', valeur, date)
 
 
+def compenser_annulation_defectueuse(boutique, valeur, date=None):
+    """
+    Annulation d'un article pour motif « Article défectueux ».
+    L'article n'est PAS remis en stock : sa valeur est RECLASSÉE de la
+    colonne « Ventes » vers « Stock sorti » (le mouvement SORTIE est créé
+    par l'annulation, il alimente valeur_stock_sorti). On retire donc ici
+    la même valeur de valeur_ventes pour que la formule de cohérence
+    (restant = ... - sorti - ventes) reste inchangée.
+    """
+    _incrementer(boutique, 'valeur_ventes', -Decimal(str(valeur)), date)
+
+
 def enregistrer_modification_prix(boutique, impact_valeur, date=None):
     """
     Modification du prix de vente d'un article.

@@ -105,7 +105,9 @@ def creer_notification_stock(sender, instance, created, **kwargs):
 
     # Regularisation d'historique (INIT-/REGL-) : ce ne sont pas de vrais
     # mouvements de stock, inutile de notifier les terminaux MAUI.
-    if (instance.reference_document or '').startswith(('INIT-', 'REGL-')):
+    # Trace d'annulation « article défectueux » (ANNUL-DEF-) : le terminal
+    # a lui-même initié l'annulation, pas de notification à renvoyer.
+    if (instance.reference_document or '').startswith(('INIT-', 'REGL-', 'ANNUL-DEF-')):
         return
 
     article = instance.article

@@ -349,6 +349,16 @@ class VarianteArticle(models.Model):
         unique_together = [['code_barre', 'article_parent']]
 
 
+# ⭐ MOTIFS D'ANNULATION (choisis sur le terminal MAUI par coche)
+# ERREUR_COMMANDE  → l'article est REMIS EN STOCK (retour client)
+# ARTICLE_DEFECTUEUX → l'article n'est PAS remis en stock, sa valeur est
+#                      reclassée en « Stock sorti » du journal de valeur.
+MOTIF_ANNULATION_CHOICES = [
+    ('ERREUR_COMMANDE', 'Achat par erreur du client'),
+    ('ARTICLE_DEFECTUEUX', 'Article défectueux'),
+]
+
+
 class Vente(models.Model):
     """Ventes."""
     
@@ -381,6 +391,11 @@ class Vente(models.Model):
     est_annulee = models.BooleanField(default=False, help_text="La vente a-t-elle été annulée?")
     date_annulation = models.DateTimeField(null=True, blank=True, help_text="Date et heure de l'annulation")
     motif_annulation = models.TextField(blank=True, help_text="Raison de l'annulation")
+    motif_annulation_code = models.CharField(
+        max_length=32, blank=True, default='',
+        choices=MOTIF_ANNULATION_CHOICES,
+        help_text="Code du motif choisi sur le terminal (ERREUR_COMMANDE / ARTICLE_DEFECTUEUX)"
+    )
     annulee_par = models.CharField(max_length=100, blank=True, help_text="Terminal ou utilisateur ayant annulé")
     
     def __str__(self):
@@ -430,6 +445,11 @@ class LigneVente(models.Model):
     est_annulee = models.BooleanField(default=False, help_text="Ligne annulée (article retiré de la facture)")
     date_annulation = models.DateTimeField(null=True, blank=True)
     motif_annulation = models.CharField(max_length=255, blank=True, default='')
+    motif_annulation_code = models.CharField(
+        max_length=32, blank=True, default='',
+        choices=MOTIF_ANNULATION_CHOICES,
+        help_text="ERREUR_COMMANDE (retour en stock) ou ARTICLE_DEFECTUEUX (sortie, pas de retour)"
+    )
     annulee_par = models.CharField(max_length=100, blank=True, default='')
 
     @property

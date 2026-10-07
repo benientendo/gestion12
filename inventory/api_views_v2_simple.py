@@ -3277,7 +3277,10 @@ def annuler_vente_simple(request):
         # Récupérer les données de la requête
         data = request.data
         numero_facture = data.get('numero_facture') or data.get('NumeroFacture') or data.get('reference')
-        motif = data.get('motif') or data.get('Motif') or 'Annulation demandée par le terminal'
+        motif, motif_code = _motif_annulation(data, 'Annulation demandée par le terminal')
+        # ARTICLE_DEFECTUEUX → aucun article n'est remis en stock (sortie tracée)
+        # ERREUR_COMMANDE / texte libre → retour en stock (comportement historique)
+        remettre_en_stock = motif_code != MOTIF_ARTICLE_DEFECTUEUX
         
         if not numero_facture:
             return Response({
@@ -3384,45 +3387,85 @@ def annuler_vente_simple(request):
         with transaction.atomic():
             stock_restaure = []
             
-            # Restaurer le stock pour chaque ligne de vente
-            for ligne in vente.lignes.all():
+            # Traiter chaque ligne de vente (les lignes déjà annulées individuellement
+            # sont ignorées : leur stock a déjà été géré à ce moment-là)
+            for ligne in vente.lignes.filter(est_annulee=False):
                 article = ligne.article
                 quantite = ligne.quantite
                 stock_avant = article.quantite_stock
-                
-                # Restaurer le stock
-                article.quantite_stock += quantite
-                article.save(update_fields=['quantite_stock'])
-                
-                # Créer un mouvement de stock pour traçabilité
-                MouvementStock.objects.create(
-                    article=article,
-                    type_mouvement='RETOUR',
-                    quantite=quantite,  # Positif car c'est un retour
-                    stock_avant=stock_avant,
-                    stock_apres=article.quantite_stock,
-                    reference_document=f"ANNUL-{vente.numero_facture}",
-                    utilisateur=terminal.nom_terminal,
-                    commentaire=f"Annulation vente #{vente.numero_facture} - Motif: {motif}"
-                )
-                
-                stock_restaure.append({
-                    'article_id': article.id,
-                    'code': article.code,
-                    'nom': article.nom,
-                    'quantite_restauree': quantite,
-                    'stock_avant': stock_avant,
-                    'stock_apres': article.quantite_stock
-                })
-                
-                logger.info(f"   ↩️ Stock restauré: {article.nom} +{quantite} ({stock_avant} → {article.quantite_stock})")
+
+                if remettre_en_stock:
+                    # Restaurer le stock
+                    article.quantite_stock += quantite
+                    article.save(update_fields=['quantite_stock'])
+
+                    # Créer un mouvement de stock pour traçabilité
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='RETOUR',
+                        quantite=quantite,  # Positif car c'est un retour
+                        stock_avant=stock_avant,
+                        stock_apres=article.quantite_stock,
+                        reference_document=f"ANNUL-{vente.numero_facture}",
+                        utilisateur=terminal.nom_terminal,
+                        commentaire=f"Annulation vente #{vente.numero_facture} - Motif: {motif}"
+                    )
+
+                    stock_restaure.append({
+                        'article_id': article.id,
+                        'code': article.code,
+                        'nom': article.nom,
+                        'quantite_restauree': quantite,
+                        'remis_en_stock': True,
+                        'stock_avant': stock_avant,
+                        'stock_apres': article.quantite_stock
+                    })
+
+                    logger.info(f"   ↩️ Stock restauré: {article.nom} +{quantite} ({stock_avant} → {article.quantite_stock})")
+                else:
+                    # ⭐ Article défectueux : PAS de retour en stock,
+                    #    la valeur est classée en « Stock sorti » du journal.
+                    valeur_sortie = _tracer_sortie_defectueuse(
+                        article, quantite, vente.numero_facture, terminal, motif
+                    )
+
+                    stock_restaure.append({
+                        'article_id': article.id,
+                        'code': article.code,
+                        'nom': article.nom,
+                        'quantite_restauree': 0,
+                        'remis_en_stock': False,
+                        'valeur_sortie': str(valeur_sortie),
+                        'stock_avant': stock_avant,
+                        'stock_apres': stock_avant
+                    })
+
+                    logger.info(
+                        f"   ↩️ {article.nom}: non remis en stock "
+                        f"(sortie de {valeur_sortie} FC au journal)"
+                    )
+
+                # Traçabilité par article (cohérence facture / réimpression)
+                ligne.est_annulee = True
+                ligne.date_annulation = timezone.now()
+                ligne.motif_annulation = motif
+                ligne.motif_annulation_code = motif_code or ''
+                ligne.annulee_par = terminal.nom_terminal
+                ligne.save(update_fields=[
+                    'est_annulee', 'date_annulation', 'motif_annulation',
+                    'motif_annulation_code', 'annulee_par'
+                ])
             
             # Marquer la vente comme annulée
             vente.est_annulee = True
             vente.date_annulation = timezone.now()
             vente.motif_annulation = motif
+            vente.motif_annulation_code = motif_code or ''
             vente.annulee_par = terminal.nom_terminal
-            vente.save(update_fields=['est_annulee', 'date_annulation', 'motif_annulation', 'annulee_par'])
+            vente.save(update_fields=[
+                'est_annulee', 'date_annulation', 'motif_annulation',
+                'motif_annulation_code', 'annulee_par'
+            ])
 
             #  TOUT REDEVIENT COMME AVANT : neutraliser les traces de reduction
             # de cette vente (source CAISSE -> ANNULATION). Le terminal MAUI
@@ -3471,6 +3514,8 @@ def annuler_vente_simple(request):
         return Response({
             'success': True,
             'message': f'Vente {numero_facture} annulée avec succès',
+            'motif_code': motif_code or '',
+            'remis_en_stock': remettre_en_stock,
             'vente': {
                 'numero_facture': vente.numero_facture,
                 'montant_total': str(vente.montant_total),
@@ -3555,6 +3600,70 @@ def _ligne_annulable(vente, data):
 def _delai_annulation_depasse(vente):
     from datetime import timedelta
     return timezone.now() - vente.date_vente > timedelta(hours=1)
+
+
+# ⭐ MOTIFS D'ANNULATION (choix par coche sur le terminal MAUI)
+MOTIF_ACHAT_PAR_ERREUR = 'ERREUR_COMMANDE'
+MOTIF_ARTICLE_DEFECTUEUX = 'ARTICLE_DEFECTUEUX'
+MOTIF_ANNULATION_LIBELLES = {
+    MOTIF_ACHAT_PAR_ERREUR: 'Achat par erreur du client',
+    MOTIF_ARTICLE_DEFECTUEUX: 'Article défectueux',
+}
+
+
+def _motif_annulation(data, libelle_defaut='Annulation demandée par le terminal'):
+    """
+    Extrait le motif d'annulation envoyé par le terminal.
+    Retourne (libelle, code) :
+      - 'ERREUR_COMMANDE'    → l'article est REMIS EN STOCK
+      - 'ARTICLE_DEFECTUEUX' → l'article n'est PAS remis en stock (sortie)
+      - None                 → ancien texte libre (compatibilité) → retour en stock
+    """
+    code = str(data.get('motif_code') or data.get('MotifCode') or '').strip().upper()
+    libelle = str(data.get('motif') or data.get('Motif') or '').strip()
+    if code in MOTIF_ANNULATION_LIBELLES:
+        return ((libelle or MOTIF_ANNULATION_LIBELLES[code])[:255], code)
+    for code_motif, libelle_motif in MOTIF_ANNULATION_LIBELLES.items():
+        if libelle and libelle.lower() == libelle_motif.lower():
+            return (libelle[:255], code_motif)
+    return ((libelle or libelle_defaut)[:255], None)
+
+
+def _tracer_sortie_defectueuse(article, quantite, numero_facture, terminal, motif):
+    """
+    Annulation pour motif « Article défectueux » : l'article n'est PAS remis
+    en stock. On trace la sortie de sa valeur :
+      - MouvementStock SORTIE (réf. ANNUL-DEF-) → colonne « Stock sorti »
+        du journal de valeur (cliquable dans le back-office)
+      - retrait de la même valeur de la colonne « Ventes » pour que la
+        formule de cohérence du journal reste inchangée.
+    Retourne la valeur sortie (prix de vente × quantité).
+    """
+    from decimal import Decimal
+    from . import journal_valeur_stock as jvs
+
+    valeur = Decimal(str(article.prix_vente or 0)) * Decimal(str(quantite or 0))
+
+    mouvement = MouvementStock.objects.create(
+        article=article,
+        type_mouvement='SORTIE',
+        quantite=quantite,
+        stock_avant=article.quantite_stock,
+        stock_apres=article.quantite_stock,
+        reference_document=f"ANNUL-DEF-{numero_facture}",
+        utilisateur=terminal.nom_terminal,
+        commentaire=(
+            f"Article défectueux non remis en stock - {article.nom} "
+            f"(facture {numero_facture}) - Motif: {motif}"
+        ),
+    )
+
+    date_mouvement = (
+        mouvement.date_mouvement.date() if mouvement.date_mouvement
+        else timezone.localdate()
+    )
+    jvs.compenser_annulation_defectueuse(article.boutique, valeur, date_mouvement)
+    return valeur
 
 
 def _serialize_demande(demande):
@@ -3796,7 +3905,11 @@ def annuler_ligne_vente_simple(request):
             'code': 'LIGNE_NOT_FOUND'
         }, status=status.HTTP_404_NOT_FOUND)
 
-    motif = str(data.get('motif') or data.get('Motif') or 'Annulation article demandée par le terminal')[:255]
+    motif, motif_code = _motif_annulation(
+        data, 'Annulation article demandée par le terminal')
+    # ARTICLE_DEFECTUEUX → pas de retour en stock (sortie tracée)
+    # ERREUR_COMMANDE / texte libre → retour en stock (comportement historique)
+    remettre_en_stock = motif_code != MOTIF_ARTICLE_DEFECTUEUX
 
     # ⭐ DÉLAI D'ANNULATION : 1 h, preuve MAUI, ou prolongation accordée
     from datetime import timedelta
@@ -3849,32 +3962,44 @@ def annuler_ligne_vente_simple(request):
         article = ligne.article
         quantite = ligne.quantite
         stock_avant = article.quantite_stock
+        valeur_sortie = None
 
-        article.quantite_stock += quantite
-        article.save(update_fields=['quantite_stock'])
+        if remettre_en_stock:
+            article.quantite_stock += quantite
+            article.save(update_fields=['quantite_stock'])
 
-        # Journal de valeur (signal): RETOUR → valeur_stock_ajoute
-        MouvementStock.objects.create(
-            article=article,
-            type_mouvement='RETOUR',
-            quantite=quantite,
-            stock_avant=stock_avant,
-            stock_apres=article.quantite_stock,
-            reference_document=f"ANNUL-LIGNE-{vente.numero_facture}",
-            utilisateur=terminal.nom_terminal,
-            commentaire=(
-                f"Annulation article {article.nom} (facture {vente.numero_facture})"
-                f" - Variante: {ligne.variante.nom_variante} - Motif: {motif}"
-                if ligne.variante else
-                f"Annulation article {article.nom} (facture {vente.numero_facture}) - Motif: {motif}"
+            # Journal de valeur (signal): RETOUR → valeur_stock_ajoute
+            MouvementStock.objects.create(
+                article=article,
+                type_mouvement='RETOUR',
+                quantite=quantite,
+                stock_avant=stock_avant,
+                stock_apres=article.quantite_stock,
+                reference_document=f"ANNUL-LIGNE-{vente.numero_facture}",
+                utilisateur=terminal.nom_terminal,
+                commentaire=(
+                    f"Annulation article {article.nom} (facture {vente.numero_facture})"
+                    f" - Variante: {ligne.variante.nom_variante} - Motif: {motif}"
+                    if ligne.variante else
+                    f"Annulation article {article.nom} (facture {vente.numero_facture}) - Motif: {motif}"
+                )
             )
-        )
+        else:
+            # ⭐ Article défectueux : PAS de retour en stock, la valeur de
+            #    l'article est classée en « Stock sorti » du journal.
+            valeur_sortie = _tracer_sortie_defectueuse(
+                article, quantite, vente.numero_facture, terminal, motif
+            )
 
         ligne.est_annulee = True
         ligne.date_annulation = timezone.now()
         ligne.motif_annulation = motif
+        ligne.motif_annulation_code = motif_code or ''
         ligne.annulee_par = terminal.nom_terminal
-        ligne.save(update_fields=['est_annulee', 'date_annulation', 'motif_annulation', 'annulee_par'])
+        ligne.save(update_fields=[
+            'est_annulee', 'date_annulation', 'motif_annulation',
+            'motif_annulation_code', 'annulee_par'
+        ])
 
         # ⭐ Total : retrancher le montant de la ligne (mêmes règles qu'à la création)
         update_fields = ['montant_total']
@@ -3914,25 +4039,32 @@ def annuler_ligne_vente_simple(request):
         lignes_actives = vente.lignes.filter(est_annulee=False).count()
         logger.info(
             f"✅ Article {article.nom} annulé sur {vente.numero_facture} "
-            f"(stock {stock_avant} → {article.quantite_stock}, "
-            f"{lignes_actives} ligne(s) restante(s), total {vente.montant_total} {vente.devise})"
+            + (f"(pas de retour en stock, sortie de {valeur_sortie} FC, "
+               if not remettre_en_stock else f"(stock {stock_avant} → {article.quantite_stock}, ")
+            + f"motif {motif_code or 'texte libre'}, "
+            + f"{lignes_actives} ligne(s) restante(s), total {vente.montant_total} {vente.devise})"
         )
 
-        notify_stock_updated(boutique.id, article.id, article.quantite_stock)
+        if remettre_en_stock:
+            notify_stock_updated(boutique.id, article.id, article.quantite_stock)
 
     return Response({
         'success': True,
         'message': f'Article {article.nom} annulé avec succès',
         'prolongation_utilisee': bool(prolongation),
+        'motif_code': motif_code or '',
+        'remis_en_stock': remettre_en_stock,
         'ligne': {
             'article_id': article.id,
             'article_nom': article.nom,
             'code': article.code,
-            'quantite_restauree': quantite,
+            'quantite_restauree': quantite if remettre_en_stock else 0,
             'montant_restitue': str(valeur_devise),
             'devise': ligne.devise,
             'stock_avant': stock_avant,
             'stock_apres': article.quantite_stock,
+            'remis_en_stock': remettre_en_stock,
+            'valeur_sortie': str(valeur_sortie) if valeur_sortie is not None else None,
         },
         'vente': {
             'numero_facture': vente.numero_facture,
