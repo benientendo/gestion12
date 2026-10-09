@@ -342,6 +342,26 @@ def api_credit_creer_vente(request, boutique_id):
         return JsonResponse({'error': "Le nom de l'article est obligatoire"}, status=400)
 
     try:
+        quantite = int(body.get('quantite', 1) or 1)
+    except (TypeError, ValueError):
+        return JsonResponse({'error': 'Quantité invalide'}, status=400)
+    if quantite < 1:
+        return JsonResponse({'error': 'La quantité doit être au moins 1'}, status=400)
+
+    # Article du catalogue (optionnel) : le prix est toujours celui du catalogue
+    article = None
+    article_id = body.get('article_id')
+    if article_id:
+        try:
+            article = Article.objects.get(
+                id=article_id, boutique=boutique,
+                est_actif=True, est_valide_client=True, date_suppression__isnull=True,
+            )
+        except Article.DoesNotExist:
+            return JsonResponse({'error': "Article du catalogue introuvable"}, status=404)
+        article_nom = article.nom
+
+    try:
         prix_total    = Decimal(str(body.get('prix_total', 0)))
         seuil_retrait = Decimal(str(body.get('seuil_retrait', 0)))
         acompte       = Decimal(str(body.get('acompte_initial', 0) or 0))
@@ -350,6 +370,16 @@ def api_credit_creer_vente(request, boutique_id):
 
     if prix_total <= 0:
         return JsonResponse({'error': 'Le prix total doit être positif'}, status=400)
+
+    # Prix catalogue verrouillé : prix_vente × quantité (aucun prix saisi à la main)
+    if article is not None:
+        prix_catalogue = (article.prix_vente or Decimal('0')) * quantite
+        if abs(prix_total - prix_catalogue) > Decimal('0.5'):
+            return JsonResponse(
+                {'error': f"Prix total incorrect : le prix catalogue est de "
+                           f"{prix_catalogue:.0f} pour {quantite} × {article.nom}."},
+                status=400)
+
     if seuil_retrait <= 0 or seuil_retrait > prix_total:
         return JsonResponse({'error': 'Seuil de retrait invalide'}, status=400)
     if acompte < 0 or acompte > prix_total:
@@ -359,7 +389,9 @@ def api_credit_creer_vente(request, boutique_id):
         vente = VenteAcompte.objects.create(
             boutique=boutique,
             client=client,
+            article=article,
             article_nom=article_nom,
+            quantite=quantite,
             prix_total=prix_total,
             seuil_retrait=seuil_retrait,
             montant_paye=Decimal('0'),
@@ -381,6 +413,8 @@ def api_credit_creer_vente(request, boutique_id):
         'reference':  vente.reference,
         'client_nom': client.nom_complet,
         'statut':     vente.statut,
+        'quantite':   vente.quantite,
+        'prix_total': float(vente.prix_total),
     }, status=201)
 
 
@@ -402,6 +436,7 @@ def api_credit_ventes(request, boutique_id):
         'client_nom':       v.client.nom_complet,
         'client_telephone': v.client.telephone,
         'article_nom':      v.article_nom,
+        'quantite':         v.quantite,
         'prix_total':       float(v.prix_total),
         'seuil_retrait':    float(v.seuil_retrait),
         'montant_paye':     float(v.montant_paye),
@@ -436,6 +471,7 @@ def api_credit_detail_vente(request, vente_id):
         'client_nom':       vente.client.nom_complet,
         'client_telephone': vente.client.telephone,
         'article_nom':      vente.article_nom,
+        'quantite':         vente.quantite,
         'prix_total':       float(vente.prix_total),
         'seuil_retrait':    float(vente.seuil_retrait),
         'montant_paye':     float(vente.montant_paye),

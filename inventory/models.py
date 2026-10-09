@@ -1985,6 +1985,7 @@ class VenteAcompte(models.Model):
     client = models.ForeignKey(ClientAcompte, on_delete=models.PROTECT, related_name='ventes')
     article = models.ForeignKey('Article', on_delete=models.SET_NULL, null=True, blank=True, related_name='ventes_acompte')
     article_nom = models.CharField(max_length=200, help_text="Nom snapshot de l'article")
+    quantite = models.IntegerField(default=1, help_text="Quantité commandée (prix catalogue × quantité)")
     prix_total = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(1)])
     seuil_retrait = models.DecimalField(
         max_digits=15, decimal_places=2,
