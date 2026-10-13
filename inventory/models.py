@@ -735,6 +735,7 @@ class Boutique(models.Model):
         ('DEPOT', 'Dépôt central'),
         ('PHARMACIE', 'Pharmacie'),
         ('ALIMENTATION', 'Alimentation générale'),
+        ('BOUCHERIE', 'Boucherie'),
         ('SUPERMARCHE', 'Supermarché'),
         ('BOUTIQUE', 'Boutique générale'),
         ('KIOSQUE', 'Kiosque'),
