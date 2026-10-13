@@ -2171,6 +2171,65 @@ class JournalValeurStock(models.Model):
         ]
 
 
+class DetailModificationPrix(models.Model):
+    """
+    Détail PAR ARTICLE d'une modification du prix de vente.
+    Alimente le clic sur la colonne « Modif. prix » du journal de valeur :
+    chaque ligne dit quel article, de quel prix à quel prix, avec quel stock
+    et quel impact sur la valeur commerciale du jour.
+    L'impact cumulé des détails d'une journée doit totaliser la valeur
+    impact_modification_prix de la ligne du journal.
+    """
+
+    journal = models.ForeignKey(
+        JournalValeurStock, on_delete=models.CASCADE,
+        related_name='details_modification_prix',
+        help_text="Ligne du journal (boutique + date) alimentée par cette modification"
+    )
+    article = models.ForeignKey(
+        'Article', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='details_modification_prix',
+        help_text="Article modifié (nul si l'article a été supprimé depuis)"
+    )
+    # Snapshots : restent lisibles même si l'article disparaît
+    article_nom = models.CharField(max_length=200)
+    article_code = models.CharField(max_length=50, blank=True)
+    devise = models.CharField(max_length=10, default='CDF')
+
+    ancien_prix = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    nouveau_prix = models.DecimalField(max_digits=15, decimal_places=2, default=0)
+    quantite_stock = models.IntegerField(
+        default=0, help_text="Stock de l'article au moment de la modification"
+    )
+    impact = models.DecimalField(
+        max_digits=18, decimal_places=2, default=0,
+        help_text="(nouveau PV − ancien PV) × quantité en stock"
+    )
+
+    utilisateur = models.CharField(
+        max_length=150, blank=True,
+        help_text="Nom du collaborateur ou du terminal à l'origine de la modification"
+    )
+    date_modification = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return (
+            f"{self.article_nom}: {self.ancien_prix} → {self.nouveau_prix} "
+            f"({self.impact})"
+        )
+
+    class Meta:
+        verbose_name = "Détail modification de prix"
+        verbose_name_plural = "Détails modifications de prix"
+        ordering = ['-date_modification']
+        indexes = [
+            models.Index(
+                fields=['journal', '-date_modification'],
+                name='idx_detail_modif_prix_journal',
+            ),
+        ]
+
+
 class TelechargementRapportMensuel(models.Model):
     """Suivi du téléchargement de l'historique de ventes mensuel par boutique."""
     boutique = models.ForeignKey('Boutique', on_delete=models.CASCADE, related_name='telechargements_rapport')

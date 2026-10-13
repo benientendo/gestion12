@@ -579,10 +579,23 @@ def enregistrer_impact_modification_prix_vente(sender, instance, created, **kwar
         return
 
     try:
-        impact = (
-            Decimal(str(instance.prix_vente)) - Decimal(str(ancien_prix_vente))
-        ) * Decimal(str(instance.quantite_stock))
-        jvs.enregistrer_modification_prix(instance.boutique, impact)
+        ancien = Decimal(str(ancien_prix_vente))
+        nouveau = Decimal(str(instance.prix_vente))
+        impact = (nouveau - ancien) * Decimal(str(instance.quantite_stock))
+        from .context_user import utilisateur_courant
+        jvs.enregistrer_modification_prix(
+            instance.boutique, impact,
+            details={
+                'article': instance,
+                'article_nom': instance.nom,
+                'article_code': instance.code or '',
+                'devise': instance.devise or 'CDF',
+                'ancien_prix': ancien,
+                'nouveau_prix': nouveau,
+                'quantite_stock': instance.quantite_stock or 0,
+                'utilisateur': utilisateur_courant(),
+            },
+        )
         logger.info(
             f"[JournalValeurStock] Impact prix vente {instance.nom}: {impact} FC"
         )

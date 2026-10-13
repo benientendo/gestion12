@@ -108,6 +108,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'inventory.context_user.CurrentUserMiddleware',  # Utilisateur courant pour les signals (traçabilité)
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'inventory.middleware.ForceTimezoneMiddleware',  # Forcer le timezone correct

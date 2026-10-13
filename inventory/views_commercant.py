@@ -9351,12 +9351,42 @@ def detail_valeur_journal(request, boutique_id, journal_id, champ):
         )
 
     elif champ == 'impact_modification_prix':
-        mode_table = 'info'
-        info_sup = (
-            "Les changements de prix de vente sont appliqués directement sur les "
-            "articles : le journal enregistre seulement l'impact total du jour "
-            "((nouveau PV − ancien PV) × quantité en stock), sans détail par article."
-        )
+        # Détail PAR ARTICLE : chaque variation de prix de vente du jour
+        details = journal.details_modification_prix.order_by('date_modification', 'id')
+        for d in details:
+            ancien = d.ancien_prix or Decimal('0')
+            nouveau = d.nouveau_prix or Decimal('0')
+            variation = nouveau - ancien
+            lignes.append({
+                'heure': d.date_modification,
+                'nom': d.article_nom,
+                'code': d.article_code,
+                'devise': d.devise,
+                'ancien': ancien,
+                'nouveau': nouveau,
+                'variation': variation,
+                'pourcentage': (variation / ancien * 100) if ancien else None,
+                'quantite': d.quantite_stock,
+                'utilisateur': d.utilisateur,
+                'valeur': d.impact,
+            })
+            total_lignes += d.impact
+
+        if lignes:
+            mode_table = 'modifications_prix'
+        else:
+            mode_table = 'info'
+            if valeur:
+                info_sup = (
+                    "Le journal totalise cette variation de valeur, mais aucun détail "
+                    "par article n'est disponible : ces modifications de prix datent "
+                    "d'avant la mise en place du détail, ou concernent des articles "
+                    "depuis supprimés."
+                )
+            else:
+                info_sup = (
+                    "Aucun prix de vente n'a été modifié ce jour-là."
+                )
 
     else:
         base_qs = (
@@ -9439,7 +9469,9 @@ def detail_valeur_journal(request, boutique_id, journal_id, champ):
                 })
                 total_lignes += -val
 
-    ecart = total_lignes - valeur if mode_table in ('mouvements', 'articles', 'reductions') else None
+    ecart = total_lignes - valeur if mode_table in (
+        'mouvements', 'articles', 'reductions', 'modifications_prix'
+    ) else None
 
     context = {
         'boutique': boutique,

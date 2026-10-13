@@ -78,7 +78,11 @@
                         {% else %}
                         <p class="mb-2"><i class="fas fa-exclamation-triangle text-warning me-1"></i>
                             Détail = {{ total_lignes|floatformat:0|intcomma }} FC pour une valeur journal de {{ valeur|floatformat:0|intcomma }} FC
+                            {% if champ == 'impact_modification_prix' %}
+                            (écart {{ ecart|floatformat:0|intcomma }} FC : modifications de prix tracées avant la mise en place du détail par article).
+                            {% else %}
                             (écart {{ ecart|floatformat:0|intcomma }} FC : mouvements d'initiation INIT-/REGL- et soldes initiaux exclus).
+                            {% endif %}
                         </p>
                         {% endif %}
                     {% endif %}
@@ -188,6 +192,56 @@
                                 <tr>
                                     <td colspan="6" class="text-end">Total</td>
                                     <td class="text-end">-{{ total_lignes|floatformat:0|intcomma }}</td>
+                                </tr>
+                            </tfoot>
+                            {% endif %}
+                        </table>
+                    </div>
+
+                    {% elif mode_table == 'modifications_prix' %}
+                    <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+                        <table class="table table-sm table-hover detail-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Heure</th>
+                                    <th>Article</th>
+                                    <th>Code</th>
+                                    <th class="text-end">Ancien prix</th>
+                                    <th class="text-end">Nouveau prix</th>
+                                    <th class="text-end">Variation</th>
+                                    <th class="text-end">Stock</th>
+                                    <th class="text-end">Impact</th>
+                                    <th>Utilisateur</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for p in lignes %}
+                                <tr>
+                                    <td>{{ p.heure|date:"d/m/Y H:i" }}</td>
+                                    <td><strong>{{ p.nom }}</strong></td>
+                                    <td>{{ p.code|default:"—" }}</td>
+                                    <td class="text-end">{{ p.ancien|floatformat:0|intcomma }} {{ p.devise }}</td>
+                                    <td class="text-end">{{ p.nouveau|floatformat:0|intcomma }} {{ p.devise }}</td>
+                                    <td class="text-end {% if p.variation > 0 %}text-increase{% elif p.variation < 0 %}text-decrease{% else %}text-neutral{% endif %}">
+                                        {{ p.variation|floatformat:0|intcomma }}
+                                        {% if p.pourcentage is not None %}({{ p.pourcentage|floatformat:1 }}%){% endif %}
+                                    </td>
+                                    <td class="text-end">{{ p.quantite|intcomma }}</td>
+                                    <td class="text-end {% if p.valeur > 0 %}text-increase{% elif p.valeur < 0 %}text-decrease{% else %}text-neutral{% endif %}">
+                                        {{ p.valeur|floatformat:0|intcomma }}
+                                    </td>
+                                    <td>{{ p.utilisateur|default:"—" }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="9" class="text-center text-muted py-4">Aucune modification de prix enregistrée ce jour-là.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                            {% if lignes %}
+                            <tfoot>
+                                <tr>
+                                    <td colspan="7" class="text-end">Total</td>
+                                    <td class="text-end">{{ total_lignes|floatformat:0|intcomma }}</td>
+                                    <td></td>
                                 </tr>
                             </tfoot>
                             {% endif %}

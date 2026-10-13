@@ -150,12 +150,47 @@ def compenser_annulation_defectueuse(boutique, valeur, date=None):
     _incrementer(boutique, 'valeur_ventes', -Decimal(str(valeur)), date)
 
 
-def enregistrer_modification_prix(boutique, impact_valeur, date=None):
+def enregistrer_modification_prix(boutique, impact_valeur, date=None, details=None):
     """
     Modification du prix de vente d'un article.
     impact_valeur = (nouveau_prix_vente - ancien_prix_vente) * quantite_stock
+
+    `details` (dict optionnel) trace l'article modifié pour le détail cliquable
+    de la colonne « Modif. prix » du back-office :
+        article, article_nom, article_code, devise,
+        ancien_prix, nouveau_prix, quantite_stock, utilisateur
     """
     _incrementer(boutique, 'impact_modification_prix', impact_valeur, date)
+    if details is not None:
+        _enregistrer_detail_modification_prix(boutique, impact_valeur, details, date)
+
+
+def _enregistrer_detail_modification_prix(boutique, impact_valeur, details, date=None):
+    """Écrit la ligne de détail article d'une modification de prix."""
+    from .models import DetailModificationPrix
+
+    if date is None:
+        date = _aujourd_hui(boutique)
+
+    ligne, creee = _get_ou_creer_ligne(boutique, date)
+    if creee:
+        # Jamais de ligne journal « vierge » (impact nul, ex. stock à 0) :
+        # on fige la valeur réelle du stock comme le ferait _incrementer.
+        ligne.valeur_stock_reel = _calculer_valeur_stock_reel(boutique)
+        ligne.save(update_fields=['valeur_stock_reel', 'updated_at'])
+
+    DetailModificationPrix.objects.create(
+        journal=ligne,
+        article=details.get('article'),
+        article_nom=details.get('article_nom') or '',
+        article_code=details.get('article_code') or '',
+        devise=details.get('devise') or 'CDF',
+        ancien_prix=details.get('ancien_prix') or 0,
+        nouveau_prix=details.get('nouveau_prix') or 0,
+        quantite_stock=int(details.get('quantite_stock') or 0),
+        impact=impact_valeur,
+        utilisateur=details.get('utilisateur') or '',
+    )
 
 
 def maj_reductions_journal(boutique, date_debut, date_fin):
