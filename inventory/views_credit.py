@@ -126,14 +126,13 @@ def creer_vente_credit(request, boutique_id):
     article_nom = request.POST.get('article_nom', '').strip()
     article_id  = request.POST.get('article_id', '').strip()
 
-    # Montants
+    # Montants — plus de seuil : retrait autorisé uniquement si entièrement payé
     try:
         prix_total   = Decimal(request.POST.get('prix_total', '0') or '0')
-        seuil_pct    = Decimal(request.POST.get('seuil_pct', '50') or '50')
-        seuil_retrait = (prix_total * seuil_pct / 100).quantize(Decimal('1'))
     except (InvalidOperation, ValueError):
         messages.error(request, "Montants invalides.")
         return redirect('inventory:liste_ventes_credit', boutique_id=boutique_id)
+    seuil_retrait = prix_total
 
     commentaire = request.POST.get('commentaire', '')
 
@@ -257,7 +256,9 @@ def marquer_retrait(request, boutique_id, vente_id):
 
     if request.method == 'POST':
         if not vente.peut_recuperer:
-            messages.error(request, f"Conditions de retrait non remplies. Minimum requis : {vente.seuil_retrait:,.0f} FC.")
+            messages.error(request, f"Retrait non autorisé : la facture n'est pas encore "
+                                     f"entièrement payée ({vente.montant_paye:,.0f} FC sur "
+                                     f"{vente.prix_total:,.0f} FC).")
         else:
             with transaction.atomic():
                 vente.article_recupere = True
@@ -393,7 +394,6 @@ def api_credit_creer_vente(request, boutique_id):
 
     try:
         prix_total    = Decimal(str(body.get('prix_total', 0)))
-        seuil_retrait = Decimal(str(body.get('seuil_retrait', 0)))
         acompte       = Decimal(str(body.get('acompte_initial', 0) or 0))
     except (InvalidOperation, TypeError, ValueError):
         return JsonResponse({'error': 'Montants invalides'}, status=400)
@@ -410,8 +410,10 @@ def api_credit_creer_vente(request, boutique_id):
                            f"{prix_catalogue:.0f} pour {quantite} × {article.nom}."},
                 status=400)
 
-    if seuil_retrait <= 0 or seuil_retrait > prix_total:
-        return JsonResponse({'error': 'Seuil de retrait invalide'}, status=400)
+    # Plus de seuil de retrait : le retrait est autorisé uniquement quand la
+    # facture est entièrement payée (seuil = prix total, champ historique).
+    seuil_retrait = prix_total
+
     if acompte < 0 or acompte > prix_total:
         return JsonResponse({'error': 'Acompte initial invalide'}, status=400)
 

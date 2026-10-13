@@ -1989,7 +1989,8 @@ class VenteAcompte(models.Model):
     prix_total = models.DecimalField(max_digits=15, decimal_places=2, validators=[MinValueValidator(1)])
     seuil_retrait = models.DecimalField(
         max_digits=15, decimal_places=2,
-        help_text="Montant minimum à payer pour autoriser le retrait de l'article"
+        help_text="Champ historique : forcé au prix total (plus de seuil, "
+                  "retrait autorisé uniquement quand la facture est payée)"
     )
     montant_paye = models.DecimalField(max_digits=15, decimal_places=2, default=0)
     statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_COURS')
@@ -2012,7 +2013,7 @@ class VenteAcompte(models.Model):
 
     @property
     def peut_recuperer(self):
-        return self.montant_paye >= self.seuil_retrait and not self.article_recupere
+        return self.montant_paye >= self.prix_total and not self.article_recupere
 
     @property
     def pourcentage_paye(self):

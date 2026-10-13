@@ -61,7 +61,6 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
             'adresse':      'Kinshasa',
             'article_nom':  'Televiseur Samsung',
             'prix_total':   float(Decimal('30000') * 2),
-            'seuil_retrait': float(Decimal('30000')),
             'acompte_initial': 0,
             'commentaire':  '',
         }
@@ -83,7 +82,8 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
         self.assertEqual(vente.quantite, 2)
         self.assertEqual(vente.article_nom, 'Televiseur Samsung')
         self.assertEqual(vente.prix_total, Decimal('60000.00'))
-        self.assertEqual(vente.seuil_retrait, Decimal('30000.00'))
+        # Plus de seuil : forcé au prix total (retrait à paiement complet)
+        self.assertEqual(vente.seuil_retrait, Decimal('60000.00'))
         self.assertEqual(vente.statut, 'EN_COURS')
         self.assertEqual(resp.json()['quantite'], 2)
 
@@ -93,13 +93,27 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
             self.url_creer,
             data=self._payload(
                 article_id=self.article.id, quantite=2,
-                prix_total=10000, seuil_retrait=5000,
+                prix_total=10000,
             ),
             content_type='application/json', **self.entete,
         )
         self.assertEqual(resp.status_code, 400)
         self.assertIn('prix catalogue', resp.json()['error'].lower())
         self.assertFalse(VenteAcompte.objects.exists())
+
+    def test_ancien_seuil_ignore_force_au_prix_total(self):
+        """Payload legacy avec seuil_retrait : le champ est ignoré,
+        le seuil est forcé au prix total (retrait = paiement complet)."""
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(article_id=self.article.id, quantite=2,
+                               seuil_retrait=5000),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        vente = VenteAcompte.objects.get()
+        self.assertEqual(vente.seuil_retrait, vente.prix_total)
+        self.assertFalse(vente.peut_recuperer)  # pas encore payé
 
     def test_quantite_invalide_rejete(self):
         resp = self.api.post(
@@ -122,7 +136,7 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
         resp = self.api.post(
             self.url_creer,
             data=self._payload(article_id=article_autre.id, quantite=1,
-                               prix_total=5000, seuil_retrait=2500),
+                               prix_total=5000),
             content_type='application/json', **self.entete,
         )
         self.assertEqual(resp.status_code, 404)
@@ -196,8 +210,7 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
         resp = self.api.post(
             self.url_creer,
             data=self._payload(article_id=self.article.id, quantite=11,
-                               prix_total=float(Decimal('30000') * 11),
-                               seuil_retrait=30000),
+                               prix_total=float(Decimal('30000') * 11)),
             content_type='application/json', **self.entete,
         )
         self.assertEqual(resp.status_code, 400)

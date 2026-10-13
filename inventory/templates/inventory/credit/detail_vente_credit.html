@@ -101,16 +101,10 @@
                         <div class="val">{{ vente.article_nom }}</div>
                     </div>
                     <div class="row g-2 mt-1">
-                        <div class="col-6">
+                        <div class="col-12">
                             <div class="info-block">
                                 <div class="lbl">Prix total</div>
                                 <div class="val text-dark">{{ vente.prix_total|floatformat:0 }} FC</div>
-                            </div>
-                        </div>
-                        <div class="col-6">
-                            <div class="info-block">
-                                <div class="lbl">Seuil retrait</div>
-                                <div class="val text-warning">{{ vente.seuil_retrait|floatformat:0 }} FC</div>
                             </div>
                         </div>
                     </div>
@@ -152,7 +146,7 @@
             <div class="alert alert-warning d-flex align-items-center gap-2">
                 <i class="fas fa-unlock fa-lg"></i>
                 <div><strong>Retrait autorisé !</strong><br>
-                Le client a atteint le seuil de paiement. L'article peut être remis.</div>
+                La facture est entièrement payée. L'article peut être remis.</div>
             </div>
             {% elif vente.article_recupere %}
             <div class="alert alert-success d-flex align-items-center gap-2">
@@ -191,15 +185,9 @@
                     </div>
                     <div class="d-flex justify-content-between">
                         <small class="text-muted">0%</small>
-                        <small class="text-warning fw-bold">Seuil retrait : {{ vente.seuil_retrait|floatformat:0 }} FC</small>
+                        <small class="text-success fw-bold">Retrait à 100%</small>
                         <small class="text-muted">100%</small>
                     </div>
-                    <!-- Marqueur seuil -->
-                    {% if vente.prix_total %}
-                    <div class="position-relative" style="height:6px; margin-top:4px;">
-                        <div style="position:absolute; left:calc({{ vente.seuil_retrait|floatformat:0 }} / {{ vente.prix_total|floatformat:0 }} * 100%); width:2px; height:12px; background:#ffc107; top:-3px;"></div>
-                    </div>
-                    {% endif %}
                 </div>
             </div>
 

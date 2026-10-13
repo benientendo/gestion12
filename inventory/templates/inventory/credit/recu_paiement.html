@@ -137,11 +137,11 @@
         </div>
         {% elif vente.peut_recuperer %}
         <div class="retrait-badge retrait-ok">
-            ✔ Retrait autorisé — {{ vente.seuil_retrait|floatformat:0 }} FC atteint
+            ✔ Retrait autorisé — facture entièrement payée
         </div>
         {% else %}
         <div class="retrait-badge retrait-nok">
-            ⏳ Retrait possible à partir de {{ vente.seuil_retrait|floatformat:0 }} FC
+            ⏳ Retrait possible une fois payé — reste {{ vente.montant_restant|floatformat:0 }} FC
         </div>
         {% endif %}
 

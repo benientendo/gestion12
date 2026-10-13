@@ -245,15 +245,7 @@
                                     </div>
                                     <div class="mb-2">
                                         <label class="form-label small">Prix total (FC) <span class="text-danger">*</span></label>
-                                        <input type="number" name="prix_total" id="prixTotalInput" class="form-control form-control-sm" min="1" placeholder="0" required onchange="updateSeuil()">
-                                    </div>
-                                    <div class="mb-2">
-                                        <label class="form-label small">% minimum pour retrait <span class="text-danger">*</span></label>
-                                        <div class="input-group input-group-sm">
-                                            <input type="number" name="seuil_pct" id="seuilPctInput" class="form-control" min="1" max="100" value="50" onchange="updateSeuil()">
-                                            <span class="input-group-text">%</span>
-                                        </div>
-                                        <small class="text-muted">Seuil retrait : <strong id="seuilDisplay">—</strong> FC</small>
+                                        <input type="number" name="prix_total" id="prixTotalInput" class="form-control form-control-sm" min="1" placeholder="0" required>
                                     </div>
                                     <div class="mb-0">
                                         <label class="form-label small">Commentaire</label>
@@ -284,14 +276,7 @@ function fillArticleNom(sel) {
     if (opt.value) {
         document.getElementById('articleNomInput').value = opt.dataset.nom || '';
         document.getElementById('prixTotalInput').value  = opt.dataset.prix || '';
-        updateSeuil();
     }
-}
-function updateSeuil() {
-    const prix = parseFloat(document.getElementById('prixTotalInput').value) || 0;
-    const pct  = parseFloat(document.getElementById('seuilPctInput').value)  || 50;
-    const seuil = Math.round(prix * pct / 100);
-    document.getElementById('seuilDisplay').textContent = seuil.toLocaleString();
 }
 </script>
 {% endblock %}

@@ -543,7 +543,9 @@ class CaNetAnnulationDifferieeTestCase(DemandeAnnulationBase):
         vente = self._creer_vente(
             heures_ecoulees=26, articles=[(self.article, 2, Decimal('1000'))]
         )
-        hier = vente.date_vente.date()
+        # Date LOCALE du jour de la vente (alignée sur date_vente__date,
+        # qui convertit en TIME_ZONE) : .date() brut = date UTC ≠ locale
+        hier = timezone.localtime(vente.date_vente).date()
         aujourd_hui = timezone.localdate()
         self.assertNotEqual(hier, aujourd_hui)
 
@@ -576,7 +578,9 @@ class CaNetAnnulationDifferieeTestCase(DemandeAnnulationBase):
         vente = self._creer_vente(
             heures_ecoulees=26, articles=[(self.article, 2, Decimal('1000'))]
         )
-        hier = vente.date_vente.date()
+        # Date LOCALE du jour de la vente (alignée sur date_vente__date,
+        # qui convertit en TIME_ZONE) : .date() brut = date UTC ≠ locale
+        hier = timezone.localtime(vente.date_vente).date()
         aujourd_hui = timezone.localdate()
 
         self._annuler_vente_differee(
