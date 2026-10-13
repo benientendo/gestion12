@@ -9,8 +9,9 @@ from django.views.decorators.csrf import csrf_exempt
 from decimal import Decimal, InvalidOperation
 import json
 
-from .models import Boutique, Article, ClientAcompte, VenteAcompte, PaiementAcompte, Client
+from .models import Boutique, Article, ClientAcompte, VenteAcompte, PaiementAcompte, Client, MouvementStock
 from .decorators import commercant_required
+from .websocket_utils import notify_stock_updated
 
 
 def _boutique_from_serial(request, boutique_id):
@@ -278,9 +279,38 @@ def annuler_vente_credit(request, boutique_id, vente_id):
     vente    = get_object_or_404(VenteAcompte, id=vente_id, boutique=boutique)
 
     if request.method == 'POST' and vente.statut == 'EN_COURS':
-        vente.statut = 'ANNULE'
-        vente.save()
-        messages.warning(request, f"Vente {vente.reference} annulée.")
+        article = None
+        stock_restant = None
+        with transaction.atomic():
+            # Retour du stock décrémenté à la création de la vente
+            if vente.article_id:
+                article = Article.objects.select_for_update().filter(
+                    id=vente.article_id).first()
+            if article is not None:
+                stock_avant = int(article.quantite_stock or 0)
+                stock_restant = stock_avant + int(vente.quantite or 1)
+                article.quantite_stock = stock_restant
+                article.save(update_fields=['quantite_stock'])
+                MouvementStock.objects.create(
+                    article=article,
+                    type_mouvement='RETOUR',
+                    quantite=int(vente.quantite or 1),
+                    stock_avant=stock_avant,
+                    stock_apres=stock_restant,
+                    reference_document=f"ANNUL-CREDIT-{vente.reference}",
+                    utilisateur=request.user.get_full_name() or request.user.username,
+                    commentaire=f"Annulation vente à crédit {vente.reference} — "
+                                f"retour {vente.quantite} × {article.nom} en stock",
+                )
+            vente.statut = 'ANNULE'
+            vente.save()
+
+        if article is not None:
+            notify_stock_updated(boutique.id, article.id, stock_restant, article_nom=article.nom)
+            messages.warning(request, f"Vente {vente.reference} annulée — "
+                                      f"stock de '{article.nom}' remis à {stock_restant}.")
+        else:
+            messages.warning(request, f"Vente {vente.reference} annulée.")
 
     return redirect('inventory:detail_vente_credit', boutique_id=boutique_id, vente_id=vente_id)
 
@@ -386,6 +416,18 @@ def api_credit_creer_vente(request, boutique_id):
         return JsonResponse({'error': 'Acompte initial invalide'}, status=400)
 
     with transaction.atomic():
+        # ── Stock : contrôle + décrément immédiat à la création ─────────
+        stock_avant  = None
+        stock_restant = None
+        if article is not None:
+            article = Article.objects.select_for_update().get(id=article.id)
+            stock_avant = int(article.quantite_stock or 0)
+            if stock_avant < quantite:
+                return JsonResponse(
+                    {'error': f"Stock insuffisant pour {article.nom} : "
+                              f"{stock_avant} disponible(s), {quantite} demandé(s)."},
+                    status=400)
+
         vente = VenteAcompte.objects.create(
             boutique=boutique,
             client=client,
@@ -407,14 +449,35 @@ def api_credit_creer_vente(request, boutique_id):
                 vente.statut = 'SOLDE'
             vente.save()
 
+        if article is not None:
+            article.quantite_stock = stock_avant - quantite
+            article.save(update_fields=['quantite_stock'])
+            stock_restant = article.quantite_stock
+            MouvementStock.objects.create(
+                article=article,
+                type_mouvement='VENTE',
+                quantite=-quantite,
+                stock_avant=stock_avant,
+                stock_apres=stock_restant,
+                reference_document=vente.reference,
+                utilisateur=request.META.get('HTTP_X_DEVICE_SERIAL', 'MAUI'),
+                commentaire=f"Vente à crédit {vente.reference} — {quantite} × {article.nom}",
+            )
+
+    # Après commit : pousser le nouveau stock à tous les terminaux (WebSocket)
+    if article is not None:
+        notify_stock_updated(boutique.id, article.id, stock_restant, article_nom=article.nom)
+
     return JsonResponse({
-        'success':    True,
-        'vente_id':   vente.id,
-        'reference':  vente.reference,
-        'client_nom': client.nom_complet,
-        'statut':     vente.statut,
-        'quantite':   vente.quantite,
-        'prix_total': float(vente.prix_total),
+        'success':      True,
+        'vente_id':     vente.id,
+        'reference':    vente.reference,
+        'client_nom':   client.nom_complet,
+        'statut':       vente.statut,
+        'quantite':     vente.quantite,
+        'prix_total':   float(vente.prix_total),
+        'stock_avant':  stock_avant,
+        'stock_restant': stock_restant,
     }, status=201)
 
 

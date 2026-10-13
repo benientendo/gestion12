@@ -114,6 +114,30 @@
                             </div>
                         </div>
                     </div>
+                    {% if vente.article %}
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <div class="info-block">
+                                <div class="lbl">Quantité vendue</div>
+                                <div class="val text-dark"><strong>{{ vente.quantite }}</strong> unité(s)</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="info-block">
+                                <div class="lbl">Stock actuel de l'article</div>
+                                <div class="val {% if vente.article.quantite_stock <= 0 %}text-danger{% else %}text-success{% endif %}">
+                                    <strong>{{ vente.article.quantite_stock }}</strong> restant(s)
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="alert alert-light border py-2 mt-2 mb-0 small">
+                        <i class="fas fa-arrow-down text-primary"></i>
+                        <strong>{{ vente.quantite }} unité(s)</strong> retirée(s) du stock dès la création de cette
+                        vente à crédit. {% if vente.statut == 'ANNULE' %}Annulée : le stock a été remis à jour.
+                        {% endif %}
+                    </div>
+                    {% endif %}
                     {% if vente.commentaire %}
                     <div class="info-block mt-2">
                         <div class="lbl">Commentaire</div>

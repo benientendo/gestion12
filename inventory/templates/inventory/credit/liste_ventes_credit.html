@@ -122,7 +122,15 @@
                                 <strong>{{ v.client.nom_complet }}</strong>
                                 {% if v.client.telephone %}<br><small class="text-muted">{{ v.client.telephone }}</small>{% endif %}
                             </td>
-                            <td>{{ v.article_nom }}</td>
+                            <td>
+                                {{ v.article_nom }}
+                                {% if v.article %}
+                                <br><small class="text-muted">Stock : {{ v.article.quantite_stock }}</small>
+                                {% endif %}
+                                {% if v.quantite > 1 %}
+                                <span class="badge bg-dark">×{{ v.quantite }}</span>
+                                {% endif %}
+                            </td>
                             <td class="fw-bold">{{ v.prix_total|floatformat:0 }} FC</td>
                             <td class="text-success">{{ v.montant_paye|floatformat:0 }} FC</td>
                             <td class="text-danger">{{ v.montant_restant|floatformat:0 }} FC</td>

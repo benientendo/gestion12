@@ -10,7 +10,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, Client as TestClient
 from django.urls import reverse
 
-from inventory.models import Article, Boutique, Client, Commercant, VenteAcompte
+from inventory.models import Article, Boutique, Client, Commercant, MouvementStock, VenteAcompte
 
 User = get_user_model()
 
@@ -163,3 +163,97 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.json()['quantite'], 3)
         self.assertEqual(detail.json()['prix_total'], 90000.0)
+
+    # ── Stock : décrément immédiat à la création ─────────────────────────
+
+    def test_stock_decremente_avec_mouvement(self):
+        """La création décrémente le stock et crée un MouvementStock VENTE."""
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(article_id=self.article.id, quantite=2),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 8)
+
+        data = resp.json()
+        self.assertEqual(data['stock_avant'], 10)
+        self.assertEqual(data['stock_restant'], 8)
+
+        mv = MouvementStock.objects.get(article=self.article,
+                                        type_mouvement='VENTE')
+        self.assertEqual(mv.type_mouvement, 'VENTE')
+        self.assertEqual(mv.quantite, -2)
+        self.assertEqual(mv.stock_avant, 10)
+        self.assertEqual(mv.stock_apres, 8)
+        self.assertEqual(mv.reference_document,
+                         VenteAcompte.objects.get().reference)
+
+    def test_stock_insuffisant_rejete(self):
+        """Quantité supérieure au stock : 400, aucune vente, stock intact."""
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(article_id=self.article.id, quantite=11,
+                               prix_total=float(Decimal('30000') * 11),
+                               seuil_retrait=30000),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('stock insuffisant', resp.json()['error'].lower())
+        self.assertFalse(VenteAcompte.objects.exists())
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 10)
+
+    def test_sans_article_id_stock_intact(self):
+        """Ancien payload (pas d'article_id) : ni décrément, ni mouvement."""
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(quantite=None, article_id=None),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        data = resp.json()
+        self.assertIsNone(data['stock_avant'])
+        self.assertIsNone(data['stock_restant'])
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 10)
+        # Seul le mouvement d'ouverture (ENTREE) existe : aucun VENTE/RETOUR
+        self.assertFalse(MouvementStock.objects.filter(
+            article=self.article).exclude(type_mouvement='ENTREE').exists())
+
+    def test_annulation_rend_le_stock(self):
+        """L'annulation web remet le stock et crée un MouvementStock RETOUR."""
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(article_id=self.article.id, quantite=3,
+                               prix_total=float(Decimal('30000') * 3)),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        vente = VenteAcompte.objects.get()
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 7)
+
+        self.client.force_login(self.user)
+        url_annul = reverse('inventory:annuler_vente_credit',
+                            args=[self.boutique.id, vente.id])
+        resp = self.client.post(url_annul)
+        self.assertEqual(resp.status_code, 302)
+
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, 'ANNULE')
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 10)
+
+        mv = MouvementStock.objects.filter(type_mouvement='RETOUR',
+                                           article=self.article).get()
+        self.assertEqual(mv.quantite, 3)
+        self.assertEqual(mv.stock_apres, 10)
+
+        # Seconde annulation (déjà annulée) : pas de double retour de stock
+        resp = self.client.post(url_annul)
+        self.assertEqual(resp.status_code, 302)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 10)
