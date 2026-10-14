@@ -213,15 +213,18 @@
                             <span class="text-primary fw-bold">{% widthratio article.prix_vente 1 article.stock_total %} <small>FC</small></span>
                             {% endif %}
                         </td>
-                        <td class="col-stock">
-                            {% if article.stock_total <= 0 %}
-                            <span class="badge bg-danger">{{ article.stock_total }}</span>
-                            {% elif article.stock_total <= boutique.alerte_stock_bas %}
-                            <span class="badge bg-warning text-dark">{{ article.stock_total }}</span>
-                            {% else %}
-                            <span class="badge bg-success">{{ article.stock_total }}</span>
-                            {% endif %}
-                            {% if article.a_variantes %}
+                <td class="col-stock">
+                    {% if article.stock_total <= 0 %}
+                    <span class="badge bg-danger">{{ article.stock_total }}</span>
+                    {% elif article.stock_total <= boutique.alerte_stock_bas %}
+                    <span class="badge bg-warning text-dark">{{ article.stock_total }}</span>
+                    {% else %}
+                    <span class="badge bg-success">{{ article.stock_total }}</span>
+                    {% endif %}
+                    {% if boutique.type_commerce == 'BOUCHERIE' %}
+                    <div class="small text-muted">{{ article.stock_decompose_formate }}</div>
+                    {% endif %}
+                    {% if article.a_variantes %}
                             <span class="badge bg-info ms-1 badge-variantes" 
                                   style="cursor: pointer;" 
                                   title="Cliquer pour voir les variantes"
@@ -276,7 +279,8 @@
                                         data-article-nom="{{ article.nom|escapejs }}"
                                         data-article-stock="{{ article.stock_total }}"
                                         data-has-variantes="{{ article.a_variantes|yesno:'true,false' }}"
-                                        onclick="setArticleForStock(parseInt(this.dataset.articleId), this.dataset.articleNom, parseInt(this.dataset.articleStock), this.dataset.hasVariantes === 'true')" title="Stock">
+                                        data-conditionnements="{% for c in article.conditionnements.all %}{% if c.est_actif %}{{ c.libelle|escapejs }}:{{ c.coefficient }}{% if not forloop.last %}|{% endif %}{% endif %}{% endfor %}"
+                                        onclick="setArticleForStock(parseInt(this.dataset.articleId), this.dataset.articleNom, parseInt(this.dataset.articleStock), this.dataset.hasVariantes === 'true', this.dataset.conditionnements || '')" title="Stock">
                                     <i class="fas fa-boxes"></i>
                                 </button>
                                 <button type="button" class="btn btn-outline-info btn-sm" 
@@ -425,7 +429,12 @@
                             <tr>
                                 <th>Stock:</th>
                                 <td>
+                                    {% if boutique.type_commerce == 'BOUCHERIE' %}
+                                    <strong>{{ article.stock_decompose_formate }}</strong>
+                                    <div class="small text-muted">({{ article.stock_total }} {{ article.unite_base|default:'unités' }})</div>
+                                    {% else %}
                                     {{ article.stock_total }} unités
+                                    {% endif %}
                                     {% if article.a_variantes %}
                                     <span class="badge bg-info ms-1"><i class="fas fa-tags"></i> {{ article.nb_variantes }} variante(s)</span>
                                     {% endif %}
@@ -807,8 +816,16 @@
                     
                     <div class="mb-3">
                         <label for="quantite_ajustement" class="form-label"><i class="fas fa-hashtag"></i> Quantité</label>
-                        <input type="number" class="form-control form-control-lg" id="quantite_ajustement" 
-                               name="quantite" required min="1" value="1" autofocus>
+                        <div class="input-group">
+                            <input type="number" class="form-control form-control-lg" id="quantite_ajustement" 
+                                   name="quantite" required min="1" value="1" autofocus>
+                            <!--  Sélecteur d'unité (Boucherie) : 2 cartons = 2 × coefficient kg -->
+                            <select class="form-select" id="unite_ajustement" name="unite_coefficient"
+                                    style="max-width: 40%;" onchange="updateStockPreview()">
+                                <option value="1">unité de base</option>
+                            </select>
+                        </div>
+                        <div class="form-text" id="uniteAjustementHint" style="display: none;"></div>
                     </div>
                     
                     <div class="mb-3">
@@ -2447,6 +2464,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 </td>
                 <td class="col-stock">
                     <span class="badge ${stockBadgeClass}">${article.quantite_stock}</span>
+                    {% if boutique.type_commerce == 'BOUCHERIE' %}
+                    ${article.stock_decompose ? `<div class="small text-muted">${article.stock_decompose}</div>` : ''}
+                    {% endif %}
                     ${variantesBadge}
                 </td>
                 <td class="col-exp">
@@ -2466,6 +2486,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
                                 data-article-stock="${article.quantite_stock}"
                                 data-has-variantes="${hasVariantes}"
+                                data-conditionnements="${article.conditionnements || ''}"
                                 title="Stock">
                             <i class="fas fa-boxes"></i>
                         </button>
@@ -2502,7 +2523,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const articleNom = this.dataset.articleNom;
                 const stock = parseInt(this.dataset.articleStock);
                 const hasVariantes = this.dataset.hasVariantes === 'true';
-                setArticleForStock(articleId, articleNom, stock, hasVariantes);
+                setArticleForStock(articleId, articleNom, stock, hasVariantes, this.dataset.conditionnements || '');
             });
         });
         
@@ -2761,6 +2782,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <span class="badge bg-secondary">${article.code || 'N/A'}</span>
                                     <span class="badge bg-info">${article.categorie || 'Sans catégorie'}</span>
                                     <span class="badge bg-primary">${article.quantite_stock} en stock</span>
+                                    {% if boutique.type_commerce == 'BOUCHERIE' %}
+                                    ${article.stock_decompose ? `<div class="small text-muted">${article.stock_decompose}</div>` : ''}
+                                    {% endif %}
                                     <span class="text-success fw-bold">${article.prix_vente} ${article.devise}</span>
                                     ${article.a_variantes ? `<span class="badge bg-info badge-variantes" style="cursor: pointer;" title="Cliquer pour voir les variantes" onclick="afficherVariantes(${article.id}, '${article.nom.replace(/'/g, "\\'")}')"><i class="fas fa-tags"></i> ${article.nb_variantes || ''}</span>` : ''}
                                 </div>
@@ -2770,6 +2794,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                             data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
                                             data-article-stock="${article.quantite_stock}"
                                             data-has-variantes="${article.a_variantes ? 'true' : 'false'}"
+                                            data-conditionnements="${article.conditionnements || ''}"
                                             data-action="stock">
                                         <i class="fas fa-boxes"></i> Stock
                                     </button>
@@ -2821,7 +2846,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (action === 'stock') {
                         const stock = parseInt(this.getAttribute('data-article-stock'));
                         const hasVariantes = this.getAttribute('data-has-variantes') === 'true';
-                        setArticleForStock(articleId, articleNom, stock, hasVariantes);
+                        setArticleForStock(articleId, articleNom, stock, hasVariantes, this.getAttribute('data-conditionnements') || '');
                         // Ouvrir le modal
                         const modal = new bootstrap.Modal(document.getElementById('ajusterStockModal'));
                         modal.show();
@@ -2856,7 +2881,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentStockArticleId = null;
     let currentStockActuel = 0;
     
-    window.setArticleForStock = function(articleId, articleNom, stockActuel, hasVariantes = false) {
+    window.setArticleForStock = function(articleId, articleNom, stockActuel, hasVariantes = false, conditionnementsStr = '') {
         currentStockArticleId = articleId;
         currentStockActuel = stockActuel;
         
@@ -2866,6 +2891,34 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('quantite_ajustement').value = 1;
         document.getElementById('commentaire_stock').value = '';
         document.getElementById('ajouterStock').checked = true;
+        
+        //  CONDITIONNEMENTS : peupler le sélecteur d'unité ("carton:25000|kg:1000|g:1")
+        const selectUnite = document.getElementById('unite_ajustement');
+        const hintUnite = document.getElementById('uniteAjustementHint');
+        selectUnite.innerHTML = '';
+        const optionBase = document.createElement('option');
+        optionBase.value = '1';
+        optionBase.textContent = 'unité de base';
+        selectUnite.appendChild(optionBase);
+        const parties = (conditionnementsStr || '').split('|').filter(p => p.includes(':'));
+        if (parties.length > 0) {
+            selectUnite.parentElement.style.display = '';
+            parties.forEach(p => {
+                const [libelle, coeffStr] = p.split(':');
+                const coeff = parseInt(coeffStr);
+                if (!libelle || !(coeff >= 1) || coeff === 1) return;
+                const opt = document.createElement('option');
+                opt.value = String(coeff);
+                opt.textContent = `${libelle} (${coeff} unités de base)`;
+                selectUnite.appendChild(opt);
+            });
+            hintUnite.style.display = parties.length > 0 ? '' : 'none';
+            hintUnite.textContent = 'Ex: 2 cartons → la quantité est multipliée par le coefficient avant application au stock.';
+        } else {
+            selectUnite.parentElement.style.display = 'none';
+            hintUnite.style.display = 'none';
+        }
+        selectUnite.value = '1';
         
         // Afficher un avertissement si l'article a des variantes
         const variantesWarning = document.getElementById('variantesStockWarning');
@@ -2879,14 +2932,16 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateStockPreview() {
         const typeAjustement = document.querySelector('input[name="type_ajustement"]:checked').value;
         const quantite = parseInt(document.getElementById('quantite_ajustement').value) || 0;
+        const coefficient = parseInt(document.getElementById('unite_ajustement').value) || 1;
+        const quantiteBase = quantite * coefficient;
         let nouveauStock = currentStockActuel;
         
         if (typeAjustement === 'ajouter') {
-            nouveauStock = currentStockActuel + quantite;
+            nouveauStock = currentStockActuel + quantiteBase;
         } else if (typeAjustement === 'retirer') {
-            nouveauStock = Math.max(0, currentStockActuel - quantite);
+            nouveauStock = Math.max(0, currentStockActuel - quantiteBase);
         } else if (typeAjustement === 'definir') {
-            nouveauStock = quantite;
+            nouveauStock = quantiteBase;
         }
         
         document.getElementById('previewStock').textContent = nouveauStock;

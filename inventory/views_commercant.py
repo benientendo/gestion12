@@ -938,7 +938,7 @@ def articles_boutique(request, boutique_id):
     pv_filter = request.GET.get('pv', '')
 
     # Requête optimisée avec select_related et prefetch_related pour les variantes
-    articles = boutique.articles.filter(est_actif=True).select_related('categorie').prefetch_related('variantes')
+    articles = boutique.articles.filter(est_actif=True).select_related('categorie').prefetch_related('variantes', 'conditionnements')
 
     if search:
         # ⭐ Chercher dans articles ET dans les codes-barres des variantes
@@ -1144,7 +1144,7 @@ def articles_search_ajax(request, boutique_id):
     
     # Combiner et dédupliquer
     all_article_ids = set(art.id for art in articles) | set(art.id for art in articles_from_variantes)
-    articles = boutique.articles.filter(id__in=all_article_ids).select_related('categorie').order_by('nom')[:50]
+    articles = boutique.articles.filter(id__in=all_article_ids).select_related('categorie').prefetch_related('conditionnements').order_by('nom')[:50]
     
     articles_data = []
     for art in articles:
@@ -1157,6 +1157,10 @@ def articles_search_ajax(request, boutique_id):
             'prix_achat': str(art.prix_achat),
             'devise': art.devise,
             'quantite_stock': art.stock_total,  # Utiliser stock_total pour inclure les variantes
+            'stock_decompose': art.stock_decompose_formate,  # Ex: "20 cartons · 15 kg · 500 g"
+            'conditionnements': '|'.join(
+                f'{c.libelle}:{c.coefficient}' for c in art.conditionnements.all() if c.est_actif
+            ),
             'a_variantes': art.a_variantes,
             'nb_variantes': art.nb_variantes if art.a_variantes else 0,
             'image_url': art.image.url if art.image else None,
@@ -3948,6 +3952,22 @@ def ajuster_stock_article(request, boutique_id, article_id):
             type_ajustement = request.POST.get('type_ajustement')
             quantite = int(request.POST.get('quantite', 0))
             commentaire = request.POST.get('commentaire', '')
+
+            #  CONDITIONNEMENT : la quantité saisie peut être en unité commerciale
+            # (ex: 2 cartons de 25 kg → 50 en unité de base). Coefficient 1 = unité de base.
+            try:
+                coefficient = max(1, int(request.POST.get('unite_coefficient', 1) or 1))
+            except (ValueError, TypeError):
+                coefficient = 1
+            unite_base_lib = article.unite_base or 'unités'
+            unite_affichee = ''
+            if coefficient > 1:
+                unite_affichee = f' × {coefficient} {unite_base_lib}'
+                for c in article.conditionnements.all():
+                    if c.coefficient == coefficient:
+                        unite_affichee = f' ({c.libelle})'
+                        break
+            quantite_base = quantite * coefficient
             
             # Capturer le stock avant modification
             stock_avant = article.quantite_stock
@@ -3956,7 +3976,7 @@ def ajuster_stock_article(request, boutique_id, article_id):
             if type_ajustement == 'ajouter':
                 # Envoyer en validation MAUI au lieu d'appliquer directement
                 article.est_valide_client = False
-                article.quantite_envoyee = quantite
+                article.quantite_envoyee = quantite_base
                 article.save(update_fields=['est_valide_client', 'quantite_envoyee'])
                 
                 from .websocket_utils import notify_stock_updated, notify_sync_required
@@ -3965,18 +3985,18 @@ def ajuster_stock_article(request, boutique_id, article_id):
                 
                 return JsonResponse({
                     'success': True,
-                    'message': f'+{quantite} unités envoyées pour validation client (stock actuel: {stock_avant})',
+                    'message': f'+{quantite}{unite_affichee} = +{quantite_base} {unite_base_lib} envoyés pour validation client (stock actuel: {stock_avant})',
                     'stock_avant': stock_avant,
                     'stock_apres': stock_avant,
-                    'quantite_en_attente': quantite
+                    'quantite_en_attente': quantite_base
                 })
             elif type_ajustement == 'retirer':
-                article.quantite_stock = max(0, article.quantite_stock - quantite)
+                article.quantite_stock = max(0, article.quantite_stock - quantite_base)
                 type_mouvement = 'SORTIE'
                 quantite_mouvement = -(stock_avant - article.quantite_stock)
             elif type_ajustement == 'definir':
-                article.quantite_stock = quantite
-                difference = quantite - stock_avant
+                article.quantite_stock = quantite_base
+                difference = quantite_base - stock_avant
                 type_mouvement = 'AJUSTEMENT'
                 quantite_mouvement = difference
             else:

@@ -209,7 +209,39 @@ class Article(models.Model):
         Note: Si l'article a des variantes, chaque variante a son propre stock (VarianteArticle.quantite_stock).
         """
         return self.quantite_stock
-    
+
+    @property
+    def stock_decompose(self):
+        """Décomposition gloutonne du stock en unités mixtes (Boucherie).
+
+        Ex: stock 515500 g avec carton=25000, kg=1000, g=1
+        → [('carton', 20), ('kg', 15), ('g', 500)]  (soit « 20 cartons · 15 kg · 500 g »).
+
+        Le stock reste stocké en unité de base (la plus petite : g, PCE…).
+        Non-Boucherie ou sans conditionnement → [(unite_base, stock)].
+        """
+        unite = self.unite_base or 'unités'
+        boutique = self.boutique
+        if boutique is None or boutique.type_commerce != 'BOUCHERIE':
+            return [(unite, self.quantite_stock)]
+        conds = [c for c in self.conditionnements.all() if c.est_actif and c.coefficient >= 1]
+        if not conds:
+            return [(unite, self.quantite_stock)]
+        restant = self.quantite_stock
+        parties = []
+        for c in sorted(conds, key=lambda c: c.coefficient, reverse=True):
+            q, restant = divmod(restant, c.coefficient)
+            if q > 0:
+                parties.append((c.libelle, q))
+        if restant > 0 or not parties:
+            parties.append((unite, restant))
+        return parties
+
+    @property
+    def stock_decompose_formate(self):
+        """Ex: « 20 cartons · 15 kg · 500 g » — ou « 500 kg » / « 30 unités » hors Boucherie."""
+        return ' · '.join(f"{q} {lib}" for lib, q in self.stock_decompose)
+
     @property
     def nb_variantes(self):
         """Retourne le nombre de variantes actives"""

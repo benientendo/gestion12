@@ -391,3 +391,107 @@ class BackOfficeConditionnementsTestCase(TestCase):
         self.assertEqual(article.prix_vente, Decimal('1200'))
         libelles = set(article.conditionnements.values_list('libelle', flat=True))
         self.assertEqual(libelles, {'kg', 'plateau'})
+
+
+class StockDecomposeTestCase(TestCase):
+    """Affichage mixte « 20 cartons · 15 kg · 500 g » + reception en cartons."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comm_cond_dec', password='pass1234', email='comm_cond_dec@test.cd'
+        )
+        self.commercant = Commercant.objects.create(
+            nom_entreprise='COND DEC', nom_responsable='COND',
+            email='comm_cond_dec@test.cd', user=self.user,
+        )
+        self.bout_boucherie = Boutique.objects.create(
+            nom='Boucherie Dec', commercant=self.commercant,
+            code_boutique='BT-CDEC-001', type_commerce='BOUCHERIE',
+        )
+        self.bout_general = Boutique.objects.create(
+            nom='General Dec', commercant=self.commercant,
+            code_boutique='BT-CDEC-002', type_commerce='GENERAL',
+        )
+        # Article Boucherie : base = gramme (la plus petite unite)
+        self.article = Article.objects.create(
+            boutique=self.bout_boucherie, nom='Poisson', code='POI-1',
+            prix_vente=Decimal('2'), devise='CDF', quantite_stock=515500,
+            est_actif=True, est_valide_client=True, unite_base='g',
+        )
+        Conditionnement.objects.create(article=self.article, libelle='carton', coefficient=25000, ordre=0)
+        Conditionnement.objects.create(article=self.article, libelle='kg', coefficient=1000, ordre=1)
+        Conditionnement.objects.create(article=self.article, libelle='g', coefficient=1, ordre=2)
+        self.web = TestClient()
+        self.web.force_login(self.user)
+
+    def test_decomposition_gloutonne(self):
+        self.assertEqual(
+            self.article.stock_decompose,
+            [('carton', 20), ('kg', 15), ('g', 500)],
+        )
+        self.assertEqual(
+            self.article.stock_decompose_formate,
+            '20 carton · 15 kg · 500 g',
+        )
+
+    def test_decomposition_sans_reste(self):
+        self.article.quantite_stock = 500000  # 20 cartons exactement
+        self.assertEqual(self.article.stock_decompose, [('carton', 20)])
+
+    def test_decomposition_stock_zero(self):
+        self.article.quantite_stock = 0
+        self.assertEqual(self.article.stock_decompose, [('g', 0)])
+
+    def test_decomposition_article_general(self):
+        autre = Article.objects.create(
+            boutique=self.bout_general, nom='Savon', code='SAV-1',
+            prix_vente=Decimal('100'), devise='CDF', quantite_stock=30,
+            est_actif=True, est_valide_client=True,
+        )
+        self.assertEqual(autre.stock_decompose, [('unités', 30)])
+        self.assertEqual(autre.stock_decompose_formate, '30 unités')
+
+    def test_reception_en_cartons_convertie_en_base(self):
+        """2 cartons envoyes depuis le back-office → quantite_envoyee = 50000 g."""
+        url = reverse('inventory:ajuster_stock_article',
+                      args=[self.bout_boucherie.id, self.article.id])
+        r = self.web.post(url, data={
+            'type_ajustement': 'ajouter',
+            'quantite': '2',
+            'unite_coefficient': '25000',
+            'commentaire': 'Réception 2 cartons',
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertTrue(body['success'])
+        self.assertEqual(body['quantite_en_attente'], 50000)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_envoyee, 50000)
+        self.assertFalse(self.article.est_valide_client)
+
+    def test_reception_unite_base_sans_conversion(self):
+        url = reverse('inventory:ajuster_stock_article',
+                      args=[self.bout_boucherie.id, self.article.id])
+        r = self.web.post(url, data={
+            'type_ajustement': 'retirer',
+            'quantite': '1000',
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 515500 - 1000)
+        self.assertTrue(
+            MouvementStock.objects.filter(article=self.article, quantite=-1000).exists()
+        )
+
+    def test_reception_definir_en_cartons(self):
+        url = reverse('inventory:ajuster_stock_article',
+                      args=[self.bout_boucherie.id, self.article.id])
+        r = self.web.post(url, data={
+            'type_ajustement': 'definir',
+            'quantite': '25',
+            'unite_coefficient': '1000',
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 25000)
+
