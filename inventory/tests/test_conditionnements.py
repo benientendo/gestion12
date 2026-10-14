@@ -1,0 +1,393 @@
+"""
+Conditionnements (boutiques Boucherie) :
+- Modele Conditionnement + Article.unite_base + LigneVente.unite_coefficient
+- Catalogue API : conditionnements exposes uniquement pour type BOUCHERIE
+- Vente avec conditionnement_id : stock debite en unite de base (quantite x coefficient)
+- Annulation : restauration du stock en unite de base
+- Back-office : creation AJAX d'article avec conditionnements (BOUCHERIE seulement)
+"""
+from decimal import Decimal
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase, Client as TestClient
+from django.urls import reverse
+
+from inventory.models import (
+    Article, Boutique, Client as Terminal, Commercant,
+    Conditionnement, LigneVente, MouvementStock, Vente,
+)
+
+User = get_user_model()
+
+
+class ConditionnementModeleTestCase(TestCase):
+    """Proprietes du modele : prix effectif + quantite de base."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comm_cond_mod', password='pass1234', email='comm_cond_mod@test.cd'
+        )
+        self.commercant = Commercant.objects.create(
+            nom_entreprise='COND MOD', nom_responsable='COND',
+            email='comm_cond_mod@test.cd', user=self.user,
+        )
+        self.boutique = Boutique.objects.create(
+            nom='Boucherie Mod', commercant=self.commercant,
+            code_boutique='BT-CMOD-001', type_commerce='BOUCHERIE',
+        )
+        self.article = Article.objects.create(
+            code='COND-M1', nom='Poisson frais',
+            prix_vente=Decimal('1000'),
+            boutique=self.boutique, quantite_stock=500,
+            est_actif=True, est_valide_client=True,
+            unite_base='kg',
+        )
+
+    def test_prix_vente_effectif_avec_prix_explicite(self):
+        c = Conditionnement.objects.create(
+            article=self.article, libelle='sac', coefficient=25,
+            prix_vente=Decimal('20000'),
+        )
+        self.assertEqual(c.prix_vente_effectif, Decimal('20000'))
+
+    def test_prix_vente_effectif_auto(self):
+        c = Conditionnement.objects.create(
+            article=self.article, libelle='sac', coefficient=25,
+        )
+        self.assertEqual(c.prix_vente_effectif, Decimal('25000'))
+
+    def test_quantite_base_ligne(self):
+        c = Conditionnement.objects.create(
+            article=self.article, libelle='sac', coefficient=25,
+        )
+        ligne = LigneVente(
+            article=self.article, conditionnement=c,
+            unite_coefficient=25, quantite=3,
+            prix_unitaire=Decimal('20000'),
+        )
+        self.assertEqual(ligne.quantite_base, 75)
+
+    def test_quantite_base_ligne_sans_conditionnement(self):
+        ligne = LigneVente(
+            article=self.article, unite_coefficient=1, quantite=4,
+            prix_unitaire=Decimal('1000'),
+        )
+        self.assertEqual(ligne.quantite_base, 4)
+
+
+class CatalogueConditionnementsTestCase(TestCase):
+    """Catalogue API : les conditionnements ne sortent que pour les boutiques Boucherie."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comm_cond_cat', password='pass1234', email='comm_cond_cat@test.cd'
+        )
+        self.commercant = Commercant.objects.create(
+            nom_entreprise='COND CAT', nom_responsable='COND',
+            email='comm_cond_cat@test.cd', user=self.user,
+        )
+        self.bout_boucherie = Boutique.objects.create(
+            nom='Boucherie Cat', commercant=self.commercant,
+            code_boutique='BT-CCAT-001', type_commerce='BOUCHERIE',
+        )
+        self.bout_general = Boutique.objects.create(
+            nom='General Cat', commercant=self.commercant,
+            code_boutique='BT-CCAT-002', type_commerce='GENERAL',
+        )
+        self.terminal_b = Terminal.objects.create(
+            compte_proprietaire=self.user, boutique=self.bout_boucherie,
+            nom_terminal='T-CAT-B', numero_serie='SERIAL-CCAT-B01', est_actif=True,
+        )
+        self.terminal_g = Terminal.objects.create(
+            compte_proprietaire=self.user, boutique=self.bout_general,
+            nom_terminal='T-CAT-G', numero_serie='SERIAL-CCAT-G01', est_actif=True,
+        )
+        self.article_b = Article.objects.create(
+            code='COND-C1', nom='Poisson frais',
+            prix_vente=Decimal('1000'),
+            boutique=self.bout_boucherie, quantite_stock=500,
+            est_actif=True, est_valide_client=True, unite_base='kg',
+        )
+        self.kg = Conditionnement.objects.create(
+            article=self.article_b, libelle='kg', coefficient=1,
+        )
+        self.sac = Conditionnement.objects.create(
+            article=self.article_b, libelle='sac', coefficient=25,
+        )
+        self.article_g = Article.objects.create(
+            code='COND-C2', nom='Savon',
+            prix_vente=Decimal('500'),
+            boutique=self.bout_general, quantite_stock=10,
+            est_actif=True, est_valide_client=True,
+        )
+        Conditionnement.objects.create(
+            article=self.article_g, libelle='lot', coefficient=6,
+        )
+        self.api = TestClient(SERVER_NAME='127.0.0.1')
+        self.url = reverse('api_v2_simple:articles_list')
+
+    def test_boucherie_expose_conditionnements(self):
+        r = self.api.get(
+            self.url, {'boutique_id': self.bout_boucherie.id},
+            HTTP_X_DEVICE_SERIAL='SERIAL-CCAT-B01',
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body.get('boutique_type'), 'BOUCHERIE')
+        art = next(a for a in body['articles'] if a['id'] == self.article_b.id)
+        self.assertEqual(art['unite_base'], 'kg')
+        libelles = {c['libelle']: c for c in art['conditionnements']}
+        self.assertIn('kg', libelles)
+        self.assertIn('sac', libelles)
+        self.assertEqual(libelles['sac']['coefficient'], 25)
+        self.assertEqual(libelles['sac']['prix_vente'], '25000.00')
+        self.assertEqual(libelles['kg']['prix_vente'], '1000.00')
+
+    def test_general_cache_conditionnements(self):
+        r = self.api.get(
+            self.url, {'boutique_id': self.bout_general.id},
+            HTTP_X_DEVICE_SERIAL='SERIAL-CCAT-G01',
+        )
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertNotEqual(body.get('boutique_type'), 'BOUCHERIE')
+        art = next(a for a in body['articles'] if a['id'] == self.article_g.id)
+        self.assertEqual(art['conditionnements'], [])
+
+
+class VenteConditionnementTestCase(TestCase):
+    """Vente via API POS : le stock est debite en unite de base."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comm_cond_vente', password='pass1234', email='comm_cond_vente@test.cd'
+        )
+        self.commercant = Commercant.objects.create(
+            nom_entreprise='COND VENTE', nom_responsable='COND',
+            email='comm_cond_vente@test.cd', user=self.user,
+        )
+        self.boutique = Boutique.objects.create(
+            nom='Boucherie Vente', commercant=self.commercant,
+            code_boutique='BT-CVNT-001', type_commerce='BOUCHERIE',
+        )
+        self.terminal = Terminal.objects.create(
+            compte_proprietaire=self.user, boutique=self.boutique,
+            nom_terminal='T-VNT', numero_serie='SERIAL-CVNT-001', est_actif=True,
+        )
+        self.article = Article.objects.create(
+            code='COND-V1', nom='Poisson frais',
+            prix_vente=Decimal('1000'),
+            boutique=self.boutique, quantite_stock=500,
+            est_actif=True, est_valide_client=True, unite_base='kg',
+        )
+        self.kg = Conditionnement.objects.create(
+            article=self.article, libelle='kg', coefficient=1,
+        )
+        self.sac = Conditionnement.objects.create(
+            article=self.article, libelle='sac', coefficient=25,
+        )
+        self.api = TestClient(SERVER_NAME='127.0.0.1')
+        self.entete = {'HTTP_X_DEVICE_SERIAL': 'SERIAL-CVNT-001'}
+        self.url_creer = reverse('api_v2_simple:create_vente')
+        self.url_annuler = reverse('api_v2_simple:annuler_vente')
+
+    def _payload(self, **kwargs):
+        base = {
+            'lignes': [{
+                'article_id': self.article.id,
+                'quantite': 1,
+            }],
+        }
+        base.update(kwargs)
+        return base
+
+    def test_vente_sac_debite_stock_en_kg(self):
+        r = self.api.post(
+            self.url_creer,
+            data=self._payload(lignes=[{
+                'article_id': self.article.id,
+                'quantite': 1,
+                'conditionnement_id': self.sac.id,
+                'prix_unitaire': 25000,
+            }]),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 475)
+
+        ligne = LigneVente.objects.get()
+        self.assertEqual(ligne.conditionnement, self.sac)
+        self.assertEqual(ligne.unite_coefficient, 25)
+        self.assertEqual(ligne.quantite, 1)
+        self.assertEqual(ligne.quantite_base, 25)
+
+        mv = MouvementStock.objects.get(type_mouvement='VENTE')
+        self.assertEqual(mv.quantite, -25)
+        self.assertEqual(mv.stock_avant, 500)
+        self.assertEqual(mv.stock_apres, 475)
+
+        ligne_json = body['vente']['lignes'][0]
+        self.assertEqual(ligne_json['conditionnement_id'], self.sac.id)
+        self.assertEqual(ligne_json['conditionnement_libelle'], 'sac')
+        self.assertEqual(ligne_json['unite_coefficient'], 25)
+
+    def test_vente_kg_sans_conversion(self):
+        r = self.api.post(
+            self.url_creer,
+            data=self._payload(lignes=[{
+                'article_id': self.article.id,
+                'quantite': 3,
+                'conditionnement_id': self.kg.id,
+                'prix_unitaire': 1000,
+            }]),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 497)
+        mv = MouvementStock.objects.get(type_mouvement='VENTE')
+        self.assertEqual(mv.quantite, -3)
+
+    def test_vente_sans_conditionnement_unite_de_base(self):
+        r = self.api.post(
+            self.url_creer,
+            data=self._payload(lignes=[{
+                'article_id': self.article.id,
+                'quantite': 2,
+                'prix_unitaire': 1000,
+            }]),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 498)
+        ligne = LigneVente.objects.get()
+        self.assertIsNone(ligne.conditionnement)
+        self.assertEqual(ligne.unite_coefficient, 1)
+
+    def test_conditionnement_invalide_vend_en_unite_de_base(self):
+        r = self.api.post(
+            self.url_creer,
+            data=self._payload(lignes=[{
+                'article_id': self.article.id,
+                'quantite': 2,
+                'conditionnement_id': 999999,
+                'prix_unitaire': 1000,
+            }]),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 498)
+
+    def test_annulation_restaure_en_unite_de_base(self):
+        r = self.api.post(
+            self.url_creer,
+            data=self._payload(lignes=[{
+                'article_id': self.article.id,
+                'quantite': 1,
+                'conditionnement_id': self.sac.id,
+                'prix_unitaire': 25000,
+            }]),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        numero_facture = r.json()['vente']['numero_facture']
+
+        r2 = self.api.post(
+            self.url_annuler,
+            data={'numero_facture': numero_facture, 'motif': 'Erreur de caisse'},
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r2.status_code, 200, r2.content)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 500)
+        vente = Vente.objects.get(numero_facture=numero_facture)
+        self.assertTrue(vente.est_annulee)
+
+
+class BackOfficeConditionnementsTestCase(TestCase):
+    """Formulaire commerant : conditionnements crees uniquement pour les boutiques Boucherie."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comm_cond_bo', password='pass1234', email='comm_cond_bo@test.cd'
+        )
+        self.commercant = Commercant.objects.create(
+            nom_entreprise='COND BO', nom_responsable='COND',
+            email='comm_cond_bo@test.cd', user=self.user,
+        )
+        self.bout_boucherie = Boutique.objects.create(
+            nom='Boucherie BO', commercant=self.commercant,
+            code_boutique='BT-CBO-001', type_commerce='BOUCHERIE',
+        )
+        self.bout_general = Boutique.objects.create(
+            nom='General BO', commercant=self.commercant,
+            code_boutique='BT-CBO-002', type_commerce='GENERAL',
+        )
+        self.web = TestClient()
+        self.web.force_login(self.user)
+
+    def _post_ajax(self, boutique, **extra):
+        url = reverse('inventory:ajouter_article_boutique', args=[boutique.id])
+        data = {
+            'nom': 'Poisson frais',
+            'prix_vente': '1000',
+            'quantite_stock': '500',
+            'devise': 'CDF',
+            'unite_base': 'kg',
+            'cond_libelle_0': 'kg',
+            'cond_coefficient_0': '1',
+            'cond_prix_0': '',
+            'cond_libelle_1': 'sac',
+            'cond_coefficient_1': '25',
+            'cond_prix_1': '25000',
+        }
+        data.update(extra)
+        return self.web.post(url, data=data, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+
+    def test_ajout_ajax_boucherie_cree_conditionnements(self):
+        r = self._post_ajax(self.bout_boucherie)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()['success'])
+        article = Article.objects.get(boutique=self.bout_boucherie)
+        self.assertEqual(article.unite_base, 'kg')
+        conds = {c.libelle: c for c in article.conditionnements.all()}
+        self.assertEqual(set(conds), {'kg', 'sac'})
+        self.assertEqual(conds['sac'].coefficient, 25)
+        self.assertEqual(conds['sac'].prix_vente, Decimal('25000'))
+        self.assertEqual(conds['kg'].coefficient, 1)
+
+    def test_ajout_ajax_general_ignore_conditionnements(self):
+        r = self._post_ajax(self.bout_general, nom='Savon')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()['success'])
+        article = Article.objects.get(boutique=self.bout_general)
+        self.assertEqual(article.unite_base, '')
+        self.assertEqual(article.conditionnements.count(), 0)
+
+    def test_modification_remplace_conditionnements(self):
+        self._post_ajax(self.bout_boucherie)
+        article = Article.objects.get(boutique=self.bout_boucherie)
+        url = reverse('inventory:modifier_article_boutique',
+                      args=[self.bout_boucherie.id, article.id])
+        r = self.web.post(url, data={
+            'nom': 'Poisson frais',
+            'prix_vente': '1200',
+            'quantite_stock': '500',
+            'devise': 'CDF',
+            'est_actif': 'on',
+            'unite_base': 'kg',
+            'cond_libelle_0': 'kg',
+            'cond_coefficient_0': '1',
+            'cond_libelle_1': 'plateau',
+            'cond_coefficient_1': '10',
+        })
+        self.assertEqual(r.status_code, 302)
+        article.refresh_from_db()
+        self.assertEqual(article.unite_base, 'kg')
+        self.assertEqual(article.prix_vente, Decimal('1200'))
+        libelles = set(article.conditionnements.values_list('libelle', flat=True))
+        self.assertEqual(libelles, {'kg', 'plateau'})

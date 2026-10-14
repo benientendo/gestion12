@@ -563,8 +563,44 @@
                                             <input type="number" class="form-control" id="quantite_stock" name="quantite_stock" 
                                                    required min="0" value="0" placeholder="Ex: 50">
                                         </div>
+                                        {% if boutique.type_commerce == 'BOUCHERIE' %}
+                                        <small class="text-muted">Stock en unité de base (ex: kg)</small>
+                                        {% endif %}
                                     </div>
                                 </div>
+
+                                <!-- ===== CONDITIONNEMENTS (BOUCHERIE) ===== -->
+                                {% if boutique.type_commerce == 'BOUCHERIE' %}
+                                <div class="border border-success rounded-3 p-2 mt-2">
+                                    <div class="fw-semibold text-success small mb-1">
+                                        <i class="fas fa-weight-hanging"></i> Unités & Conditionnements
+                                    </div>
+                                    <div class="row g-2 mb-1">
+                                        <div class="col-md-4">
+                                            <input type="text" name="unite_base" class="form-control form-control-sm" maxlength="20" value="kg" placeholder="Unité de base (kg…)">
+                                        </div>
+                                        <div class="col-md-8">
+                                            <small class="text-muted">Le stock est dans l'unité de base ; chaque conditionnement vaut un coefficient (ex: sac = 25 kg)</small>
+                                        </div>
+                                    </div>
+                                    <div id="listeConditionnementsRapide">
+                                        <div class="row g-2 mb-1 ligne-cond-rapide align-items-center">
+                                            <div class="col-md-4">
+                                                <input type="text" name="cond_libelle_0" class="form-control form-control-sm" maxlength="30" value="kg" placeholder="Unité">
+                                            </div>
+                                            <div class="col-md-3">
+                                                <input type="number" name="cond_coefficient_0" class="form-control form-control-sm" min="1" value="1" placeholder="Coefficient">
+                                            </div>
+                                            <div class="col-md-3">
+                                                <input type="number" name="cond_prix_0" class="form-control form-control-sm" step="0.01" min="0" placeholder="Prix (auto)">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn btn-outline-success btn-sm mt-1" onclick="ajouterLigneConditionnementRapide()">
+                                        <i class="fas fa-plus"></i> Conditionnement
+                                    </button>
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
 
@@ -1746,6 +1782,28 @@ document.addEventListener('DOMContentLoaded', function() {
     const focusCodeBarreCheckbox = document.getElementById('focusCodeBarre');
     let articlesAjoutes = 0; // Compteur d'articles ajoutés
     
+    // ===== CONDITIONNEMENTS RAPIDES (BOUCHERIE) =====
+    function ajouterLigneConditionnementRapide() {
+        const container = document.getElementById('listeConditionnementsRapide');
+        if (!container) return;
+        const idx = container.querySelectorAll('.ligne-cond-rapide').length;
+        const ligne = document.createElement('div');
+        ligne.className = 'row g-2 mb-1 ligne-cond-rapide align-items-center';
+        ligne.innerHTML = `
+            <div class="col-md-4">
+                <input type="text" name="cond_libelle_${idx}" class="form-control form-control-sm" maxlength="30" placeholder="Unité">
+            </div>
+            <div class="col-md-3">
+                <input type="number" name="cond_coefficient_${idx}" class="form-control form-control-sm" min="1" value="1" placeholder="Coefficient">
+            </div>
+            <div class="col-md-3">
+                <input type="number" name="cond_prix_${idx}" class="form-control form-control-sm" step="0.01" min="0" placeholder="Prix (auto)">
+            </div>
+        `;
+        container.appendChild(ligne);
+        ligne.querySelector('input[type="text"]').focus();
+    }
+
     // ===== GESTION PRIX ACHAT / MARGE / PRIX VENTE =====
     const prixAchatInput = document.getElementById('prix_achat');
     const prixAchatContainer = document.getElementById('prixAchatContainer');

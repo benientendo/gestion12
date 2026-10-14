@@ -21,7 +21,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Prefetch
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner, CodeCloture, ClotureJournee, DemandeAnnulationVente
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner, CodeCloture, ClotureJournee, DemandeAnnulationVente, Conditionnement
 from .serializers import ArticleSerializer, ArticleAvecVariantesSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created, notify_dashboard_stats
 
@@ -43,6 +43,32 @@ def to_local_iso(dt):
     if dt is None:
         return None
     return timezone.localtime(dt).isoformat()
+
+
+def _resoudre_conditionnement(article, conditionnement_id):
+    """Résout un conditionnement vendu (ex: sac de 25 kg) pour un article.
+
+    Retourne (conditionnement, coefficient). Identifiant invalide → (None, 1),
+    la vente continue alors en unité de base.
+    """
+    if not conditionnement_id:
+        return None, 1
+    try:
+        cond = Conditionnement.objects.get(
+            id=conditionnement_id, article=article, est_actif=True
+        )
+    except (Conditionnement.DoesNotExist, ValueError, TypeError):
+        logger.warning(
+            f"⚠️ Conditionnement {conditionnement_id} introuvable/inactif "
+            f"pour article {article.nom} → vente en unité de base"
+        )
+        return None, 1
+    return cond, max(1, int(cond.coefficient or 1))
+
+
+def _quantite_base_ligne(ligne):
+    """Quantité d'une ligne de vente convertie en unité de base du stock (ex: sacs → kg)."""
+    return int(ligne.quantite) * max(1, int(ligne.unite_coefficient or 1))
 
 
 def _compute_dashboard_stats(boutique):
@@ -432,8 +458,9 @@ def articles_by_serial_simple(request, numero_serie):
             boutique=boutique,
             est_actif=True,
             est_valide_client=True
-        ).select_related('categorie').prefetch_related(
-            Prefetch('variantes', queryset=VarianteArticle.objects.filter(est_actif=True))
+        ).select_related('categorie', 'boutique').prefetch_related(
+            Prefetch('variantes', queryset=VarianteArticle.objects.filter(est_actif=True)),
+            'conditionnements'
         ).order_by('nom')
         
         # Sérialiser les articles avec variantes (code-barres inclus pour le scan)
@@ -446,6 +473,7 @@ def articles_by_serial_simple(request, numero_serie):
             'count': articles.count(),
             'boutique_id': boutique.id,
             'boutique_nom': boutique.nom,
+            'boutique_type': boutique.type_commerce,
             'taux_dollar': str(boutique.commercant.taux_dollar),
             'terminal': {
                 'numero_serie': terminal.numero_serie,
@@ -529,8 +557,9 @@ def articles_list_simple(request):
             boutique=boutique,
             est_actif=True,
             est_valide_client=True  # Seuls les articles validés sont disponibles à la vente
-        ).select_related('categorie').prefetch_related(
-            Prefetch('variantes', queryset=VarianteArticle.objects.filter(est_actif=True))
+        ).select_related('categorie', 'boutique').prefetch_related(
+            Prefetch('variantes', queryset=VarianteArticle.objects.filter(est_actif=True)),
+            'conditionnements'
         )
         
         # ✨ SYNC INCRÉMENTALE: Filtrer par date de modification
@@ -563,6 +592,7 @@ def articles_list_simple(request):
             'count': articles.count(),
             'boutique_id': boutique.id,
             'boutique_nom': boutique.nom,
+            'boutique_type': boutique.type_commerce,
             'taux_dollar': str(boutique.commercant.taux_dollar),
             'articles': articles_data,
             'sync_metadata': {
@@ -1446,11 +1476,23 @@ def create_vente_simple(request):
                     except VarianteArticle.DoesNotExist:
                         logger.warning(f"⚠️ Variante {variante_id} non trouvée pour article {article.nom}, vente sur article parent")
                 
+                # 📦 Conditionnement (ex: sac de 25 kg) : la quantité reçue est dans
+                #    l'unité choisie, le stock reste géré en unité de base.
+                conditionnement, coefficient = _resoudre_conditionnement(
+                    article,
+                    ligne_data.get('conditionnement_id') or ligne_data.get('ConditionnementId')
+                )
+                try:
+                    quantite = int(quantite)
+                except (ValueError, TypeError):
+                    quantite = 1
+                quantite_base = quantite * coefficient
+                
                 # Vérifier le stock (avertissement + création d'alerte — la vente est toujours enregistrée)
                 nom_article = variante.nom_complet if variante else article.nom
-                stock_sera_negatif = article.quantite_stock < quantite
+                stock_sera_negatif = article.quantite_stock < quantite_base
                 if stock_sera_negatif:
-                    logger.warning(f"⚠️ Stock insuffisant: {nom_article} dispo={article.quantite_stock} demandé={quantite} → stock négatif accepté")
+                    logger.warning(f"⚠️ Stock insuffisant: {nom_article} dispo={article.quantite_stock} demandé={quantite_base} → stock négatif accepté")
                     
                     # Créer une alerte de stock négatif pour suivi
                     try:
@@ -1459,9 +1501,9 @@ def create_vente_simple(request):
                             boutique=boutique,
                             type_alerte='STOCK_NEGATIF',
                             defaults={
-                                'message': f"Stock négatif après vente #{vente.numero_facture}: {nom_article} dispo={article.quantite_stock} demandé={quantite}",
+                                'message': f"Stock négatif après vente #{vente.numero_facture}: {nom_article} dispo={article.quantite_stock} demandé={quantite_base}",
                                 'seuil_critique': 0,
-                                'stock_actuel': article.quantite_stock - quantite,
+                                'stock_actuel': article.quantite_stock - quantite_base,
                                 'est_resolue': False
                             }
                         )
@@ -1511,6 +1553,8 @@ def create_vente_simple(request):
                     vente=vente,
                     article=article,
                     variante=variante,
+                    conditionnement=conditionnement,
+                    unite_coefficient=coefficient,
                     quantite=quantite,
                     prix_unitaire=prix_unitaire,
                     prix_unitaire_usd=prix_unitaire_usd,
@@ -1539,6 +1583,9 @@ def create_vente_simple(request):
                     'article_id': article.id,
                     'article_nom': article.nom,
                     'quantite': quantite,
+                    'conditionnement_id': conditionnement.id if conditionnement else None,
+                    'conditionnement_libelle': conditionnement.libelle if conditionnement else None,
+                    'unite_coefficient': coefficient,
                     'prix_unitaire': str(prix_unitaire),
                     'prix_unitaire_usd': str(prix_unitaire_usd) if prix_unitaire_usd else None,
                     'devise': devise_ligne,
@@ -1561,21 +1608,25 @@ def create_vente_simple(request):
                     continue
 
                 # Stock TOUJOURS sur le parent (variants = identifiants uniquement)
+                # 📦 Débit du stock en unité de base (quantite x coefficient)
                 stock_avant = article.quantite_stock
-                article.quantite_stock -= quantite
+                article.quantite_stock -= quantite_base
                 article.save(update_fields=['quantite_stock'])
 
                 # Log avec info variant si applicable
                 if variante:
                     logger.info(f"🏷️ Vente variant {variante.nom_complet}: Stock parent {stock_avant} → {article.quantite_stock}")
                     commentaire_stock = f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_affiche} {symbole_devise}"
+                elif conditionnement:
+                    logger.info(f"📦 Vente conditionnement {conditionnement.libelle} x{quantite}: Stock {stock_avant} → {article.quantite_stock} (-{quantite_base} {article.unite_base or 'unités'})")
+                    commentaire_stock = f"Vente #{vente.numero_facture} - {quantite} {conditionnement.libelle} ({quantite_base} {article.unite_base or 'unités'}) - Prix: {prix_affiche} {symbole_devise}"
                 else:
                     commentaire_stock = f"Vente #{vente.numero_facture} - Prix: {prix_affiche} {symbole_devise}"
 
                 MouvementStock.objects.create(
                     article=article,
                     type_mouvement='VENTE',
-                    quantite=-quantite,
+                    quantite=-quantite_base,
                     stock_avant=stock_avant,
                     stock_apres=article.quantite_stock,
                     reference_document=vente.numero_facture,
@@ -1594,10 +1645,10 @@ def create_vente_simple(request):
                         terminal=terminal,
                         article=article,
                         variante=variante,
-                        quantite_vendue=quantite,
+                        quantite_vendue=quantite_base,
                         stock_serveur_avant=stock_avant,
                         stock_serveur_apres=article.quantite_stock,
-                        ecart=stock_avant - quantite,
+                        ecart=stock_avant - quantite_base,
                         numero_facture=vente.numero_facture
                     )
                     logger.warning(f"🚨 ALERTE STOCK: {nom_article} stock={article.quantite_stock}")
@@ -2178,6 +2229,7 @@ def sync_ventes_simple(request):
                     ligne_convertie = {
                         'article_id': item.get('ArticleId') if item.get('ArticleId') is not None else item.get('article_id'),
                         'variante_id': item.get('VarianteId') if item.get('VarianteId') is not None else item.get('variante_id'),
+                        'conditionnement_id': item.get('ConditionnementId') if item.get('ConditionnementId') is not None else item.get('conditionnement_id'),
                         'quantite': item.get('Quantite') if item.get('Quantite') is not None else item.get('quantite'),
                         'prix_unitaire': item.get('PrixUnitaire') if item.get('PrixUnitaire') is not None else item.get('prix_unitaire'),
                         'prix_unitaire_usd': item.get('PrixUnitaireUsd') if item.get('PrixUnitaireUsd') is not None else item.get('prix_unitaire_usd'),
@@ -2347,11 +2399,22 @@ def sync_ventes_simple(request):
                             except VarianteArticle.DoesNotExist:
                                 logger.warning(f"⚠️ Variante {variante_id} non trouvée pour article {article.nom}, vente sur article parent")
                         
+                        # 📦 Conditionnement (ex: sac de 25 kg) : quantité dans l'unité choisie
+                        conditionnement, coefficient = _resoudre_conditionnement(
+                            article,
+                            ligne_data.get('conditionnement_id') or ligne_data.get('ConditionnementId')
+                        )
+                        try:
+                            quantite = int(quantite)
+                        except (ValueError, TypeError):
+                            quantite = 1
+                        quantite_base = quantite * coefficient
+                        
                         # ⭐ Vérifier le stock (avertissement seulement — la vente est toujours enregistrée)
                         nom_article_vente = variante.nom_complet if variante else article.nom
-                        stock_sera_negatif = article.quantite_stock < quantite
+                        stock_sera_negatif = article.quantite_stock < quantite_base
                         if stock_sera_negatif:
-                            logger.warning(f"⚠️ Stock insuffisant: {nom_article_vente} dispo={article.quantite_stock} demandé={quantite} → stock négatif accepté")
+                            logger.warning(f"⚠️ Stock insuffisant: {nom_article_vente} dispo={article.quantite_stock} demandé={quantite_base} → stock négatif accepté")
 
                         # Créer la ligne de vente avec support USD
                         # ⭐ MÊME LOGIQUE que create_vente_simple: pour une vente USD,
@@ -2408,6 +2471,8 @@ def sync_ventes_simple(request):
                             vente=vente,
                             article=article,
                             variante=variante,
+                            conditionnement=conditionnement,
+                            unite_coefficient=coefficient,
                             quantite=quantite,
                             prix_unitaire=prix_unitaire,
                             prix_unitaire_usd=prix_unitaire_usd,
@@ -2429,6 +2494,9 @@ def sync_ventes_simple(request):
                             'article_nom': article.nom,
                             'article_code': article.code,
                             'quantite': quantite,
+                            'conditionnement_id': conditionnement.id if conditionnement else None,
+                            'conditionnement_libelle': conditionnement.libelle if conditionnement else None,
+                            'unite_coefficient': coefficient,
                             'prix_unitaire': str(prix_unitaire),
                             'prix_unitaire_usd': str(prix_unitaire_usd) if prix_unitaire_usd else None,
                             'devise': devise_ligne,
@@ -2450,20 +2518,22 @@ def sync_ventes_simple(request):
                             continue
 
                         stock_avant = article.quantite_stock
-                        article.quantite_stock -= quantite
+                        article.quantite_stock -= quantite_base
                         article.save(update_fields=['quantite_stock'])
 
                         symbole_devise_stock = '$' if devise_ligne == 'USD' else 'FC'
                         prix_affiche_stock = prix_unitaire_usd if devise_ligne == 'USD' else prix_unitaire
                         if variante:
                             commentaire_stock = f"Vente #{vente.numero_facture} - Variante: {variante.nom_variante} - Prix: {prix_affiche_stock} {symbole_devise_stock}"
+                        elif conditionnement:
+                            commentaire_stock = f"Vente #{vente.numero_facture} - {quantite} {conditionnement.libelle} ({quantite_base} {article.unite_base or 'unités'}) - Prix: {prix_affiche_stock} {symbole_devise_stock}"
                         else:
                             commentaire_stock = f"Vente #{vente.numero_facture} - Prix: {prix_affiche_stock} {symbole_devise_stock}"
 
                         MouvementStock.objects.create(
                             article=article,
                             type_mouvement='VENTE',
-                            quantite=-quantite,
+                            quantite=-quantite_base,
                             stock_avant=stock_avant,
                             stock_apres=article.quantite_stock,
                             reference_document=vente.numero_facture,
@@ -2482,10 +2552,10 @@ def sync_ventes_simple(request):
                                 terminal=terminal,
                                 article=article,
                                 variante=variante,
-                                quantite_vendue=quantite,
+                                quantite_vendue=quantite_base,
                                 stock_serveur_avant=stock_avant,
                                 stock_serveur_apres=article.quantite_stock,
-                                ecart=stock_avant - quantite,
+                                ecart=stock_avant - quantite_base,
                                 numero_facture=vente.numero_facture
                             )
                             logger.warning(f"🚨 ALERTE STOCK: {nom_article_vente} stock={article.quantite_stock}")
@@ -3408,7 +3478,8 @@ def annuler_vente_simple(request):
             # sont ignorées : leur stock a déjà été géré à ce moment-là)
             for ligne in vente.lignes.filter(est_annulee=False):
                 article = ligne.article
-                quantite = ligne.quantite
+                # 📦 Restauration en unité de base (1 sac = 25 kg → +25 kg en stock)
+                quantite = _quantite_base_ligne(ligne)
                 stock_avant = article.quantite_stock
 
                 if remettre_en_stock:
@@ -3977,7 +4048,8 @@ def annuler_ligne_vente_simple(request):
 
     with transaction.atomic():
         article = ligne.article
-        quantite = ligne.quantite
+        # 📦 Restauration en unité de base (1 sac = 25 kg → +25 kg en stock)
+        quantite = _quantite_base_ligne(ligne)
         stock_avant = article.quantite_stock
         valeur_sortie = None
 

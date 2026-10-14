@@ -78,6 +78,61 @@
                             </label>
                         </div>
 
+                        <!-- ===== CONDITIONNEMENTS (BOUCHERIE) ===== -->
+                        {% if boutique.type_commerce == 'BOUCHERIE' %}
+                        <div class="card border-success mb-3">
+                            <div class="card-header bg-success text-white py-2">
+                                <span><i class="fas fa-weight-hanging"></i> <strong>Unités & Conditionnements</strong> <small>(ex: kg → 1, sac → 25 kg)</small></span>
+                            </div>
+                            <div class="card-body py-2">
+                                <label class="form-label small fw-bold">Unité de base (stock)</label>
+                                <input type="text" name="unite_base" class="form-control form-control-sm mb-2" maxlength="20" value="{{ article.unite_base|default:'kg' }}" placeholder="kg, L, PCE…">
+                                <div class="row mb-1 text-muted small fw-bold">
+                                    <div class="col-md-4">Unité</div>
+                                    <div class="col-md-3">Coefficient</div>
+                                    <div class="col-md-4">Prix (vide = auto)</div>
+                                    <div class="col-md-1"></div>
+                                </div>
+                                <div id="listeConditionnements">
+                                    {% for c in conditionnements %}
+                                    <div class="row mb-1 ligne-conditionnement">
+                                        <div class="col-md-4">
+                                            <input type="text" name="cond_libelle_{{ forloop.counter0 }}" class="form-control form-control-sm" maxlength="30" value="{{ c.libelle }}">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <input type="number" name="cond_coefficient_{{ forloop.counter0 }}" class="form-control form-control-sm" min="1" value="{{ c.coefficient }}">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <input type="number" name="cond_prix_{{ forloop.counter0 }}" class="form-control form-control-sm" step="0.01" min="0" value="{{ c.prix_vente|default:'' }}" placeholder="auto">
+                                        </div>
+                                        <div class="col-md-1">
+                                            <button type="button" class="btn btn-outline-danger btn-sm" onclick="supprimerLigneConditionnement(this)" title="Supprimer">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    {% empty %}
+                                    <div class="row mb-1 ligne-conditionnement">
+                                        <div class="col-md-4">
+                                            <input type="text" name="cond_libelle_0" class="form-control form-control-sm" maxlength="30" value="{{ article.unite_base|default:'kg' }}">
+                                        </div>
+                                        <div class="col-md-3">
+                                            <input type="number" name="cond_coefficient_0" class="form-control form-control-sm" min="1" value="1">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <input type="number" name="cond_prix_0" class="form-control form-control-sm" step="0.01" min="0" placeholder="auto">
+                                        </div>
+                                        <div class="col-md-1"></div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <button type="button" class="btn btn-outline-success btn-sm mt-1" onclick="ajouterLigneConditionnement()">
+                                    <i class="fas fa-plus"></i> Ajouter un conditionnement
+                                </button>
+                            </div>
+                        </div>
+                        {% endif %}
+
                         <!-- Boutons -->
                         <div class="d-flex gap-2">
                             <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-secondary">
@@ -313,6 +368,46 @@ function ajusterStockVariante() {
     .catch(error => {
         console.error('Erreur:', error);
         alert('Erreur de connexion');
+    });
+}
+
+// ===== GESTION DES CONDITIONNEMENTS (BOUCHERIE) =====
+function ajouterLigneConditionnement() {
+    const container = document.getElementById('listeConditionnements');
+    if (!container) return;
+    const idx = container.querySelectorAll('.ligne-conditionnement').length;
+
+    const ligne = document.createElement('div');
+    ligne.className = 'row mb-1 ligne-conditionnement';
+    ligne.innerHTML = `
+        <div class="col-md-4">
+            <input type="text" name="cond_libelle_${idx}" class="form-control form-control-sm" maxlength="30" placeholder="kg, sac…">
+        </div>
+        <div class="col-md-3">
+            <input type="number" name="cond_coefficient_${idx}" class="form-control form-control-sm" min="1" value="1">
+        </div>
+        <div class="col-md-4">
+            <input type="number" name="cond_prix_${idx}" class="form-control form-control-sm" step="0.01" min="0" placeholder="auto">
+        </div>
+        <div class="col-md-1">
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="supprimerLigneConditionnement(this)" title="Supprimer">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+    container.appendChild(ligne);
+    ligne.querySelector('input[type="text"]').focus();
+}
+
+function supprimerLigneConditionnement(btn) {
+    const container = document.getElementById('listeConditionnements');
+    const ligne = btn.closest('.ligne-conditionnement');
+    if (!container || !ligne) return;
+    ligne.remove();
+    container.querySelectorAll('.ligne-conditionnement').forEach(function(row, i) {
+        row.querySelector('[name^="cond_libelle_"]').name = `cond_libelle_${i}`;
+        row.querySelector('[name^="cond_coefficient_"]').name = `cond_coefficient_${i}`;
+        row.querySelector('[name^="cond_prix_"]').name = `cond_prix_${i}`;
     });
 }
 </script>

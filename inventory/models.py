@@ -134,6 +134,10 @@ class Article(models.Model):
     
     quantite_attribuee = models.IntegerField(default=0, help_text="Référence quantité attribuée (configurable indépendamment par article)")
     pieces_par_carton = models.PositiveIntegerField(default=1, help_text="Nombre de pièces par carton (auto-rempli à la saisie facture)")
+    unite_base = models.CharField(
+        max_length=20, blank=True, default='',
+        help_text="Unité de base du stock (ex: kg, L, PCE) — boutiques spécialisées (Boucherie)"
+    )
     last_updated = models.DateTimeField(auto_now=True, help_text="Dernière modification pour sync incrémentale")
     version = models.IntegerField(default=1, help_text="Version pour sync optimisée")
     point_vente_source = models.CharField(
@@ -238,6 +242,57 @@ class Article(models.Model):
             models.Index(fields=['quantite_stock'], name='idx_article_stock'),
             models.Index(fields=['date_expiration'], name='idx_article_expiration'),
         ]
+
+
+class Conditionnement(models.Model):
+    """Conditionnement de vente pour les boutiques spécialisées (ex: Boucherie).
+
+    Exemple : article "poisson", unité de base kg, stock 500 ;
+    conditionnements : kg (coefficient 1), sac (coefficient 25 kg).
+    Le stock reste toujours géré en unité de base (entier).
+    """
+
+    article = models.ForeignKey(
+        Article, on_delete=models.CASCADE, related_name='conditionnements',
+        help_text="Article concerné"
+    )
+    libelle = models.CharField(
+        max_length=30, help_text="Nom de l'unité affichée au client (ex: kg, sac)"
+    )
+    coefficient = models.PositiveIntegerField(
+        default=1, help_text="Nombre d'unités de base par conditionnement (ex: 25 pour un sac de 25 kg)"
+    )
+    prix_vente = models.DecimalField(
+        max_digits=15, decimal_places=2, null=True, blank=True,
+        help_text="Prix de vente par conditionnement (vide = coefficient x prix de l'article)"
+    )
+    prix_achat = models.DecimalField(
+        max_digits=15, decimal_places=2, null=True, blank=True,
+        help_text="Prix d'achat par conditionnement (optionnel)"
+    )
+    ordre = models.PositiveIntegerField(default=0, help_text="Ordre d'affichage")
+    est_actif = models.BooleanField(default=True)
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_mise_a_jour = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Conditionnement"
+        verbose_name_plural = "Conditionnements"
+        ordering = ['ordre', 'id']
+        unique_together = [['article', 'libelle']]
+        indexes = [
+            models.Index(fields=['article', 'est_actif'], name='idx_cond_article_actif'),
+        ]
+
+    def __str__(self):
+        return f"{self.libelle} ({self.coefficient} x {self.article.nom})"
+
+    @property
+    def prix_vente_effectif(self):
+        """Prix de vente par conditionnement (défaut : coefficient x prix de l'article)."""
+        if self.prix_vente is not None:
+            return self.prix_vente
+        return (self.article.prix_vente or 0) * self.coefficient
 
 
 class VarianteArticle(models.Model):
@@ -438,6 +493,20 @@ class LigneVente(models.Model):
         help_text="Variante spécifique vendue (optionnel)"
     )
     quantite = models.PositiveIntegerField()
+    # 📦 Conditionnement vendu (ex: 1 sac = 25 kg) — boutiques spécialisées (Boucherie)
+    conditionnement = models.ForeignKey(
+        'Conditionnement',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='lignes_vente',
+        help_text="Conditionnement vendu (optionnel)"
+    )
+    unite_coefficient = models.PositiveIntegerField(
+        default=1,
+        help_text="Coefficient du conditionnement au moment de la vente "
+                  "(quantite x coefficient = quantité en unité de base)"
+    )
     prix_unitaire = models.DecimalField(max_digits=15, decimal_places=2)
     # Prix original avant négociation (pour traçabilité)
     prix_original = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True, 
@@ -465,6 +534,11 @@ class LigneVente(models.Model):
     @property
     def total_ligne(self):
         return self.quantite * self.prix_unitaire
+
+    @property
+    def quantite_base(self):
+        """Quantité vendue convertie en unité de base du stock (ex: sacs → kg)."""
+        return int(self.quantite) * max(1, int(self.unite_coefficient or 1))
 
     @property
     def remis_en_stock(self):

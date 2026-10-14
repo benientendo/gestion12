@@ -106,6 +106,7 @@ class ArticleAvecVariantesSerializer(serializers.ModelSerializer):
     """Serializer d'article incluant ses variantes actives — utilisé pour la sync MAUI."""
     
     variantes = serializers.SerializerMethodField()
+    conditionnements = serializers.SerializerMethodField()
     categorie_nom = serializers.CharField(source='categorie.nom', read_only=True)
     categorie_backend_id = serializers.IntegerField(source='categorie.id', read_only=True, default=None)
     has_variantes = serializers.SerializerMethodField()
@@ -121,7 +122,7 @@ class ArticleAvecVariantesSerializer(serializers.ModelSerializer):
             'quantite_stock', 'est_actif', 'has_variantes',
             'stock_total_variantes', 'variantes',
             'est_valide_client', 'date_suppression',
-            'image_url',
+            'image_url', 'unite_base', 'conditionnements',
         ]
     
     def get_variantes(self, obj):
@@ -132,6 +133,24 @@ class ArticleAvecVariantesSerializer(serializers.ModelSerializer):
             many=True,
             context=self.context
         ).data
+
+    def get_conditionnements(self, obj):
+        """Conditionnements actifs (ex: kg, sac=25kg) — uniquement pour les boutiques Boucherie."""
+        if not obj.boutique_id:
+            return []
+        if obj.boutique.type_commerce != 'BOUCHERIE':
+            return []
+        return [
+            {
+                'id': c.id,
+                'libelle': c.libelle,
+                'coefficient': c.coefficient,
+                'prix_vente': str(c.prix_vente_effectif),
+                'devise': obj.devise,
+            }
+            for c in obj.conditionnements.all()
+            if c.est_actif
+        ]
 
     def get_has_variantes(self, obj):
         return any(v.est_actif for v in obj.variantes.all())

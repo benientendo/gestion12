@@ -3004,6 +3004,62 @@ def modifier_article_existant(request, boutique_id):
         })
 
 
+def _lire_conditionnements_post(post, boutique):
+    """Lit les conditionnements du formulaire (cond_libelle_i / cond_coefficient_i / cond_prix_i).
+
+    Renvoie [] pour toute boutique non spécialisée (aucune donnée conditionnement acceptée).
+    """
+    if boutique.type_commerce != 'BOUCHERIE':
+        return []
+    unites = []
+    i = 0
+    while i <= 30 and f'cond_libelle_{i}' in post:
+        libelle = (post.get(f'cond_libelle_{i}') or '').strip()
+        coeff_raw = post.get(f'cond_coefficient_{i}')
+        prix_raw = (post.get(f'cond_prix_{i}') or '').strip()
+        try:
+            coefficient = int(str(coeff_raw).strip())
+        except (ValueError, TypeError):
+            coefficient = 0
+        if libelle and coefficient >= 1:
+            prix = None
+            if prix_raw:
+                try:
+                    prix = Decimal(prix_raw.replace(',', '.'))
+                except Exception:
+                    prix = None
+            unites.append({
+                'libelle': libelle[:30],
+                'coefficient': coefficient,
+                'prix_vente': prix,
+            })
+        i += 1
+    return unites
+
+
+def _appliquer_conditionnements(article, unites, unite_base):
+    """Remplace les conditionnements de l'article et met à jour l'unité de base.
+
+    L'appel n'a d'effet que si la boutique est de type Boucherie (voir
+    _lire_conditionnements_post). Toujours appeler après création/modification
+    d'article pour une boutique Boucherie (y compris avec une liste vide,
+    afin de synchroniser le terminal MAUI via last_updated).
+    """
+    from .models import Conditionnement
+    Conditionnement.objects.filter(article=article).delete()
+    for idx, u in enumerate(unites):
+        Conditionnement.objects.create(
+            article=article,
+            libelle=u['libelle'],
+            coefficient=u['coefficient'],
+            prix_vente=u['prix_vente'],
+            ordre=idx,
+        )
+    article.unite_base = (unite_base or '').strip()[:20]
+    # save() complet → last_updated + version → sync MAUI des conditionnements
+    article.save()
+
+
 @login_required
 @commercant_required
 @boutique_access_required
@@ -3152,9 +3208,20 @@ def ajouter_article_boutique(request, boutique_id):
                             except Exception as e:
                                 print(f"Erreur création variante: {e}")
                 
+                # 📦 Conditionnements (ex: kg, sac=25kg) — boutiques Boucherie uniquement
+                cond_crees = 0
+                if boutique.type_commerce == 'BOUCHERIE':
+                    unites_cond = _lire_conditionnements_post(request.POST, boutique)
+                    _appliquer_conditionnements(
+                        article, unites_cond, request.POST.get('unite_base', '')
+                    )
+                    cond_crees = len(unites_cond)
+                
                 msg = f'Article "{article.nom}" ajouté avec succès'
                 if variantes_creees > 0:
                     msg += f' avec {variantes_creees} variante(s)'
+                if cond_crees > 0:
+                    msg += f' et {cond_crees} conditionnement(s)'
                 
                 # 🔔 Notifier le(s) terminal(aux) MAUI : nouvel article créé → sync immédiate
                 notify_article_created(boutique.id, article)
@@ -3246,9 +3313,20 @@ def ajouter_article_boutique(request, boutique_id):
                         except Exception as e:
                             print(f"Erreur création variante: {e}")
             
+            # 📦 Conditionnements (ex: kg, sac=25kg) — boutiques Boucherie uniquement
+            cond_crees = 0
+            if boutique.type_commerce == 'BOUCHERIE':
+                unites_cond = _lire_conditionnements_post(request.POST, boutique)
+                _appliquer_conditionnements(
+                    article, unites_cond, request.POST.get('unite_base', '')
+                )
+                cond_crees = len(unites_cond)
+            
             msg = f'Article "{article.nom}" ajouté avec succès à {boutique.nom}.'
             if variantes_creees > 0:
                 msg += f' {variantes_creees} variante(s) créée(s).'
+            if cond_crees > 0:
+                msg += f' {cond_crees} conditionnement(s) créé(s).'
             messages.success(request, msg)
             
             # 🔔 Notifier le(s) terminal(aux) MAUI : nouvel article créé → sync immédiate
@@ -3303,6 +3381,13 @@ def modifier_article_boutique(request, boutique_id, article_id):
             article.code = ancien_code
             article.save()
             
+            # 📦 Conditionnements (Boucherie uniquement) — remplacement complet
+            if boutique.type_commerce == 'BOUCHERIE':
+                unites_cond = _lire_conditionnements_post(request.POST, boutique)
+                _appliquer_conditionnements(
+                    article, unites_cond, request.POST.get('unite_base', article.unite_base)
+                )
+            
             # 🔔 Notifier le(s) terminal(aux) MAUI : article modifié (prix, quantité, …)
             from .websocket_utils import notify_article_updated, notify_sync_required
             notify_article_updated(boutique.id, article)
@@ -3338,6 +3423,8 @@ def modifier_article_boutique(request, boutique_id, article_id):
         'variante_form': variante_form,
         'stock_total_variantes': stock_total_variantes,
         'has_variantes': variantes.exists(),
+        # Conditionnements (Boucherie)
+        'conditionnements': article.conditionnements.all().order_by('ordre', 'id'),
     }
     
     return render(request, 'inventory/commercant/modifier_article.html', context)
