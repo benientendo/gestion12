@@ -2975,7 +2975,7 @@ document.addEventListener('DOMContentLoaded', function() {
         selectUnite.appendChild(optionBase);
         const parties = (conditionnementsStr || '').split('|').filter(p => p.includes(':'));
         if (parties.length > 0) {
-            selectUnite.parentElement.style.display = '';
+            selectUnite.style.display = '';
             parties.forEach(p => {
                 const [libelle, coeffStr] = p.split(':');
                 const coeff = parseInt(coeffStr);
@@ -2985,10 +2985,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 opt.textContent = `${libelle} (${coeff} unités de base)`;
                 selectUnite.appendChild(opt);
             });
-            hintUnite.style.display = parties.length > 0 ? '' : 'none';
+            hintUnite.style.display = selectUnite.options.length > 1 ? '' : 'none';
             hintUnite.textContent = 'Ex: 2 cartons → la quantité est multipliée par le coefficient avant application au stock.';
         } else {
-            selectUnite.parentElement.style.display = 'none';
+            // Masquer UNIQUEMENT le select, jamais l'input-group (l'input Quantité doit rester visible)
+            selectUnite.style.display = 'none';
             hintUnite.style.display = 'none';
         }
         selectUnite.value = '1';
