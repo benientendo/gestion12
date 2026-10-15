@@ -495,3 +495,159 @@ class StockDecomposeTestCase(TestCase):
         self.article.refresh_from_db()
         self.assertEqual(self.article.quantite_stock, 25000)
 
+    def test_ajouts_en_attente_accumulent(self):
+        """Un 2e ajout ne doit JAMAIS ecraser le 1er (re-confirmation par erreur)."""
+        url = reverse('inventory:ajuster_stock_article',
+                      args=[self.bout_boucherie.id, self.article.id])
+        self.web.post(url, data={
+            'type_ajustement': 'ajouter', 'quantite': '40',
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_envoyee, 40)
+        # Re-confirmation accidentelle avec la valeur par defaut (1) → 41, pas 1
+        r = self.web.post(url, data={
+            'type_ajustement': 'ajouter', 'quantite': '1',
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertTrue(r.json()['success'])
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_envoyee, 41)
+
+    def test_ajouts_en_attente_accumulent_en_cartons(self):
+        url = reverse('inventory:ajuster_stock_article',
+                      args=[self.bout_boucherie.id, self.article.id])
+        for qte in ('2', '1'):
+            self.web.post(url, data={
+                'type_ajustement': 'ajouter',
+                'quantite': qte,
+                'unite_coefficient': '25000',
+            }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.article.refresh_from_db()
+        # 2 cartons + 1 carton = 75000 g
+        self.assertEqual(self.article.quantite_envoyee, 75000)
+
+
+class HierarchieUnitesTestCase(TestCase):
+    """Bonnes pratiques (Mbolongo) : carton 30 = 3 rames de 10, demi 5, kg 1.
+    Chaque coefficient doit etre un multiple de l'unite plus petite."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comm_cond_hier', password='pass1234', email='comm_cond_hier@test.cd'
+        )
+        self.commercant = Commercant.objects.create(
+            nom_entreprise='COND HIER', nom_responsable='COND',
+            email='comm_cond_hier@test.cd', user=self.user,
+        )
+        self.boutique = Boutique.objects.create(
+            nom='Boucherie Hier', commercant=self.commercant,
+            code_boutique='BT-CHIER-001', type_commerce='BOUCHERIE',
+        )
+        self.bout_general = Boutique.objects.create(
+            nom='General Hier', commercant=self.commercant,
+            code_boutique='BT-CHIER-002', type_commerce='GENERAL',
+        )
+        self.article = Article.objects.create(
+            code='POI-MBO', nom='Poisson Mbolongo',
+            prix_vente=Decimal('1000'),
+            boutique=self.boutique, quantite_stock=90000,
+            est_actif=True, est_valide_client=True, unite_base='kg',
+        )
+        Conditionnement.objects.create(article=self.article, libelle='carton', coefficient=30, ordre=0)
+        Conditionnement.objects.create(article=self.article, libelle='rame', coefficient=10, ordre=1)
+        Conditionnement.objects.create(article=self.article, libelle='demi', coefficient=5, ordre=2)
+        Conditionnement.objects.create(article=self.article, libelle='kg', coefficient=1, ordre=3)
+        self.web = TestClient()
+        self.web.force_login(self.user)
+
+    def test_unites_resume(self):
+        self.assertEqual(
+            self.article.unites_resume,
+            'carton 30 kg · rame 10 kg · demi 5 kg · kg 1 kg',
+        )
+
+    def test_unites_equivalences(self):
+        self.assertEqual(
+            self.article.unites_equivalences,
+            '1 carton = 3 rame · 1 rame = 2 demi · 1 demi = 5 kg',
+        )
+
+    def test_unites_resume_vide_hors_boucherie(self):
+        autre = Article.objects.create(
+            boutique=self.bout_general, nom='Savon', code='SAV-H1',
+            prix_vente=Decimal('100'), devise='CDF', quantite_stock=30,
+            est_actif=True, est_valide_client=True,
+        )
+        Conditionnement.objects.create(article=autre, libelle='lot', coefficient=6)
+        self.assertEqual(autre.unites_resume, '')
+        self.assertEqual(autre.unites_equivalences, '')
+
+    def test_helper_hierarchie_valide(self):
+        from inventory.views_commercant import _valider_hierarchie_conditionnements
+        unites = [
+            {'libelle': 'carton', 'coefficient': 30},
+            {'libelle': 'rame', 'coefficient': 10},
+            {'libelle': 'demi', 'coefficient': 5},
+            {'libelle': 'kg', 'coefficient': 1},
+        ]
+        self.assertIsNone(_valider_hierarchie_conditionnements(unites))
+
+    def test_helper_non_multiple_refuse(self):
+        from inventory.views_commercant import _valider_hierarchie_conditionnements
+        unites = [
+            {'libelle': 'carton', 'coefficient': 30},
+            {'libelle': 'sac', 'coefficient': 25},
+            {'libelle': 'kg', 'coefficient': 1},
+        ]
+        erreur = _valider_hierarchie_conditionnements(unites)
+        self.assertIsNotNone(erreur)
+        self.assertIn("n'est pas un multiple", erreur)
+
+    def test_helper_unite_seule_ignorée(self):
+        from inventory.views_commercant import _valider_hierarchie_conditionnements
+        self.assertIsNone(_valider_hierarchie_conditionnements(
+            [{'libelle': 'kg', 'coefficient': 1}]
+        ))
+
+    def test_ajout_ajax_hierarchie_invalide_refuse(self):
+        url = reverse('inventory:ajouter_article_boutique', args=[self.boutique.id])
+        r = self.web.post(url, data={
+            'nom': 'Autre poisson',
+            'prix_vente': '1000',
+            'quantite_stock': '100',
+            'devise': 'CDF',
+            'unite_base': 'kg',
+            'cond_libelle_0': 'kg',
+            'cond_coefficient_0': '1',
+            'cond_libelle_1': 'sac',
+            'cond_coefficient_1': '25',
+            'cond_libelle_2': 'carton',
+            'cond_coefficient_2': '30',
+        }, HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertFalse(body['success'])
+        self.assertIn("n'est pas un multiple", body['message'])
+        self.assertFalse(Article.objects.filter(nom='Autre poisson').exists())
+
+    def test_modification_hierarchie_invalide_refuse(self):
+        url = reverse('inventory:modifier_article_boutique',
+                      args=[self.boutique.id, self.article.id])
+        r = self.web.post(url, data={
+            'nom': 'Poisson Mbolongo',
+            'prix_vente': '1000',
+            'quantite_stock': '90000',
+            'devise': 'CDF',
+            'est_actif': 'on',
+            'unite_base': 'kg',
+            'cond_libelle_0': 'kg',
+            'cond_coefficient_0': '1',
+            'cond_libelle_1': 'sac',
+            'cond_coefficient_1': '25',
+            'cond_libelle_2': 'carton',
+            'cond_coefficient_2': '30',
+        })
+        # Re-rendu du formulaire avec erreur (article et unites inchanges)
+        self.assertEqual(r.status_code, 200)
+        libelles = set(self.article.conditionnements.values_list('libelle', flat=True))
+        self.assertEqual(libelles, {'carton', 'rame', 'demi', 'kg'})
+

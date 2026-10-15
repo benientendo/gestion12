@@ -24,7 +24,7 @@
                     <h6 class="mb-0"><i class="fas fa-box"></i> Informations</h6>
                 </div>
                 <div class="card-body">
-                    <form method="post" enctype="multipart/form-data">
+                    <form method="post" enctype="multipart/form-data" onsubmit="return validerConditionnements()">
                         {% csrf_token %}
                         
                         <!-- Nom -->
@@ -129,6 +129,20 @@
                                 <button type="button" class="btn btn-outline-success btn-sm mt-1" onclick="ajouterLigneConditionnement()">
                                     <i class="fas fa-plus"></i> Ajouter un conditionnement
                                 </button>
+                                <small class="text-muted d-block mt-1">
+                                    Bonnes pratiques : l'unité de base = la plus petite quantité vendue (kg ou g).
+                                    Chaque unité doit être un multiple de la plus petite.<br>
+                                    Exemple poisson : <strong>carton 30</strong> (= 3 rames), <strong>rame 10</strong>, <strong>demi 5</strong>, <strong>kg 1</strong>.<br>
+                                    Le stock est géré dans l'unité de base ; la vente de 1 carton débite automatiquement son coefficient (ex: 30 kg).
+                                </small>
+                                <!--  Aperçu vivant des équivalences : 1 carton = 3 rames · 1 rame = 2 demi -->
+                                <div class="mt-1" id="apercuEquivalences" style="display:none;">
+                                    <small class="text-success"><i class="fas fa-scale-balanced"></i> <span id="apercuEquivalencesTexte"></span></small>
+                                </div>
+                                <!--  Alerte si hiérarchie incorrecte (ex: 25 non multiple de 10) -->
+                                <div class="alert alert-warning mt-2 mb-0 py-2" id="alerteHierarchie" style="display:none;">
+                                    <i class="fas fa-exclamation-triangle"></i> <span id="alerteHierarchieTexte"></span>
+                                </div>
                             </div>
                         </div>
                         {% endif %}
@@ -397,6 +411,7 @@ function ajouterLigneConditionnement() {
     `;
     container.appendChild(ligne);
     ligne.querySelector('input[type="text"]').focus();
+    validerConditionnements();
 }
 
 function supprimerLigneConditionnement(btn) {
@@ -409,7 +424,57 @@ function supprimerLigneConditionnement(btn) {
         row.querySelector('[name^="cond_coefficient_"]').name = `cond_coefficient_${i}`;
         row.querySelector('[name^="cond_prix_"]').name = `cond_prix_${i}`;
     });
+    validerConditionnements();
 }
+
+// =====  VALIDATION HIÉRARCHIE + APERÇU ÉQUIVALENCES =====
+function lireConditionnementsFormulaire() {
+    const unites = [];
+    document.querySelectorAll('#listeConditionnements .ligne-conditionnement').forEach(function(row) {
+        const lib = (row.querySelector('[name^="cond_libelle_"]')?.value || '').trim();
+        const coeff = parseInt(row.querySelector('[name^="cond_coefficient_"]')?.value, 10);
+        if (lib && coeff >= 1) unites.push({ libelle: lib, coefficient: coeff });
+    });
+    return unites;
+}
+
+function validerConditionnements() {
+    const container = document.getElementById('listeConditionnements');
+    if (!container) return true; // Pas de bloc conditionnements (non Boucherie)
+    const unites = lireConditionnementsFormulaire();
+    let erreur = null;
+    const coeffs = Array.from(new Set(unites.map(function(u) { return u.coefficient; }))).sort(function(a, b) { return a - b; });
+    for (let i = 0; i < coeffs.length - 1; i++) {
+        if (coeffs[i + 1] % coeffs[i] !== 0) {
+            erreur = coeffs[i + 1] + " n'est pas un multiple de " + coeffs[i] +
+                ". Chaque unité doit être un multiple de la plus petite (ex: carton 30, rame 10, demi 5, kg 1).";
+            break;
+        }
+    }
+    const alerte = document.getElementById('alerteHierarchie');
+    if (alerte) {
+        alerte.style.display = erreur ? '' : 'none';
+        if (erreur) document.getElementById('alerteHierarchieTexte').textContent = erreur;
+    }
+    // Aperçu : « 1 carton = 3 rames · 1 rame = 2 demi »
+    const apercu = document.getElementById('apercuEquivalences');
+    if (apercu) {
+        const tries = unites.slice().sort(function(a, b) { return b.coefficient - a.coefficient; });
+        const chaines = [];
+        for (let i = 0; i < tries.length - 1; i++) {
+            if (tries[i].coefficient % tries[i + 1].coefficient === 0) {
+                chaines.push('1 ' + tries[i].libelle + ' = ' + (tries[i].coefficient / tries[i + 1].coefficient) + ' ' + tries[i + 1].libelle);
+            }
+        }
+        apercu.style.display = chaines.length ? '' : 'none';
+        if (chaines.length) document.getElementById('apercuEquivalencesTexte').textContent = chaines.join(' · ');
+    }
+    return erreur === null;
+}
+
+document.addEventListener('input', function(e) {
+    if (e.target && e.target.name && e.target.name.indexOf('cond_') === 0) validerConditionnements();
+});
 </script>
 
 <!-- Modal Ajouter Variante -->

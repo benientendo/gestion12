@@ -222,7 +222,7 @@
                     <span class="badge bg-success">{{ article.stock_total }}</span>
                     {% endif %}
                     {% if boutique.type_commerce == 'BOUCHERIE' %}
-                    <div class="small text-muted">{{ article.stock_decompose_formate }}</div>
+                    <div class="small text-muted"{% if article.unites_resume %} title="{{ article.unites_resume }}{% if article.unites_equivalences %} — {{ article.unites_equivalences }}{% endif %}"{% endif %}>{{ article.stock_decompose_formate }}</div>
                     {% endif %}
                     {% if article.a_variantes %}
                             <span class="badge bg-info ms-1 badge-variantes" 
@@ -435,11 +435,22 @@
                                     {% else %}
                                     {{ article.stock_total }} unités
                                     {% endif %}
-                                    {% if article.a_variantes %}
-                                    <span class="badge bg-info ms-1"><i class="fas fa-tags"></i> {{ article.nb_variantes }} variante(s)</span>
+                            {% if article.a_variantes %}
+                            <span class="badge bg-info ms-1"><i class="fas fa-tags"></i> {{ article.nb_variantes }} variante(s)</span>
+                            {% endif %}
+                                </td>
+                            </tr>
+                            {% if boutique.type_commerce == 'BOUCHERIE' and article.unites_resume %}
+                            <tr>
+                                <th>Unités de vente:</th>
+                                <td>
+                                    <div>{{ article.unites_resume }}</div>
+                                    {% if article.unites_equivalences %}
+                                    <div class="small text-muted"><i class="fas fa-scale-balanced"></i> {{ article.unites_equivalences }}</div>
                                     {% endif %}
                                 </td>
                             </tr>
+                            {% endif %}
                         </table>
                         {% if article.description %}
                         <div class="mt-3">
@@ -589,7 +600,7 @@
                                             <input type="text" name="unite_base" class="form-control form-control-sm" maxlength="20" value="kg" placeholder="Unité de base (kg…)">
                                         </div>
                                         <div class="col-md-8">
-                                            <small class="text-muted">Le stock est dans l'unité de base ; chaque conditionnement vaut un coefficient (ex: sac = 25 kg)</small>
+                                            <small class="text-muted">L'unité de base = la plus petite quantité vendue (kg ou g). Exemples : poisson → carton 30 (= 3 rames), rame 10, demi 5, kg 1 ; autres → carton 10, demi 5, kg 1.</small>
                                         </div>
                                     </div>
                                     <div id="listeConditionnementsRapide">
@@ -608,6 +619,14 @@
                                     <button type="button" class="btn btn-outline-success btn-sm mt-1" onclick="ajouterLigneConditionnementRapide()">
                                         <i class="fas fa-plus"></i> Conditionnement
                                     </button>
+                                    <!--  Aperçu vivant des équivalences : 1 carton = 3 rames · 1 rame = 2 demi -->
+                                    <div class="mt-1" id="apercuEquivalences" style="display:none;">
+                                        <small class="text-success"><i class="fas fa-scale-balanced"></i> <span id="apercuEquivalencesTexte"></span></small>
+                                    </div>
+                                    <!--  Alerte si hiérarchie incorrecte (ex: 25 non multiple de 10) -->
+                                    <div class="alert alert-warning mt-2 mb-0 py-2" id="alerteHierarchie" style="display:none;">
+                                        <i class="fas fa-exclamation-triangle"></i> <span id="alerteHierarchieTexte"></span>
+                                    </div>
                                 </div>
                                 {% endif %}
                             </div>
@@ -1819,7 +1838,57 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
         container.appendChild(ligne);
         ligne.querySelector('input[type="text"]').focus();
+        validerConditionnements();
     }
+
+    // =====  VALIDATION HIÉRARCHIE + APERÇU ÉQUIVALENCES =====
+    function lireConditionnementsFormulaire() {
+        const unites = [];
+        document.querySelectorAll('#listeConditionnementsRapide .ligne-cond-rapide').forEach(function(row) {
+            const lib = (row.querySelector('[name^="cond_libelle_"]')?.value || '').trim();
+            const coeff = parseInt(row.querySelector('[name^="cond_coefficient_"]')?.value, 10);
+            if (lib && coeff >= 1) unites.push({ libelle: lib, coefficient: coeff });
+        });
+        return unites;
+    }
+
+    function validerConditionnements() {
+        const container = document.getElementById('listeConditionnementsRapide');
+        if (!container) return true; // Pas de bloc conditionnements (non Boucherie)
+        const unites = lireConditionnementsFormulaire();
+        let erreur = null;
+        const coeffs = Array.from(new Set(unites.map(function(u) { return u.coefficient; }))).sort(function(a, b) { return a - b; });
+        for (let i = 0; i < coeffs.length - 1; i++) {
+            if (coeffs[i + 1] % coeffs[i] !== 0) {
+                erreur = coeffs[i + 1] + " n'est pas un multiple de " + coeffs[i] +
+                    ". Chaque unité doit être un multiple de la plus petite (ex: carton 30, rame 10, demi 5, kg 1).";
+                break;
+            }
+        }
+        const alerte = document.getElementById('alerteHierarchie');
+        if (alerte) {
+            alerte.style.display = erreur ? '' : 'none';
+            if (erreur) document.getElementById('alerteHierarchieTexte').textContent = erreur;
+        }
+        // Aperçu : « 1 carton = 3 rames · 1 rame = 2 demi »
+        const apercu = document.getElementById('apercuEquivalences');
+        if (apercu) {
+            const tries = unites.slice().sort(function(a, b) { return b.coefficient - a.coefficient; });
+            const chaines = [];
+            for (let i = 0; i < tries.length - 1; i++) {
+                if (tries[i].coefficient % tries[i + 1].coefficient === 0) {
+                    chaines.push('1 ' + tries[i].libelle + ' = ' + (tries[i].coefficient / tries[i + 1].coefficient) + ' ' + tries[i + 1].libelle);
+                }
+            }
+            apercu.style.display = chaines.length ? '' : 'none';
+            if (chaines.length) document.getElementById('apercuEquivalencesTexte').textContent = chaines.join(' · ');
+        }
+        return erreur === null;
+    }
+
+    document.addEventListener('input', function(e) {
+        if (e.target && e.target.name && e.target.name.indexOf('cond_') === 0) validerConditionnements();
+    });
 
     // ===== GESTION PRIX ACHAT / MARGE / PRIX VENTE =====
     const prixAchatInput = document.getElementById('prix_achat');
@@ -2096,6 +2165,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Fonction pour soumettre le formulaire
     function soumettreFormulaire() {
+        //  Validation hiérarchie des unités (bonnes pratiques) avant envoi
+        if (!validerConditionnements()) {
+            return;
+        }
         // Validation du formulaire
         if (!formAjoutRapide.checkValidity()) {
             formAjoutRapide.reportValidity();
@@ -2987,8 +3060,12 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                // Fermer le modal et recharger
-                bootstrap.Modal.getInstance(document.getElementById('ajusterStockModal')).hide();
+                // Fermer le modal et recharger TOUJOURS (masque pas d'erreur réseau
+                // si l'instance modal manque — la recharge montre l'état serveur)
+                try {
+                    const inst = bootstrap.Modal.getInstance(document.getElementById('ajusterStockModal'));
+                    if (inst) inst.hide();
+                } catch (e) {}
                 location.reload();
             } else {
                 alert('Erreur: ' + (data.message || 'Une erreur est survenue'));

@@ -2980,7 +2980,8 @@ def modifier_article_existant(request, boutique_id):
     # Ajouter du stock si quantité > 0 → envoyer en validation MAUI
     if quantite > 0:
         article.est_valide_client = False
-        article.quantite_envoyee = quantite
+        #  ACCUMULER (pas d'écrasement) : préserver un ajout déjà en attente
+        article.quantite_envoyee = (article.quantite_envoyee or 0) + quantite
         modifications.append(f"Stock: +{quantite} envoyé pour validation client")
     
     if modifications:
@@ -3039,6 +3040,26 @@ def _lire_conditionnements_post(post, boutique):
             })
         i += 1
     return unites
+
+
+def _valider_hierarchie_conditionnements(unites):
+    """Bonnes pratiques : le coefficient de chaque unité doit être un multiple
+    de l'unité plus petite (ex: carton 30, rame 10, demi 5, kg 1).
+
+    Retourne un message d'erreur ou None.
+    """
+    if len(unites) < 2:
+        return None
+    coeffs = sorted({u['coefficient'] for u in unites if u['coefficient'] >= 1})
+    for i in range(len(coeffs) - 1):
+        petit, grand = coeffs[i], coeffs[i + 1]
+        if grand % petit != 0:
+            return (
+                f"Hiérarchie des unités incorrecte : {grand} n'est pas un multiple de {petit}. "
+                "Chaque unité doit être un multiple de la plus petite "
+                "(ex : carton 30, rame 10, demi 5, kg 1)."
+            )
+    return None
 
 
 def _appliquer_conditionnements(article, unites, unite_base):
@@ -3104,8 +3125,9 @@ def ajouter_article_boutique(request, boutique_id):
                         quantite_ajout = int(quantite_stock) if quantite_stock else 0
                         if quantite_ajout > 0:
                             # Ne PAS ajouter le stock maintenant — sera appliqué après validation MAUI
+                            #  ACCUMULER (pas d'écrasement) : préserver un ajout déjà en attente
                             article_existant.est_valide_client = False
-                            article_existant.quantite_envoyee = quantite_ajout
+                            article_existant.quantite_envoyee = (article_existant.quantite_envoyee or 0) + quantite_ajout
                             article_existant.save()
                             
                             # 🔔 Notifier le(s) terminal(aux) MAUI : stock en attente de validation
@@ -3133,6 +3155,14 @@ def ajouter_article_boutique(request, boutique_id):
                 
                 if errors:
                     return JsonResponse({'success': False, 'errors': errors})
+                
+                #  Validation hiérarchie des unités (bonnes pratiques) avant création
+                if boutique.type_commerce == 'BOUCHERIE':
+                    erreur_cond = _valider_hierarchie_conditionnements(
+                        _lire_conditionnements_post(request.POST, boutique)
+                    )
+                    if erreur_cond:
+                        return JsonResponse({'success': False, 'message': erreur_cond})
                 
                 # Générer un code-barres automatique si aucun n'est fourni
                 if not code:
@@ -3247,6 +3277,18 @@ def ajouter_article_boutique(request, boutique_id):
         
         # Si ce n'est pas AJAX, utiliser le formulaire normal
         form = ArticleForm(request.POST, request.FILES)
+        #  Validation hiérarchie des unités (bonnes pratiques) avant sauvegarde
+        if boutique.type_commerce == 'BOUCHERIE':
+            erreur_cond = _valider_hierarchie_conditionnements(
+                _lire_conditionnements_post(request.POST, boutique)
+            )
+            if erreur_cond:
+                messages.error(request, erreur_cond)
+                return render(request, 'inventory/commercant/ajouter_article.html', {
+                    'form': form,
+                    'boutique': boutique,
+                    'categories': boutique.categories.all(),
+                })
         if form.is_valid():
             # ⭐ Vérifier si l'article existe déjà par code-barres
             code = form.cleaned_data.get('code')
@@ -3378,6 +3420,26 @@ def modifier_article_boutique(request, boutique_id, article_id):
         # Conserver le code-barres existant (on ne souhaite plus le modifier via ce formulaire)
         ancien_code = article.code
         form = ArticleForm(request.POST, request.FILES, instance=article)
+        #  Validation hiérarchie des unités (bonnes pratiques) avant sauvegarde
+        if boutique.type_commerce == 'BOUCHERIE':
+            erreur_cond = _valider_hierarchie_conditionnements(
+                _lire_conditionnements_post(request.POST, boutique)
+            )
+            if erreur_cond:
+                messages.error(request, erreur_cond)
+                variantes = article.variantes.all().order_by('nom_variante')
+                return render(request, 'inventory/commercant/modifier_article.html', {
+                    'form': form,
+                    'boutique': boutique,
+                    'categories': boutique.categories.all(),
+                    'article': article,
+                    'mode_edition': True,
+                    'variantes': variantes,
+                    'variante_form': VarianteArticleForm(),
+                    'stock_total_variantes': article.quantite_stock,
+                    'has_variantes': variantes.exists(),
+                    'conditionnements': article.conditionnements.all().order_by('ordre', 'id'),
+                })
         if form.is_valid():
             article = form.save(commit=False)
             article.boutique = boutique
@@ -3975,8 +4037,10 @@ def ajuster_stock_article(request, boutique_id, article_id):
             # Calculer la différence et le type de mouvement
             if type_ajustement == 'ajouter':
                 # Envoyer en validation MAUI au lieu d'appliquer directement
+                #  ACCUMULER (pas d'écrasement) : un 2e ajout ne doit jamais effacer
+                # le premier (ex: +40 puis re-confirmation par erreur → 41, pas 1)
                 article.est_valide_client = False
-                article.quantite_envoyee = quantite_base
+                article.quantite_envoyee = (article.quantite_envoyee or 0) + quantite_base
                 article.save(update_fields=['est_valide_client', 'quantite_envoyee'])
                 
                 from .websocket_utils import notify_stock_updated, notify_sync_required

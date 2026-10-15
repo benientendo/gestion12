@@ -243,6 +243,36 @@ class Article(models.Model):
         return ' · '.join(f"{q} {lib}" for lib, q in self.stock_decompose)
 
     @property
+    def unites_resume(self):
+        """Résumé des unités de vente : « carton 30 kg · rame 10 kg · demi 5 kg » (Boucherie)."""
+        if self.boutique is None or self.boutique.type_commerce != 'BOUCHERIE':
+            return ''
+        unite = self.unite_base or 'unités'
+        conds = [c for c in self.conditionnements.all() if c.est_actif and c.coefficient >= 1]
+        if not conds:
+            return ''
+        parts = [f"{c.libelle} {c.coefficient} {unite}"
+                 for c in sorted(conds, key=lambda c: c.coefficient, reverse=True)]
+        return ' · '.join(parts)
+
+    @property
+    def unites_equivalences(self):
+        """Chaînes d'équivalence : « 1 carton = 3 rames · 1 rame = 2 demi · 1 demi = 5 kg »."""
+        if self.boutique is None or self.boutique.type_commerce != 'BOUCHERIE':
+            return ''
+        conds = sorted(
+            (c for c in self.conditionnements.all() if c.est_actif and c.coefficient >= 1),
+            key=lambda c: c.coefficient, reverse=True,
+        )
+        chaines = []
+        for i in range(len(conds) - 1):
+            grand, petit = conds[i], conds[i + 1]
+            if petit.coefficient and grand.coefficient % petit.coefficient == 0:
+                ratio = grand.coefficient // petit.coefficient
+                chaines.append(f"1 {grand.libelle} = {ratio} {petit.libelle}")
+        return ' · '.join(chaines)
+
+    @property
     def nb_variantes(self):
         """Retourne le nombre de variantes actives"""
         return self.variantes.filter(est_actif=True).count()
