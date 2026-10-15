@@ -308,6 +308,136 @@ class VenteConditionnementTestCase(TestCase):
         self.assertTrue(vente.est_annulee)
 
 
+class ReglesMetierBoucherieTestCase(TestCase):
+    """Règles métier demandées : Exemple A Poisson (carton 30 = 3 rames de 10,
+    demi-rame 5, kg 1) et Exemple B Tripes (carton 10, demi-carton 5, kg 1),
+    masses indépendantes par article."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='comm_cond_regle', password='pass1234', email='comm_cond_regle@test.cd'
+        )
+        self.commercant = Commercant.objects.create(
+            nom_entreprise='COND REGLE', nom_responsable='COND',
+            email='comm_cond_regle@test.cd', user=self.user,
+        )
+        self.boutique = Boutique.objects.create(
+            nom='Boucherie Regle', commercant=self.commercant,
+            code_boutique='BT-CREG-001', type_commerce='BOUCHERIE',
+        )
+        self.terminal = Terminal.objects.create(
+            compte_proprietaire=self.user, boutique=self.boutique,
+            nom_terminal='T-REG', numero_serie='SERIAL-CREG-001', est_actif=True,
+        )
+        # Exemple A : Poisson — 1 carton = 30 kg = 3 rames de 10, demi-rame 5, kg 1
+        self.poisson = Article.objects.create(
+            code='POISSON-A', nom='Poisson', prix_vente=Decimal('1000'),
+            boutique=self.boutique, quantite_stock=1000,
+            est_actif=True, est_valide_client=True, unite_base='kg',
+        )
+        self.poisson_kg = Conditionnement.objects.create(
+            article=self.poisson, libelle='kg', coefficient=1, ordre=3)
+        self.poisson_demi = Conditionnement.objects.create(
+            article=self.poisson, libelle='demi-rame', coefficient=5, ordre=2)
+        self.poisson_rame = Conditionnement.objects.create(
+            article=self.poisson, libelle='rame', coefficient=10, ordre=1)
+        self.poisson_carton = Conditionnement.objects.create(
+            article=self.poisson, libelle='carton', coefficient=30, ordre=0)
+        # Exemple B : Tripes — 1 carton = 10 kg, demi-carton 5, kg 1 (indep. Poisson)
+        self.tripes = Article.objects.create(
+            code='TRIPES-B', nom='Tripes', prix_vente=Decimal('500'),
+            boutique=self.boutique, quantite_stock=500,
+            est_actif=True, est_valide_client=True, unite_base='kg',
+        )
+        self.tripes_kg = Conditionnement.objects.create(
+            article=self.tripes, libelle='kg', coefficient=1, ordre=2)
+        self.tripes_demi = Conditionnement.objects.create(
+            article=self.tripes, libelle='demi-carton', coefficient=5, ordre=1)
+        self.tripes_carton = Conditionnement.objects.create(
+            article=self.tripes, libelle='carton', coefficient=10, ordre=0)
+        self.api = TestClient(SERVER_NAME='127.0.0.1')
+        self.entete = {'HTTP_X_DEVICE_SERIAL': 'SERIAL-CREG-001'}
+        self.url_creer = reverse('api_v2_simple:create_vente')
+
+    def _vendre(self, article, conditionnement, quantite, prix):
+        import uuid
+        r = self.api.post(
+            self.url_creer,
+            data={
+                # MAUI envoie toujours une référence unique (fallback serveur
+                # VENTE-{id}-{timestamp} est à la seconde → collision si absent)
+                'reference': f'VENTE-REG-{uuid.uuid4().hex[:10].upper()}',
+                'lignes': [{
+                    'article_id': article.id,
+                    'quantite': quantite,
+                    'conditionnement_id': conditionnement.id,
+                    'prix_unitaire': prix,
+                }],
+            },
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        return r
+
+    def test_exemple_a_poisson_vend_chaque_unite(self):
+        """Carton → -30 kg, rame → -10, demi-rame → -5, kg libre → -n."""
+        self._vendre(self.poisson, self.poisson_carton, 1, 30000)
+        self.poisson.refresh_from_db()
+        self.assertEqual(self.poisson.quantite_stock, 970)
+
+        self._vendre(self.poisson, self.poisson_rame, 1, 10000)
+        self.poisson.refresh_from_db()
+        self.assertEqual(self.poisson.quantite_stock, 960)
+
+        self._vendre(self.poisson, self.poisson_demi, 1, 5000)
+        self.poisson.refresh_from_db()
+        self.assertEqual(self.poisson.quantite_stock, 955)
+
+        self._vendre(self.poisson, self.poisson_kg, 3, 1000)
+        self.poisson.refresh_from_db()
+        self.assertEqual(self.poisson.quantite_stock, 952)
+
+    def test_exemple_b_tripes_config_independante(self):
+        """Le carton des tripes (10 kg) ne doit PAS utiliser celui du poisson (30 kg)."""
+        self.assertEqual(self.tripes_carton.coefficient, 10)
+        self.assertEqual(self.poisson_carton.coefficient, 30)
+        self._vendre(self.tripes, self.tripes_carton, 1, 10000)
+        self.tripes.refresh_from_db()
+        self.poisson.refresh_from_db()
+        self.assertEqual(self.tripes.quantite_stock, 490)  # -10 kg, pas -30
+        self.assertEqual(self.poisson.quantite_stock, 1000)  # intact
+
+    def test_conditionnement_d_un_autre_article_non_utilisable(self):
+        """Vendre du Poisson avec le carton des Tripes → retombe en kg (x1)."""
+        import uuid
+        r = self.api.post(
+            self.url_creer,
+            data={
+                'reference': f'VENTE-REG-{uuid.uuid4().hex[:10].upper()}',
+                'lignes': [{
+                    'article_id': self.poisson.id,
+                    'quantite': 1,
+                    'conditionnement_id': self.tripes_carton.id,
+                    'prix_unitaire': 1000,
+                }],
+            },
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.poisson.refresh_from_db()
+        self.assertEqual(self.poisson.quantite_stock, 999)  # -1 kg, pas -10
+
+    def test_unite_desactivee_non_exposee_au_catalogue(self):
+        """Une unité désactivée n'apparait plus dans le catalogue API (bouton POS)."""
+        self.poisson_demi.est_actif = False
+        self.poisson_demi.save()
+        from inventory.serializers import ArticleAvecVariantesSerializer
+        data = ArticleAvecVariantesSerializer(self.poisson).data
+        libelles = {c['libelle'] for c in data['conditionnements']}
+        self.assertEqual(libelles, {'kg', 'rame', 'carton'})
+        self.assertNotIn('demi-rame', libelles)
+
+
 class BackOfficeConditionnementsTestCase(TestCase):
     """Formulaire commerant : conditionnements crees uniquement pour les boutiques Boucherie."""
 
