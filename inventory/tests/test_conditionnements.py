@@ -250,6 +250,62 @@ class VenteConditionnementTestCase(TestCase):
         mv = MouvementStock.objects.get(type_mouvement='VENTE')
         self.assertEqual(mv.quantite, -3)
 
+    def test_vente_conditionnements_mixtes_meme_article(self):
+        """Vente avec plusieurs conditionnements du meme article en une seule vente.
+
+        Le dedup MouvementStock ne doit pas confondre les lignes :
+        1 sac (25) + 3 kg (3) = 28 debites, pas seulement 25.
+        """
+        r = self.api.post(
+            self.url_creer,
+            data=self._payload(lignes=[
+                {
+                    'article_id': self.article.id,
+                    'quantite': 1,
+                    'conditionnement_id': self.sac.id,
+                    'prix_unitaire': 25000,
+                },
+                {
+                    'article_id': self.article.id,
+                    'quantite': 3,
+                    'conditionnement_id': self.kg.id,
+                    'prix_unitaire': 1000,
+                },
+            ]),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.article.refresh_from_db()
+        self.assertEqual(
+            self.article.quantite_stock, 472,
+            f"Stock doit etre 500-28=472, obtenu {self.article.quantite_stock}",
+        )
+        self.assertEqual(LigneVente.objects.count(), 2)
+        self.assertEqual(MouvementStock.objects.filter(type_mouvement='VENTE').count(), 2)
+
+    def test_vente_conditionnement_inactif_fallback_unite_base(self):
+        """Un conditionnement desactive n'est pas exposé ; la vente fallback en kg."""
+        self.sac.est_actif = False
+        self.sac.save()
+        r = self.api.post(
+            self.url_creer,
+            data=self._payload(lignes=[{
+                'article_id': self.article.id,
+                'quantite': 2,
+                'conditionnement_id': self.sac.id,
+                'prix_unitaire': 1000,
+            }]),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.article.refresh_from_db()
+        self.assertEqual(
+            self.article.quantite_stock, 498,
+            f"Stock doit etre 500-2=498 (fallback kg x1), obtenu {self.article.quantite_stock}",
+        )
+        ligne = LigneVente.objects.get()
+        self.assertEqual(ligne.unite_coefficient, 1)
+
     def test_vente_sans_conditionnement_unite_de_base(self):
         r = self.api.post(
             self.url_creer,

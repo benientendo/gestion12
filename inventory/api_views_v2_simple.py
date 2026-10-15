@@ -1603,6 +1603,8 @@ def create_vente_simple(request):
                 }
                 if variante:
                     dedup_filter['commentaire__contains'] = f"Variante: {variante.nom_variante}"
+                elif conditionnement:
+                    dedup_filter['commentaire__contains'] = f" {quantite} {conditionnement.libelle} ("
                 if MouvementStock.objects.filter(**dedup_filter).exists():
                     logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} (variante: {variante.nom_variante if variante else 'N/A'}) — skip stock only")
                     continue
@@ -2513,6 +2515,8 @@ def sync_ventes_simple(request):
                         }
                         if variante:
                             dedup_filter['commentaire__contains'] = f"Variante: {variante.nom_variante}"
+                        elif conditionnement:
+                            dedup_filter['commentaire__contains'] = f" {quantite} {conditionnement.libelle} ("
                         if MouvementStock.objects.filter(**dedup_filter).exists():
                             logger.warning(f"⚠️ Doublon MouvementStock: {vente.numero_facture} / {article.nom} (variante: {variante.nom_variante if variante else 'N/A'}) — skip stock only")
                             continue
