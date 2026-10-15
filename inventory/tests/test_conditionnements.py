@@ -522,6 +522,61 @@ class BackOfficeConditionnementsTestCase(TestCase):
         libelles = set(article.conditionnements.values_list('libelle', flat=True))
         self.assertEqual(libelles, {'kg', 'plateau'})
 
+    def test_modification_desactive_unite_et_conserve_identifiant(self):
+        """Case 'Actif' décochée → est_actif=False ; une unité modifiée garde son ID."""
+        self._post_ajax(self.bout_boucherie)
+        article = Article.objects.get(boutique=self.bout_boucherie)
+        conds = {c.libelle: c for c in article.conditionnements.all()}
+        id_kg = conds['kg'].id
+        id_sac = conds['sac'].id
+
+        url = reverse('inventory:modifier_article_boutique',
+                      args=[self.bout_boucherie.id, article.id])
+        r = self.web.post(url, data={
+            'nom': 'Poisson frais',
+            'prix_vente': '1000',
+            'quantite_stock': '500',
+            'devise': 'CDF',
+            'est_actif': 'on',
+            'unite_base': 'kg',
+            # kg actif (case cochée), sac INACTIF (case absente du POST)
+            'cond_libelle_0': 'kg',
+            'cond_coefficient_0': '1',
+            'cond_actif_0': '1',
+            'cond_libelle_1': 'sac',
+            'cond_coefficient_1': '25',
+        })
+        self.assertEqual(r.status_code, 302)
+        article.refresh_from_db()
+        conds = {c.libelle: c for c in article.conditionnements.all()}
+        self.assertEqual(set(conds), {'kg', 'sac'})
+        self.assertTrue(conds['kg'].est_actif)
+        self.assertFalse(conds['sac'].est_actif)
+        # IDs conservés (les ventes MAUI en cours référencent ces IDs)
+        self.assertEqual(conds['kg'].id, id_kg)
+        self.assertEqual(conds['sac'].id, id_sac)
+        # L'unité désactivée n'est plus exposée au POS
+        from inventory.serializers import ArticleAvecVariantesSerializer
+        data = ArticleAvecVariantesSerializer(article).data
+        self.assertEqual({c['libelle'] for c in data['conditionnements']}, {'kg'})
+
+    def test_creation_avec_unite_inactive_ignoree_par_hierarchie(self):
+        """Une unité inactive (ex: sac 25) ne bloque pas la hiérarchie des actives."""
+        r = self._post_ajax(
+            self.bout_boucherie,
+            nom='Tripes',
+            cond_libelle_0='carton', cond_coefficient_0='30', cond_actif_0='1',
+            cond_libelle_1='rame', cond_coefficient_1='10', cond_actif_1='1',
+            cond_libelle_2='sac', cond_coefficient_2='25',  # inactif + non multiple
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()['success'], r.content)
+        article = Article.objects.get(boutique=self.bout_boucherie, nom='Tripes')
+        conds = {c.libelle: c for c in article.conditionnements.all()}
+        self.assertFalse(conds['sac'].est_actif)
+        self.assertTrue(conds['carton'].est_actif)
+        self.assertTrue(conds['rame'].est_actif)
+
 
 class StockDecomposeTestCase(TestCase):
     """Affichage mixte « 20 cartons · 15 kg · 500 g » + reception en cartons."""

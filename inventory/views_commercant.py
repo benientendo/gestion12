@@ -3010,18 +3010,22 @@ def modifier_article_existant(request, boutique_id):
 
 
 def _lire_conditionnements_post(post, boutique):
-    """Lit les conditionnements du formulaire (cond_libelle_i / cond_coefficient_i / cond_prix_i).
+    """Lit les conditionnements du formulaire (cond_libelle_i / cond_coefficient_i /
+    cond_prix_i / cond_actif_i).
 
     Renvoie [] pour toute boutique non spécialisée (aucune donnée conditionnement acceptée).
     """
     if boutique.type_commerce != 'BOUCHERIE':
         return []
     unites = []
+    # Compat : un formulaire sans aucune case cond_actif_* garde tout actif par défaut
+    cles_actif_presentes = any(k.startswith('cond_actif_') for k in post.keys())
     i = 0
     while i <= 30 and f'cond_libelle_{i}' in post:
         libelle = (post.get(f'cond_libelle_{i}') or '').strip()
         coeff_raw = post.get(f'cond_coefficient_{i}')
         prix_raw = (post.get(f'cond_prix_{i}') or '').strip()
+        actif = (post.get(f'cond_actif_{i}') == '1') if cles_actif_presentes else True
         try:
             coefficient = int(str(coeff_raw).strip())
         except (ValueError, TypeError):
@@ -3037,6 +3041,7 @@ def _lire_conditionnements_post(post, boutique):
                 'libelle': libelle[:30],
                 'coefficient': coefficient,
                 'prix_vente': prix,
+                'actif': actif,
             })
         i += 1
     return unites
@@ -3046,11 +3051,13 @@ def _valider_hierarchie_conditionnements(unites):
     """Bonnes pratiques : le coefficient de chaque unité doit être un multiple
     de l'unité plus petite (ex: carton 30, rame 10, demi 5, kg 1).
 
+    Seules les unités ACTIVES sont validées (une unité désactivée ne bloque pas).
     Retourne un message d'erreur ou None.
     """
-    if len(unites) < 2:
+    actifs = [u for u in unites if u.get('actif', True)]
+    if len(actifs) < 2:
         return None
-    coeffs = sorted({u['coefficient'] for u in unites if u['coefficient'] >= 1})
+    coeffs = sorted({u['coefficient'] for u in actifs if u['coefficient'] >= 1})
     for i in range(len(coeffs) - 1):
         petit, grand = coeffs[i], coeffs[i + 1]
         if grand % petit != 0:
@@ -3069,17 +3076,25 @@ def _appliquer_conditionnements(article, unites, unite_base):
     _lire_conditionnements_post). Toujours appeler après création/modification
     d'article pour une boutique Boucherie (y compris avec une liste vide,
     afin de synchroniser le terminal MAUI via last_updated).
+
+    Mise à jour par libellé : un conditionnement modifié garde son identifiant
+    (les ventes MAUI en cours référencent l'ID) ; seules les lignes retirées
+    du formulaire sont supprimées.
     """
     from .models import Conditionnement
-    Conditionnement.objects.filter(article=article).delete()
+    existants = {c.libelle: c for c in Conditionnement.objects.filter(article=article)}
+    vus = []
     for idx, u in enumerate(unites):
-        Conditionnement.objects.create(
-            article=article,
-            libelle=u['libelle'],
-            coefficient=u['coefficient'],
-            prix_vente=u['prix_vente'],
-            ordre=idx,
-        )
+        cond = existants.get(u['libelle'])
+        if cond is None:
+            cond = Conditionnement(article=article, libelle=u['libelle'])
+        cond.coefficient = u['coefficient']
+        cond.prix_vente = u['prix_vente']
+        cond.ordre = idx
+        cond.est_actif = u.get('actif', True)
+        cond.save()
+        vus.append(u['libelle'])
+    Conditionnement.objects.filter(article=article).exclude(libelle__in=vus).delete()
     article.unite_base = (unite_base or '').strip()[:20]
     # save() complet → last_updated + version → sync MAUI des conditionnements
     article.save()

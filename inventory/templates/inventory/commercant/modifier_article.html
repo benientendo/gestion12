@@ -88,41 +88,52 @@
                                 <label class="form-label small fw-bold">Unité de base (stock)</label>
                                 <input type="text" name="unite_base" class="form-control form-control-sm mb-2" maxlength="20" value="{{ article.unite_base|default:'kg' }}" placeholder="kg, L, PCE…">
                                 <div class="row mb-1 text-muted small fw-bold">
-                                    <div class="col-md-4">Unité</div>
-                                    <div class="col-md-3">Coefficient</div>
-                                    <div class="col-md-4">Prix (vide = auto)</div>
-                                    <div class="col-md-1"></div>
+                                    <div class="col-md-3">Unité</div>
+                                    <div class="col-md-2">Quantité en unité de base</div>
+                                    <div class="col-md-3">Prix de vente (vide = auto)</div>
+                                    <div class="col-md-2">Actif</div>
+                                    <div class="col-md-2"></div>
                                 </div>
                                 <div id="listeConditionnements">
                                     {% for c in conditionnements %}
-                                    <div class="row mb-1 ligne-conditionnement">
-                                        <div class="col-md-4">
+                                    <div class="row mb-1 ligne-conditionnement align-items-center">
+                                        <div class="col-md-3">
                                             <input type="text" name="cond_libelle_{{ forloop.counter0 }}" class="form-control form-control-sm" maxlength="30" value="{{ c.libelle }}">
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-2">
                                             <input type="number" name="cond_coefficient_{{ forloop.counter0 }}" class="form-control form-control-sm" min="1" value="{{ c.coefficient }}">
                                         </div>
-                                        <div class="col-md-4">
+                                        <div class="col-md-3">
                                             <input type="number" name="cond_prix_{{ forloop.counter0 }}" class="form-control form-control-sm" step="0.01" min="0" value="{{ c.prix_vente|default:'' }}" placeholder="auto">
                                         </div>
-                                        <div class="col-md-1">
+                                        <div class="col-md-2">
+                                            <div class="form-check m-0 ms-1">
+                                                <input class="form-check-input" type="checkbox" name="cond_actif_{{ forloop.counter0 }}" value="1"{% if c.est_actif %} checked{% endif %}>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-2">
                                             <button type="button" class="btn btn-outline-danger btn-sm" onclick="supprimerLigneConditionnement(this)" title="Supprimer">
                                                 <i class="fas fa-times"></i>
                                             </button>
                                         </div>
                                     </div>
                                     {% empty %}
-                                    <div class="row mb-1 ligne-conditionnement">
-                                        <div class="col-md-4">
+                                    <div class="row mb-1 ligne-conditionnement align-items-center">
+                                        <div class="col-md-3">
                                             <input type="text" name="cond_libelle_0" class="form-control form-control-sm" maxlength="30" value="{{ article.unite_base|default:'kg' }}">
                                         </div>
-                                        <div class="col-md-3">
+                                        <div class="col-md-2">
                                             <input type="number" name="cond_coefficient_0" class="form-control form-control-sm" min="1" value="1">
                                         </div>
-                                        <div class="col-md-4">
+                                        <div class="col-md-3">
                                             <input type="number" name="cond_prix_0" class="form-control form-control-sm" step="0.01" min="0" placeholder="auto">
                                         </div>
-                                        <div class="col-md-1"></div>
+                                        <div class="col-md-2">
+                                            <div class="form-check m-0 ms-1">
+                                                <input class="form-check-input" type="checkbox" name="cond_actif_0" value="1" checked>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-2"></div>
                                     </div>
                                     {% endfor %}
                                 </div>
@@ -392,18 +403,23 @@ function ajouterLigneConditionnement() {
     const idx = container.querySelectorAll('.ligne-conditionnement').length;
 
     const ligne = document.createElement('div');
-    ligne.className = 'row mb-1 ligne-conditionnement';
+    ligne.className = 'row mb-1 ligne-conditionnement align-items-center';
     ligne.innerHTML = `
-        <div class="col-md-4">
+        <div class="col-md-3">
             <input type="text" name="cond_libelle_${idx}" class="form-control form-control-sm" maxlength="30" placeholder="kg, sac…">
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
             <input type="number" name="cond_coefficient_${idx}" class="form-control form-control-sm" min="1" value="1">
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <input type="number" name="cond_prix_${idx}" class="form-control form-control-sm" step="0.01" min="0" placeholder="auto">
         </div>
-        <div class="col-md-1">
+        <div class="col-md-2">
+            <div class="form-check m-0 ms-1">
+                <input class="form-check-input" type="checkbox" name="cond_actif_${idx}" value="1" checked>
+            </div>
+        </div>
+        <div class="col-md-2">
             <button type="button" class="btn btn-outline-danger btn-sm" onclick="supprimerLigneConditionnement(this)" title="Supprimer">
                 <i class="fas fa-times"></i>
             </button>
@@ -423,6 +439,8 @@ function supprimerLigneConditionnement(btn) {
         row.querySelector('[name^="cond_libelle_"]').name = `cond_libelle_${i}`;
         row.querySelector('[name^="cond_coefficient_"]').name = `cond_coefficient_${i}`;
         row.querySelector('[name^="cond_prix_"]').name = `cond_prix_${i}`;
+        const actif = row.querySelector('[name^="cond_actif_"]');
+        if (actif) actif.name = `cond_actif_${i}`;
     });
     validerConditionnements();
 }
@@ -433,7 +451,9 @@ function lireConditionnementsFormulaire() {
     document.querySelectorAll('#listeConditionnements .ligne-conditionnement').forEach(function(row) {
         const lib = (row.querySelector('[name^="cond_libelle_"]')?.value || '').trim();
         const coeff = parseInt(row.querySelector('[name^="cond_coefficient_"]')?.value, 10);
-        if (lib && coeff >= 1) unites.push({ libelle: lib, coefficient: coeff });
+        const actifCb = row.querySelector('[name^="cond_actif_"]');
+        const actif = actifCb ? actifCb.checked : true;
+        if (lib && coeff >= 1) unites.push({ libelle: lib, coefficient: coeff, actif: actif });
     });
     return unites;
 }
@@ -441,7 +461,8 @@ function lireConditionnementsFormulaire() {
 function validerConditionnements() {
     const container = document.getElementById('listeConditionnements');
     if (!container) return true; // Pas de bloc conditionnements (non Boucherie)
-    const unites = lireConditionnementsFormulaire();
+    // Hiérarchie validée sur les unités ACTIVES uniquement (désactivée → ignorée)
+    const unites = lireConditionnementsFormulaire().filter(function(u) { return u.actif; });
     let erreur = null;
     const coeffs = Array.from(new Set(unites.map(function(u) { return u.coefficient; }))).sort(function(a, b) { return a - b; });
     for (let i = 0; i < coeffs.length - 1; i++) {
