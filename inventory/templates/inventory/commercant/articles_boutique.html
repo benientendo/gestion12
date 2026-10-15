@@ -1808,6 +1808,108 @@
 
 {% block extra_js %}
 <script>
+// ===== CONDITIONNEMENTS RAPIDES (BOUCHERIE) =====
+// NB: en portee globale — appeles par onclick inline (hors closure DOMContentLoaded)
+function ajouterLigneConditionnementRapide() {
+    const container = document.getElementById('listeConditionnementsRapide');
+    if (!container) return;
+    const idx = container.querySelectorAll('.ligne-cond-rapide').length;
+    const ligne = document.createElement('div');
+    ligne.className = 'row g-2 mb-1 ligne-cond-rapide align-items-center';
+    ligne.innerHTML = `
+        <div class="col-md-3">
+            <input type="text" name="cond_libelle_${idx}" class="form-control form-control-sm" maxlength="30" placeholder="Unité">
+        </div>
+        <div class="col-md-2">
+            <input type="number" name="cond_coefficient_${idx}" class="form-control form-control-sm" min="1" value="1" placeholder="Coefficient">
+        </div>
+        <div class="col-md-3">
+            <input type="number" name="cond_prix_${idx}" class="form-control form-control-sm" step="0.01" min="0" placeholder="Prix (auto)">
+        </div>
+        <div class="col-md-2">
+            <div class="form-check m-0 ms-1">
+                <input class="form-check-input" type="checkbox" name="cond_actif_${idx}" value="1" checked>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <button type="button" class="btn btn-outline-danger btn-sm" onclick="supprimerLigneConditionnementRapide(this)" title="Supprimer">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+    container.appendChild(ligne);
+    ligne.querySelector('input[type="text"]').focus();
+    validerConditionnements();
+}
+
+function supprimerLigneConditionnementRapide(btn) {
+    const container = document.getElementById('listeConditionnementsRapide');
+    const ligne = btn.closest('.ligne-cond-rapide');
+    if (!container || !ligne) return;
+    ligne.remove();
+    // Réindexer pour garder des noms contigus (cond_libelle_0, cond_libelle_1…)
+    container.querySelectorAll('.ligne-cond-rapide').forEach(function(row, i) {
+        row.querySelector('[name^="cond_libelle_"]').name = `cond_libelle_${i}`;
+        row.querySelector('[name^="cond_coefficient_"]').name = `cond_coefficient_${i}`;
+        row.querySelector('[name^="cond_prix_"]').name = `cond_prix_${i}`;
+        const actif = row.querySelector('[name^="cond_actif_"]');
+        if (actif) actif.name = `cond_actif_${i}`;
+    });
+    validerConditionnements();
+}
+
+// =====  VALIDATION HIÉRARCHIE + APERÇU ÉQUIVALENCES =====
+function lireConditionnementsFormulaire() {
+    const unites = [];
+    document.querySelectorAll('#listeConditionnementsRapide .ligne-cond-rapide').forEach(function(row) {
+        const lib = (row.querySelector('[name^="cond_libelle_"]')?.value || '').trim();
+        const coeff = parseInt(row.querySelector('[name^="cond_coefficient_"]')?.value, 10);
+        const actifCb = row.querySelector('[name^="cond_actif_"]');
+        const actif = actifCb ? actifCb.checked : true;
+        if (lib && coeff >= 1) unites.push({ libelle: lib, coefficient: coeff, actif: actif });
+    });
+    return unites;
+}
+
+function validerConditionnements() {
+    const container = document.getElementById('listeConditionnementsRapide');
+    if (!container) return true; // Pas de bloc conditionnements (non Boucherie)
+    // Hiérarchie validée sur les unités ACTIVES uniquement (désactivée → ignorée)
+    const unites = lireConditionnementsFormulaire().filter(function(u) { return u.actif; });
+    let erreur = null;
+    const coeffs = Array.from(new Set(unites.map(function(u) { return u.coefficient; }))).sort(function(a, b) { return a - b; });
+    for (let i = 0; i < coeffs.length - 1; i++) {
+        if (coeffs[i + 1] % coeffs[i] !== 0) {
+            erreur = coeffs[i + 1] + " n'est pas un multiple de " + coeffs[i] +
+                ". Chaque unité doit être un multiple de la plus petite (ex: carton 30, rame 10, demi 5, kg 1).";
+            break;
+        }
+    }
+    const alerte = document.getElementById('alerteHierarchie');
+    if (alerte) {
+        alerte.style.display = erreur ? '' : 'none';
+        if (erreur) document.getElementById('alerteHierarchieTexte').textContent = erreur;
+    }
+    // Aperçu : « 1 carton = 3 rames · 1 rame = 2 demi »
+    const apercu = document.getElementById('apercuEquivalences');
+    if (apercu) {
+        const tries = unites.slice().sort(function(a, b) { return b.coefficient - a.coefficient; });
+        const chaines = [];
+        for (let i = 0; i < tries.length - 1; i++) {
+            if (tries[i].coefficient % tries[i + 1].coefficient === 0) {
+                chaines.push('1 ' + tries[i].libelle + ' = ' + (tries[i].coefficient / tries[i + 1].coefficient) + ' ' + tries[i + 1].libelle);
+            }
+        }
+        apercu.style.display = chaines.length ? '' : 'none';
+        if (chaines.length) document.getElementById('apercuEquivalencesTexte').textContent = chaines.join(' · ');
+    }
+    return erreur === null;
+}
+
+document.addEventListener('input', function(e) {
+    if (e.target && e.target.name && e.target.name.indexOf('cond_') === 0) validerConditionnements();
+});
+
 document.addEventListener('DOMContentLoaded', function() {
     let seuilStockBas = 0;
     try {
@@ -1828,86 +1930,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const codeBarreFeedback = document.getElementById('codeBarreFeedback');
     const focusCodeBarreCheckbox = document.getElementById('focusCodeBarre');
     let articlesAjoutes = 0; // Compteur d'articles ajoutés
-    
-    // ===== CONDITIONNEMENTS RAPIDES (BOUCHERIE) =====
-    function ajouterLigneConditionnementRapide() {
-        const container = document.getElementById('listeConditionnementsRapide');
-        if (!container) return;
-        const idx = container.querySelectorAll('.ligne-cond-rapide').length;
-        const ligne = document.createElement('div');
-        ligne.className = 'row g-2 mb-1 ligne-cond-rapide align-items-center';
-        ligne.innerHTML = `
-            <div class="col-md-3">
-                <input type="text" name="cond_libelle_${idx}" class="form-control form-control-sm" maxlength="30" placeholder="Unité">
-            </div>
-            <div class="col-md-2">
-                <input type="number" name="cond_coefficient_${idx}" class="form-control form-control-sm" min="1" value="1" placeholder="Coefficient">
-            </div>
-            <div class="col-md-3">
-                <input type="number" name="cond_prix_${idx}" class="form-control form-control-sm" step="0.01" min="0" placeholder="Prix (auto)">
-            </div>
-            <div class="col-md-2">
-                <div class="form-check m-0 ms-1">
-                    <input class="form-check-input" type="checkbox" name="cond_actif_${idx}" value="1" checked>
-                </div>
-            </div>
-        `;
-        container.appendChild(ligne);
-        ligne.querySelector('input[type="text"]').focus();
-        validerConditionnements();
-    }
-
-    // =====  VALIDATION HIÉRARCHIE + APERÇU ÉQUIVALENCES =====
-    function lireConditionnementsFormulaire() {
-        const unites = [];
-        document.querySelectorAll('#listeConditionnementsRapide .ligne-cond-rapide').forEach(function(row) {
-            const lib = (row.querySelector('[name^="cond_libelle_"]')?.value || '').trim();
-            const coeff = parseInt(row.querySelector('[name^="cond_coefficient_"]')?.value, 10);
-            const actifCb = row.querySelector('[name^="cond_actif_"]');
-            const actif = actifCb ? actifCb.checked : true;
-            if (lib && coeff >= 1) unites.push({ libelle: lib, coefficient: coeff, actif: actif });
-        });
-        return unites;
-    }
-
-    function validerConditionnements() {
-        const container = document.getElementById('listeConditionnementsRapide');
-        if (!container) return true; // Pas de bloc conditionnements (non Boucherie)
-        // Hiérarchie validée sur les unités ACTIVES uniquement (désactivée → ignorée)
-        const unites = lireConditionnementsFormulaire().filter(function(u) { return u.actif; });
-        let erreur = null;
-        const coeffs = Array.from(new Set(unites.map(function(u) { return u.coefficient; }))).sort(function(a, b) { return a - b; });
-        for (let i = 0; i < coeffs.length - 1; i++) {
-            if (coeffs[i + 1] % coeffs[i] !== 0) {
-                erreur = coeffs[i + 1] + " n'est pas un multiple de " + coeffs[i] +
-                    ". Chaque unité doit être un multiple de la plus petite (ex: carton 30, rame 10, demi 5, kg 1).";
-                break;
-            }
-        }
-        const alerte = document.getElementById('alerteHierarchie');
-        if (alerte) {
-            alerte.style.display = erreur ? '' : 'none';
-            if (erreur) document.getElementById('alerteHierarchieTexte').textContent = erreur;
-        }
-        // Aperçu : « 1 carton = 3 rames · 1 rame = 2 demi »
-        const apercu = document.getElementById('apercuEquivalences');
-        if (apercu) {
-            const tries = unites.slice().sort(function(a, b) { return b.coefficient - a.coefficient; });
-            const chaines = [];
-            for (let i = 0; i < tries.length - 1; i++) {
-                if (tries[i].coefficient % tries[i + 1].coefficient === 0) {
-                    chaines.push('1 ' + tries[i].libelle + ' = ' + (tries[i].coefficient / tries[i + 1].coefficient) + ' ' + tries[i + 1].libelle);
-                }
-            }
-            apercu.style.display = chaines.length ? '' : 'none';
-            if (chaines.length) document.getElementById('apercuEquivalencesTexte').textContent = chaines.join(' · ');
-        }
-        return erreur === null;
-    }
-
-    document.addEventListener('input', function(e) {
-        if (e.target && e.target.name && e.target.name.indexOf('cond_') === 0) validerConditionnements();
-    });
 
     // ===== GESTION PRIX ACHAT / MARGE / PRIX VENTE =====
     const prixAchatInput = document.getElementById('prix_achat');
