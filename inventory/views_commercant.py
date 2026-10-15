@@ -3299,7 +3299,8 @@ def ajouter_article_boutique(request, boutique_id):
                     quantite_ajout = form.cleaned_data.get('quantite_stock', 0)
                     if quantite_ajout > 0:
                         article_existant.est_valide_client = False
-                        article_existant.quantite_envoyee = quantite_ajout
+                        #  ACCUMULER (pas d'écrasement) : préserver un ajout déjà en attente
+                        article_existant.quantite_envoyee = (article_existant.quantite_envoyee or 0) + quantite_ajout
                         article_existant.save()
                         
                         # 🔔 Notifier le(s) terminal(aux) MAUI : quantité en attente de validation
