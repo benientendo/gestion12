@@ -173,7 +173,7 @@
                                         <div class="article-list">
                                             {% if detail.articles %}
                                                 {% for art in detail.articles|slice:":3" %}
-                                                <div>{{ art.nom }} x{{ art.quantite }}</div>
+                                                <div>{{ art.nom }} x{{ art.quantite }}{% if art.unite %} {{ art.unite }}{% endif %}</div>
                                                 {% endfor %}
                                                 {% if detail.articles|length > 3 %}
                                                 <div class="text-muted">+{{ detail.articles|length|add:"-3" }} autres...</div>

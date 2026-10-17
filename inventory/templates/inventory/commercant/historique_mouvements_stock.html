@@ -244,9 +244,9 @@
                                     </td>
                                     <td class="text-center">
                                         {% if mouvement.quantite > 0 %}
-                                            <span class="quantite-positive">+{{ mouvement.quantite }}</span>
+                                            <span class="quantite-positive">+{{ mouvement.quantite }}{% if mouvement.article.unite_base %} {{ mouvement.article.unite_base }}{% endif %}</span>
                                         {% else %}
-                                            <span class="quantite-negative">{{ mouvement.quantite }}</span>
+                                            <span class="quantite-negative">{{ mouvement.quantite }}{% if mouvement.article.unite_base %} {{ mouvement.article.unite_base }}{% endif %}</span>
                                         {% endif %}
                                     </td>
                                     <td class="text-center">
@@ -339,6 +339,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderRow(m) {
         const qClass = m.quantite > 0 ? 'quantite-positive' : 'quantite-negative';
         const qPrefix = m.quantite > 0 ? '+' : '';
+        const qUnite = m.unite_base ? ' ' + m.unite_base : '';
         const color = TYPE_COLORS[m.type] || 'secondary';
         const stockChange = (m.stock_avant !== null && m.stock_apres !== null)
             ? `<div class="stock-change justify-content-center">
@@ -351,7 +352,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <td class="text-nowrap"><strong>${m.date}</strong><br><small class="text-muted">${m.heure}</small></td>
             <td><span class="badge badge-${m.type.toLowerCase()} bg-${color}">${m.type_display}</span></td>
             <td><strong>${m.article_nom}</strong><br><small class="text-muted">${m.article_code}</small></td>
-            <td class="text-center"><span class="${qClass}">${qPrefix}${m.quantite}</span></td>
+            <td class="text-center"><span class="${qClass}">${qPrefix}${m.quantite}${qUnite}</span></td>
             <td class="text-center">${stockChange}</td>
             <td>${m.reference ? `<code class="small">${m.reference}</code>` : '<span class="text-muted">-</span>'}</td>
             <td>${m.utilisateur ? `<small><i class="fas fa-user"></i> ${m.utilisateur}</small>` : '<span class="text-muted">-</span>'}</td>

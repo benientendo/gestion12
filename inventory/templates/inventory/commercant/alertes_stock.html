@@ -144,14 +144,14 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                <span class="badge bg-primary">{{ alerte.quantite_vendue }}</span>
+                                <span class="badge bg-primary">{{ alerte.quantite_vendue }}{% if alerte.article.unite_base %} {{ alerte.article.unite_base }}{% endif %}</span>
                             </td>
-                            <td class="text-center">{{ alerte.stock_serveur_avant }}</td>
+                            <td class="text-center">{{ alerte.stock_serveur_avant }}{% if alerte.article.unite_base %} {{ alerte.article.unite_base }}{% endif %}</td>
                             <td class="text-center">
                                 {% if alerte.stock_serveur_apres < 0 %}
-                                <span class="text-danger fw-bold">{{ alerte.stock_serveur_apres }}</span>
+                                <span class="text-danger fw-bold">{{ alerte.stock_serveur_apres }}{% if alerte.article.unite_base %} {{ alerte.article.unite_base }}{% endif %}</span>
                                 {% else %}
-                                {{ alerte.stock_serveur_apres }}
+                                {{ alerte.stock_serveur_apres }}{% if alerte.article.unite_base %} {{ alerte.article.unite_base }}{% endif %}
                                 {% endif %}
                             </td>
                             <td class="text-center">

@@ -128,7 +128,7 @@ kbd {
                     Système : <strong id="srStockActuel" style="color:#667eea;">—</strong>
                 </small>
                 <small class="text-success mt-1" id="srStockInventorie" style="font-size:.7rem;display:none;">
-                    Inventorié : <strong id="srStockInventorieValue">0</strong> pcs
+                    Inventorié : <strong id="srStockInventorieValue">0</strong> <span id="srStockInventorieUnite">pcs</span>
                 </small>
             </div>
 
@@ -1539,13 +1539,15 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 
         // Remplir les champs
         srLabel.textContent    = art.nom;
-        srStockActuel.textContent = art.quantite_stock + ' pcs';
+        srStockActuel.textContent = art.quantite_stock + ' ' + (art.unite_base || 'pcs');
         srPrixVente.value      = art.prix_vente;
         srDevise.textContent   = art.devise || 'CDF';
         
         // Afficher le stock déjà inventorié si existe
         const srStockInventorieEl = document.getElementById('srStockInventorie');
         const srStockInventorieValueEl = document.getElementById('srStockInventorieValue');
+        const srStockInventorieUniteEl = document.getElementById('srStockInventorieUnite');
+        if (srStockInventorieUniteEl) srStockInventorieUniteEl.textContent = art.unite_base || 'pcs';
         if (art.stock_physique !== null) {
             srStockInventorieEl.style.display = '';
             srStockInventorieValueEl.textContent = art.stock_physique;
@@ -1576,7 +1578,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             const msg = document.getElementById('confirmResaisieMsg');
             msg.innerHTML = '<strong>' + art.nom + '</strong><br>'
                 + '<span class="badge bg-info text-dark mt-1">' + art.assigne_a + '</span>'
-                + ' a déjà saisi <strong>' + art.stock_physique + '</strong> pcs.';
+                + ' a déjà saisi <strong>' + art.stock_physique + '</strong> ' + (art.unite_base || 'pcs') + '.';
 
             const modal = new bootstrap.Modal(document.getElementById('confirmResaisieModal'));
             const ouiBtn = document.getElementById('confirmResaisieOui');
@@ -1652,7 +1654,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 const ecartTxt = data.ecart > 0 ? ' <span class="text-success">(+' + data.ecart + ')</span>'
                                : data.ecart < 0 ? ' <span class="text-danger">(' + data.ecart + ')</span>'
                                : ' <span class="text-secondary">(=)</span>';
-                showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + data.stock_physique + ' pcs' + ecartTxt, 'success');
+                showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + data.stock_physique + ' ' + (data.unite_base || 'pcs') + ecartTxt, 'success');
 
                 // Mettre à jour la ligne dans le tableau si visible
                 const tableInput = document.querySelector('input[name="stock_physique_' + data.ligne_id + '"]');

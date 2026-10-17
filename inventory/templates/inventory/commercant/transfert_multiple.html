@@ -324,7 +324,7 @@
                                                 {{ article.nom }}
                                             </label>
                                             <span class="stock-badge {% if article.quantite_stock <= depot.alerte_stock_bas %}stock-bas{% else %}stock-ok{% endif %}">
-                                                {{ article.quantite_stock }} en stock
+                                                {{ article.quantite_stock }}{% if article.unite_base %} {{ article.unite_base }}{% endif %} en stock
                                             </span>
                                         </div>
                                         <small class="text-muted">

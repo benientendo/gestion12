@@ -83,6 +83,7 @@
                             data-article="{% if a.article %}{{ a.article.nom|escapejs }}{% else %}Inconnu{% endif %}"
                             data-code="{{ a.code_article|escapejs }}"
                             data-quantite="{{ a.quantite }}"
+                            data-unite="{{ a.article.unite_base|default:'' }}"
                             data-montant="{{ a.montant_negocie }}"
                             data-devise="{{ a.devise }}"
                             data-motif="{{ a.motif|escapejs }}"
@@ -113,7 +114,7 @@
                                 {% endif %}
                             </td>
                             <td>{{ a.code_article }}</td>
-                            <td class="text-end">{{ a.quantite }}</td>
+                            <td class="text-end">{{ a.quantite }}{% if a.article.unite_base %} {{ a.article.unite_base }}{% endif %}</td>
                             <td class="text-end">{{ a.montant_negocie|floatformat:0 }}</td>
                             <td>{{ a.devise }}</td>
                             <td style="max-width: 250px;">
@@ -214,6 +215,7 @@
             var article = trigger.getAttribute('data-article') || '';
             var code = trigger.getAttribute('data-code') || '';
             var quantiteStr = trigger.getAttribute('data-quantite') || '0';
+            var unite = trigger.getAttribute('data-unite') || '';
             var montantStr = trigger.getAttribute('data-montant') || '0';
             var devise = trigger.getAttribute('data-devise') || '';
             var motif = trigger.getAttribute('data-motif') || '';
@@ -228,7 +230,7 @@
             modalElement.querySelector('#modalNegociationTerminal').textContent = terminal;
             modalElement.querySelector('#modalNegociationArticle').textContent = article;
             modalElement.querySelector('#modalNegociationCode').textContent = code;
-            modalElement.querySelector('#modalNegociationQuantite').textContent = quantite;
+            modalElement.querySelector('#modalNegociationQuantite').textContent = quantite + (unite ? ' ' + unite : '');
             modalElement.querySelector('#modalNegociationMontant').textContent = montant.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) + ' ' + devise;
             modalElement.querySelector('#modalNegociationTotal').textContent = total.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}) + ' ' + devise;
             modalElement.querySelector('#modalNegociationMotif').textContent = motif || '-';

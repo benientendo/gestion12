@@ -1157,6 +1157,7 @@ def articles_search_ajax(request, boutique_id):
             'prix_achat': str(art.prix_achat),
             'devise': art.devise,
             'quantite_stock': art.stock_total,  # Utiliser stock_total pour inclure les variantes
+            'unite_base': art.unite_base or '',
             'stock_decompose': art.stock_decompose_formate,  # Ex: "20 cartons · 15 kg · 500 g"
             'conditionnements': '|'.join(
                 f'{c.libelle}:{c.coefficient}' for c in art.conditionnements.all() if c.est_actif
@@ -3095,7 +3096,15 @@ def _appliquer_conditionnements(article, unites, unite_base):
         cond.save()
         vus.append(u['libelle'])
     Conditionnement.objects.filter(article=article).exclude(libelle__in=vus).delete()
-    article.unite_base = (unite_base or '').strip()[:20]
+    unite_base = (unite_base or '').strip()[:20]
+    if not unite_base and unites:
+        #  BOUCHERIE : déduire l'unité de base du conditionnement au plus petit
+        # coefficient (ex: coefficient 1 = « kg ») — les badges/historiques
+        # afficheront « 10 kg » au lieu d'un nombre nu.
+        base = min(unites, key=lambda u: u['coefficient'])
+        if base['coefficient'] == 1:
+            unite_base = base['libelle'][:20]
+    article.unite_base = unite_base
     # save() complet → last_updated + version → sync MAUI des conditionnements
     article.save()
 
@@ -4506,7 +4515,9 @@ def ventes_refusees_boutique(request, boutique_id):
                         articles_info.append({
                             'nom': ligne.get('nom', ligne.get('article_nom', 'N/A')),
                             'quantite': ligne.get('quantite', 1),
-                            'prix': ligne.get('prix_unitaire', ligne.get('prix', 0))
+                            'prix': ligne.get('prix_unitaire', ligne.get('prix', 0)),
+                            #  BOUCHERIE : libellé conditionnement envoyé par MAUI
+                            'unite': ligne.get('conditionnement_libelle') or ligne.get('unite') or '',
                         })
             
             ventes_details.append({
@@ -6330,6 +6341,7 @@ def historique_mouvements_stock(request, boutique_id):
                 'article_nom': m.article.nom,
                 'article_code': m.article.code or '',
                 'quantite': m.quantite,
+                'unite_base': m.article.unite_base or '',
                 'stock_avant': m.stock_avant,
                 'stock_apres': m.stock_apres,
                 'reference': m.reference_document or '',
@@ -8157,6 +8169,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
             'stock_physique': l.stock_physique or 0,
             'assigne_a': str(l.assigne_a) if l.assigne_a else '',
             'quantite_stock': l.article.quantite_stock or 0,
+            'unite_base': str(l.article.unite_base) if l.article.unite_base else 'pcs',
             'prix_vente': float(l.article.prix_vente) if l.article.prix_vente else 0,
             'devise': str(l.article.devise) if l.article.devise else '',
             'categorie_id': l.article.categorie_id,
@@ -8307,6 +8320,7 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         'article_id': ligne.article.id,
         'stock_theorique': ligne.stock_theorique,
         'stock_physique': ligne.stock_physique,
+        'unite_base': ligne.article.unite_base or 'pcs',
         'prix_vente': float(ligne.article.prix_vente),
         'categorie_nom': ligne.article.categorie.nom if ligne.article.categorie else '',
         'ecart': ligne.ecart,

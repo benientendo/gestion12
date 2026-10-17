@@ -216,7 +216,7 @@
                                     </div>
                                     <div class="col-auto text-center">
                                         <span class="stock-badge {% if article.quantite_stock <= 5 %}stock-bas{% else %}stock-ok{% endif %}">
-                                            {{ article.quantite_stock }} en stock
+                                            {{ article.quantite_stock }}{% if article.unite_base %} {{ article.unite_base }}{% endif %} en stock
                                         </span>
                                     </div>
                                     <div class="col-auto">

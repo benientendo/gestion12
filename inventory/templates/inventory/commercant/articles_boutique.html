@@ -215,11 +215,11 @@
                         </td>
                 <td class="col-stock">
                     {% if article.stock_total <= 0 %}
-                    <span class="badge bg-danger">{{ article.stock_total }}</span>
+                    <span class="badge bg-danger">{{ article.stock_total }}{% if boutique.type_commerce == 'BOUCHERIE' and article.unite_base %} {{ article.unite_base }}{% endif %}</span>
                     {% elif article.stock_total <= boutique.alerte_stock_bas %}
-                    <span class="badge bg-warning text-dark">{{ article.stock_total }}</span>
+                    <span class="badge bg-warning text-dark">{{ article.stock_total }}{% if boutique.type_commerce == 'BOUCHERIE' and article.unite_base %} {{ article.unite_base }}{% endif %}</span>
                     {% else %}
-                    <span class="badge bg-success">{{ article.stock_total }}</span>
+                    <span class="badge bg-success">{{ article.stock_total }}{% if boutique.type_commerce == 'BOUCHERIE' and article.unite_base %} {{ article.unite_base }}{% endif %}</span>
                     {% endif %}
                     {% if boutique.type_commerce == 'BOUCHERIE' %}
                     <div class="small text-muted"{% if article.unites_resume %} title="{{ article.unites_resume }}{% if article.unites_equivalences %} — {{ article.unites_equivalences }}{% endif %}"{% endif %}>{{ article.stock_decompose_formate }}</div>
@@ -2558,7 +2558,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </td>
                 <td class="col-nom">
                     <div class="article-name">${article.nom}</div>
-                    ${!article.est_valide_client ? `<span class="badge bg-warning text-dark"><i class="fas fa-clock"></i> En attente de validation — ${article.quantite_envoyee} unité(s) envoyée(s)</span>` : ''}
+                    ${!article.est_valide_client ? `<span class="badge bg-warning text-dark"><i class="fas fa-clock"></i> En attente de validation — ${article.quantite_envoyee} ${article.unite_base || 'unité(s)'} envoyée(s)</span>` : ''}
                     ${article.description ? `<div class="article-desc">${article.description.substring(0, 80)}...</div>` : ''}
                 </td>
                 <td class="col-code"><code class="article-code">${article.code || '-'}</code></td>
@@ -2577,7 +2577,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <span class="text-primary fw-bold">${isUSD ? `$ ${Math.round(article.prix_vente * article.quantite_stock)}` : `${Math.round(article.prix_vente * article.quantite_stock)} <small>FC</small>`}</span>
                 </td>
                 <td class="col-stock">
-                    <span class="badge ${stockBadgeClass}">${article.quantite_stock}</span>
+                    <span class="badge ${stockBadgeClass}">${article.quantite_stock}${article.unite_base ? ' ' + article.unite_base : ''}</span>
                     {% if boutique.type_commerce == 'BOUCHERIE' %}
                     ${article.stock_decompose ? `<div class="small text-muted">${article.stock_decompose}</div>` : ''}
                     {% endif %}
@@ -2895,7 +2895,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <div class="result-info">
                                     <span class="badge bg-secondary">${article.code || 'N/A'}</span>
                                     <span class="badge bg-info">${article.categorie || 'Sans catégorie'}</span>
-                                    <span class="badge bg-primary">${article.quantite_stock} en stock</span>
+                                    <span class="badge bg-primary">${article.quantite_stock}${article.unite_base ? ' ' + article.unite_base : ''} en stock</span>
                                     {% if boutique.type_commerce == 'BOUCHERIE' %}
                                     ${article.stock_decompose ? `<div class="small text-muted">${article.stock_decompose}</div>` : ''}
                                     {% endif %}

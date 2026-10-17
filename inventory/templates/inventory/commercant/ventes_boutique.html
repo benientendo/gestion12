@@ -326,7 +326,7 @@
                     <div class="d-flex justify-content-between align-items-start small text-danger">
                         <span>
                             <strong>{{ ligne.article.nom }}</strong>
-                            — qté {{ ligne.quantite }}
+                            — qté {{ ligne.quantite_affichee }}
                             <span class="badge bg-danger ms-1">{{ ligne.statut_annulation }}</span>
                             {% if ligne.date_annulation %}
                             <span class="badge bg-light text-danger border ms-1">Remboursé le {{ ligne.date_annulation|format_date_vente }}</span>
@@ -396,7 +396,7 @@
                                         </span>
                                         {% endif %}
                                     </td>
-                                    <td class="text-center {% if ligne.est_annulee %}text-danger text-decoration-line-through{% endif %}">{{ ligne.quantite }}</td>
+                                    <td class="text-center {% if ligne.est_annulee %}text-danger text-decoration-line-through{% endif %}">{{ ligne.quantite_affichee }}</td>
                                     <td class="text-end {% if ligne.est_annulee %}text-danger text-decoration-line-through{% endif %}">
                                         {{ ligne.prix_unitaire|format_cdf:0 }}
                                         {% if ligne.est_negocie %}

@@ -66,12 +66,15 @@
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Quantité</label>
-                                <input type="number" 
-                                       name="quantite_{{ forloop.counter0 }}" 
-                                       class="form-control quantite-input" 
-                                       value="{{ ligne.quantite }}"
-                                       min="1" 
-                                       required>
+                                <div class="input-group">
+                                    <input type="number" 
+                                           name="quantite_{{ forloop.counter0 }}" 
+                                           class="form-control quantite-input" 
+                                           value="{{ ligne.quantite }}"
+                                           min="1" 
+                                           required>
+                                    <span class="input-group-text">{{ ligne.unite_affichee }}</span>
+                                </div>
                             </div>
                             <div class="col-md-3">
                                 <label class="form-label">Prix unitaire (FC)</label>

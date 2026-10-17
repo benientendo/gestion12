@@ -598,6 +598,25 @@ class LigneVente(models.Model):
         return self.quantite * self.prix_unitaire
 
     @property
+    def unite_affichee(self):
+        """Libellé de l'unité vendue : conditionnement (ex: « carton ») ou unité de base (« kg »).
+
+        Boucherie : « 2 carton » / « 5 kg » au lieu d'un nombre nu.
+        """
+        cond = self.conditionnement
+        if cond is not None:
+            return cond.libelle
+        article = self.article
+        if article is not None and article.unite_base:
+            return article.unite_base
+        return 'unité'
+
+    @property
+    def quantite_affichee(self):
+        """« 2 carton » — quantité + unité, pour affichage direct."""
+        return f'{self.quantite} {self.unite_affichee}'
+
+    @property
     def quantite_base(self):
         """Quantité vendue convertie en unité de base du stock (ex: sacs → kg)."""
         return int(self.quantite) * max(1, int(self.unite_coefficient or 1))

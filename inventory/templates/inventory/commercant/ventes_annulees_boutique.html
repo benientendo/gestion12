@@ -129,7 +129,7 @@
                             <div class="col-md-3">
                                 <div class="article-list">
                                     {% for ligne in detail.lignes|slice:":3" %}
-                                    <div>{{ ligne.article.nom|default:"Article" }} x{{ ligne.quantite }}</div>
+                                    <div>{{ ligne.article.nom|default:"Article" }} x{{ ligne.quantite_affichee }}</div>
                                     {% empty %}
                                     <span class="text-muted">Détails non disponibles</span>
                                     {% endfor %}
