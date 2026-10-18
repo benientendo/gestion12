@@ -23,4 +23,7 @@ urlpatterns = [
 
     # Facture approvisionnement
     path('approvisionnement/', api_views_maui_desktop.recevoir_facture, name='recevoir_facture'),
+
+    # Transfert entre boutiques (même commerçant)
+    path('transferts/', api_views_maui_desktop.transfert_entre_boutiques, name='transfert_entre_boutiques'),
 ]

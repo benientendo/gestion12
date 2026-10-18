@@ -9,13 +9,16 @@ Endpoints pour:
 
 import json
 import logging
+import uuid
 from decimal import Decimal
 from django.utils import timezone
 from django.contrib.auth import authenticate
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.exceptions import ParseError
 from rest_framework.parsers import JSONParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -23,6 +26,7 @@ from rest_framework.response import Response
 from .models import (
     Commercant, Boutique, Article, Categorie, Fournisseur,
     FactureApprovisionnement, LigneApprovisionnement, MouvementStock,
+    Client, TransfertStock,
 )
 
 logger = logging.getLogger(__name__)
@@ -598,3 +602,185 @@ def _get_user_id(request):
     if auth.isdigit():
         return int(auth)
     return None
+
+
+# ===== TRANSFERTS ENTRE BOUTIQUES =====
+
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@parser_classes([JSONParser])
+@transaction.atomic
+def transfert_entre_boutiques(request):
+    """
+    Transfert d'un article d'une boutique source vers une boutique destination
+    (même commerçant, boutiques différentes). Terminal identifié par X-Device-Serial.
+    """
+    try:
+        # 1. Authentification terminal
+        numero_serie = request.headers.get('X-Device-Serial', '')
+        if not numero_serie:
+            return Response(
+                {'success': False, 'error': 'Header X-Device-Serial manquant.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        client = Client.objects.select_related('boutique__commercant').filter(
+            numero_serie=numero_serie, est_actif=True
+        ).first()
+        if not client:
+            return Response(
+                {'success': False, 'error': 'Terminal non reconnu ou inactif.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        boutique_source = client.boutique
+        if not boutique_source:
+            return Response(
+                {'success': False, 'error': 'Ce terminal n\'est associé à aucune boutique.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        commerçant = boutique_source.commercant
+
+        # 2. Lecture et validation du payload
+        data = request.data
+        quantite = data.get('quantite')
+        boutique_destination_id = data.get('boutique_destination_id')
+
+        try:
+            quantite = int(quantite)
+        except (TypeError, ValueError):
+            return Response(
+                {'success': False, 'error': 'quantite doit être un entier positif.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if quantite < 1:
+            return Response(
+                {'success': False, 'error': 'quantite doit être ≥ 1.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            boutique_destination_id = int(boutique_destination_id)
+        except (TypeError, ValueError):
+            return Response(
+                {'success': False, 'error': 'boutique_destination_id invalide.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 3. Destination : même commerçant, boutique différente
+        try:
+            boutique_destination = Boutique.objects.get(pk=boutique_destination_id)
+        except Boutique.DoesNotExist:
+            return Response(
+                {'success': False, 'error': 'Boutique destination introuvable.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if boutique_destination.commercant_id != commerçant.id:
+            return Response(
+                {'success': False, 'error': 'La boutique destination doit appartenir au même commerçant.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if boutique_destination.id == boutique_source.id:
+            return Response(
+                {'success': False, 'error': 'La boutique source et destination doivent être différentes.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 4. Article dans la boutique source
+        article_id = data.get('article_id')
+        article_code = data.get('article_code')
+        if article_id is not None:
+            try:
+                article = Article.objects.get(pk=int(article_id), boutique=boutique_source)
+            except (Article.DoesNotExist, TypeError, ValueError):
+                return Response(
+                    {'success': False, 'error': 'Article non trouvé dans cette boutique.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        elif article_code:
+            article = Article.objects.filter(
+                code=str(article_code).strip(), boutique=boutique_source
+            ).first()
+            if not article:
+                return Response(
+                    {'success': False, 'error': 'Article non trouvé dans cette boutique.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            return Response(
+                {'success': False, 'error': 'article_id ou article_code requis.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 5. Stock suffisant
+        if article.quantite_stock < quantite:
+            return Response(
+                {'success': False, 'error': f'Stock insuffisant (disponible: {article.quantite_stock}).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 6. Commentaire
+        commentaire = str(data.get('commentaire', '')).strip()
+        if not commentaire:
+            commentaire = f"Transfert terminal {client.numero_serie} → {boutique_destination.nom}"
+
+        # 7. Créer et valider le transfert
+        reference_lot = f"LOT-{timezone.localtime().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6].upper()}"
+
+        transfert = TransfertStock.objects.create(
+            article=article,
+            depot_source=boutique_source,
+            boutique_destination=boutique_destination,
+            quantite=quantite,
+            effectue_par=f"Terminal {client.numero_serie}",
+            statut='EN_ATTENTE',
+            reference_lot=reference_lot,
+            commentaire=commentaire,
+        )
+
+        # valider_transfert décrémente la source, crée le mouvement SORTIE
+        # et retourne (ou crée) l'article destination
+        article_dest = transfert.valider_transfert(valide_par_user=f"Terminal {client.numero_serie}")
+
+        # Incrémenter le stock destination
+        stock_dest_avant = article_dest.quantite_stock or 0
+        article_dest.quantite_stock = stock_dest_avant + quantite
+        article_dest.save(update_fields=['quantite_stock'])
+
+        MouvementStock.objects.create(
+            article=article_dest,
+            type_mouvement='ENTREE',
+            quantite=quantite,
+            stock_avant=stock_dest_avant,
+            stock_apres=article_dest.quantite_stock,
+            commentaire=f"Transfert depuis {boutique_source.nom} (lot {transfert.reference_lot})",
+            reference_document=f"TRANSFERT-{transfert.id}",
+            utilisateur=f"Terminal {client.numero_serie}",
+        )
+
+        return Response({
+            'success': True,
+            'transfert_id': transfert.id,
+            'reference_lot': transfert.reference_lot,
+            'article_destination_id': article_dest.id,
+            'quantite_transferee': quantite,
+            'boutique_destination': boutique_destination.nom,
+        })
+
+    except ValidationError as e:
+        logger.warning(f"Transfert refusé: {e}")
+        return Response(
+            {'success': False, 'error': str(e)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except ParseError as e:
+        return Response(
+            {'success': False, 'error': f'JSON invalide: {e}'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except Exception as e:
+        logger.error(f"Erreur transfert entre boutiques: {str(e)}", exc_info=True)
+        return Response(
+            {'success': False, 'error': f'Erreur serveur: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
