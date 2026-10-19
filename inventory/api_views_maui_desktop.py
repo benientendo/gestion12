@@ -595,13 +595,21 @@ def recevoir_articles(request):
 # ===== UTILITAIRES =====
 
 def _get_user_id(request):
-    """Extraire le user_id du header Authorization."""
-    auth = request.headers.get('Authorization', '')
+    """Extraire le user_id du header Authorization (user_id numérique ou token JWT Bearer)."""
+    auth = request.headers.get('Authorization', '') or ''
     if auth.startswith('Bearer '):
         auth = auth[7:]
+    auth = auth.strip()
+    if not auth:
+        return None
     if auth.isdigit():
         return int(auth)
-    return None
+    # Token JWT (simplejwt) : décoder pour récupérer le user_id
+    try:
+        from rest_framework_simplejwt.tokens import AccessToken
+        return int(AccessToken(auth)['user_id'])
+    except Exception:
+        return None
 
 
 # ===== TRANSFERTS ENTRE BOUTIQUES =====
