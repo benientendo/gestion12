@@ -776,24 +776,12 @@ def transfert_entre_boutiques(request):
             )
 
             # valider_transfert décrémente la source, crée le mouvement SORTIE
-            # et retourne (ou crée) l'article destination
+            # et place le stock de destination EN ATTENTE de validation côté terminal
+            # (quantite_envoyee += quantite, est_valide_client=False).
+            # On ne crédite PAS quantite_stock ici : le terminal de la boutique
+            # destination validera la réception (comme un transfert validé depuis le
+            # back-office). Créditer directement doublerait le stock à la validation.
             article_dest = transfert.valider_transfert(valide_par_user=effectue_par)
-
-            # Incrémenter le stock destination
-            stock_dest_avant = article_dest.quantite_stock or 0
-            article_dest.quantite_stock = stock_dest_avant + quantite
-            article_dest.save(update_fields=['quantite_stock'])
-
-            MouvementStock.objects.create(
-                article=article_dest,
-                type_mouvement='ENTREE',
-                quantite=quantite,
-                stock_avant=stock_dest_avant,
-                stock_apres=article_dest.quantite_stock,
-                commentaire=f"Transfert depuis {boutique_source.nom} (lot {reference_lot})",
-                reference_document=f"TRANSFERT-{transfert.id}",
-                utilisateur=effectue_par,
-            )
 
             quantite_totale += quantite
             transferts.append({
@@ -803,6 +791,16 @@ def transfert_entre_boutiques(request):
                 'article_nom': article.nom,
                 'quantite': quantite,
             })
+
+        # Prévenir la boutique destination : stock reçu en attente de validation client
+        try:
+            from .websocket_utils import notify_sync_required
+            notify_sync_required(
+                boutique_destination.id,
+                f"{quantite_totale} unité(s) reçue(s) - en attente de validation côté client"
+            )
+        except Exception as e:
+            logger.warning(f"Notification destination échouée: {e}")
 
         premier = transferts[0]
         return Response({
