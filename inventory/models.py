@@ -1260,6 +1260,44 @@ def trouver_article_destination(article_source, boutique, avec_categorie=True,
     return article, True
 
 
+def appliquer_attributs_vente_destination(article_destination, article_source):
+    """Recopie sur l'article de destination les attributs de vente de l'article
+    source : unité de base, conditionnements, prix d'achat/vente, devise et
+    pièces par carton. Permet au terminal récepteur de vendre à l'identique,
+    même s'il ne possédait pas l'article avant le transfert.
+    """
+    champs = ['description', 'devise', 'prix_vente', 'prix_achat',
+              'pieces_par_carton', 'unite_base']
+    modifs = [c for c in champs
+              if getattr(article_destination, c) != getattr(article_source, c)]
+    if modifs:
+        for champ in modifs:
+            setattr(article_destination, champ, getattr(article_source, champ))
+        article_destination.save()
+
+    # Conditionnements : mise à jour par libellé (unique_together article/libellé)
+    for cond_source in article_source.conditionnements.all():
+        cond_dest, cree = Conditionnement.objects.get_or_create(
+            article=article_destination,
+            libelle=cond_source.libelle,
+            defaults={
+                'coefficient': cond_source.coefficient,
+                'prix_vente': cond_source.prix_vente,
+                'prix_achat': cond_source.prix_achat,
+                'ordre': cond_source.ordre,
+                'est_actif': cond_source.est_actif,
+            },
+        )
+        if not cree:
+            champs_cond = []
+            for champ in ['coefficient', 'prix_vente', 'prix_achat', 'ordre', 'est_actif']:
+                if getattr(cond_dest, champ) != getattr(cond_source, champ):
+                    setattr(cond_dest, champ, getattr(cond_source, champ))
+                    champs_cond.append(champ)
+            if champs_cond:
+                cond_dest.save(update_fields=champs_cond)
+
+
 class TransfertStock(models.Model):
     """Transfert de stock du dépôt vers une boutique."""
     
@@ -1326,6 +1364,9 @@ class TransfertStock(models.Model):
         # Article de destination : par code, sinon par nom identique
         # (évite les doublons quand le point de vente a déjà le même article)
         article_boutique, cree = trouver_article_destination(article_depot, self.boutique_destination)
+        # Recopier unité, conditionnements et prix pour que le terminal récepteur
+        # puisse vendre à l'identique, même s'il ne possédait pas l'article.
+        appliquer_attributs_vente_destination(article_boutique, article_depot)
         self.stock_boutique_avant = 0 if cree else article_boutique.quantite_stock
 
         article_boutique.est_valide_client = False

@@ -150,14 +150,41 @@ def boutiques_commercant(request):
     except Commercant.DoesNotExist:
         return Response({'error': 'Commerçant non trouvé'}, status=404)
 
-    boutiques = Boutique.objects.filter(
-        commercant=commercant,
-        est_active=True
-    ).values('id', 'nom', 'code_boutique', 'type_commerce', 'devise', 'est_depot', 'adresse', 'ville')
+    # Type de la boutique source (celle du terminal) : les transferts ne sont
+    # autorisés qu'entre boutiques de même type_commerce.
+    source_boutique = None
+    numero_serie = request.headers.get('X-Device-Serial', '') or request.META.get('HTTP_X_DEVICE_SERIAL', '')
+    if numero_serie:
+        client = Client.objects.select_related('boutique').filter(
+            numero_serie=numero_serie, est_actif=True
+        ).first()
+        if client and client.boutique:
+            source_boutique = client.boutique
+
+    source_type = source_boutique.type_commerce if source_boutique else None
+
+    boutiques = []
+    for b in Boutique.objects.filter(commercant=commercant, est_active=True):
+        autorise = (source_type is None) or (b.type_commerce == source_type)
+        boutiques.append({
+            'id': b.id,
+            'nom': b.nom,
+            'code_boutique': b.code_boutique,
+            'type_commerce': b.type_commerce,
+            'type_commerce_libelle': b.get_type_commerce_display(),
+            'devise': b.devise,
+            'est_depot': b.est_depot,
+            'adresse': b.adresse,
+            'ville': b.ville,
+            'transfert_autorise': autorise,
+        })
 
     return Response({
         'success': True,
-        'boutiques': list(boutiques),
+        'boutique_source_id': source_boutique.id if source_boutique else None,
+        'boutique_source_type': source_type,
+        'boutique_source_type_libelle': source_boutique.get_type_commerce_display() if source_boutique else None,
+        'boutiques': boutiques,
     })
 
 
@@ -676,6 +703,17 @@ def transfert_entre_boutiques(request):
         if boutique_destination.id == boutique_source.id:
             return Response(
                 {'success': False, 'error': 'La boutique source et destination doivent être différentes.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Transfert autorisé uniquement entre boutiques de même type
+        if boutique_destination.type_commerce != boutique_source.type_commerce:
+            return Response(
+                {'success': False, 'error': (
+                    f"Transfert impossible : types de boutique différents "
+                    f"({boutique_source.get_type_commerce_display()} → "
+                    f"{boutique_destination.get_type_commerce_display()}). "
+                    f"Un transfert n'est autorisé qu'entre boutiques de même type."
+                )},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
