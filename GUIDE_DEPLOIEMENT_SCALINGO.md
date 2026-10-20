@@ -301,10 +301,20 @@ scalingo --app gestion-magazin-prod backups-download
 # Après modifications du code
 git add .
 git commit -m "Description des changements"
-git push scalingo master
+git push scalingo main
 
 # Les migrations sont exécutées automatiquement (voir Procfile)
 ```
+
+### Redéploiement après un échec de démarrage
+
+Si un déploiement échoue au démarrage, Scalingo conserve la version précédente en production. Pour relancer, pousser un nouveau commit sur `main` :
+
+```bash
+git push scalingo main
+```
+
+Les logs de démarrage sont visibles dans le Dashboard Scalingo → Logs. Les branches autres que `main`/`master` sont refusées par le remote Scalingo.
 
 ---
 
