@@ -283,4 +283,5 @@ urlpatterns = [
     path('api/credit/boutique/<int:boutique_id>/clients/', views_credit.api_credit_clients, name='api_credit_clients'),
     path('api/credit/vente/<int:vente_id>/', views_credit.api_credit_detail_vente, name='api_credit_detail_vente'),
     path('api/credit/vente/<int:vente_id>/paiement/', views_credit.api_credit_enregistrer_paiement, name='api_credit_enregistrer_paiement'),
+    path('api/credit/boutique/<int:boutique_id>/paiements-jour/', views_credit.api_credit_paiements_jour, name='api_credit_paiements_jour'),
 ]

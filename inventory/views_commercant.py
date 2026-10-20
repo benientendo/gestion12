@@ -25,7 +25,7 @@ from reportlab.lib.units import cm
 from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination, CodeCloture, ClotureJournee, DemandeAnnulationVente
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 from .distribution import etat_distribution
-from .ca_remboursements import ca_net, remboursements
+from .ca_remboursements import ca_net, remboursements, paiements_credit
 import json
 import io
 
@@ -383,8 +383,13 @@ def dashboard_commercant(request):
     remboursements_jour_cdf = remboursements(perimetre_cdf, aujourd_hui, aujourd_hui)
     remboursements_jour_usd = remboursements(perimetre_usd, aujourd_hui, aujourd_hui)
 
-    # Total jour (pour compatibilité, on garde le CDF)
-    ca_jour = ca_jour_cdf
+    # Paiements credit (acomptes) encaisses aujourd'hui — ajoutés à la recette
+    credit_jour_cdf = sum(
+        paiements_credit(b, aujourd_hui, aujourd_hui) for b in boutiques
+    )
+
+    # Total jour (pour compatibilité, on garde le CDF) + paiements credit
+    ca_jour = ca_jour_cdf + credit_jour_cdf
 
     # Recette 30 jours - Séparation CDF et USD
     ventes_30j = Vente.objects.filter(
@@ -504,6 +509,7 @@ def dashboard_commercant(request):
         'chiffre_affaires_30j_usd': ca_30j_usd,  # USD 30 jours
         'recette_jour': ca_jour_cdf,  # CDF du jour
         'recette_jour_usd': ca_jour_usd,  # USD du jour
+        'credit_jour': credit_jour_cdf,  # Paiements crédit du jour
         'remboursements_jour': remboursements_jour_cdf,
         'remboursements_jour_usd': remboursements_jour_usd,
         'nb_ventes_jour_cdf': ventes_jour_cdf.count(),
@@ -1569,7 +1575,10 @@ def entrer_boutique(request, boutique_id):
         depense_appliquee=True
     ).aggregate(total=Sum('depense'))['total'] or 0
 
-    ca_aujourd_hui = ca_aujourd_hui_brut - depenses_appliquees_ca_jour
+    # Paiements credit (acomptes) encaisses aujourd'hui — ajoutés à la recette
+    credit_jour = paiements_credit(boutique, date_aujourd_hui, date_aujourd_hui)
+
+    ca_aujourd_hui = ca_aujourd_hui_brut - depenses_appliquees_ca_jour + credit_jour
     
     # Ventes du mois en cours (exclure les ventes annulées)
     try:
@@ -1593,7 +1602,10 @@ def entrer_boutique(request, boutique_id):
         depense_appliquee=True
     ).aggregate(total=Sum('depense'))['total'] or 0
 
-    ca_mois = ca_mois_brut - depenses_appliquees_ca_mois
+    # Paiements credit du mois — ajoutés à la recette mensuelle
+    credit_mois = paiements_credit(boutique, premier_jour_mois, date_aujourd_hui)
+
+    ca_mois = ca_mois_brut - depenses_appliquees_ca_mois + credit_mois
     
     # Variables supplémentaires pour le template dashboard.html
     total_articles = nb_articles
@@ -1787,6 +1799,7 @@ def entrer_boutique(request, boutique_id):
         'ca_mois_usd': ca_mois_usd,
         'depenses_appliquees_ca_mois': depenses_appliquees_ca_mois,
         'ca_jour': ca_jour,
+        'credit_jour': credit_jour,
         'remboursements_jour': remboursements_ca_jour,
         'valeur_stock_disponible': valeur_stock_disponible,
         'valeur_stock_cdf': valeur_stock_cdf,

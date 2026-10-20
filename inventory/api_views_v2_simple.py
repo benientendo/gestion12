@@ -74,7 +74,7 @@ def _quantite_base_ligne(ligne):
 def _compute_dashboard_stats(boutique):
     """Calcule les stats recette du jour/mois pour le push WebSocket dashboard."""
     from .models import RapportCaisse
-    from .ca_remboursements import ca_net, remboursements
+    from .ca_remboursements import ca_net, remboursements, paiements_credit
     today = timezone.localdate()
     premier_jour_mois = today.replace(day=1)
 
@@ -95,6 +95,9 @@ def _compute_dashboard_stats(boutique):
         boutique=boutique, date_rapport__date=today, depense_appliquee=True
     ).aggregate(total=Sum('depense'))['total'] or 0
 
+    # Paiements credit (acomptes) encaisses aujourd'hui — ajoutés à la recette
+    credit_jour = paiements_credit(boutique, today, today)
+
     ventes_mois = Vente.objects.filter(ventes_base, date_vente__date__gte=premier_jour_mois).distinct()
     ventes_mois_toutes = Vente.objects.filter(scope, date_vente__date__gte=premier_jour_mois).distinct()
     ca_mois_cdf = ca_net(ventes_mois_toutes.filter(devise='CDF'), perimetre_cdf, premier_jour_mois, today)
@@ -103,11 +106,15 @@ def _compute_dashboard_stats(boutique):
         boutique=boutique, date_rapport__date__gte=premier_jour_mois, date_rapport__date__lte=today, depense_appliquee=True
     ).aggregate(total=Sum('depense'))['total'] or 0
 
+    credit_mois = paiements_credit(boutique, premier_jour_mois, today)
+
     return {
-        'ca_jour': float(ca_jour_cdf - depenses_jour),
+        'ca_jour': float(ca_jour_cdf - depenses_jour + credit_jour),
         'ca_jour_usd': float(ca_jour_usd),
-        'ca_mois': float(ca_mois_cdf - depenses_mois),
+        'ca_mois': float(ca_mois_cdf - depenses_mois + credit_mois),
         'ca_mois_usd': float(ca_mois_usd),
+        'credit_jour': float(credit_jour),
+        'credit_mois': float(credit_mois),
         'remboursements_jour': float(remboursements_cdf),
         'remboursements_jour_usd': float(remboursements_usd),
         'nb_ventes_jour': ventes_jour.count(),

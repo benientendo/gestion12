@@ -69,3 +69,20 @@ def remboursements(ventes_scope_qs, date_debut, date_fin=None):
 def ca_net(ventes_qs, ventes_scope_qs, date_debut, date_fin=None):
     """CA net de la periode : encaisse d'origine - remboursements de la periode."""
     return encaisse_total(ventes_qs) - remboursements(ventes_scope_qs, date_debut, date_fin)
+
+
+def paiements_credit(boutique, date_debut, date_fin=None):
+    """Montant des paiements credit (acomptes) encaisses dans la periode pour cette boutique."""
+    from .models import PaiementAcompte
+    paiements = PaiementAcompte.objects.filter(
+        date_paiement__date__gte=date_debut,
+        vente__boutique=boutique,
+    )
+    if date_fin is not None:
+        paiements = paiements.filter(date_paiement__date__lte=date_fin)
+    return paiements.aggregate(total=Sum('montant'))['total'] or Decimal('0')
+
+
+def ca_net_avec_credit(ventes_qs, ventes_scope_qs, boutique, date_debut, date_fin=None):
+    """CA net + paiements credit de la periode."""
+    return ca_net(ventes_qs, ventes_scope_qs, date_debut, date_fin) + paiements_credit(boutique, date_debut, date_fin)

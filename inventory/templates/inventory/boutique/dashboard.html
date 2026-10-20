@@ -255,6 +255,15 @@
                                         <span class="text-white-50">Remboursé aujourd'hui :</span>
                                         <span class="fw-semibold sensitive-amount" id="stat-remboursements-jour">-{{ remboursements_jour|format_cdf:0 }} CDF</span>
                                     </small>
+                                    {% if credit_jour %}
+                                    <small class="d-block mt-1">
+                                        <a href="{% url 'inventory:liste_ventes_credit' boutique.id %}" class="text-white text-decoration-underline" title="Voir les ventes à crédit">
+                                            <i class="fas fa-hand-holding-usd fa-xs"></i>
+                                            Crédit encaissé : <span class="fw-bold sensitive-amount">+{{ credit_jour|format_cdf:0 }} CDF</span>
+                                            <i class="fas fa-external-link-alt fa-xs"></i>
+                                        </a>
+                                    </small>
+                                    {% endif %}
                                 </div>
                             </div>
                         </a>

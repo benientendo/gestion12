@@ -613,3 +613,29 @@ def api_credit_clients(request, boutique_id):
     } for c in clients]
 
     return JsonResponse({'clients': data, 'count': len(data)})
+
+
+def api_credit_paiements_jour(request, boutique_id):
+    """GET : paiements crédit encaissés aujourd'hui pour le dashboard MAUI."""
+    boutique, err = _boutique_from_serial(request, boutique_id)
+    if err:
+        return err
+
+    today = timezone.localdate()
+    paiements = PaiementAcompte.objects.filter(
+        date_paiement__date=today,
+        vente__boutique=boutique,
+    ).select_related('vente', 'vente__client')
+
+    data = [{
+        'id':            p.id,
+        'reference':     p.reference_recu,
+        'montant':       float(p.montant),
+        'date_paiement': p.date_paiement.isoformat(),
+        'vente_id':      p.vente_id,
+        'vente_ref':     p.vente.reference,
+        'client_nom':    p.vente.client.nom_complet,
+    } for p in paiements]
+
+    total = sum(p['montant'] for p in data)
+    return JsonResponse({'paiements': data, 'total': total, 'count': len(data)})
