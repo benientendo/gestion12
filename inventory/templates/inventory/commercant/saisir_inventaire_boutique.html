@@ -117,6 +117,12 @@ kbd {
             <div id="srDropdown"></div>
         </div>
 
+        <!-- Ajout d'un article absent de l'inventaire -->
+        <button type="button" id="srNewArticleBtn" class="btn btn-sm btn-outline-success"
+                style="white-space:nowrap;" title="Ajouter un article qui n'existe pas encore dans cet inventaire">
+            <i class="fas fa-plus-circle me-1"></i>Nouvel article
+        </button>
+
         <!-- Champs article (cachés jusqu'à sélection) -->
         <div id="srQteWrap" class="align-items-center gap-2 flex-wrap" style="display:none;">
 
@@ -598,6 +604,55 @@ kbd {
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fermer</button>
             </div>
         </div>
+    </div>
+</div>
+
+<!-- Modal : nouvel article pendant l'inventaire en cours -->
+<div class="modal fade" id="nouvelArticleModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" id="nouvelArticleForm" autocomplete="off">
+            <div class="modal-header bg-success text-white py-2">
+                <h6 class="modal-title mb-0"><i class="fas fa-plus-circle me-1"></i>Nouvel article dans l'inventaire</h6>
+                <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div class="alert alert-info py-2 small mb-3">
+                    L'article rejoint l'inventaire en cours avec un stock théorique de 0 :
+                    la quantité comptée sera <strong>appliquée au stock à la régularisation</strong>.
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-bold mb-1" for="naCode">Code / code-barres</label>
+                    <input type="text" class="form-control form-control-sm" id="naCode" maxlength="50"
+                           placeholder="Laisser vide pour générer un code">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small fw-bold mb-1" for="naNom">Nom de l'article *</label>
+                    <input type="text" class="form-control form-control-sm" id="naNom" maxlength="100" required>
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-6">
+                        <label class="form-label small fw-bold mb-1" for="naPrix">Prix de vente (CDF)</label>
+                        <input type="number" class="form-control form-control-sm" id="naPrix" min="0" step="any" placeholder="0">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-bold mb-1" for="naCategorie">Catégorie</label>
+                        <select class="form-select form-select-sm" id="naCategorie"><option value="">—</option></select>
+                    </div>
+                </div>
+                <div class="mb-1">
+                    <label class="form-label small fw-bold mb-1" for="naQte">Quantité comptée</label>
+                    <input type="number" class="form-control form-control-sm" id="naQte" min="0" step="1"
+                           placeholder="Laisser vide si non comptée">
+                </div>
+                <div class="text-danger small mt-1" id="naError" style="display:none;"></div>
+            </div>
+            <div class="modal-footer py-2 border-0">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Annuler</button>
+                <button type="submit" class="btn btn-success btn-sm" id="naSubmitBtn">
+                    <i class="fas fa-plus me-1"></i>Ajouter
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -1293,7 +1348,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 // SAISIE RAPIDE — PANNEAU FIXE
 // =============================================
 (function() {
-    let ARTICLES, CATEGORIES, AJAX_URL, LOCK_URL, UNLOCK_URL, LOCKS_URL, RESET_URL, CSRF, CURRENT_USER_NOM;
+    let ARTICLES, CATEGORIES, AJAX_URL, NA_URL, LOCK_URL, UNLOCK_URL, LOCKS_URL, RESET_URL, CSRF, CURRENT_USER_NOM;
     let activeLocks = {};  // { ligne_id: nom_collaborateur }
     
     try {
@@ -1304,6 +1359,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         UNLOCK_URL      = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/unlock-ligne/';
         LOCKS_URL       = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/locks/';
         RESET_URL       = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/reset-ligne/';
+        NA_URL          = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/ajouter-article/';
         CSRF            = '{{ csrf_token }}';
         CURRENT_USER_NOM = '{{ current_user_nom|escapejs }}';
     } catch(e) {
@@ -1619,6 +1675,123 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         setTimeout(function() { t.remove(); }, 3000);
     }
 
+    // ---- Ajout d'un article absent de l'inventaire en cours ----
+    function escapeHtml(valeur) {
+        return String(valeur == null ? '' : valeur).replace(/[&<>"']/g, function(c) {
+            return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+        });
+    }
+
+    function ouvrirNouvelArticle(code, nom) {
+        const modalEl = document.getElementById('nouvelArticleModal');
+        document.getElementById('naCode').value = code || '';
+        document.getElementById('naNom').value = nom || '';
+        document.getElementById('naPrix').value = '';
+        document.getElementById('naQte').value = '';
+        document.getElementById('naError').style.display = 'none';
+        document.getElementById('naSubmitBtn').disabled = false;
+
+        const selectCat = document.getElementById('naCategorie');
+        selectCat.value = '';
+        if (selectCat.options.length <= 1) {
+            CATEGORIES.forEach(function(c) {
+                const opt = document.createElement('option');
+                opt.value = c.id;
+                opt.textContent = c.nom;
+                selectCat.appendChild(opt);
+            });
+        }
+
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        setTimeout(function() {
+            const cible = nom ? document.getElementById('naCode') : document.getElementById('naNom');
+            cible.focus();
+            if (cible.select) cible.select();
+        }, 350);
+    }
+    window.ouvrirNouvelArticle = ouvrirNouvelArticle;
+
+    function openCreateSuggestion(query) {
+        srDropdown.innerHTML = '';
+        activeIdx = -1;
+        articlesList = [];
+        const div = document.createElement('div');
+        div.className = 'sr-item';
+        div.style.cssText = 'color:#198754;font-weight:600;';
+        div.innerHTML = '<i class="fas fa-plus-circle me-1"></i>Créer « <strong>' + escapeHtml(query) + '</strong> »';
+        div.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            ouvrirNouvelArticle('', query);
+        });
+        srDropdown.appendChild(div);
+        srDropdown.style.display = 'block';
+    }
+
+    document.getElementById('srNewArticleBtn').addEventListener('click', function() {
+        ouvrirNouvelArticle('', document.getElementById('srSearch').value.trim());
+    });
+
+    document.getElementById('nouvelArticleForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const erreur = document.getElementById('naError');
+        const nom = document.getElementById('naNom').value.trim();
+        if (!nom) {
+            erreur.textContent = "Le nom de l'article est obligatoire";
+            erreur.style.display = 'block';
+            return;
+        }
+        erreur.style.display = 'none';
+
+        const bouton = document.getElementById('naSubmitBtn');
+        bouton.disabled = true;
+        const quantiteBrute = document.getElementById('naQte').value;
+
+        postJson(NA_URL, {
+            code: document.getElementById('naCode').value.trim(),
+            nom: nom,
+            prix_vente: document.getElementById('naPrix').value || null,
+            categorie_id: document.getElementById('naCategorie').value || null,
+            quantite: quantiteBrute === '' ? null : parseInt(quantiteBrute, 10),
+        }).then(function(d) {
+            if (!d.success) {
+                erreur.textContent = d.error || 'Erreur lors de la création';
+                erreur.style.display = 'block';
+                return;
+            }
+
+            const entree = {
+                ligne_id: d.ligne_id, article_id: d.article_id, nom: d.article_nom, code: d.article_code,
+                codes: [d.article_code], stock_theorique: d.stock_theorique, stock_physique: d.stock_physique,
+                assigne_a: d.assigne_a || '', quantite_stock: d.quantite_stock, unite_base: d.unite_base,
+                prix_vente: d.prix_vente, devise: d.devise,
+                categorie_id: d.categorie_id, categorie_nom: d.categorie_nom,
+            };
+            const pos = ARTICLES.findIndex(function(x) { return x.ligne_id === d.ligne_id; });
+            if (pos >= 0) { ARTICLES[pos] = entree; } else { ARTICLES.push(entree); }
+
+            srNbSaisis.textContent = d.nb_saisis + ' saisis';
+            srNbRestants.textContent = (d.nb_total - d.nb_saisis) + ' restants';
+
+            const compte = (d.stock_physique !== null && d.stock_physique !== undefined);
+            if (compte) addSessionEntry(d, d.stock_physique);
+
+            bootstrap.Modal.getInstance(document.getElementById('nouvelArticleModal')).hide();
+            showToast(
+                '<i class="fas fa-plus-circle me-2"></i><strong>' + escapeHtml(d.article_nom)
+                + '</strong> ajouté à l\'inventaire'
+                + (compte ? ' (' + d.stock_physique + ' compté(s), écart ' + d.ecart + ')' : ''),
+                'success'
+            );
+            playBeep();
+            resetPanel();
+        }).catch(function() {
+            erreur.textContent = 'Erreur réseau';
+            erreur.style.display = 'block';
+        }).finally(function() {
+            bouton.disabled = false;
+        });
+    });
+
     function saveArticle() {
         if (!selectedArticle) return;
         const qte = parseInt(srQte.value);
@@ -1713,6 +1886,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             });
             return (a.nom || '').toLowerCase().includes(q) || codeOk;
         }).slice(0, 12);
+        if (!results.length) { openCreateSuggestion(this.value.trim()); return; }
         openDropdown(results);
     });
 
@@ -1731,6 +1905,8 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 selectArticle(articlesList[activeIdx]);
             } else if (articlesList.length === 1) {
                 selectArticle(articlesList[0]);
+            } else if (!articlesList.length) {
+                ouvrirNouvelArticle('', srSearch.value.trim());
             }
             return;
         } else if (e.key === 'Escape') {

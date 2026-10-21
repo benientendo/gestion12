@@ -8525,6 +8525,152 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
 @login_required
 @commercant_required
 @boutique_access_required
+@require_POST
+def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
+    """AJAX : rattacher un article absent de l'inventaire en cours.
+
+    L'article est créé dans la boutique s'il n'existe pas déjà (réutilisé sinon),
+    puis rattaché à l'inventaire avec un stock théorique de 0 : la quantité
+    comptée devient un écart, pris en compte à la régularisation.
+    """
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique, statut='EN_COURS')
+
+    try:
+        data = json.loads(request.body)
+    except (ValueError, TypeError):
+        return JsonResponse({'success': False, 'error': 'Données invalides'}, status=400)
+
+    code = str(data.get('code') or '').strip()
+    nom = str(data.get('nom') or '').strip()
+    article_existant = (
+        Article.objects.filter(boutique=boutique, code__iexact=code).first() if code else None
+    )
+    if not nom and article_existant is None:
+        return JsonResponse({'success': False, 'error': "Le nom de l'article est obligatoire"},
+                            status=400)
+
+    if hasattr(request.user, 'profil_collaborateur'):
+        user_nom = request.user.profil_collaborateur.nom_complet
+    else:
+        user_nom = request.user.get_full_name() or request.user.username
+
+    try:
+        raw_prix = data.get('prix_vente')
+        prix_vente = Decimal(str(raw_prix)) if raw_prix not in (None, '') else Decimal('0')
+        if prix_vente < 0:
+            prix_vente = Decimal('0')
+    except (ValueError, TypeError, ArithmeticError):
+        prix_vente = Decimal('0')
+
+    categorie = None
+    if data.get('categorie_id'):
+        categorie = Categorie.objects.filter(id=data.get('categorie_id'), boutique=boutique).first()
+
+    try:
+        raw_qte = data.get('quantite')
+        quantite = int(raw_qte) if raw_qte not in (None, '') else None
+        if quantite is not None and quantite < 0:
+            quantite = None
+    except (ValueError, TypeError):
+        quantite = None
+
+    with transaction.atomic():
+        article = article_existant
+        article_cree = False
+
+        if article is None:
+            if not code:
+                code = f"{boutique.id}-{uuid.uuid4().hex[:8].upper()}"
+                while Article.objects.filter(code=code).exists():
+                    code = f"{boutique.id}-{uuid.uuid4().hex[:8].upper()}"
+            article = Article.objects.create(
+                boutique=boutique,
+                nom=nom,
+                code=code,
+                prix_vente=prix_vente,
+                prix_achat=0,
+                quantite_stock=0,
+                est_actif=True,
+                est_valide_client=True,
+                quantite_envoyee=0,
+                categorie=categorie,
+            )
+            article_cree = True
+        else:
+            champs = []
+            if not article.est_actif:
+                article.est_actif = True
+                champs.append('est_actif')
+            if categorie and article.categorie_id != categorie.id:
+                article.categorie = categorie
+                champs.append('categorie')
+            if champs:
+                article.save(update_fields=champs)
+
+        ligne, ligne_creee = LigneInventaire.objects.get_or_create(
+            inventaire=inventaire,
+            article=article,
+            defaults={
+                'stock_theorique': article.quantite_stock,
+                'prix_unitaire': (
+                    article.prix_achat if article.prix_achat and article.prix_achat > 0
+                    else article.prix_vente
+                ) or 0,
+            },
+        )
+
+        if quantite is not None and ligne.stock_physique is None:
+            ligne.stock_physique = quantite
+            ligne.saisi_par = request.user
+            ligne.assigne_a = user_nom
+            ligne.date_modification = timezone.now()
+            ligne.save()
+            HistoriqueSaisieInventaire.objects.create(
+                ligne_inventaire=ligne,
+                article=article,
+                inventaire=inventaire,
+                stock_physique_saisi=quantite,
+                stock_theorique_au_moment=ligne.stock_theorique,
+                ecart_au_moment=ligne.ecart,
+                saisi_par=request.user,
+                nom_saisi_par=user_nom,
+            )
+
+        inventaire.calculer_statistiques()
+
+    if article_cree:
+        from .websocket_utils import notify_article_created, notify_sync_required
+        notify_article_created(boutique.id, article)
+        notify_sync_required(boutique.id, "Nouvel article ajouté pendant l'inventaire")
+
+    return JsonResponse({
+        'success': True,
+        'article_cree': article_cree,
+        'ligne_creee': ligne_creee,
+        'ligne_id': ligne.id,
+        'article_id': article.id,
+        'article_nom': article.nom,
+        'article_code': article.code,
+        'stock_theorique': ligne.stock_theorique,
+        'stock_physique': ligne.stock_physique,
+        'ecart': ligne.ecart,
+        'prix_vente': float(article.prix_vente),
+        'devise': article.devise,
+        'categorie_id': article.categorie_id,
+        'categorie_nom': article.categorie.nom if article.categorie else '',
+        'unite_base': article.unite_base or 'pcs',
+        'quantite_stock': article.quantite_stock,
+        'assigne_a': ligne.assigne_a or '',
+        'saisi_par_nom': user_nom,
+        'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
+        'nb_total': inventaire.lignes.count(),
+    })
+
+
+@login_required
+@commercant_required
+@boutique_access_required
 def reset_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
     """AJAX: Réinitialise le stock physique d'une ligne d'inventaire."""
     try:

@@ -146,6 +146,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/', views_commercant.detail_inventaire_boutique, name='detail_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/saisir/', views_commercant.saisir_inventaire_boutique, name='saisir_inventaire_boutique'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/saisir-ligne/', views_commercant.saisir_ligne_inventaire_ajax, name='saisir_ligne_inventaire_ajax'),
+path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/ajouter-article/', views_commercant.ajouter_article_inventaire_ajax, name='ajouter_article_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/reset-ligne/', views_commercant.reset_ligne_inventaire_ajax, name='reset_ligne_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/lock-ligne/', views_commercant.lock_ligne_inventaire_ajax, name='lock_ligne_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/unlock-ligne/', views_commercant.unlock_ligne_inventaire_ajax, name='unlock_ligne_inventaire_ajax'),
