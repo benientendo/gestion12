@@ -157,6 +157,7 @@ class AjoutArticleTest(AjoutArticleInventaireBase):
 
         ligne = LigneInventaire.objects.get(inventaire=self.inventaire, article=article)
         self.assertEqual(ligne.prix_unitaire, 800)
+        self.assertEqual(r.json()['prix_unitaire_ligne'], 800.0)
         self.assertEqual(ligne.ecart, 3)
         self.assertEqual(ligne.valeur_ecart, 2400)
 
