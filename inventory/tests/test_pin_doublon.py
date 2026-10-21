@@ -79,6 +79,17 @@ class PinEnDoubleTest(PinDoubleBase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, '4 chiffres')
 
+    def test_utilisateur_desactive_rend_un_message(self):
+        """Django lève PermissionDenied dans auth.login() → pas de 500."""
+        self.autre.code_pin = '9876'
+        self.autre.save(update_fields=['code_pin'])
+        self.autre.user.is_active = False
+        self.autre.user.save(update_fields=['is_active'])
+
+        r = self._post_pin('9876')
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'désactivé')
+
 
 class CreationCollaborateurPinTest(PinDoubleBase):
 
