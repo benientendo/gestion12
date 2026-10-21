@@ -6,7 +6,43 @@ from django.contrib.auth import login
 from django.contrib import messages
 from django.views.decorators.http import require_http_methods
 
-from .models import Collaborateur
+from .models import Collaborateur, Inventaire
+
+
+def accueil_collaborateur(request):
+    """Point d'arrivée d'un collaborateur connecté par code PIN.
+
+    Un collaborateur n'a PAS de profil commerçant : lire `profil_commercant`
+    (dashboard, liste d'inventaires…) lève RelatedObjectDoesNotExist → erreur
+    500. On le mène donc vers l'inventaire en cours, sinon vers la page PIN
+    avec un message explicite.
+    """
+    collaborateur = Collaborateur.objects.filter(
+        user=request.user, est_actif=True
+    ).select_related('commercant').first()
+
+    if collaborateur is None:
+        messages.error(request, "Vous n'avez pas de profil commerçant ou collaborateur.")
+        return redirect('inventory:login_commercant')
+
+    inventaire = Inventaire.objects.filter(
+        boutique__commercant=collaborateur.commercant,
+        statut='EN_COURS',
+    ).select_related('boutique').first()
+
+    if inventaire:
+        return redirect(
+            'inventory:saisir_inventaire_boutique',
+            boutique_id=inventaire.boutique.id,
+            inventaire_id=inventaire.id,
+        )
+
+    return render(request, 'inventory/commercant/login_pin.html', {
+        'notice': (
+            "Aucun inventaire en cours pour le moment. "
+            "Reconnectez-vous avec votre PIN dès qu'un inventaire sera démarré."
+        ),
+    })
 
 
 @require_http_methods(["GET", "POST"])
@@ -41,26 +77,9 @@ def login_pin(request):
                 f"Bienvenue {collaborateur.nom_complet} ! Connexion rapide réussie."
             )
             
-            # Rediriger vers l'inventaire en cours si disponible
-            from .models import Inventaire
-            
-            # Chercher un inventaire en cours pour ce commerçant
-            inventaire_en_cours = Inventaire.objects.filter(
-                boutique__commercant=collaborateur.commercant,
-                statut='EN_COURS'
-            ).first()
-            
-            if inventaire_en_cours:
-                # Rediriger directement vers la saisie d'inventaire
-                return redirect(
-                    'inventory:saisir_inventaire_boutique',
-                    boutique_id=inventaire_en_cours.boutique.id,
-                    inventaire_id=inventaire_en_cours.id
-                )
-            else:
-                # Si pas d'inventaire en cours, rediriger vers le dashboard
-                next_url = request.GET.get('next', 'inventory:commercant_dashboard')
-                return redirect(next_url)
+            # Inventaire en cours → saisie ; sinon accueil collaborateur
+            # (et surtout PAS le dashboard commerçant : erreur 500).
+            return accueil_collaborateur(request)
             
         except Collaborateur.DoesNotExist:
             return render(request, 'inventory/commercant/login_pin.html', {

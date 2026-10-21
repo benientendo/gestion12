@@ -22,16 +22,18 @@
             </nav>
         </div>
         <div>
+            {% if not is_collaborateur %}
             <a href="{% url 'inventory:gestion_collaborateurs' %}" class="btn btn-success me-2" title="Gérer vos employés pour l'inventaire">
                 <i class="fas fa-users me-1"></i>Gérer les collaborateurs
             </a>
+            {% endif %}
             <a href="{% url 'inventory:nouvel_inventaire_boutique' boutique.id %}" class="btn btn-primary">
                 <i class="fas fa-plus"></i> Nouvel inventaire
             </a>
         </div>
     </div>
 
-    {% if nb_collaborateurs == 0 %}
+    {% if nb_collaborateurs == 0 and not is_collaborateur %}
     <div class="alert alert-info alert-dismissible fade show" role="alert">
         <div class="d-flex align-items-start">
             <i class="fas fa-info-circle fa-2x me-3 mt-1"></i>

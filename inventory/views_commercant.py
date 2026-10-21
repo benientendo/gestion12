@@ -167,6 +167,26 @@ def boutique_access_required(view_func):
     return wrapper
 
 
+def commercant_utilisateur(user):
+    """Commerçant du profil courant, ou celui du collaborateur connecté par PIN.
+
+    `commercant_required` (celui de ce module) laisse passer les collaborateurs,
+    mais ils n'ont aucun `profil_commercant` : lire cet attribut lève alors
+    RelatedObjectDoesNotExist → erreur 500. On retombe sur le commerçant rattaché
+    au collaborateur, qui est le bon propriétaire pour toutes les requêtes.
+    """
+    try:
+        return user.profil_commercant
+    except Commercant.DoesNotExist:
+        from .models import Collaborateur
+        collaborateur = Collaborateur.objects.filter(
+            user=user, est_actif=True
+        ).select_related('commercant').first()
+        if collaborateur:
+            return collaborateur.commercant
+        raise
+
+
 def journee_non_cloturee(view_func):
     """Bloque la mutation (entrées, prix, stock) si la journée est clôturée."""
     def wrapper(request, boutique_id, *args, **kwargs):
@@ -230,7 +250,14 @@ def logout_commercant(request):
 @commercant_required
 def dashboard_commercant(request):
     """Tableau de bord principal du commerçant"""
-    commercant = request.user.profil_commercant
+    try:
+        commercant = request.user.profil_commercant
+    except Commercant.DoesNotExist:
+        # Collaborateur connecté par PIN (logo / menu de base.html) : il n'a
+        # pas de dashboard commerçant → inventaire en cours ou message,
+        # au lieu d'une erreur 500.
+        from .views_pin_login import accueil_collaborateur
+        return accueil_collaborateur(request)
     
     # Statistiques générales - Requêtes optimisées
     boutiques_toutes = commercant.boutiques.select_related('commercant').prefetch_related('clients', 'articles')
@@ -1314,7 +1341,7 @@ def creer_terminal(request, boutique_id):
 def api_stats_boutique(request, boutique_id):
     """API pour récupérer les statistiques d'une boutique en temps réel"""
     try:
-        commercant = request.user.profil_commercant
+        commercant = commercant_utilisateur(request.user)
         boutique = get_object_or_404(Boutique, id=boutique_id, commercant=commercant)
         
         # Statistiques d'aujourd'hui
@@ -1825,7 +1852,7 @@ def entrer_boutique(request, boutique_id):
         'annulations_mois': annulations_mois,
         'montant_annule_mois': montant_annule_mois,
         # 📦 Dépôt du commerçant (pour lien rapide)
-        'depot': Boutique.objects.filter(commercant=request.user.profil_commercant, est_depot=True).first(),
+        'depot': Boutique.objects.filter(commercant=commercant_utilisateur(request.user), est_depot=True).first(),
     }
     
     return render(request, 'inventory/boutique/dashboard.html', context)
@@ -8076,7 +8103,9 @@ def regulariser_inventaire(request, depot_id, inventaire_id):
 def liste_inventaires_boutique(request, boutique_id):
     """Liste des inventaires d'une boutique."""
     boutique = request.boutique
-    commercant = request.user.profil_commercant
+    # Le commerçant de la boutique, pas le profil de l'utilisateur : un
+    # collaborateur (connexion PIN) n'a pas de profil_commercant → 500.
+    commercant = boutique.commercant
     inventaires = Inventaire.objects.filter(boutique=boutique).order_by('-date_creation')
     
     # Compter les collaborateurs actifs pour afficher un message si nécessaire
@@ -8087,6 +8116,7 @@ def liste_inventaires_boutique(request, boutique_id):
         'boutique': boutique,
         'inventaires': inventaires,
         'nb_collaborateurs': nb_collaborateurs,
+        'is_collaborateur': hasattr(request.user, 'profil_collaborateur'),
     }
     return render(request, 'inventory/commercant/liste_inventaires_boutique.html', context)
 
@@ -9867,7 +9897,9 @@ def verifier_code_barre_global(request):
         return JsonResponse({'existe': False})
 
     try:
-        commercant = request.user.profil_commercant
+        # Collaborateur (connexion PIN) : repli sur son commerçant, sinon le
+        # scanner global renvoie « Pas commerçant » et la recherche échoue.
+        commercant = commercant_utilisateur(request.user)
     except Commercant.DoesNotExist:
         return JsonResponse({'existe': False, 'message': 'Pas commerçant'})
 
@@ -9970,7 +10002,8 @@ def modifier_article_global(request):
         return JsonResponse({'success': False, 'message': 'Méthode non autorisée'}, status=405)
 
     try:
-        commercant = request.user.profil_commercant
+        # Idem : un collaborateur doit pouvoir corriger via le scanner.
+        commercant = commercant_utilisateur(request.user)
     except Commercant.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Pas commerçant'})
 
