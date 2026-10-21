@@ -126,6 +126,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/transfert/', views_commercant.transfert_entre_boutiques, name='transfert_entre_boutiques'),
     path('commercant/boutiques/<int:boutique_id>/articles/importer/', views_commercant.importer_articles_entre_boutiques, name='importer_articles_entre_boutiques'),
     path('commercant/boutiques/<int:boutique_id>/articles/sync-variantes/', views_commercant.sync_variantes_entre_boutiques, name='sync_variantes_entre_boutiques'),
+    path('commercant/boutiques/<int:boutique_id>/articles/copier-prix/', views_commercant.copier_prix_entre_boutiques, name='copier_prix_entre_boutiques'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/ajuster-stock/', views_commercant.ajuster_stock_article, name='ajuster_stock_article'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/modifier-prix/', views_commercant.modifier_prix_article, name='modifier_prix_article'),
     path('commercant/boutiques/<int:boutique_id>/articles/<int:article_id>/qte-attribuee/', views_commercant.maj_quantite_attribuee_boutique, name='maj_quantite_attribuee_boutique'),

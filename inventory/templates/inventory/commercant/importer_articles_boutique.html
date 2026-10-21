@@ -50,7 +50,9 @@
         <i class="fas fa-info-circle"></i>
         Les articles importés seront créés dans <strong>{{ boutique.nom }}</strong> avec <strong>quantité = 0</strong> et <strong>prix = 0</strong>.
         Les <strong>variantes</strong> de chaque article seront également copiées (avec stock = 0).
-        Vous pourrez ensuite ajuster les prix et le stock manuellement.
+        Une fois l'import fait, utilisez <strong>« Copier les prix »</strong> pour recopier les
+        <strong>prix d'achat</strong> et <strong>prix de vente</strong> des articles déjà présents
+        (appariés par code ou par nom). Le stock, les variantes et les catégories ne sont pas touchés.
     </div>
 
     {% if messages %}
@@ -107,6 +109,9 @@
             <button type="button" class="btn btn-primary btn-sm" id="btnImporter" onclick="submitImport()" disabled>
                 <i class="fas fa-file-import me-1"></i>Importer la sélection
             </button>
+            <button type="button" class="btn btn-success btn-sm" onclick="submitCopierPrix()" title="Recopier les prix d'achat et de vente des articles déjà présents depuis le point de vente source">
+                <i class="fas fa-tags me-1"></i>Copier les prix
+            </button>
             <button type="button" class="btn btn-outline-info btn-sm" onclick="submitSyncVariantes()" title="Copier les variantes manquantes pour les articles déjà importés">
                 <i class="fas fa-sync me-1"></i>Sync variantes
             </button>
@@ -122,6 +127,12 @@
 
     <!-- Formulaire caché sync variantes -->
     <form id="syncVariantesForm" method="post" action="{% url 'inventory:sync_variantes_entre_boutiques' boutique.id %}" style="display:none;">
+        {% csrf_token %}
+        <input type="hidden" name="boutique_source" value="{{ boutique_source.id }}">
+    </form>
+
+    <!-- Formulaire caché copie des prix -->
+    <form id="copierPrixForm" method="post" action="{% url 'inventory:copier_prix_entre_boutiques' boutique.id %}" style="display:none;">
         {% csrf_token %}
         <input type="hidden" name="boutique_source" value="{{ boutique_source.id }}">
     </form>
@@ -259,6 +270,16 @@ function submitImport() {
 function submitSyncVariantes() {
     if (!confirm('Synchroniser les variantes manquantes depuis {{ boutique_source.nom }} vers {{ boutique.nom }} ?\n\nLes variantes seront copiées avec stock = 0 pour tous les articles déjà présents.')) return;
     document.getElementById('syncVariantesForm').submit();
+}
+
+function submitCopierPrix() {
+    if (!confirm('Recopier les prix d\'achat et de vente de {{ boutique_source.nom }} vers {{ boutique.nom }} ?\n\n' +
+                 '• Appariement par code (ou nom identique)\n' +
+                 '• Seuls les prix sont modifiés (achat, vente, devise, conversion USD)\n' +
+                 '• Le stock, les variantes et les catégories ne sont pas touchés\n' +
+                 '• Un prix source à 0 n\'écrase jamais un prix existant\n\n' +
+                 'Les terminaux seront resynchronisés automatiquement.')) return;
+    document.getElementById('copierPrixForm').submit();
 }
 </script>
 {% endblock %}

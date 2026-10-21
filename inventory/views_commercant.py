@@ -3811,6 +3811,155 @@ def sync_variantes_entre_boutiques(request, boutique_id):
     return redirect(f"/commercant/boutiques/{boutique.id}/articles/importer/?source={source_id}")
 
 
+@login_required
+@commercant_required
+@boutique_access_required
+def copier_prix_entre_boutiques(request, boutique_id):
+    """Recopier prix_achat / prix_vente / devise depuis un autre point de vente
+    (meme commerçant), article par article.
+
+    Appariement : par code (prioritaire) puis par nom identique, exactement la
+    regle utilisee par l'import et par les transferts.
+
+    Le stock, les variantes et la categorie de la destination ne sont jamais
+    toches. Un prix source a 0 (ou absent) n'ecrase jamais un prix destination
+    non nul (cas d'un article jamais tarife a la source).
+
+    Les champs de conversion prix_vente_usd / prix_achat_usd sont recopies
+    aussi : ils sont saisis manuellement (aucun signal ne les recalcule) et
+    une vente en USD facture 0 si le champ est vide sur la destination.
+
+    Pas de signal d'ajustement de prix ici : un update() brut evite de creer
+    une notification + un push FCM par article (1147 articles = 1147 pushes).
+    Seule une resynchronisation unique est demandee au terminal a la fin, avec
+    last_updated et version mis a jour pour que la sync incremental voie le
+    changement.
+    """
+    from .websocket_utils import notify_sync_required
+
+    commercant = request.user.profil_commercant
+    boutique = request.boutique
+
+    if request.method != 'POST':
+        return redirect('inventory:importer_articles_entre_boutiques', boutique_id=boutique.id)
+
+    autres_boutiques = commercant.boutiques.filter(
+        est_active=True
+    ).exclude(id=boutique.id)
+
+    source_id = request.POST.get('boutique_source')
+    if not source_id:
+        messages.error(request, "Veuillez sélectionner un point de vente source")
+        return redirect('inventory:importer_articles_entre_boutiques', boutique_id=boutique.id)
+
+    boutique_src = autres_boutiques.filter(id=source_id).first()
+    if not boutique_src:
+        messages.error(request, "Point de vente source introuvable")
+        return redirect('inventory:importer_articles_entre_boutiques', boutique_id=boutique.id)
+
+    par_code = {}
+    par_nom = {}
+    for art in Article.objects.filter(boutique=boutique_src, est_actif=True):
+        code = (art.code or '').strip().upper()
+        if code and code not in par_code:
+            par_code[code] = art
+        nom = (art.nom or '').strip().casefold()
+        if nom and nom not in par_nom:
+            par_nom[nom] = art
+
+    def _cible(src_val, dest_val):
+        """N'ecrase jamais un prix existant par un zero (ou champ vide) source."""
+        if (src_val or 0) == 0:
+            return dest_val
+        return src_val
+
+    maintenant = timezone.now()
+    appareilles = 0
+    modifies = 0
+    deja_a_jour = 0
+    sans_prix_source = 0
+
+    try:
+        with transaction.atomic():
+            for dest in Article.objects.filter(boutique=boutique, est_actif=True):
+                code = (dest.code or '').strip().upper()
+                src = par_code.get(code)
+                if src is None:
+                    src = par_nom.get((dest.nom or '').strip().casefold())
+                if src is None or src.id == dest.id:
+                    continue
+                appareilles += 1
+
+                nouveau_achat = _cible(src.prix_achat, dest.prix_achat)
+                nouveau_vente = _cible(src.prix_vente, dest.prix_vente)
+                nouveau_achat_usd = _cible(src.prix_achat_usd, dest.prix_achat_usd)
+                nouveau_vente_usd = _cible(src.prix_vente_usd, dest.prix_vente_usd)
+                nouvelle_devise = src.devise or dest.devise or 'CDF'
+
+                if (src.prix_achat or 0) == 0 and (dest.prix_achat or 0) != 0:
+                    sans_prix_source += 1
+                if (src.prix_vente or 0) == 0 and (dest.prix_vente or 0) != 0:
+                    sans_prix_source += 1
+
+                if (dest.prix_achat == nouveau_achat
+                        and dest.prix_vente == nouveau_vente
+                        and dest.prix_achat_usd == nouveau_achat_usd
+                        and dest.prix_vente_usd == nouveau_vente_usd
+                        and dest.devise == nouvelle_devise):
+                    deja_a_jour += 1
+                    continue
+
+                Article.objects.filter(id=dest.id).update(
+                    prix_achat=nouveau_achat,
+                    prix_vente=nouveau_vente,
+                    prix_achat_usd=nouveau_achat_usd,
+                    prix_vente_usd=nouveau_vente_usd,
+                    devise=nouvelle_devise,
+                    version=F('version') + 1,
+                    last_updated=maintenant,
+                )
+                modifies += 1
+
+    except Exception as e:
+        messages.error(request, f"Erreur pendant la copie des prix : {str(e)}")
+        return redirect('inventory:importer_articles_entre_boutiques', boutique_id=boutique.id)
+
+    if appareilles == 0:
+        messages.warning(
+            request,
+            f"Aucun article de {boutique.nom} ne correspond (par code ou par nom) "
+            f"aux articles de {boutique_src.nom}"
+        )
+    else:
+        if modifies > 0:
+            messages.success(
+                request,
+                f"{modifies} prix(s) copié(s) de {boutique_src.nom} vers {boutique.nom} "
+                f"({appareilles} article(s) apparié(s), {deja_a_jour} déjà à jour)"
+            )
+            try:
+                notify_sync_required(
+                    boutique.id,
+                    f"{modifies} prix(s) copié(s) depuis {boutique_src.nom}",
+                )
+            except Exception:
+                pass
+        else:
+            messages.info(
+                request,
+                f"Les prix sont déjà identiques entre {boutique_src.nom} et {boutique.nom} "
+                f"({appareilles} article(s) apparié(s))"
+            )
+        if sans_prix_source > 0:
+            messages.warning(
+                request,
+                f"{sans_prix_source} prix source étaient à 0 et n'ont pas écrasé "
+                f"le prix existant de la destination"
+            )
+
+    return redirect(f"/commercant/boutiques/{boutique.id}/articles/importer/?source={source_id}")
+
+
 # ===== GESTION DES VARIANTES D'ARTICLES =====
 
 @login_required
