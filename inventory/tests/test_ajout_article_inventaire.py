@@ -145,6 +145,39 @@ class AjoutArticleTest(AjoutArticleInventaireBase):
         self.assertEqual(r.status_code, 400)
         self.assertFalse(r.json()['success'])
 
+    def test_prix_achat_enregistre_et_devient_le_prix_unitaire(self):
+        r = self._post(code='INV-PA', nom='Produit PA', prix_achat='800',
+                       prix_vente='1500', quantite=3)
+        self.assertTrue(r.json()['success'])
+        self.assertEqual(r.json()['prix_achat'], 800.0)
+
+        article = Article.objects.get(boutique=self.boutique, code='INV-PA')
+        self.assertEqual(article.prix_achat, 800)
+        self.assertEqual(article.prix_vente, 1500)
+
+        ligne = LigneInventaire.objects.get(inventaire=self.inventaire, article=article)
+        self.assertEqual(ligne.prix_unitaire, 800)
+        self.assertEqual(ligne.ecart, 3)
+        self.assertEqual(ligne.valeur_ecart, 2400)
+
+    def test_sans_prix_achat_le_prix_unitaire_est_le_prix_de_vente(self):
+        r = self._post(code='INV-PA2', nom='Produit PV', prix_vente='1000')
+        self.assertTrue(r.json()['success'])
+        ligne = LigneInventaire.objects.get(id=r.json()['ligne_id'])
+        self.assertEqual(ligne.prix_unitaire, 1000)
+
+    def test_prix_achat_renseigne_sur_un_article_existant(self):
+        r = self._post(code='INV-ART-1', prix_achat='600')
+        self.assertTrue(r.json()['success'])
+        self.assertFalse(r.json()['article_cree'])
+
+        article = Article.objects.get(boutique=self.boutique, code='INV-ART-1')
+        self.assertEqual(article.prix_achat, 600)
+        self.assertEqual(article.prix_vente, 1000)
+
+        ligne = LigneInventaire.objects.get(inventaire=self.inventaire, article=article)
+        self.assertEqual(ligne.prix_unitaire, 600)
+
     def test_collegue_peut_ajouter(self):
         user_collab = User.objects.create_user(username='inv_collab', password='x')
         Collaborateur.objects.create(

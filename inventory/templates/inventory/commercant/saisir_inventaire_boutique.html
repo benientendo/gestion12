@@ -631,18 +631,27 @@ kbd {
                 </div>
                 <div class="row g-2 mb-2">
                     <div class="col-6">
+                        <label class="form-label small fw-bold mb-1" for="naPrixAchat">Prix d'achat (CDF)</label>
+                        <input type="number" class="form-control form-control-sm" id="naPrixAchat" min="0" step="any" placeholder="0">
+                    </div>
+                    <div class="col-6">
                         <label class="form-label small fw-bold mb-1" for="naPrix">Prix de vente (CDF)</label>
                         <input type="number" class="form-control form-control-sm" id="naPrix" min="0" step="any" placeholder="0">
                     </div>
+                </div>
+                <div class="row g-2 mb-1">
                     <div class="col-6">
                         <label class="form-label small fw-bold mb-1" for="naCategorie">Catégorie</label>
                         <select class="form-select form-select-sm" id="naCategorie"><option value="">—</option></select>
                     </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-bold mb-1" for="naQte">Quantité comptée</label>
+                        <input type="number" class="form-control form-control-sm" id="naQte" min="0" step="1"
+                               placeholder="Laisser vide si non comptée">
+                    </div>
                 </div>
-                <div class="mb-1">
-                    <label class="form-label small fw-bold mb-1" for="naQte">Quantité comptée</label>
-                    <input type="number" class="form-control form-control-sm" id="naQte" min="0" step="1"
-                           placeholder="Laisser vide si non comptée">
+                <div class="text-muted small mb-1">
+                    Le prix d'achat sert au calcul de la valeur des écarts à la régularisation.
                 </div>
                 <div class="text-danger small mt-1" id="naError" style="display:none;"></div>
             </div>
@@ -1686,6 +1695,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         const modalEl = document.getElementById('nouvelArticleModal');
         document.getElementById('naCode').value = code || '';
         document.getElementById('naNom').value = nom || '';
+        document.getElementById('naPrixAchat').value = '';
         document.getElementById('naPrix').value = '';
         document.getElementById('naQte').value = '';
         document.getElementById('naError').style.display = 'none';
@@ -1749,6 +1759,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         postJson(NA_URL, {
             code: document.getElementById('naCode').value.trim(),
             nom: nom,
+            prix_achat: document.getElementById('naPrixAchat').value || null,
             prix_vente: document.getElementById('naPrix').value || null,
             categorie_id: document.getElementById('naCategorie').value || null,
             quantite: quantiteBrute === '' ? null : parseInt(quantiteBrute, 10),

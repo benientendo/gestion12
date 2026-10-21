@@ -8563,6 +8563,14 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
     except (ValueError, TypeError, ArithmeticError):
         prix_vente = Decimal('0')
 
+    try:
+        raw_prix_achat = data.get('prix_achat')
+        prix_achat_saisi = Decimal(str(raw_prix_achat)) if raw_prix_achat not in (None, '') else None
+        if prix_achat_saisi is not None and prix_achat_saisi < 0:
+            prix_achat_saisi = None
+    except (ValueError, TypeError, ArithmeticError):
+        prix_achat_saisi = None
+
     categorie = None
     if data.get('categorie_id'):
         categorie = Categorie.objects.filter(id=data.get('categorie_id'), boutique=boutique).first()
@@ -8589,7 +8597,7 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
                 nom=nom,
                 code=code,
                 prix_vente=prix_vente,
-                prix_achat=0,
+                prix_achat=prix_achat_saisi or 0,
                 quantite_stock=0,
                 est_actif=True,
                 est_valide_client=True,
@@ -8605,6 +8613,9 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
             if categorie and article.categorie_id != categorie.id:
                 article.categorie = categorie
                 champs.append('categorie')
+            if prix_achat_saisi is not None and prix_achat_saisi != article.prix_achat:
+                article.prix_achat = prix_achat_saisi
+                champs.append('prix_achat')
             if champs:
                 article.save(update_fields=champs)
 
@@ -8619,6 +8630,15 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
                 ) or 0,
             },
         )
+
+        if not ligne_creee and prix_achat_saisi is not None:
+            prix_unitaire = (
+                article.prix_achat if article.prix_achat and article.prix_achat > 0
+                else article.prix_vente
+            ) or 0
+            if ligne.prix_unitaire != prix_unitaire:
+                ligne.prix_unitaire = prix_unitaire
+                ligne.save()
 
         if quantite is not None and ligne.stock_physique is None:
             ligne.stock_physique = quantite
@@ -8656,6 +8676,8 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
         'stock_physique': ligne.stock_physique,
         'ecart': ligne.ecart,
         'prix_vente': float(article.prix_vente),
+        'prix_achat': float(article.prix_achat),
+        'prix_unitaire_ligne': float(ligne.prix_unitaire),
         'devise': article.devise,
         'categorie_id': article.categorie_id,
         'categorie_nom': article.categorie.nom if article.categorie else '',
