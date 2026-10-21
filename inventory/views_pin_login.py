@@ -1,12 +1,26 @@
 """
 Vue pour la connexion rapide par code PIN
 """
+import logging
+
 from django.shortcuts import render, redirect
 from django.contrib.auth import login
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from .models import Collaborateur, Inventaire
+
+logger = logging.getLogger(__name__)
+
+
+def _page_pin(request, error=None, notice=None):
+    """Rend la page PIN (jamais une erreur 500 pour un terrain mobile)."""
+    return render(request, 'inventory/commercant/login_pin.html', {
+        'error': error,
+        'notice': notice,
+    })
 
 
 def accueil_collaborateur(request):
@@ -37,53 +51,78 @@ def accueil_collaborateur(request):
             inventaire_id=inventaire.id,
         )
 
-    return render(request, 'inventory/commercant/login_pin.html', {
-        'notice': (
+    return _page_pin(
+        request,
+        notice=(
             "Aucun inventaire en cours pour le moment. "
             "Reconnectez-vous avec votre PIN dès qu'un inventaire sera démarré."
         ),
-    })
+    )
 
 
 @require_http_methods(["GET", "POST"])
 def login_pin(request):
-    """Connexion rapide par code PIN pour les collaborateurs."""
-    
+    """Connexion rapide par code PIN pour les collaborateurs.
+
+    Aucune exception ne doit s'échapper : elle devient un message affiché sur
+    la page PIN (le terrain ne doit jamais voir une page 500).
+    """
     if request.method == 'POST':
         pin = request.POST.get('pin', '').strip()
-        
+
         if not pin or len(pin) < 4:
-            return render(request, 'inventory/commercant/login_pin.html', {
-                'error': 'Le code PIN doit contenir au moins 4 chiffres'
-            })
-        
-        try:
-            # Chercher le collaborateur avec ce PIN
-            collaborateur = Collaborateur.objects.select_related('user').get(
-                code_pin=pin,
-                est_actif=True
+            return _page_pin(request, error='Le code PIN doit contenir au moins 4 chiffres')
+
+        # `.get()` levait MultipleObjectsReturned si deux collaborateurs
+        # partagent le même PIN (aucune contrainte unique sur le champ) → 500.
+        candidats = list(
+            Collaborateur.objects.select_related('user', 'commercant')
+            .filter(code_pin=pin, est_actif=True)
+            .order_by('id')[:2]
+        )
+
+        if not candidats:
+            return _page_pin(request, error='Code PIN invalide ou compte inactif')
+
+        if len(candidats) > 1:
+            logger.warning(
+                "Code PIN %s partagé par les collaborateurs %s",
+                pin, [c.id for c in candidats],
             )
-            
-            # Connecter l'utilisateur
+            return _page_pin(
+                request,
+                error=(
+                    "Ce code PIN est utilisé par plusieurs collaborateurs. "
+                    "Contactez votre commerçant pour qu'il vous en attribue un autre."
+                ),
+            )
+
+        collaborateur = candidats[0]
+
+        try:
             login(request, collaborateur.user)
-            
-            # Mettre à jour la dernière connexion
-            from django.utils import timezone
+        except PermissionDenied:
+            return _page_pin(request, error='Ce compte est désactivé')
+        except Exception as e:
+            logger.exception("Echec de connexion PIN pour le collaborateur %s", collaborateur.id)
+            return _page_pin(request, error=f"Connexion impossible : {e}")
+
+        try:
             collaborateur.date_derniere_connexion = timezone.now()
             collaborateur.save(update_fields=['date_derniere_connexion'])
-            
+
             messages.success(
-                request, 
+                request,
                 f"Bienvenue {collaborateur.nom_complet} ! Connexion rapide réussie."
             )
-            
+
             # Inventaire en cours → saisie ; sinon accueil collaborateur
             # (et surtout PAS le dashboard commerçant : erreur 500).
             return accueil_collaborateur(request)
-            
-        except Collaborateur.DoesNotExist:
-            return render(request, 'inventory/commercant/login_pin.html', {
-                'error': 'Code PIN invalide ou compte inactif'
-            })
-    
-    return render(request, 'inventory/commercant/login_pin.html')
+        except Exception as e:
+            logger.exception(
+                "Erreur post-connexion PIN pour le collaborateur %s", collaborateur.id
+            )
+            return _page_pin(request, error=f"Erreur technique : {e}")
+
+    return _page_pin(request)

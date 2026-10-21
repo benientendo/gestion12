@@ -43,7 +43,22 @@ def gestion_collaborateurs(request):
 def ajouter_collaborateur(request):
     """Créer un nouveau collaborateur."""
     commercant = request.user.profil_commercant
-    
+
+    # La connexion PIN cherche le collaborateur sur toute la plateforme
+    # (sans filtre par commerçant) : deux collaborateurs actifs avec le même
+    # PIN rendaient la connexion inopérante (voir views_pin_login).
+    code_pin = request.POST.get('code_pin', '').strip()
+    if code_pin and len(code_pin) < 4:
+        messages.error(request, "Le code PIN doit contenir au moins 4 chiffres.")
+        return redirect('inventory:gestion_collaborateurs')
+    if code_pin and Collaborateur.objects.filter(code_pin=code_pin, est_actif=True).exists():
+        messages.error(
+            request,
+            f"Le code PIN '{code_pin}' est déjà utilisé par un autre collaborateur. "
+            "Choisissez un code libre.",
+        )
+        return redirect('inventory:gestion_collaborateurs')
+
     try:
         with transaction.atomic():
             # Créer le compte utilisateur Django
@@ -68,7 +83,7 @@ def ajouter_collaborateur(request):
                 nom_complet=request.POST.get('nom_complet'),
                 telephone=request.POST.get('telephone', ''),
                 role=request.POST.get('role', 'INVENTAIRE'),
-                code_pin=request.POST.get('code_pin', ''),
+                code_pin=code_pin,
                 est_actif=True
             )
             
@@ -131,7 +146,18 @@ def toggle_collaborateur_statut(request, collaborateur_id):
         id=collaborateur_id, 
         commercant=commercant
     )
-    
+
+    # Réactivation : vérifier que son PIN n'est pas repris par un autre actif.
+    if not collaborateur.est_actif and collaborateur.code_pin and Collaborateur.objects.filter(
+        code_pin=collaborateur.code_pin, est_actif=True
+    ).exclude(pk=collaborateur.pk).exists():
+        messages.error(
+            request,
+            f"Impossible : le code PIN {collaborateur.code_pin} est déjà utilisé "
+            "par un autre collaborateur actif. Changez d'abord l'un des deux.",
+        )
+        return redirect('inventory:gestion_collaborateurs')
+
     collaborateur.est_actif = not collaborateur.est_actif
     collaborateur.save()
     
