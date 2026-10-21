@@ -838,7 +838,10 @@ function onSaisieArticleInput() {
         }
         if (match) {
             factSelectedArticle = match;
-            getEl('art_id').value = match.id || '';
+            // Article d'une autre boutique/dépôt (local === false) : nom et prix
+            // pré-remplis, mais aucun id envoyé → l'article sera créé dans le
+            // point de vente en cours à l'enregistrement.
+            getEl('art_id').value = (match.local !== false && match.id) ? match.id : '';
             getEl('art_code').value = match.code || '';
             input.classList.add('input-matched');
 
@@ -1730,7 +1733,8 @@ function applyLocalSuggestion(articleId) {
     // Remplir les champs
     getEl('art_nom').value = art.nom;
     getEl('art_nom').classList.add('input-matched');
-    getEl('art_id').value = (art.id && art.id !== 0) ? art.id : '';
+    // local === false : article d'un autre point de vente → créé ici à l'enregistrement
+    getEl('art_id').value = (art.local !== false && art.id) ? art.id : '';
     getEl('art_code').value = art.code || '';
     
     // Catégorie

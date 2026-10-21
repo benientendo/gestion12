@@ -67,13 +67,25 @@ def _load_autocomplete_legacy():
         return {'articles': [], 'familles': [], 'fournisseurs': []}
 
 
-def _autocomplete_articles_json(articles_qs):
-    """Articles du dépôt + suggestions legacy (id=0 → article créé à l'enregistrement)."""
+def _autocomplete_articles_json(articles_qs, autres_qs=None):
+    """Articles du point de vente + autres articles du commerçant + suggestions legacy.
+
+    `autres_qs` : articles des autres boutiques/dépôts du même commerçant, marqués
+    `local=False` : le nom est retrouvé automatiquement à la saisie (prix/catégorie
+    pré-remplis) mais l'article sera créé dans la boutique en cours à l'enregistrement.
+    Les doublons de nom sont résolus en faveur de l'article local.
+    """
     existants = []
-    for art in articles_qs:
+    noms = set()
+
+    def _ajouter(art, local):
+        nom = art.nom or ''
+        if not nom or nom.lower() in noms:
+            return
+        noms.add(nom.lower())
         existants.append({
             'id': art.id,
-            'nom': art.nom,
+            'nom': nom,
             'code': art.code,
             'prix_vente': float(art.prix_vente or 0),
             'prix_achat': float(art.prix_achat or 0),
@@ -81,9 +93,14 @@ def _autocomplete_articles_json(articles_qs):
             'stock': art.quantite_stock or 0,
             'categorie_id': art.categorie_id or '',
             'pieces_par_carton': art.pieces_par_carton or 1,
+            'local': local,
             'legacy': False,
         })
-    noms = {a['nom'].lower() for a in existants}
+
+    for art in articles_qs:
+        _ajouter(art, True)
+    for art in (autres_qs or []):
+        _ajouter(art, False)
     legacy = _load_autocomplete_legacy()
     for a in legacy['articles']:
         nom = a.get('nom') or ''
@@ -101,6 +118,7 @@ def _autocomplete_articles_json(articles_qs):
             'categorie_id': '',
             'famille': a.get('famille') or '',
             'pieces_par_carton': int(a.get('pieces_par_carton') or 1),
+            'local': False,
             'legacy': True,
         })
     return existants, legacy
@@ -6616,7 +6634,11 @@ def approvisionner_facture(request, depot_id):
     fournisseurs = Fournisseur.objects.filter(commercant=commercant, est_actif=True)
     categories = Categorie.objects.filter(boutique=depot)
     articles_qs = Article.objects.filter(boutique=depot, est_actif=True).order_by('nom')
-    autocomplete_articles, legacy_ac = _autocomplete_articles_json(articles_qs)
+    articles_autres_qs = (
+        Article.objects.filter(boutique__commercant=commercant, est_actif=True)
+        .exclude(boutique=depot).order_by('nom')
+    )
+    autocomplete_articles, legacy_ac = _autocomplete_articles_json(articles_qs, articles_autres_qs)
     fournisseurs_noms = list(fournisseurs.values_list('nom', flat=True))
     for nom in legacy_ac['fournisseurs']:
         if nom not in fournisseurs_noms:
@@ -6742,39 +6764,47 @@ def approvisionner_facture(request, depot_id):
                     if article_id:
                         article = Article.objects.get(id=article_id, boutique=depot)
                     else:
-                        # Créer un nouvel article
+                        # Créer un nouvel article (ou réutiliser celui du même code
+                        # déjà présent dans ce dépôt, ex. article repris d'une boutique)
                         code = art_data.get('code', '').strip()
-                        if not code:
-                            code = f"ART-{uuid.uuid4().hex[:8].upper()}"
-                        
-                        categorie_id = art_data.get('categorie_id')
-                        categorie_nom = art_data.get('categorie_nom', '').strip()
-                        if categorie_id:
-                            categorie = Categorie.objects.filter(id=categorie_id).first()
-                        elif categorie_nom:
-                            categorie, _ = Categorie.objects.get_or_create(
-                                nom__iexact=categorie_nom,
-                                boutique=depot,
-                                defaults={'nom': categorie_nom}
-                            )
-                        else:
-                            categorie = None
-                        
-                        # Si facture en USD, l'article sera stocké en CDF (après conversion)
-                        devise_article = 'CDF' if devise == 'USD' else devise
-                        
-                        article = Article.objects.create(
-                            code=code,
-                            nom=art_data.get('nom', 'Article sans nom'),
-                            description=art_data.get('description', ''),
-                            devise=devise_article,
-                            prix_achat=Decimal(str(art_data.get('prix_achat_unitaire', 0))),
-                            prix_vente=Decimal(str(art_data.get('prix_vente', 0))),
-                            quantite_stock=0,
-                            boutique=depot,
-                            categorie=categorie,
-                            est_actif=True
+                        existant_local = (
+                            Article.objects.filter(boutique=depot, code__iexact=code).first()
+                            if code else None
                         )
+                        if existant_local:
+                            article = existant_local
+                        else:
+                            if not code:
+                                code = f"ART-{uuid.uuid4().hex[:8].upper()}"
+                            
+                            categorie_id = art_data.get('categorie_id')
+                            categorie_nom = art_data.get('categorie_nom', '').strip()
+                            if categorie_id:
+                                categorie = Categorie.objects.filter(id=categorie_id).first()
+                            elif categorie_nom:
+                                categorie, _ = Categorie.objects.get_or_create(
+                                    nom__iexact=categorie_nom,
+                                    boutique=depot,
+                                    defaults={'nom': categorie_nom}
+                                )
+                            else:
+                                categorie = None
+                            
+                            # Si facture en USD, l'article sera stocké en CDF (après conversion)
+                            devise_article = 'CDF' if devise == 'USD' else devise
+                            
+                            article = Article.objects.create(
+                                code=code,
+                                nom=art_data.get('nom', 'Article sans nom'),
+                                description=art_data.get('description', ''),
+                                devise=devise_article,
+                                prix_achat=Decimal(str(art_data.get('prix_achat_unitaire', 0))),
+                                prix_vente=Decimal(str(art_data.get('prix_vente', 0))),
+                                quantite_stock=0,
+                                boutique=depot,
+                                categorie=categorie,
+                                est_actif=True
+                            )
                     
                     # Données de la ligne
                     type_quantite = art_data.get('type_quantite', 'UNITE')
@@ -6904,7 +6934,11 @@ def approvisionner_facture_boutique(request, boutique_id):
     fournisseurs = Fournisseur.objects.filter(commercant=commercant, est_actif=True)
     categories = Categorie.objects.filter(boutique=boutique)
     articles_qs = Article.objects.filter(boutique=boutique, est_actif=True).order_by('nom')
-    autocomplete_articles, legacy_ac = _autocomplete_articles_json(articles_qs)
+    articles_autres_qs = (
+        Article.objects.filter(boutique__commercant=commercant, est_actif=True)
+        .exclude(boutique=boutique).order_by('nom')
+    )
+    autocomplete_articles, legacy_ac = _autocomplete_articles_json(articles_qs, articles_autres_qs)
     fournisseurs_noms = list(fournisseurs.values_list('nom', flat=True))
     for nom in legacy_ac['fournisseurs']:
         if nom not in fournisseurs_noms:
@@ -7030,39 +7064,47 @@ def approvisionner_facture_boutique(request, boutique_id):
                     if article_id:
                         article = Article.objects.get(id=article_id, boutique=boutique)
                     else:
-                        # Créer un nouvel article
+                        # Créer un nouvel article (ou réutiliser celui du même code
+                        # déjà présent dans cette boutique, ex. article repris du dépôt)
                         code = art_data.get('code', '').strip()
-                        if not code:
-                            code = f"ART-{uuid.uuid4().hex[:8].upper()}"
-                        
-                        categorie_id = art_data.get('categorie_id')
-                        categorie_nom = art_data.get('categorie_nom', '').strip()
-                        if categorie_id:
-                            categorie = Categorie.objects.filter(id=categorie_id).first()
-                        elif categorie_nom:
-                            categorie, _ = Categorie.objects.get_or_create(
-                                nom__iexact=categorie_nom,
-                                boutique=boutique,
-                                defaults={'nom': categorie_nom}
-                            )
-                        else:
-                            categorie = None
-                        
-                        # Si facture en USD, l'article sera stocké en CDF (après conversion)
-                        devise_article = 'CDF' if devise == 'USD' else devise
-                        
-                        article = Article.objects.create(
-                            code=code,
-                            nom=art_data.get('nom', 'Article sans nom'),
-                            description=art_data.get('description', ''),
-                            devise=devise_article,
-                            prix_achat=Decimal(str(art_data.get('prix_achat_unitaire', 0))),
-                            prix_vente=Decimal(str(art_data.get('prix_vente', 0))),
-                            quantite_stock=0,
-                            boutique=boutique,
-                            categorie=categorie,
-                            est_actif=True
+                        existant_local = (
+                            Article.objects.filter(boutique=boutique, code__iexact=code).first()
+                            if code else None
                         )
+                        if existant_local:
+                            article = existant_local
+                        else:
+                            if not code:
+                                code = f"ART-{uuid.uuid4().hex[:8].upper()}"
+                            
+                            categorie_id = art_data.get('categorie_id')
+                            categorie_nom = art_data.get('categorie_nom', '').strip()
+                            if categorie_id:
+                                categorie = Categorie.objects.filter(id=categorie_id).first()
+                            elif categorie_nom:
+                                categorie, _ = Categorie.objects.get_or_create(
+                                    nom__iexact=categorie_nom,
+                                    boutique=boutique,
+                                    defaults={'nom': categorie_nom}
+                                )
+                            else:
+                                categorie = None
+                            
+                            # Si facture en USD, l'article sera stocké en CDF (après conversion)
+                            devise_article = 'CDF' if devise == 'USD' else devise
+                            
+                            article = Article.objects.create(
+                                code=code,
+                                nom=art_data.get('nom', 'Article sans nom'),
+                                description=art_data.get('description', ''),
+                                devise=devise_article,
+                                prix_achat=Decimal(str(art_data.get('prix_achat_unitaire', 0))),
+                                prix_vente=Decimal(str(art_data.get('prix_vente', 0))),
+                                quantite_stock=0,
+                                boutique=boutique,
+                                categorie=categorie,
+                                est_actif=True
+                            )
                     
                     # Données de la ligne
                     type_quantite = art_data.get('type_quantite', 'UNITE')
@@ -7144,7 +7186,7 @@ def approvisionner_facture_boutique(request, boutique_id):
                     })
                 
                 messages.success(request, msg_succes)
-                return redirect('inventory:detail_boutique', boutique_id=boutique.id)
+                return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
                 
         except Exception as e:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
