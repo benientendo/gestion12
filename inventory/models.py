@@ -939,10 +939,15 @@ class Boutique(models.Model):
     def save(self, *args, **kwargs):
         # Générer un code boutique unique si pas défini
         if not self.code_boutique:
-            # Format: COMM_BOUTIQUE_001
+            # Format: COMM_BOUTIQUE_001 — en évitant les codes déjà attribués
+            # (deux commerçants peuvent partager les 4 premières lettres).
             commercant_prefix = self.commercant.nom_entreprise[:4].upper().replace(' ', '')
             numero = self.commercant.boutiques.count() + 1
-            self.code_boutique = f"{commercant_prefix}_BOUT_{numero:03d}"
+            code = f"{commercant_prefix}_BOUT_{numero:03d}"
+            while Boutique.objects.filter(code_boutique=code).exists():
+                numero += 1
+                code = f"{commercant_prefix}_BOUT_{numero:03d}"
+            self.code_boutique = code
         
         # Générer une clé API si pas définie
         if not self.cle_api_boutique:

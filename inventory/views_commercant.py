@@ -7,7 +7,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
 from django.db.models import Q, Sum, Count, F, Avg, Max, Min, Prefetch, ExpressionWrapper, DecimalField as OrmDecimalField
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.utils import timezone
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from django.core.exceptions import ValidationError
@@ -632,13 +632,33 @@ def creer_boutique(request):
     if request.method == 'POST':
         form = BoutiqueForm(request.POST)
         if form.is_valid():
-            boutique = form.save(commit=False)
-            boutique.commercant = commercant
-            # Forcer le flag dépôt si le type sélectionné est "DEPOT"
-            boutique.est_depot = boutique.type_commerce == 'DEPOT'
-            boutique.save()
-            messages.success(request, f"Boutique '{boutique.nom}' créée avec succès!")
-            return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
+            # Le formulaire ne couvre pas le champ « commercant », donc Django ne
+            # peut pas valider le unique_together (commercant, nom) : on le
+            # vérifie nous-mêmes pour éviter un IntegrityError → erreur 500.
+            nom = (form.cleaned_data.get('nom') or '').strip()
+            if Boutique.objects.filter(commercant=commercant, nom=nom).exists():
+                messages.error(
+                    request,
+                    f"Une boutique nommée '{nom}' existe déjà pour votre compte. "
+                    "Choisissez un autre nom."
+                )
+            else:
+                try:
+                    with transaction.atomic():
+                        boutique = form.save(commit=False)
+                        boutique.commercant = commercant
+                        # Forcer le flag dépôt si le type sélectionné est "DEPOT"
+                        boutique.est_depot = boutique.type_commerce == 'DEPOT'
+                        boutique.save()
+                except IntegrityError:
+                    messages.error(
+                        request,
+                        "Impossible de créer la boutique (conflit de nom ou de code). "
+                        "Réessayez avec un autre nom."
+                    )
+                else:
+                    messages.success(request, f"Boutique '{boutique.nom}' créée avec succès!")
+                    return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
         else:
             for field, errors in form.errors.items():
                 for error in errors:
@@ -7707,7 +7727,6 @@ def modifier_ligne_facture(request, depot_id, facture_id, ligne_id):
             return JsonResponse({'success': False, 'error': 'Le prix de vente ne peut pas être négatif'}, status=400)
         
         # Transaction atomique pour garantir la cohérence des données
-        from django.db import transaction
         with transaction.atomic():
             # Mettre à jour la ligne de facture uniquement
             ligne.quantite_unites = quantite_unites
