@@ -74,37 +74,29 @@
         </div>
     </div>
 
-    <!-- Valeur du stock : prix d'achat et prix de vente -->
+    <!-- Valeur du stock compté, au prix de vente -->
     <div class="row mb-4">
-        <div class="col-md-3">
-            <div class="card border-primary">
-                <div class="card-body text-center">
-                    <h4 class="mb-0 text-primary">{{ valeur_stock_achat|floatformat:0 }} <small>FC</small></h4>
-                    <small class="text-muted">Valeur stock (achat)</small>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card border-success">
                 <div class="card-body text-center">
                     <h4 class="mb-0 text-success">{{ valeur_stock_vente|floatformat:0 }} <small>FC</small></h4>
-                    <small class="text-muted">Valeur stock (vente)</small>
+                    <small class="text-muted">Valeur du stock compté (prix de vente)</small>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card">
                 <div class="card-body text-center">
-                    <h5 class="mb-0 text-success">+{{ valeur_ecart_positif_achat|floatformat:0 }} <small>FC</small></h5>
-                    <small class="text-muted">Surplus (achat) · +{{ valeur_ecart_positif_vente|floatformat:0 }} FC vente</small>
+                    <h4 class="mb-0 text-success">+{{ valeur_ecart_positif_vente|floatformat:0 }} <small>FC</small></h4>
+                    <small class="text-muted">Surplus (+) valorisés au prix de vente</small>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card">
                 <div class="card-body text-center">
-                    <h5 class="mb-0 text-danger">-{{ valeur_ecart_negatif_achat|floatformat:0 }} <small>FC</small></h5>
-                    <small class="text-muted">Manques (achat) · -{{ valeur_ecart_negatif_vente|floatformat:0 }} FC vente</small>
+                    <h4 class="mb-0 text-danger">-{{ valeur_ecart_negatif_vente|floatformat:0 }} <small>FC</small></h4>
+                    <small class="text-muted">Manques (−) valorisés au prix de vente</small>
                 </div>
             </div>
         </div>
@@ -134,7 +126,7 @@
                                 <tr>
                                     <td><strong>{{ ligne.article.nom }}</strong></td>
                                     <td class="text-center"><span class="badge bg-success">+{{ ligne.ecart }}</span></td>
-                                    <td class="text-end text-success">+{{ ligne.valeur_ecart|floatformat:0 }} FC</td>
+                                    <td class="text-end text-success">+{{ ligne.ecart|mul:ligne.article.prix_vente|floatformat:0 }} FC</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -165,7 +157,7 @@
                                 <tr>
                                     <td><strong>{{ ligne.article.nom }}</strong></td>
                                     <td class="text-center"><span class="badge bg-danger">{{ ligne.ecart }}</span></td>
-                                    <td class="text-end text-danger">{{ ligne.valeur_ecart|floatformat:0 }} FC</td>
+                                    <td class="text-end text-danger">{{ ligne.ecart|mul:ligne.article.prix_vente|floatformat:0 }} FC</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -242,8 +234,8 @@
                                 {% elif ligne.stock_physique is not None %}<span class="badge bg-secondary">0</span>{% endif %}
                             </td>
                             <td class="text-end">
-                                {% if ligne.valeur_ecart > 0 %}<span class="text-success">+{{ ligne.valeur_ecart|floatformat:0 }} FC</span>
-                                {% elif ligne.valeur_ecart < 0 %}<span class="text-danger">{{ ligne.valeur_ecart|floatformat:0 }} FC</span>{% endif %}
+                                {% if ligne.ecart|mul:ligne.article.prix_vente > 0 %}<span class="text-success">+{{ ligne.ecart|mul:ligne.article.prix_vente|floatformat:0 }} FC</span>
+                                {% elif ligne.ecart|mul:ligne.article.prix_vente < 0 %}<span class="text-danger">{{ ligne.ecart|mul:ligne.article.prix_vente|floatformat:0 }} FC</span>{% endif %}
                             </td>
                         </tr>
                         {% empty %}

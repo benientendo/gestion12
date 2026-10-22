@@ -7885,38 +7885,28 @@ def nouvel_inventaire(request, depot_id):
 
 
 def _totaux_valeur_inventaire(lignes):
-    """Valeur du stock de l'inventaire au prix d'achat ET au prix de vente.
+    """Valeur des articles INVENTORIÉS (comptés), au PRIX DE VENTE.
 
-    Quantité retenue : le stock compté quand il existe, sinon le stock
-    théorique (les lignes non comptées restent à leur valeur système).
-    Les écarts sont valorisés dans les deux sens pour le rapport imprimé.
+    Seules les lignes avec un stock compté (stock_physique renseigné) sont
+    valorisées : les articles non comptés sont exclus du total et signalés à
+    part. Les écarts (surplus/manques) sont également valorisés au prix de
+    vente, seul prix retenu pour l'affichage et le rapport imprimé.
     """
     totaux = {
-        'valeur_stock_achat': Decimal(0),
         'valeur_stock_vente': Decimal(0),
-        'valeur_ecart_positif_achat': Decimal(0),
         'valeur_ecart_positif_vente': Decimal(0),
-        'valeur_ecart_negatif_achat': Decimal(0),
         'valeur_ecart_negatif_vente': Decimal(0),
     }
     for ligne in lignes:
-        article = ligne.article
-        qte = ligne.stock_physique if ligne.stock_physique is not None else ligne.stock_theorique
-        prix_achat = article.prix_achat or Decimal(0)
-        prix_vente = article.prix_vente or Decimal(0)
-        totaux['valeur_stock_achat'] += Decimal(qte) * prix_achat
-        totaux['valeur_stock_vente'] += Decimal(qte) * prix_vente
-
-        # Écart valorisé : au prix d'achat retenu par l'inventaire (ligne.valeur_ecart),
-        # et au prix de vente pour la colonne « marge potentielle » du rapport.
-        valeur_achat = ligne.valeur_ecart
-        valeur_vente = Decimal(ligne.ecart) * prix_vente
+        if ligne.stock_physique is None:
+            continue
+        prix_vente = ligne.article.prix_vente or Decimal(0)
+        totaux['valeur_stock_vente'] += Decimal(ligne.stock_physique) * prix_vente
+        valeur = Decimal(ligne.ecart) * prix_vente
         if ligne.ecart > 0:
-            totaux['valeur_ecart_positif_achat'] += valeur_achat
-            totaux['valeur_ecart_positif_vente'] += valeur_vente
+            totaux['valeur_ecart_positif_vente'] += valeur
         elif ligne.ecart < 0:
-            totaux['valeur_ecart_negatif_achat'] += -valeur_achat
-            totaux['valeur_ecart_negatif_vente'] += -valeur_vente
+            totaux['valeur_ecart_negatif_vente'] += -valeur
     return totaux
 
 
@@ -7959,7 +7949,8 @@ def detail_inventaire(request, depot_id, inventaire_id):
     
     # Valeur du stock non inventorié
     lignes_non_saisies_qs = lignes.filter(stock_physique__isnull=True)
-    valeur_stock_non_inventorie = sum(l.stock_theorique * l.prix_unitaire for l in lignes_non_saisies_qs)
+    valeur_stock_non_inventorie = sum(
+        l.stock_theorique * (l.article.prix_vente or Decimal(0)) for l in lignes_non_saisies_qs)
     
     context = {
         'depot': depot,
@@ -7969,8 +7960,8 @@ def detail_inventaire(request, depot_id, inventaire_id):
         'lignes_avec_ecart': lignes_avec_ecart,
         'ecarts_positifs': ecarts_positifs,
         'ecarts_negatifs': ecarts_negatifs,
-        'total_ecart_positif': sum(l.valeur_ecart for l in ecarts_positifs),
-        'total_ecart_negatif': abs(sum(l.valeur_ecart for l in ecarts_negatifs)),
+        'total_ecart_positif': sum(l.ecart * (l.article.prix_vente or Decimal(0)) for l in ecarts_positifs),
+        'total_ecart_negatif': abs(sum(l.ecart * (l.article.prix_vente or Decimal(0)) for l in ecarts_negatifs)),
         'lignes_non_saisies': lignes_non_saisies_qs.count(),
         'lignes_non_saisies_qs': lignes_non_saisies_qs,
         'valeur_stock_non_inventorie': valeur_stock_non_inventorie,
@@ -8299,7 +8290,8 @@ def detail_inventaire_boutique(request, boutique_id, inventaire_id):
     
     # Valeur du stock non inventorié
     lignes_non_saisies_qs = lignes.filter(stock_physique__isnull=True)
-    valeur_stock_non_inventorie = sum(l.stock_theorique * l.prix_unitaire for l in lignes_non_saisies_qs)
+    valeur_stock_non_inventorie = sum(
+        l.stock_theorique * (l.article.prix_vente or Decimal(0)) for l in lignes_non_saisies_qs)
     
     context = {
         'boutique': boutique,
@@ -8309,8 +8301,8 @@ def detail_inventaire_boutique(request, boutique_id, inventaire_id):
         'lignes_avec_ecart': lignes_avec_ecart,
         'ecarts_positifs': ecarts_positifs,
         'ecarts_negatifs': ecarts_negatifs,
-        'total_ecart_positif': sum(l.valeur_ecart for l in ecarts_positifs),
-        'total_ecart_negatif': abs(sum(l.valeur_ecart for l in ecarts_negatifs)),
+        'total_ecart_positif': sum(l.ecart * (l.article.prix_vente or Decimal(0)) for l in ecarts_positifs),
+        'total_ecart_negatif': abs(sum(l.ecart * (l.article.prix_vente or Decimal(0)) for l in ecarts_negatifs)),
         'lignes_non_saisies': lignes_non_saisies_qs.count(),
         'lignes_non_saisies_qs': lignes_non_saisies_qs,
         'valeur_stock_non_inventorie': valeur_stock_non_inventorie,

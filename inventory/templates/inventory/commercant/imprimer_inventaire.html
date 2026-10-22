@@ -139,25 +139,25 @@
         <!-- RÉCAPITULATIF DES VALEURS -->
         <div class="pv-totaux">
             <div class="pv-totaux-card">
-                <h6><i class="fas fa-calculator me-1"></i>Valeur du stock</h6>
+                <h6><i class="fas fa-calculator me-1"></i>Valeur du stock compté</h6>
                 <div class="pv-totaux-row">
-                    <span>Au prix d'achat :</span>
-                    <strong>{{ valeur_stock_achat|format_number }} FC</strong>
+                    <span>Au prix de vente ({{ nb_saisis }} article(s) compté(s)) :</span>
+                    <strong>{{ valeur_stock_vente|format_number }} FC</strong>
                 </div>
                 <div class="pv-totaux-row total">
-                    <span>Au prix de vente :</span>
-                    <span>{{ valeur_stock_vente|format_number }} FC</span>
+                    <span>Articles non comptés (non valorisés) :</span>
+                    <span>{{ nb_non_saisis }}</span>
                 </div>
             </div>
             <div class="pv-totaux-card">
-                <h6><i class="fas fa-exchange-alt me-1"></i>Valeur des écarts constatés</h6>
+                <h6><i class="fas fa-exchange-alt me-1"></i>Valeur des écarts (prix de vente)</h6>
                 <div class="pv-totaux-row">
-                    <span>Surplus (+) achat / vente :</span>
-                    <strong class="pv-ecart-pos">+{{ valeur_ecart_positif_achat|format_number }} / +{{ valeur_ecart_positif_vente|format_number }} FC</strong>
+                    <span>Surplus (+) :</span>
+                    <strong class="pv-ecart-pos">+{{ valeur_ecart_positif_vente|format_number }} FC</strong>
                 </div>
                 <div class="pv-totaux-row">
-                    <span>Manques (−) achat / vente :</span>
-                    <strong class="pv-ecart-neg">-{{ valeur_ecart_negatif_achat|format_number }} / -{{ valeur_ecart_negatif_vente|format_number }} FC</strong>
+                    <span>Manques (−) :</span>
+                    <strong class="pv-ecart-neg">-{{ valeur_ecart_negatif_vente|format_number }} FC</strong>
                 </div>
                 <div class="pv-totaux-row total">
                     <span>Articles avec écart :</span>
@@ -176,8 +176,7 @@
                     <th style="width:8%;" class="text-center">Théorique</th>
                     <th style="width:8%;" class="text-center">Compté</th>
                     <th style="width:8%;" class="text-center">Écart</th>
-                    <th style="width:16%;" class="text-end">Valeur achat</th>
-                    <th style="width:16%;" class="text-end">Valeur vente</th>
+                    <th style="width:16%;" class="text-end">Valeur (vente)</th>
                 </tr>
             </thead>
             <tbody>
@@ -194,8 +193,7 @@
                         {% elif ligne.ecart < 0 %}<span class="pv-ecart-neg">{{ ligne.ecart }}</span>
                         {% else %}0{% endif %}
                     </td>
-                    <td class="text-end">{% with qte=ligne.stock_physique|default_if_none:ligne.stock_theorique %}{{ qte|mul:ligne.article.prix_achat|format_number }}{% endwith %}</td>
-                    <td class="text-end">{% with qte=ligne.stock_physique|default_if_none:ligne.stock_theorique %}{{ qte|mul:ligne.article.prix_vente|format_number }}{% endwith %}</td>
+                    <td class="text-end">{% if ligne.stock_physique is not None %}{{ ligne.stock_physique|mul:ligne.article.prix_vente|format_number }}{% else %}—{% endif %}</td>
                 </tr>
                 {% empty %}
                 <tr><td colspan="8" class="text-center">Aucun article dans cet inventaire</td></tr>
@@ -203,8 +201,7 @@
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="6" class="text-end">VALEUR TOTALE DU STOCK</td>
-                    <td class="text-end">{{ valeur_stock_achat|format_number }} FC</td>
+                    <td colspan="6" class="text-end">VALEUR TOTALE DU STOCK COMPTÉ (PRIX DE VENTE)</td>
                     <td class="text-end">{{ valeur_stock_vente|format_number }} FC</td>
                 </tr>
             </tfoot>
@@ -220,11 +217,15 @@
                 portant sur <strong>{{ nb_articles }} article(s)</strong> dont <strong>{{ nb_saisis }} compté(s)</strong>.
             </p>
             <p>
-                Reconnais exactes les quantités comptées ci-dessus, qui fixent la valeur des stocks qui m'ont été
-                confiés s'élevant à <strong>{{ valeur_stock_achat|format_number }} FC au prix d'achat</strong>
-                et <strong>{{ valeur_stock_vente|format_number }} FC au prix de vente</strong>,
-                soit des écarts de <strong>+{{ valeur_ecart_positif_achat|format_number }} FC</strong> (surplus) et
-                <strong>-{{ valeur_ecart_negatif_achat|format_number }} FC</strong> (manques) valorisés au prix d'achat.
+                Reconnais exactes les quantités comptées ci-dessus pour les <strong>{{ nb_saisis }} article(s) compté(s)</strong>,
+                qui fixent la valeur des stocks qui m'ont été confiés, s'élevant à
+                <strong>{{ valeur_stock_vente|format_number }} FC au prix de vente</strong>,
+                soit des écarts de <strong>+{{ valeur_ecart_positif_vente|format_number }} FC</strong> (surplus) et
+                <strong>-{{ valeur_ecart_negatif_vente|format_number }} FC</strong> (manques), également valorisés
+                au prix de vente.
+            </p>
+            <p>
+                Les <strong>{{ nb_non_saisis }} article(s) non compté(s)</strong> ne sont pas valorisés dans ce procès-verbal.
             </p>
             <p>
                 J'assume la responsabilité des stocks qui me sont confiés et m'engage à rendre compte de tout écart,

@@ -1,8 +1,8 @@
 """
-Rapport d'inventaire imprimable : valeur du stock à l'achat ET à la vente
-=========================================================================
-- Les pages détail (boutique et dépôt) exposent la valeur du stock aux
-  deux prix (achat + vente) et la valeur des écarts dans les deux sens.
+Rapport d'inventaire imprimable : valeur des articles comptés, au prix de vente
+===============================================================================
+- Les pages détail (boutique et dépôt) affichent la valeur du stock COMPTÉ
+  (seuls les articles inventorier avec une quantité saisie), au PRIX DE VENTE.
 - Une route lecture seule imprime un procès-verbal signable (3 signatures).
 """
 from datetime import date
@@ -77,42 +77,38 @@ class ValeurInventaireBase(TestCase):
 
 class TotauxValeurInventaireTest(ValeurInventaireBase):
 
-    def test_totaux_achat_et_vente(self):
+    def test_totaux_prix_de_vente_des_seuls_articles_comptes(self):
         totaux = _totaux_valeur_inventaire(self.inventaire.lignes.all())
-        # 12×100 + 5×50 + 4×20 = 1530 ; 12×200 + 5×80 + 4×30 = 2920
-        self.assertEqual(totaux['valeur_stock_achat'], Decimal('1530'))
-        self.assertEqual(totaux['valeur_stock_vente'], Decimal('2920'))
-        # surplus +2 : achat 2×100, vente 2×200
-        self.assertEqual(totaux['valeur_ecart_positif_achat'], Decimal('200'))
+        # Seuls les 2 articles comptés sont valorisés, au prix de vente :
+        # 12×200 + 5×80 = 2800 (l'article non compté est exclu)
+        self.assertEqual(totaux['valeur_stock_vente'], Decimal('2800'))
+        self.assertNotIn('valeur_stock_achat', totaux)
+        # surplus +2 → 2×200 ; manque −3 → 3×80
         self.assertEqual(totaux['valeur_ecart_positif_vente'], Decimal('400'))
-        # manque −3 : achat 3×50, vente 3×80 (toujours positif après inversion)
-        self.assertEqual(totaux['valeur_ecart_negatif_achat'], Decimal('150'))
         self.assertEqual(totaux['valeur_ecart_negatif_vente'], Decimal('240'))
 
-    def test_ligne_non_comptee_valeure_au_theorique(self):
+    def test_lignes_non_comptees_exclues_du_total(self):
         totaux = _totaux_valeur_inventaire(
             LigneInventaire.objects.filter(stock_physique__isnull=True)
         )
-        self.assertEqual(totaux['valeur_stock_achat'], Decimal('80'))
-        self.assertEqual(totaux['valeur_stock_vente'], Decimal('120'))
-        self.assertEqual(totaux['valeur_ecart_positif_achat'], Decimal(0))
-        self.assertEqual(totaux['valeur_ecart_negatif_achat'], Decimal(0))
+        self.assertEqual(totaux['valeur_stock_vente'], Decimal(0))
+        self.assertEqual(totaux['valeur_ecart_positif_vente'], Decimal(0))
+        self.assertEqual(totaux['valeur_ecart_negatif_vente'], Decimal(0))
 
 
 class PageDetailValeurStockTest(ValeurInventaireBase):
 
-    def test_detail_boutique_affiche_valeur_achat_et_vente(self):
+    def test_detail_boutique_affiche_valeur_vente_des_comptes(self):
         r = self.client.get(reverse(
             'inventory:detail_inventaire_boutique',
             args=[self.boutique.id, self.inventaire.id]))
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.context['valeur_stock_achat'], Decimal('1530'))
-        self.assertEqual(r.context['valeur_stock_vente'], Decimal('2920'))
-        self.assertContains(r, 'Valeur stock (achat)')
-        self.assertContains(r, 'Valeur stock (vente)')
+        self.assertEqual(r.context['valeur_stock_vente'], Decimal('2800'))
+        self.assertContains(r, 'Valeur du stock compté (prix de vente)')
+        self.assertNotContains(r, 'Valeur stock (achat)')
         self.assertContains(r, 'Imprimer le rapport')
 
-    def test_detail_depot_affiche_valeur_achat_et_vente(self):
+    def test_detail_depot_affiche_valeur_vente_des_comptes(self):
         inventaire_depot = Inventaire.objects.create(
             boutique=self.depot, reference='INV-PV-DEP-001',
             date_inventaire=date.today(), statut='EN_COURS',
@@ -124,7 +120,7 @@ class PageDetailValeurStockTest(ValeurInventaireBase):
         )
         LigneInventaire.objects.create(
             inventaire=inventaire_depot, article=article,
-            stock_theorique=6, prix_unitaire=Decimal('10'),
+            stock_theorique=6, stock_physique=6, prix_unitaire=Decimal('10'),
         )
         inventaire_depot.calculer_statistiques()
 
@@ -132,9 +128,8 @@ class PageDetailValeurStockTest(ValeurInventaireBase):
             'inventory:detail_inventaire',
             args=[self.depot.id, inventaire_depot.id]))
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.context['valeur_stock_achat'], Decimal('60'))
         self.assertEqual(r.context['valeur_stock_vente'], Decimal('150'))
-        self.assertContains(r, 'Valeur stock (vente)')
+        self.assertContains(r, 'Valeur du stock compté (prix de vente)')
 
 
 class RapportImprimableTest(ValeurInventaireBase):
@@ -146,9 +141,9 @@ class RapportImprimableTest(ValeurInventaireBase):
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, "Procès-verbal d'inventaire")
         self.assertContains(r, 'INV-PV-001')
-        self.assertContains(r, 'Valeur du stock')
-        self.assertContains(r, '1 530')  # achat (séparateur de milliers)
-        self.assertContains(r, '2 920')  # vente
+        self.assertContains(r, 'Valeur du stock compté')
+        self.assertContains(r, '2 800')  # 12×200 + 5×80, seuls articles comptés
+        self.assertNotContains(r, 'Valeur achat')  # plus de colonne / valeur d'achat
         self.assertContains(r, 'Déclaration et engagement')
         self.assertContains(r, 'Inventaire effectué par')
         self.assertContains(r, 'Approuvé par le Propriétaire')
@@ -179,9 +174,8 @@ class RapportImprimableTest(ValeurInventaireBase):
             args=[self.depot.id, inventaire_depot.id]))
         self.assertEqual(r.status_code, 200)
         self.assertContains(r, 'Dépôt « PV Dépôt »')
-        self.assertEqual(r.context['valeur_stock_achat'], Decimal('60'))
         self.assertEqual(r.context['valeur_stock_vente'], Decimal('150'))
-        self.assertEqual(r.context['valeur_ecart_positif_achat'], Decimal('20'))
+        self.assertEqual(r.context['valeur_ecart_positif_vente'], Decimal('50'))
 
     def test_imprimer_anonyme_redirige_vers_login(self):
         self.client.logout()
