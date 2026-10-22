@@ -148,10 +148,18 @@ class RapportImprimableTest(ValeurInventaireBase):
         self.assertContains(r, 'Inventaire effectué par')
         self.assertContains(r, 'Approuvé par le Propriétaire')
         self.assertContains(r, 'Signature')
-        # Détail des lignes
+        # Détail des lignes : seuls les articles saisis figurent au tableau
         self.assertContains(r, 'Savon')
         self.assertContains(r, 'Eponge')
-        self.assertContains(r, 'Balai')
+        # Article non saisi : exclu du tableau (les alertes latérales peuvent
+        # malgré tout citer son nom, on vérifie donc le code propre au tableau)
+        self.assertNotContains(r, '<code>PV-C</code>')
+        self.assertEqual(
+            sorted(l.article.code for l in r.context['lignes']), ['PV-A', 'PV-B'])
+        self.assertContains(r, 'article(s) saisis')
+        self.assertEqual(r.context['nb_saisis'], 2)
+        self.assertEqual(r.context['nb_non_saisis'], 1)
+        self.assertEqual(r.context['nb_articles'], 3)
 
     def test_imprimer_depot(self):
         inventaire_depot = Inventaire.objects.create(

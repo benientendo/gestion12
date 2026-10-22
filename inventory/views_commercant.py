@@ -7911,10 +7911,15 @@ def _totaux_valeur_inventaire(lignes):
 
 
 def _context_rapport_inventaire(request, inventaire, point_vente, commercant, est_depot=False):
-    """Contexte commun du rapport d'inventaire imprimable (boutique et dépôt)."""
-    lignes = list(inventaire.lignes.select_related('article', 'article__categorie').all())
-    nb_saisis = sum(1 for l in lignes if l.stock_physique is not None)
-    nb_ecarts = sum(1 for l in lignes if l.stock_physique is not None and l.ecart != 0)
+    """Contexte commun du rapport d'inventaire imprimable (boutique et dépôt).
+
+    Le tableau liste uniquement les articles SAISIS (comptés) : les lignes sans
+    quantité comptée sont exclues du document, leur nombre étant rappelé en tête.
+    """
+    toutes_lignes = list(inventaire.lignes.select_related('article', 'article__categorie').all())
+    lignes = [l for l in toutes_lignes if l.stock_physique is not None]
+    nb_saisis = len(lignes)
+    nb_ecarts = sum(1 for l in lignes if l.ecart != 0)
     return render(request, 'inventory/commercant/imprimer_inventaire.html', {
         'inventaire': inventaire,
         'point_vente': point_vente,
@@ -7922,9 +7927,9 @@ def _context_rapport_inventaire(request, inventaire, point_vente, commercant, es
         'type_point_vente': 'Dépôt' if est_depot else 'Point de vente',
         'commercant': commercant,
         'lignes': lignes,
-        'nb_articles': len(lignes),
+        'nb_articles': len(toutes_lignes),
         'nb_saisis': nb_saisis,
-        'nb_non_saisis': len(lignes) - nb_saisis,
+        'nb_non_saisis': len(toutes_lignes) - nb_saisis,
         'nb_ecarts': nb_ecarts,
         'today': timezone.localdate(),
         **_totaux_valeur_inventaire(lignes),

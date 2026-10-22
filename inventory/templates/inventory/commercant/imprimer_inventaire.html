@@ -54,6 +54,7 @@
     .pv-stats span { background: #f5f6fa; border: 1px solid #e1e4ea; border-radius: 4px; padding: 4px 10px; }
 
     /* Tableau */
+    .pv-note { font-size: .78rem; color: #666; background: #f5f6fa; border-left: 3px solid #667eea; padding: 6px 10px; margin-bottom: 8px; }
     .pv-table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
     .pv-table th, .pv-table td { border: 1px solid #d0d4da; padding: 5px 7px; font-size: .78rem; }
     .pv-table thead th { background: #333; color: #fff; font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
@@ -166,7 +167,11 @@
             </div>
         </div>
 
-        <!-- TABLEAU DÉTAILLÉ -->
+        <!-- TABLEAU DÉTAILLÉ : SEULEMENT LES ARTICLES SAISIS -->
+        <p class="pv-note">
+            <i class="fas fa-info-circle me-1"></i>Seuls les <strong>{{ nb_saisis }} article(s) saisis</strong> (comptés)
+            figurent ci-dessous ; {{ nb_non_saisis }} article(s) non saisis sont exclus du présent document.
+        </p>
         <table class="pv-table">
             <thead>
                 <tr>
@@ -186,17 +191,16 @@
                     <td><strong>{{ ligne.article.nom }}</strong></td>
                     <td><code>{{ ligne.article.code }}</code></td>
                     <td class="text-center">{{ ligne.stock_theorique }}</td>
-                    <td class="text-center">{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% else %}—{% endif %}</td>
+                    <td class="text-center">{{ ligne.stock_physique }}</td>
                     <td class="text-center">
-                        {% if ligne.stock_physique is None %}—
-                        {% elif ligne.ecart > 0 %}<span class="pv-ecart-pos">+{{ ligne.ecart }}</span>
+                        {% if ligne.ecart > 0 %}<span class="pv-ecart-pos">+{{ ligne.ecart }}</span>
                         {% elif ligne.ecart < 0 %}<span class="pv-ecart-neg">{{ ligne.ecart }}</span>
                         {% else %}0{% endif %}
                     </td>
-                    <td class="text-end">{% if ligne.stock_physique is not None %}{{ ligne.stock_physique|mul:ligne.article.prix_vente|format_number }}{% else %}—{% endif %}</td>
+                    <td class="text-end">{{ ligne.stock_physique|mul:ligne.article.prix_vente|format_number }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="8" class="text-center">Aucun article dans cet inventaire</td></tr>
+                <tr><td colspan="7" class="text-center">Aucun article saisi dans cet inventaire</td></tr>
                 {% endfor %}
             </tbody>
             <tfoot>
@@ -225,7 +229,8 @@
                 au prix de vente.
             </p>
             <p>
-                Les <strong>{{ nb_non_saisis }} article(s) non compté(s)</strong> ne sont pas valorisés dans ce procès-verbal.
+                Les <strong>{{ nb_non_saisis }} article(s) non saisis</strong> ne figurent pas dans le tableau ci-dessus
+                et ne sont pas valorisés dans ce procès-verbal.
             </p>
             <p>
                 J'assume la responsabilité des stocks qui me sont confiés et m'engage à rendre compte de tout écart,
