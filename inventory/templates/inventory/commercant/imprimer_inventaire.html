@@ -1,0 +1,261 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load number_filters %}
+
+{% block title %}Procès-verbal d'inventaire - {{ inventaire.reference }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* === IMPRESSION === */
+    @media print {
+        body { margin: 0; padding: 0; font-size: 10pt; background: #fff; }
+        .no-print { display: none !important; }
+        .pv-page { box-shadow: none !important; border: none !important; padding: 0 !important; }
+        .navbar, .sidebar, footer { display: none !important; }
+        .pv-table thead { display: table-header-group; }
+        .pv-table tr { page-break-inside: avoid; }
+        .pv-signatures, .pv-engagement, .pv-totaux { page-break-inside: avoid; }
+        @page { margin: 12mm 12mm; size: A4 portrait; }
+    }
+
+    /* === ÉCRAN === */
+    .pv-wrapper { max-width: 960px; margin: 20px auto; padding: 0 15px; }
+    .pv-page {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        box-shadow: 0 2px 12px rgba(0,0,0,.08);
+        padding: 30px 34px;
+    }
+
+    /* En-tête */
+    .pv-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 3px solid #333; }
+    .pv-header-left h2 { margin: 0; font-size: 1.35rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+    .pv-header-left p { margin: 2px 0; font-size: .85rem; color: #555; }
+    .pv-header-right { text-align: right; }
+    .pv-header-right .ref { font-size: 1rem; font-weight: 700; color: #333; background: #f0f0f0; padding: 4px 12px; border-radius: 4px; display: inline-block; margin-bottom: 5px; }
+    .pv-header-right .date { font-size: .85rem; color: #666; }
+
+    /* Info blocs */
+    .pv-info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 18px; }
+    .pv-info-bloc { background: #f8f9fa; border-radius: 6px; padding: 12px 16px; border-left: 4px solid #667eea; }
+    .pv-info-bloc h6 { margin: 0 0 6px; font-size: .74rem; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; }
+    .pv-info-bloc .val { font-size: .92rem; font-weight: 600; color: #222; }
+    .pv-info-bloc .val small { font-weight: 400; color: #666; }
+
+    /* Récapitulatif valeurs */
+    .pv-totaux { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 18px; }
+    .pv-totaux-card { border: 2px solid #333; border-radius: 6px; padding: 12px 16px; }
+    .pv-totaux-card h6 { margin: 0 0 8px; font-size: .76rem; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; color: #444; }
+    .pv-totaux-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: .88rem; }
+    .pv-totaux-row strong { font-weight: 700; }
+    .pv-totaux-row.total { font-size: 1rem; font-weight: 800; border-top: 2px solid #333; margin-top: 6px; padding-top: 6px; }
+    .pv-stats { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 16px; font-size: .86rem; }
+    .pv-stats span { background: #f5f6fa; border: 1px solid #e1e4ea; border-radius: 4px; padding: 4px 10px; }
+
+    /* Tableau */
+    .pv-table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+    .pv-table th, .pv-table td { border: 1px solid #d0d4da; padding: 5px 7px; font-size: .78rem; }
+    .pv-table thead th { background: #333; color: #fff; font-size: .72rem; text-transform: uppercase; letter-spacing: .4px; font-weight: 600; }
+    .pv-table tbody tr:nth-child(even) { background: #fafbfc; }
+    .pv-table .text-end { text-align: right; }
+    .pv-table .text-center { text-align: center; }
+    .pv-table tfoot td { font-weight: 700; font-size: .84rem; border-top: 2px solid #333; background: #f1f3f6; }
+    .pv-ecart-pos { color: #1b7f34; font-weight: 700; }
+    .pv-ecart-neg { color: #b02a37; font-weight: 700; }
+
+    /* Engagement */
+    .pv-engagement { background: #fffde7; border: 1px solid #f9e68c; border-radius: 6px; padding: 16px 20px; margin-bottom: 22px; }
+    .pv-engagement h6 { margin: 0 0 8px; font-weight: 700; font-size: .88rem; }
+    .pv-engagement p { margin: 0 0 7px; font-size: .83rem; color: #333; line-height: 1.55; }
+    .pv-engagement p:last-child { margin-bottom: 0; }
+
+    /* Signatures */
+    .pv-signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; margin-top: 24px; }
+    .pv-sig-bloc { text-align: center; }
+    .pv-sig-bloc .sig-title { font-size: .76rem; font-weight: 700; text-transform: uppercase; color: #555; margin-bottom: 5px; letter-spacing: .5px; }
+    .pv-sig-bloc .sig-name { font-size: .88rem; font-weight: 600; margin-bottom: 42px; min-height: 1.3em; word-break: break-word; }
+    .pv-sig-bloc .sig-line { border-top: 1px solid #333; padding-top: 7px; font-size: .74rem; color: #888; }
+
+    /* Pied de page */
+    .pv-footer { margin-top: 22px; padding-top: 10px; border-top: 1px solid #ccc; text-align: center; font-size: .7rem; color: #999; }
+
+    /* Actions */
+    .pv-actions { margin-bottom: 18px; display: flex; gap: 10px; justify-content: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pv-wrapper">
+    <div class="pv-actions no-print">
+        <button onclick="window.print()" class="btn btn-primary">
+            <i class="fas fa-print me-1"></i>Imprimer / PDF
+        </button>
+        <a href="{% if est_depot %}{% url 'inventory:detail_inventaire' point_vente.id inventaire.id %}{% else %}{% url 'inventory:detail_inventaire_boutique' point_vente.id inventaire.id %}{% endif %}"
+           class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Retour
+        </a>
+    </div>
+
+    <div class="pv-page">
+        <!-- EN-TÊTE -->
+        <div class="pv-header">
+            <div class="pv-header-left">
+                <h2><i class="fas fa-clipboard-list me-2"></i>Procès-verbal d'inventaire</h2>
+                <p><strong>{{ commercant.nom_entreprise|default:commercant.user.get_full_name }}</strong></p>
+                <p>Contrôle physique des stocks — {{ type_point_vente }} « {{ point_vente.nom }} »</p>
+            </div>
+            <div class="pv-header-right">
+                <div class="ref">{{ inventaire.reference }}</div>
+                <div class="date"><i class="fas fa-calendar me-1"></i>{{ inventaire.date_inventaire|date:"d/m/Y" }}</div>
+                <div class="date"><span class="badge bg-{% if inventaire.statut == 'REGULARISE' %}success{% elif inventaire.statut == 'TERMINE' %}info{% else %}warning text-dark{% endif %}">{{ inventaire.get_statut_display }}</span></div>
+            </div>
+        </div>
+
+        <!-- INFORMATIONS -->
+        <div class="pv-info-grid">
+            <div class="pv-info-bloc">
+                <h6><i class="fas fa-store me-1"></i>{{ type_point_vente }}</h6>
+                <div class="val">{{ point_vente.nom }}</div>
+                <div class="val"><small>{{ point_vente.adresse|default:"" }}{% if point_vente.ville %} — {{ point_vente.ville }}{% endif %}</small></div>
+            </div>
+            <div class="pv-info-bloc" style="border-left-color:#28a745;">
+                <h6><i class="fas fa-user me-1"></i>Inventaire effectué par</h6>
+                <div class="val">{{ inventaire.cree_par.get_full_name|default:inventaire.cree_par.username|default:"—" }}</div>
+                <div class="val"><small>Clôturé le {{ inventaire.date_cloture|date:"d/m/Y H:i"|default:"—" }}</small></div>
+            </div>
+            <div class="pv-info-bloc" style="border-left-color:#ffc107;">
+                <h6><i class="fas fa-balance-scale me-1"></i>Régularisation du stock</h6>
+                <div class="val">{{ inventaire.date_regularisation|date:"d/m/Y H:i"|default:"Non régularisé" }}</div>
+                <div class="val"><small>{{ nb_ecarts }} article(s) avec écart</small></div>
+            </div>
+            <div class="pv-info-bloc" style="border-left-color:#17a2b8;">
+                <h6><i class="fas fa-boxes me-1"></i>Articles inventoriés</h6>
+                <div class="val">{{ nb_saisis }} compté(s) sur {{ nb_articles }}</div>
+                <div class="val"><small>{{ nb_non_saisis }} non compté(s)</small></div>
+            </div>
+        </div>
+
+        <!-- RÉCAPITULATIF DES VALEURS -->
+        <div class="pv-totaux">
+            <div class="pv-totaux-card">
+                <h6><i class="fas fa-calculator me-1"></i>Valeur du stock</h6>
+                <div class="pv-totaux-row">
+                    <span>Au prix d'achat :</span>
+                    <strong>{{ valeur_stock_achat|format_number }} FC</strong>
+                </div>
+                <div class="pv-totaux-row total">
+                    <span>Au prix de vente :</span>
+                    <span>{{ valeur_stock_vente|format_number }} FC</span>
+                </div>
+            </div>
+            <div class="pv-totaux-card">
+                <h6><i class="fas fa-exchange-alt me-1"></i>Valeur des écarts constatés</h6>
+                <div class="pv-totaux-row">
+                    <span>Surplus (+) achat / vente :</span>
+                    <strong class="pv-ecart-pos">+{{ valeur_ecart_positif_achat|format_number }} / +{{ valeur_ecart_positif_vente|format_number }} FC</strong>
+                </div>
+                <div class="pv-totaux-row">
+                    <span>Manques (−) achat / vente :</span>
+                    <strong class="pv-ecart-neg">-{{ valeur_ecart_negatif_achat|format_number }} / -{{ valeur_ecart_negatif_vente|format_number }} FC</strong>
+                </div>
+                <div class="pv-totaux-row total">
+                    <span>Articles avec écart :</span>
+                    <span>{{ nb_ecarts }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- TABLEAU DÉTAILLÉ -->
+        <table class="pv-table">
+            <thead>
+                <tr>
+                    <th style="width:4%;">N°</th>
+                    <th style="width:26%;">Article</th>
+                    <th style="width:14%;">Code</th>
+                    <th style="width:8%;" class="text-center">Théorique</th>
+                    <th style="width:8%;" class="text-center">Compté</th>
+                    <th style="width:8%;" class="text-center">Écart</th>
+                    <th style="width:16%;" class="text-end">Valeur achat</th>
+                    <th style="width:16%;" class="text-end">Valeur vente</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ligne in lignes %}
+                <tr>
+                    <td class="text-center">{{ forloop.counter }}</td>
+                    <td><strong>{{ ligne.article.nom }}</strong></td>
+                    <td><code>{{ ligne.article.code }}</code></td>
+                    <td class="text-center">{{ ligne.stock_theorique }}</td>
+                    <td class="text-center">{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% else %}—{% endif %}</td>
+                    <td class="text-center">
+                        {% if ligne.stock_physique is None %}—
+                        {% elif ligne.ecart > 0 %}<span class="pv-ecart-pos">+{{ ligne.ecart }}</span>
+                        {% elif ligne.ecart < 0 %}<span class="pv-ecart-neg">{{ ligne.ecart }}</span>
+                        {% else %}0{% endif %}
+                    </td>
+                    <td class="text-end">{% with qte=ligne.stock_physique|default_if_none:ligne.stock_theorique %}{{ qte|mul:ligne.article.prix_achat|format_number }}{% endwith %}</td>
+                    <td class="text-end">{% with qte=ligne.stock_physique|default_if_none:ligne.stock_theorique %}{{ qte|mul:ligne.article.prix_vente|format_number }}{% endwith %}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="8" class="text-center">Aucun article dans cet inventaire</td></tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td colspan="6" class="text-end">VALEUR TOTALE DU STOCK</td>
+                    <td class="text-end">{{ valeur_stock_achat|format_number }} FC</td>
+                    <td class="text-end">{{ valeur_stock_vente|format_number }} FC</td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <!-- CLAUSE D'ENGAGEMENT -->
+        <div class="pv-engagement">
+            <h6><i class="fas fa-shield-alt me-1"></i>Déclaration et engagement de responsabilité</h6>
+            <p>
+                Je soussigné(e), responsable du {{ type_point_vente|lower }} <strong>« {{ point_vente.nom }} »</strong>,
+                certifie que l'inventaire physique ci-dessus a été réalisé le
+                <strong>{{ inventaire.date_inventaire|date:"d/m/Y" }}</strong>, article par article,
+                portant sur <strong>{{ nb_articles }} article(s)</strong> dont <strong>{{ nb_saisis }} compté(s)</strong>.
+            </p>
+            <p>
+                Reconnais exactes les quantités comptées ci-dessus, qui fixent la valeur des stocks qui m'ont été
+                confiés s'élevant à <strong>{{ valeur_stock_achat|format_number }} FC au prix d'achat</strong>
+                et <strong>{{ valeur_stock_vente|format_number }} FC au prix de vente</strong>,
+                soit des écarts de <strong>+{{ valeur_ecart_positif_achat|format_number }} FC</strong> (surplus) et
+                <strong>-{{ valeur_ecart_negatif_achat|format_number }} FC</strong> (manques) valorisés au prix d'achat.
+            </p>
+            <p>
+                J'assume la responsabilité des stocks qui me sont confiés et m'engage à rendre compte de tout écart,
+                perte, détérioration ou différence constatée ultérieurement sur ces marchandises.
+            </p>
+        </div>
+
+        <!-- SIGNATURES -->
+        <div class="pv-signatures">
+            <div class="pv-sig-bloc">
+                <div class="sig-title"><i class="fas fa-clipboard-check me-1"></i>Inventaire effectué par</div>
+                <div class="sig-name">{{ inventaire.cree_par.get_full_name|default:inventaire.cree_par.username|default:"____________________" }}</div>
+                <div class="sig-line">Nom, signature et date</div>
+            </div>
+            <div class="pv-sig-bloc">
+                <div class="sig-title"><i class="fas fa-store me-1"></i>Le Gérant ({{ type_point_vente|lower }})</div>
+                <div class="sig-name">____________________</div>
+                <div class="sig-line">Nom, signature et cachet</div>
+            </div>
+            <div class="pv-sig-bloc">
+                <div class="sig-title"><i class="fas fa-user-tie me-1"></i>Approuvé par le Propriétaire</div>
+                <div class="sig-name">{{ commercant.nom_responsable|default:commercant.user.get_full_name|default:"____________________" }}</div>
+                <div class="sig-line">Signature, cachet et date d'approbation</div>
+            </div>
+        </div>
+
+        <!-- PIED DE PAGE -->
+        <div class="pv-footer">
+            <p>Document généré le {{ today|date:"d/m/Y" }} — Réf. : {{ inventaire.reference }} — {{ point_vente.nom }}</p>
+            <p>Document à conserver : il engage la responsabilité du gérant quant aux stocks inventoriés et confiés.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -7884,6 +7884,63 @@ def nouvel_inventaire(request, depot_id):
     return render(request, 'inventory/commercant/nouvel_inventaire.html', context)
 
 
+def _totaux_valeur_inventaire(lignes):
+    """Valeur du stock de l'inventaire au prix d'achat ET au prix de vente.
+
+    Quantité retenue : le stock compté quand il existe, sinon le stock
+    théorique (les lignes non comptées restent à leur valeur système).
+    Les écarts sont valorisés dans les deux sens pour le rapport imprimé.
+    """
+    totaux = {
+        'valeur_stock_achat': Decimal(0),
+        'valeur_stock_vente': Decimal(0),
+        'valeur_ecart_positif_achat': Decimal(0),
+        'valeur_ecart_positif_vente': Decimal(0),
+        'valeur_ecart_negatif_achat': Decimal(0),
+        'valeur_ecart_negatif_vente': Decimal(0),
+    }
+    for ligne in lignes:
+        article = ligne.article
+        qte = ligne.stock_physique if ligne.stock_physique is not None else ligne.stock_theorique
+        prix_achat = article.prix_achat or Decimal(0)
+        prix_vente = article.prix_vente or Decimal(0)
+        totaux['valeur_stock_achat'] += Decimal(qte) * prix_achat
+        totaux['valeur_stock_vente'] += Decimal(qte) * prix_vente
+
+        # Écart valorisé : au prix d'achat retenu par l'inventaire (ligne.valeur_ecart),
+        # et au prix de vente pour la colonne « marge potentielle » du rapport.
+        valeur_achat = ligne.valeur_ecart
+        valeur_vente = Decimal(ligne.ecart) * prix_vente
+        if ligne.ecart > 0:
+            totaux['valeur_ecart_positif_achat'] += valeur_achat
+            totaux['valeur_ecart_positif_vente'] += valeur_vente
+        elif ligne.ecart < 0:
+            totaux['valeur_ecart_negatif_achat'] += -valeur_achat
+            totaux['valeur_ecart_negatif_vente'] += -valeur_vente
+    return totaux
+
+
+def _context_rapport_inventaire(request, inventaire, point_vente, commercant, est_depot=False):
+    """Contexte commun du rapport d'inventaire imprimable (boutique et dépôt)."""
+    lignes = list(inventaire.lignes.select_related('article', 'article__categorie').all())
+    nb_saisis = sum(1 for l in lignes if l.stock_physique is not None)
+    nb_ecarts = sum(1 for l in lignes if l.stock_physique is not None and l.ecart != 0)
+    return render(request, 'inventory/commercant/imprimer_inventaire.html', {
+        'inventaire': inventaire,
+        'point_vente': point_vente,
+        'est_depot': est_depot,
+        'type_point_vente': 'Dépôt' if est_depot else 'Point de vente',
+        'commercant': commercant,
+        'lignes': lignes,
+        'nb_articles': len(lignes),
+        'nb_saisis': nb_saisis,
+        'nb_non_saisis': len(lignes) - nb_saisis,
+        'nb_ecarts': nb_ecarts,
+        'today': timezone.localdate(),
+        **_totaux_valeur_inventaire(lignes),
+    })
+
+
 @login_required
 @commercant_required
 def detail_inventaire(request, depot_id, inventaire_id):
@@ -7917,8 +7974,19 @@ def detail_inventaire(request, depot_id, inventaire_id):
         'lignes_non_saisies': lignes_non_saisies_qs.count(),
         'lignes_non_saisies_qs': lignes_non_saisies_qs,
         'valeur_stock_non_inventorie': valeur_stock_non_inventorie,
+        **_totaux_valeur_inventaire(lignes),
     }
     return render(request, 'inventory/commercant/detail_inventaire.html', context)
+
+
+@login_required
+@commercant_required
+def imprimer_inventaire(request, depot_id, inventaire_id):
+    """Rapport imprimable d'un inventaire de dépôt (valeurs achat + vente)."""
+    commercant = commercant_utilisateur(request.user)
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=depot)
+    return _context_rapport_inventaire(request, inventaire, depot, commercant, est_depot=True)
 
 
 @login_required
@@ -8246,8 +8314,20 @@ def detail_inventaire_boutique(request, boutique_id, inventaire_id):
         'lignes_non_saisies': lignes_non_saisies_qs.count(),
         'lignes_non_saisies_qs': lignes_non_saisies_qs,
         'valeur_stock_non_inventorie': valeur_stock_non_inventorie,
+        **_totaux_valeur_inventaire(lignes),
     }
     return render(request, 'inventory/commercant/detail_inventaire_boutique.html', context)
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def imprimer_inventaire_boutique(request, boutique_id, inventaire_id):
+    """Rapport imprimable d'un inventaire de boutique (valeurs achat + vente)."""
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+    return _context_rapport_inventaire(
+        request, inventaire, boutique, commercant_utilisateur(request.user))
 
 
 @login_required

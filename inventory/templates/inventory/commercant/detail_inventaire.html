@@ -19,6 +19,9 @@
             </nav>
         </div>
         <div>
+            <a href="{% url 'inventory:imprimer_inventaire' depot.id inventaire.id %}" target="_blank" class="btn btn-outline-secondary">
+                <i class="fas fa-print"></i> Imprimer le rapport
+            </a>
             {% if inventaire.statut == 'EN_COURS' %}
             <a href="{% url 'inventory:saisir_inventaire' depot.id inventaire.id %}" class="btn btn-primary">
                 <i class="fas fa-edit"></i> Continuer la saisie
@@ -68,6 +71,42 @@
                 <div class="card-body text-center">
                     <h3 class="mb-0 {% if lignes_avec_ecart > 0 %}text-danger{% endif %}">{{ lignes_avec_ecart }}</h3>
                     <small class="text-muted">Écarts</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Valeur du stock : prix d'achat et prix de vente -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card border-primary">
+                <div class="card-body text-center">
+                    <h4 class="mb-0 text-primary">{{ valeur_stock_achat|floatformat:0 }} <small>FC</small></h4>
+                    <small class="text-muted">Valeur stock (achat)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h4 class="mb-0 text-success">{{ valeur_stock_vente|floatformat:0 }} <small>FC</small></h4>
+                    <small class="text-muted">Valeur stock (vente)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="mb-0 text-success">+{{ valeur_ecart_positif_achat|floatformat:0 }} <small>FC</small></h5>
+                    <small class="text-muted">Surplus (achat) · +{{ valeur_ecart_positif_vente|floatformat:0 }} FC vente</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h5 class="mb-0 text-danger">-{{ valeur_ecart_negatif_achat|floatformat:0 }} <small>FC</small></h5>
+                    <small class="text-muted">Manques (achat) · -{{ valeur_ecart_negatif_vente|floatformat:0 }} FC vente</small>
                 </div>
             </div>
         </div>
@@ -161,8 +200,8 @@
                                     <th class="text-end">Valeur</th>
                                 </tr>
                             </thead>
-                            <tbody>_nnsaisq
-                                {% for ligne in lignes.filter(stock_physique__isnull=True) %}
+                            <tbody>
+                                {% for ligne in lignes_non_saisies_qs %}
                                 <tr>
                                     <td><strong>{{ ligne.article.nom }}</strong></td>
                                     <td class="text-center">{{ ligne.stock_theorique }}</td>
