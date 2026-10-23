@@ -22,7 +22,7 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination, CodeCloture, ClotureJournee, DemandeAnnulationVente
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination, appliquer_attributs_vente_destination, CodeCloture, ClotureJournee, DemandeAnnulationVente
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 from .distribution import etat_distribution
 from .ca_remboursements import ca_net, remboursements, paiements_credit
@@ -8663,6 +8663,46 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
 @login_required
 @commercant_required
 @boutique_access_required
+def articles_autres_pdv_inventaire_ajax(request, boutique_id, inventaire_id):
+    """GET : rechercher un article dans les AUTRES points de vente du commerçant,
+    de même type que la boutique courante (import possible pendant l'inventaire)."""
+    boutique = request.boutique
+    get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+
+    q = str(request.GET.get('q') or '').strip()
+    if len(q) < 2:
+        return JsonResponse({'success': True, 'results': []})
+
+    articles = Article.objects.filter(
+        boutique__commercant=boutique.commercant,
+        boutique__type_commerce=boutique.type_commerce,
+        est_actif=True,
+    ).exclude(boutique=boutique).filter(
+        Q(nom__icontains=q) | Q(code__icontains=q)
+    ).select_related('boutique', 'categorie').order_by('nom')[:20]
+
+    return JsonResponse({
+        'success': True,
+        'results': [{
+            'id': a.id,
+            'nom': a.nom,
+            'code': a.code,
+            'prix_vente': float(a.prix_vente or 0),
+            'prix_achat': float(a.prix_achat or 0),
+            'devise': a.devise,
+            'unite_base': a.unite_base or '',
+            'categorie_id': a.categorie_id,
+            'categorie_nom': a.categorie.nom if a.categorie else '',
+            'boutique_id': a.boutique_id,
+            'boutique_nom': a.boutique.nom,
+            'quantite_stock': a.quantite_stock,
+        } for a in articles],
+    })
+
+
+@login_required
+@commercant_required
+@boutique_access_required
 @require_POST
 def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
     """AJAX : rattacher un article absent de l'inventaire en cours.
@@ -8679,8 +8719,27 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
     except (ValueError, TypeError):
         return JsonResponse({'success': False, 'error': 'Données invalides'}, status=400)
 
+    # Import depuis un autre point de vente (même commerçant, même type)
+    source = None
+    if data.get('autre_article_id'):
+        source = Article.objects.filter(
+            id=data.get('autre_article_id'),
+            boutique__commercant=boutique.commercant,
+            boutique__type_commerce=boutique.type_commerce,
+        ).exclude(boutique=boutique).first()
+        if source is None:
+            return JsonResponse({'success': False, 'error':
+                "Article source introuvable : l'import est réservé aux autres points "
+                "de vente de même type de votre compte."}, status=400)
+
     code = str(data.get('code') or '').strip()
     nom = str(data.get('nom') or '').strip()
+    if source is not None:
+        if not code:
+            code = source.code
+        if not nom:
+            nom = source.nom
+
     article_existant = (
         Article.objects.filter(boutique=boutique, code__iexact=code).first() if code else None
     )
@@ -8730,6 +8789,16 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
                 code = f"{boutique.id}-{uuid.uuid4().hex[:8].upper()}"
                 while Article.objects.filter(code=code).exists():
                     code = f"{boutique.id}-{uuid.uuid4().hex[:8].upper()}"
+
+            if source is not None:
+                # Import : reprendre la catégorie localement (par nom) si absente
+                if categorie is None and source.categorie_id:
+                    categorie, _ = Categorie.objects.get_or_create(
+                        nom__iexact=source.categorie.nom,
+                        boutique=boutique,
+                        defaults={'nom': source.categorie.nom},
+                    )
+
             article = Article.objects.create(
                 boutique=boutique,
                 nom=nom,
@@ -8741,8 +8810,30 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
                 est_valide_client=True,
                 quantite_envoyee=0,
                 categorie=categorie,
+                description=source.description if source is not None else '',
+                devise=source.devise if source is not None else 'CDF',
+                unite_base=source.unite_base if source is not None else '',
+                pieces_par_carton=source.pieces_par_carton if source is not None else 0,
             )
             article_cree = True
+
+            if source is not None:
+                # Devise, prix, unité de base, pièces/carton et conditionnements
+                # (Boucherie) repris de l'article source, puis éventuels ajustements
+                # saisis dans le formulaire d'import.
+                appliquer_attributs_vente_destination(article, source)
+                champs = []
+                if prix_vente > 0 and prix_vente != article.prix_vente:
+                    article.prix_vente = prix_vente
+                    champs.append('prix_vente')
+                if prix_achat_saisi is not None and prix_achat_saisi != article.prix_achat:
+                    article.prix_achat = prix_achat_saisi
+                    champs.append('prix_achat')
+                if categorie and article.categorie_id != categorie.id:
+                    article.categorie = categorie
+                    champs.append('categorie')
+                if champs:
+                    article.save(update_fields=champs)
         else:
             champs = []
             if not article.est_actif:
@@ -8810,6 +8901,7 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
         'article_id': article.id,
         'article_nom': article.nom,
         'article_code': article.code,
+        'importe_depuis': source.boutique.nom if source is not None else '',
         'stock_theorique': ligne.stock_theorique,
         'stock_physique': ligne.stock_physique,
         'ecart': ligne.ecart,

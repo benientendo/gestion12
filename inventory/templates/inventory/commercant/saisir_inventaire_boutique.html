@@ -61,7 +61,7 @@ kbd {
     z-index: 9999;
     display: none;
 }
-.sr-item {
+.sr-item, .sr-item-ext {
     padding: 8px 12px;
     cursor: pointer;
     border-bottom: 1px solid #f0f0f0;
@@ -70,12 +70,13 @@ kbd {
     align-items: center;
     font-size: .9rem;
 }
-.sr-item:hover, .sr-item.sr-active {
+.sr-item:hover, .sr-item.sr-active, .sr-item-ext:hover {
     background: #f0f4ff;
 }
-.sr-item:last-child { border-bottom: none; }
+.sr-item:last-child, .sr-item-ext:last-child { border-bottom: none; }
 .sr-badge-ok  { background:#d4edda; color:#155724; border-radius:4px; padding:1px 6px; font-size:.75rem; }
 .sr-badge-nok { background:#fff3cd; color:#856404; border-radius:4px; padding:1px 6px; font-size:.75rem; }
+.sr-badge-ext { background:#e7f1ff; color:#084298; border-radius:4px; padding:1px 6px; font-size:.75rem; }
 /* === IA INVENTAIRE === */
 .ia-box { position: relative; display: inline-block; }
 .btn-ia-inv { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff; border: none; font-size: .8rem; padding: 5px 12px; border-radius: 8px; cursor: pointer; transition: all .2s; }
@@ -616,10 +617,14 @@ kbd {
                 <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-3">
-                <div class="alert alert-info py-2 small mb-3">
+                <div class="alert alert-info py-2 small mb-3" id="naBaseInfo">
                     L'article rejoint l'inventaire en cours avec un stock théorique de 0 :
                     la quantité comptée sera <strong>appliquée au stock à la régularisation</strong>.
                 </div>
+                <div class="alert alert-warning py-2 small mb-3" id="naOrigineInfo" style="display:none;">
+                    <i class="fas fa-file-import me-1"></i><span id="naOrigineTexte"></span>
+                </div>
+                <input type="hidden" id="naOrigineId" value="">
                 <div class="mb-2">
                     <label class="form-label small fw-bold mb-1" for="naCode">Code / code-barres</label>
                     <input type="text" class="form-control form-control-sm" id="naCode" maxlength="50"
@@ -1369,6 +1374,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         LOCKS_URL       = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/locks/';
         RESET_URL       = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/reset-ligne/';
         NA_URL          = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/ajouter-article/';
+        AUTRES_PDV_URL  = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/articles-autres-pdv/';
         CSRF            = '{{ csrf_token }}';
         CURRENT_USER_NOM = '{{ current_user_nom|escapejs }}';
     } catch(e) {
@@ -1691,6 +1697,14 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         });
     }
 
+    function reinitOrigine() {
+        document.getElementById('naOrigineId').value = '';
+        document.getElementById('naOrigineInfo').style.display = 'none';
+        document.getElementById('naBaseInfo').style.display = '';
+        document.querySelector('#nouvelArticleModal .modal-title').innerHTML =
+            '<i class="fas fa-plus-circle me-1"></i>Nouvel article dans l\'inventaire';
+    }
+
     function ouvrirNouvelArticle(code, nom) {
         const modalEl = document.getElementById('nouvelArticleModal');
         document.getElementById('naCode').value = code || '';
@@ -1700,6 +1714,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         document.getElementById('naQte').value = '';
         document.getElementById('naError').style.display = 'none';
         document.getElementById('naSubmitBtn').disabled = false;
+        reinitOrigine();
 
         const selectCat = document.getElementById('naCategorie');
         selectCat.value = '';
@@ -1720,6 +1735,48 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         }, 350);
     }
     window.ouvrirNouvelArticle = ouvrirNouvelArticle;
+
+    // Import depuis un autre point de vente du même commerçant / même type :
+    // l'article est copié dans cette boutique, prix + unités + conditionnements
+    // repris, puis l'utilisateur saisit la quantité comptée.
+    function ouvrirImportArticle(src) {
+        const modalEl = document.getElementById('nouvelArticleModal');
+        ouvrirNouvelArticle(src.code || '', src.nom || '');
+
+        document.getElementById('naOrigineId').value = src.id;
+        document.getElementById('naOrigineTexte').innerHTML =
+            'Article repris du point de vente <strong>' + escapeHtml(src.boutique_nom) + '</strong>'
+            + (src.unite_base ? ' (unité : ' + escapeHtml(src.unite_base) + ')' : '')
+            + ' — prix et conditionnements copiés.'
+            + ' <strong>Saisissez la quantité comptée</strong> pour cet inventaire.';
+        document.getElementById('naOrigineInfo').style.display = '';
+        document.getElementById('naBaseInfo').style.display = 'none';
+        document.querySelector('#nouvelArticleModal .modal-title').innerHTML =
+            '<i class="fas fa-file-import me-1"></i>Importer un article depuis un autre point de vente';
+
+        if (src.prix_vente) document.getElementById('naPrix').value = src.prix_vente;
+        if (src.prix_achat) document.getElementById('naPrixAchat').value = src.prix_achat;
+
+        const selectCat = document.getElementById('naCategorie');
+        selectCat.value = '';
+        if (src.categorie_nom) {
+            Array.prototype.some.call(selectCat.options, function(o) {
+                if (o.textContent.trim().toLowerCase() === String(src.categorie_nom).trim().toLowerCase()) {
+                    selectCat.value = o.value;
+                    return true;
+                }
+                return false;
+            });
+        }
+
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        setTimeout(function() {
+            const qte = document.getElementById('naQte');
+            qte.focus();
+            if (qte.select) qte.select();
+        }, 350);
+    }
+    window.ouvrirImportArticle = ouvrirImportArticle;
 
     function openCreateSuggestion(query) {
         srDropdown.innerHTML = '';
@@ -1763,6 +1820,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             prix_vente: document.getElementById('naPrix').value || null,
             categorie_id: document.getElementById('naCategorie').value || null,
             quantite: quantiteBrute === '' ? null : parseInt(quantiteBrute, 10),
+            autre_article_id: document.getElementById('naOrigineId').value || null,
         }).then(function(d) {
             if (!d.success) {
                 erreur.textContent = d.error || 'Erreur lors de la création';
@@ -1787,9 +1845,11 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             if (compte) addSessionEntry(d, d.stock_physique);
 
             bootstrap.Modal.getInstance(document.getElementById('nouvelArticleModal')).hide();
+            reinitOrigine();
             showToast(
                 '<i class="fas fa-plus-circle me-2"></i><strong>' + escapeHtml(d.article_nom)
                 + '</strong> ajouté à l\'inventaire'
+                + (d.importe_depuis ? ' (importé depuis ' + escapeHtml(d.importe_depuis) + ')' : '')
                 + (compte ? ' (' + d.stock_physique + ' compté(s), écart ' + d.ecart + ')' : ''),
                 'success'
             );
@@ -1885,10 +1945,67 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         });
     }
 
+    // === Recherche dans les AUTRES points de vente (même commerçant, même type) ===
+    let extToken = 0;
+    let extTimer = null;
+    let extResults = [];
+
+    function clearAutresPdv() {
+        const blocs = srDropdown.querySelectorAll('.sr-ext-sep, .sr-item-ext');
+        blocs.forEach(function(n) { n.remove(); });
+        extResults = [];
+    }
+
+    function rendreAutresPdv(items) {
+        clearAutresPdv();
+        extResults = items || [];
+        if (!extResults.length) return;
+
+        const sep = document.createElement('div');
+        sep.className = 'sr-ext-sep';
+        sep.style.cssText = 'font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;color:#6c757d;'
+            + 'padding:5px 12px 3px;background:#f8f9fa;border-top:1px solid #e9ecef;';
+        sep.innerHTML = '<i class="fas fa-file-import me-1"></i>Autres points de vente (même type)';
+        srDropdown.appendChild(sep);
+
+        extResults.forEach(function(a) {
+            const div = document.createElement('div');
+            div.className = 'sr-item-ext';
+            div.title = 'Importer « ' + a.nom + ' » depuis ' + a.boutique_nom + ' (saisir la quantité ensuite)';
+            div.innerHTML = '<span><strong>' + escapeHtml(a.nom) + '</strong> '
+                + '<small class="text-muted">' + escapeHtml(a.code) + '</small></span>'
+                + '<span class="sr-badge-ext"><i class="fas fa-file-import me-1"></i>'
+                + escapeHtml(a.boutique_nom) + '</span>';
+            div.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                ouvrirImportArticle(a);
+            });
+            srDropdown.appendChild(div);
+        });
+        srDropdown.style.display = 'block';
+    }
+
+    function rechercherAutresPdv(q) {
+        const token = ++extToken;
+        if (extTimer) clearTimeout(extTimer);
+        if (!q || q.length < 2) { rendreAutresPdv([]); return; }
+        extTimer = setTimeout(function() {
+            fetch(AUTRES_PDV_URL + '?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (token !== extToken) return;
+                    rendreAutresPdv((data && data.results) ? data.results : []);
+                })
+                .catch(function() {
+                    if (token === extToken) rendreAutresPdv([]);
+                });
+        }, 250);
+    }
+
     // === Événements ===
     srSearch.addEventListener('input', function() {
         const q = this.value.trim().toLowerCase();
-        if (!q) { closeDropdown(); return; }
+        if (!q) { clearAutresPdv(); closeDropdown(); return; }
         // 🔍 Recherche sur nom / code parent / codes des VARIANTES
         const results = ARTICLES.filter(function(a) {
             const codes = (a.codes && a.codes.length) ? a.codes : [a.code || ''];
@@ -1897,8 +2014,9 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             });
             return (a.nom || '').toLowerCase().includes(q) || codeOk;
         }).slice(0, 12);
-        if (!results.length) { openCreateSuggestion(this.value.trim()); return; }
-        openDropdown(results);
+        if (!results.length) { openCreateSuggestion(this.value.trim()); }
+        else { openDropdown(results); }
+        rechercherAutresPdv(this.value.trim());
     });
 
     srSearch.addEventListener('keydown', function(e) {
@@ -1917,7 +2035,9 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             } else if (articlesList.length === 1) {
                 selectArticle(articlesList[0]);
             } else if (!articlesList.length) {
-                ouvrirNouvelArticle('', srSearch.value.trim());
+                // Un seul ou plusieurs résultats dans les autres PDV : on importe
+                if (extResults.length) { ouvrirImportArticle(extResults[0]); }
+                else { ouvrirNouvelArticle('', srSearch.value.trim()); }
             }
             return;
         } else if (e.key === 'Escape') {
