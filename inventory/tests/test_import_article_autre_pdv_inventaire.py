@@ -118,6 +118,10 @@ class RechercheAutresPdvTest(ImportAutrePdvBase):
     def test_requete_courte_ne_retourne_rien(self):
         self.assertEqual(self.client.get(self.url_search, {'q': 'P'}).json()['results'], [])
 
+    def test_sans_requete_retourne_la_liste_importable(self):
+        results = self.client.get(self.url_search).json()['results']
+        self.assertEqual([a['id'] for a in results], [self.article_source.id])
+
 
 class ImportArticlePendantInventaireTest(ImportAutrePdvBase):
 

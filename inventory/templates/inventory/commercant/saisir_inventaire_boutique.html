@@ -124,6 +124,12 @@ kbd {
             <i class="fas fa-plus-circle me-1"></i>Nouvel article
         </button>
 
+        <!-- Import depuis un autre point de vente -->
+        <button type="button" id="srImportBtn" class="btn btn-sm btn-outline-primary"
+                style="white-space:nowrap;" title="Importer un article (prix d'achat, prix de vente, catégorie) depuis un autre point de vente de même type">
+            <i class="fas fa-file-import me-1"></i>Importer (autre PDV)
+        </button>
+
         <!-- Champs article (cachés jusqu'à sélection) -->
         <div id="srQteWrap" class="align-items-center gap-2 flex-wrap" style="display:none;">
 
@@ -667,6 +673,31 @@ kbd {
                 </button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Modal : liste des articles importables depuis les autres points de vente -->
+<div class="modal fade" id="importPdvModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white py-2">
+                <h6 class="modal-title mb-0"><i class="fas fa-file-import me-1"></i>Importer depuis un autre point de vente</h6>
+                <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <div class="alert alert-info py-2 small mb-3">
+                    Articles des <strong>autres points de vente de même type</strong> de votre compte :
+                    prix d'achat, prix de vente et catégorie sont <strong>copiés</strong>, puis vous saisissez
+                    la quantité comptée pour cet inventaire.
+                </div>
+                <input type="text" class="form-control form-control-sm mb-2" id="ipSearch"
+                       placeholder="&#128269; Nom ou code (vide = tout afficher)" autocomplete="off" spellcheck="false">
+                <div id="ipResults" style="max-height:320px;overflow-y:auto;"></div>
+            </div>
+            <div class="modal-footer py-2 border-0">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -1796,6 +1827,80 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 
     document.getElementById('srNewArticleBtn').addEventListener('click', function() {
         ouvrirNouvelArticle('', document.getElementById('srSearch').value.trim());
+    });
+
+    // === Modal « Importer (autre PDV) » : liste visible des articles importables ===
+    const ipSearch = document.getElementById('ipSearch');
+    const ipResults = document.getElementById('ipResults');
+    let ipToken = 0;
+    let ipTimer = null;
+
+    function rendreListePdv(items) {
+        if (!items.length) {
+            ipResults.innerHTML = '<div class="text-muted small py-2">'
+                + '<i class="fas fa-search-minus me-1"></i>Aucun article importable trouvé.</div>';
+            return;
+        }
+        ipResults.innerHTML = '';
+        items.forEach(function(a) {
+            const div = document.createElement('div');
+            div.className = 'sr-item';
+            div.style.cssText = 'padding:8px 10px;cursor:pointer;border-bottom:1px solid #eee;';
+            div.title = 'Importer « ' + a.nom + ' » depuis ' + a.boutique_nom;
+            div.innerHTML = '<div class="d-flex justify-content-between align-items-center gap-2">'
+                + '<div class="text-truncate"><strong>' + escapeHtml(a.nom) + '</strong> '
+                + '<small class="text-muted">' + escapeHtml(a.code) + '</small>'
+                + '<br><small class="text-muted">Achat&nbsp;: ' + Number(a.prix_achat || 0).toLocaleString('fr-FR')
+                + ' &nbsp;|&nbsp; Vente&nbsp;: ' + Number(a.prix_vente || 0).toLocaleString('fr-FR')
+                + ' ' + escapeHtml(a.devise)
+                + (a.categorie_nom ? ' &nbsp;·&nbsp; ' + escapeHtml(a.categorie_nom) : '')
+                + '</small></div>'
+                + '<span class="sr-badge-ext" style="white-space:nowrap;"><i class="fas fa-store me-1"></i>'
+                + escapeHtml(a.boutique_nom) + '</span>'
+                + '</div>';
+            div.addEventListener('click', function() {
+                bootstrap.Modal.getInstance(document.getElementById('importPdvModal')).hide();
+                ouvrirImportArticle(a);
+            });
+            ipResults.appendChild(div);
+        });
+    }
+
+    function chargerArticlesPdv(q) {
+        const token = ++ipToken;
+        ipResults.innerHTML = '<div class="text-muted small py-2">'
+            + '<i class="fas fa-spinner fa-spin me-1"></i>Chargement…</div>';
+        fetch(AUTRES_PDV_URL + (q ? '?q=' + encodeURIComponent(q) : ''), { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (token !== ipToken) return;
+                rendreListePdv((data && data.results) ? data.results : []);
+            })
+            .catch(function() {
+                if (token === ipToken) {
+                    ipResults.innerHTML = '<div class="text-danger small py-2">'
+                        + '<i class="fas fa-exclamation-triangle me-1"></i>Erreur réseau</div>';
+                }
+            });
+    }
+
+    document.getElementById('srImportBtn').addEventListener('click', function() {
+        ipSearch.value = '';
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('importPdvModal')).show();
+        chargerArticlesPdv('');
+        setTimeout(function() { ipSearch.focus(); }, 350);
+    });
+
+    ipSearch.addEventListener('input', function() {
+        const q = this.value.trim();
+        if (ipTimer) clearTimeout(ipTimer);
+        if (!q) { chargerArticlesPdv(''); return; }
+        if (q.length < 2) {
+            ipToken++;
+            ipResults.innerHTML = '<div class="text-muted small py-2">Saisissez au moins 2 caractères…</div>';
+            return;
+        }
+        ipTimer = setTimeout(function() { chargerArticlesPdv(q); }, 250);
     });
 
     document.getElementById('nouvelArticleForm').addEventListener('submit', function(e) {

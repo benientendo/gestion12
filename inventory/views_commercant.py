@@ -8670,16 +8670,17 @@ def articles_autres_pdv_inventaire_ajax(request, boutique_id, inventaire_id):
     get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
 
     q = str(request.GET.get('q') or '').strip()
-    if len(q) < 2:
+    if q and len(q) < 2:
         return JsonResponse({'success': True, 'results': []})
 
     articles = Article.objects.filter(
         boutique__commercant=boutique.commercant,
         boutique__type_commerce=boutique.type_commerce,
         est_actif=True,
-    ).exclude(boutique=boutique).filter(
-        Q(nom__icontains=q) | Q(code__icontains=q)
-    ).select_related('boutique', 'categorie').order_by('nom')[:20]
+    ).exclude(boutique=boutique)
+    if q:
+        articles = articles.filter(Q(nom__icontains=q) | Q(code__icontains=q))
+    articles = articles.select_related('boutique', 'categorie').order_by('nom')[:20]
 
     return JsonResponse({
         'success': True,

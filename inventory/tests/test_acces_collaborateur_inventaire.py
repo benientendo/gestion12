@@ -146,6 +146,14 @@ class PagesInventaireCollaborateurTest(AccesCollaborateurInventaireBase):
             r = self.client.get(reverse(f'inventory:{name}', args=args))
             self.assertEqual(r.status_code, 200, name)
 
+    def test_bouton_import_autre_pdv_visible_pendant_la_saisie(self):
+        r = self.client.get(
+            reverse('inventory:saisir_inventaire_boutique',
+                    args=[self.boutique.id, self.inventaire.id]),
+        )
+        self.assertContains(r, 'srImportBtn')
+        self.assertContains(r, 'importPdvModal')
+
 
 class DashboardCommercantTest(AccesCollaborateurInventaireBase):
     """Régression : le commerçant garde son dashboard."""
