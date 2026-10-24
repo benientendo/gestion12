@@ -8423,6 +8423,44 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                 except (LigneInventaire.DoesNotExist, ValueError):
                     pass
         
+        # Corrections d'erreur de comptage : une ligne DÉJÀ comptée dont la
+        # valeur a été changée dans le tableau est REMPLACÉE (pas accumulée).
+        for key, value in request.POST.items():
+            if key.startswith('stock_corrige_'):
+                ligne_id = key.replace('stock_corrige_', '')
+                try:
+                    ligne = LigneInventaire.objects.select_related('article').get(id=ligne_id, inventaire=inventaire)
+                    if value.strip():
+                        nouvelle_valeur = int(value)
+                        ancien_stock = ligne.stock_physique
+                        commentaire_val = request.POST.get(f'commentaire_{ligne_id}', '')
+                        ancien_lib = ancien_stock if ancien_stock is not None else 'non saisi'
+                        hist_commentaire = commentaire_val or f"Correction : {ancien_lib} → {nouvelle_valeur}"
+
+                        ligne.stock_physique = nouvelle_valeur
+                        if commentaire_val:
+                            ligne.commentaire = commentaire_val
+                        ligne.saisi_par = request.user
+                        ligne.assigne_a = user_nom_batch
+                        ligne.date_modification = timezone.now()
+                        ligne.save()
+
+                        ligne.refresh_from_db()
+                        HistoriqueSaisieInventaire.objects.create(
+                            ligne_inventaire=ligne,
+                            article=ligne.article,
+                            inventaire=inventaire,
+                            stock_physique_saisi=nouvelle_valeur,
+                            stock_theorique_au_moment=ligne.stock_theorique,
+                            ecart_au_moment=ligne.ecart,
+                            saisi_par=request.user,
+                            nom_saisi_par=user_nom_batch,
+                            commentaire=hist_commentaire,
+                        )
+                        lignes_mises_a_jour += 1
+                except (LigneInventaire.DoesNotExist, ValueError):
+                    pass
+        
         msg_parts = []
         if lignes_mises_a_jour > 0:
             msg_parts.append(f"{lignes_mises_a_jour} lignes mises à jour")
@@ -8446,20 +8484,25 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     
     lignes = inventaire.lignes.select_related('article', 'article__categorie')
     
-    if filtre == 'saisis':
-        lignes = lignes.filter(stock_physique__isnull=False)
-    elif filtre == 'ecarts':
-        lignes = lignes.filter(stock_physique__isnull=False).exclude(ecart=0)
-    # 'non_saisis' (défaut) : affiche TOUS les articles pour permettre l'ajout/accumulation
-    
     if categorie_id:
         lignes = lignes.filter(article__categorie_id=categorie_id)
     
     if recherche:
+        # La recherche prime sur le filtre d'état : un article déjà saisi
+        # doit s'afficher directement dès qu'on le cherche.
         lignes = lignes.filter(
             Q(article__nom__icontains=recherche) |
             Q(article__code__icontains=recherche)
         )
+    elif filtre == 'saisis':
+        # « Saisis » : uniquement les articles comptés avec au moins 1
+        lignes = lignes.filter(stock_physique__gte=1)
+    elif filtre == 'non_saisis':
+        # « Non saisis » : uniquement les articles jamais comptés
+        lignes = lignes.filter(stock_physique__isnull=True)
+    elif filtre == 'ecarts':
+        lignes = lignes.filter(stock_physique__isnull=False).exclude(ecart=0)
+    # 'tous' : tous les articles
     
     # Filtre par collaborateur (assigne_a auto-rempli au moment de la saisie)
     if assigne_a_filtre:
@@ -8531,6 +8574,8 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'is_collaborateur': is_collaborateur,
         'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
         'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
+        # Compté avec au moins 1 : correspond au filtre « Saisis »
+        'nb_saisis_quantite': inventaire.lignes.filter(stock_physique__gte=1).count(),
         'all_articles_json': all_articles_json,
         'categories_json': categories_json,
         'variants_scan_json': variants_scan_json,
@@ -8571,8 +8616,12 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
 
     ancien_stock_physique = ligne.stock_physique
     
-    # Mode accumulation: toujours ajouter à la valeur existante
-    if ligne.stock_physique is not None:
+    # Correction d'une erreur : remplacer la valeur existante.
+    # Sinon mode accumulation : toujours ajouter à la valeur existante.
+    remplacer = bool(data.get('remplacer'))
+    if remplacer:
+        ligne.stock_physique = stock_physique
+    elif ligne.stock_physique is not None:
         ligne.stock_physique += stock_physique
     else:
         ligne.stock_physique = stock_physique
@@ -8583,6 +8632,11 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
     ligne.save()
 
     # Tracer la saisie dans l'historique — stock_physique_saisi = quantité ajoutée
+    # (ou nouvelle valeur en cas de correction)
+    commentaire_hist = data.get('commentaire', '')
+    if remplacer and not commentaire_hist:
+        ancien_lib = ancien_stock_physique if ancien_stock_physique is not None else 'non saisi'
+        commentaire_hist = f"Correction : {ancien_lib} → {stock_physique}"
     HistoriqueSaisieInventaire.objects.create(
         ligne_inventaire=ligne,
         article=ligne.article,
@@ -8592,7 +8646,7 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         ecart_au_moment=ligne.stock_physique - ligne.stock_theorique,
         saisi_par=request.user,
         nom_saisi_par=user_nom_ajax,
-        commentaire=data.get('commentaire', ''),
+        commentaire=commentaire_hist,
     )
 
     article_fields_updated = []

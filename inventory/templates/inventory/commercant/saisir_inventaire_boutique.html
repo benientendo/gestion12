@@ -161,6 +161,10 @@ kbd {
                    style="max-width:72px;font-weight:700;font-size:1.05rem;border:2px solid #28a745;">
 
             <!-- Boutons -->
+            <button class="btn btn-outline-warning btn-sm" id="srCorrigerBtn" type="button"
+                    style="display:none;" title="Corriger : remplacer la quantité déjà saisie (erreur de comptage)">
+                <i class="fas fa-pen"></i>
+            </button>
             <button class="btn btn-success btn-sm" id="srSaveBtn" type="button">
                 <i class="fas fa-check"></i>
             </button>
@@ -271,7 +275,7 @@ kbd {
             <form method="get" class="d-flex flex-wrap align-items-center gap-2 mb-2">
                 <div class="btn-group btn-group-sm">
                     <a href="?filtre=non_saisis" class="btn {% if filtre == 'non_saisis' %}btn-primary{% else %}btn-outline-primary{% endif %}">Non saisis ({{ nb_non_saisis }})</a>
-                    <a href="?filtre=saisis"     class="btn {% if filtre == 'saisis'     %}btn-success{% else %}btn-outline-success{% endif %}">Saisis ({{ nb_saisis }})</a>
+                    <a href="?filtre=saisis"     class="btn {% if filtre == 'saisis'     %}btn-success{% else %}btn-outline-success{% endif %}">Saisis ({{ nb_saisis_quantite }})</a>
                     <a href="?filtre=ecarts"     class="btn {% if filtre == 'ecarts'     %}btn-danger{% else %}btn-outline-danger{% endif %}">Écarts</a>
                     <a href="?filtre=tous"       class="btn {% if filtre == 'tous'       %}btn-secondary{% else %}btn-outline-secondary{% endif %}">Tous</a>
                 </div>
@@ -432,6 +436,7 @@ kbd {
                                     <input type="number" name="stock_physique_{{ ligne.id }}" 
                                            class="form-control form-control-lg text-center stock-input piece-mode-input"
                                            value="{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% endif %}"
+                                           data-original="{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% endif %}"
                                            min="0" placeholder="?" data-theorique="{{ ligne.stock_theorique }}"
                                            data-ligne-id="{{ ligne.id }}" data-prix-vente="{{ ligne.article.prix_vente }}"
                                            tabindex="{{ forloop.counter }}">
@@ -1345,28 +1350,55 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     var countEl = document.getElementById('searchCount');
     var countBadge = document.getElementById('searchCountBadge');
     var debounce = null;
+    var srvToken = 0;
+    var LIGNES_URL = '/commercant/boutiques/{{ boutique.id }}/inventaires/{{ inventaire.id }}/lignes-recherche/';
+
+    function appliquerFiltre() {
+        var rows = getRows();
+        var q = searchInput.value.trim().toLowerCase();
+        var visible = 0;
+        for (var i = 0; i < rows.length; i++) {
+            var data = rows[i].getAttribute('data-search') || '';
+            if (!q || data.indexOf(q) >= 0) {
+                rows[i].style.display = '';
+                visible++;
+            } else {
+                rows[i].style.display = 'none';
+            }
+        }
+        if (q) {
+            countBadge.textContent = visible + ' trouvé(s)';
+            countEl.style.display = '';
+        } else {
+            countEl.style.display = 'none';
+        }
+    }
+
+    // Un article DÉJÀ saisi (ou ajouté pendant l'inventaire) ne figure pas
+    // forcément dans les lignes affichées (filtre « Non saisis », limite de
+    // 50 lignes…) : le chercher doit l'afficher directement.
+    function rechercherSurServeur(q) {
+        var token = ++srvToken;
+        if (!q) return;
+        fetch(LIGNES_URL + '?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (token !== srvToken) return;
+                var res = (d && d.results) ? d.results : [];
+                var ajoute = false;
+                for (var i = 0; i < res.length; i++) {
+                    if (window.insererLigneTableau(res[i])) ajoute = true;
+                }
+                if (ajoute) appliquerFiltre();
+            })
+            .catch(function() {});
+    }
 
     searchInput.addEventListener('input', function() {
         clearTimeout(debounce);
         debounce = setTimeout(function() {
-            var rows = getRows();
-            var q = searchInput.value.trim().toLowerCase();
-            var visible = 0;
-            for (var i = 0; i < rows.length; i++) {
-                var data = rows[i].getAttribute('data-search') || '';
-                if (!q || data.indexOf(q) >= 0) {
-                    rows[i].style.display = '';
-                    visible++;
-                } else {
-                    rows[i].style.display = 'none';
-                }
-            }
-            if (q) {
-                countBadge.textContent = visible + ' trouvé(s)';
-                countEl.style.display = '';
-            } else {
-                countEl.style.display = 'none';
-            }
+            appliquerFiltre();
+            rechercherSurServeur(searchInput.value.trim());
         }, 150);
     });
 
@@ -1398,6 +1430,28 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     } else {
         searchInput.focus();
     }
+})();
+
+// =============================================
+// SOUMISSION DU TABLEAU — CORRECTION D'UNE QUANTITÉ DÉJÀ SAISIE
+// =============================================
+// Une ligne déjà comptée dont la valeur n'a pas été touchée n'est PAS
+// renvoyée (sinon l'accumulation la doublerait) ; si la valeur a été
+// changée, elle part en stock_corrige_<id> : le serveur la REMPLACE.
+(function() {
+    const modeInput = document.getElementById('modeAccumulationInput');
+    if (!modeInput) return;                       // vue collaborateur : pas de tableau
+    const form = modeInput.closest('form');
+    if (!form) return;
+    form.addEventListener('submit', function() {
+        document.querySelectorAll('.stock-input').forEach(function(inp) {
+            const original = inp.dataset.original;
+            if (original === undefined || original === '') return;   // jamais saisi
+            if (inp.value.trim() === original) { inp.disabled = true; return; }
+            const ligneId = inp.dataset.ligneId;
+            if (ligneId) inp.name = 'stock_corrige_' + ligneId;
+        });
+    });
 })();
 
 // =============================================
@@ -1457,6 +1511,9 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     let selectedArticle = null;
     let activeIdx = -1;
     let articlesList = [];
+    // Correction d'une erreur de comptage : remplacer la valeur déjà saisie
+    // au lieu d'accumuler (bouton stylo du panneau).
+    let modeCorrection = false;
     // Horodatage de la dernière mise à jour locale (saisie / réinit.) :
     // une réponse de recherche LIVE plus ancienne ne doit pas l'écraser.
     let derniereMajLocale = 0;
@@ -1678,11 +1735,46 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         activeIdx = -1;
     }
 
+    // === Correction d'une erreur de comptage ===
+    // Le bouton stylo n'apparaît que si la quantité est déjà saisie : il fait
+    // passer le champ en mode « remplacement » au lieu de l'accumulation.
+    function majModeCorrection(actif, art) {
+        const a = art || selectedArticle;
+        const estSaisi = !!a && a.stock_physique !== null && a.stock_physique !== undefined;
+        modeCorrection = estSaisi ? !!actif : false;
+
+        const btn = document.getElementById('srCorrigerBtn');
+        btn.style.display = estSaisi ? '' : 'none';
+        btn.classList.toggle('btn-warning', modeCorrection);
+        btn.classList.toggle('btn-outline-warning', !modeCorrection);
+        btn.innerHTML = modeCorrection
+            ? '<i class="fas fa-exclamation-triangle"></i> Remplace'
+            : '<i class="fas fa-pen"></i>';
+        srQte.style.borderColor = modeCorrection ? '#ffc107' : '#28a745';
+        srQte.title = modeCorrection
+            ? 'Correction : cette valeur REMPLACERA les ' + a.stock_physique + ' déjà saisis'
+            : 'Quantité physique';
+    }
+
+    document.getElementById('srCorrigerBtn').addEventListener('click', function() {
+        if (!selectedArticle) return;
+        majModeCorrection(!modeCorrection, selectedArticle);
+        if (modeCorrection) {
+            srQte.value = selectedArticle.stock_physique;
+            srQte.focus();
+            srQte.select();
+        } else {
+            srQte.value = '';
+            srQte.focus();
+        }
+    });
+
     function doSelectArticle(art) {
         selectedArticle = art;
         srSearch.value = art.nom;
         closeDropdown();
         lockArticle(art.ligne_id);
+        majModeCorrection(false, art);
 
         // Remplir les champs
         srLabel.textContent    = art.nom;
@@ -1746,6 +1838,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     function resetPanel() {
         if (selectedArticle) unlockArticle(selectedArticle.ligne_id);
         selectedArticle = null;
+        majModeCorrection(false, null);
         srSearch.value = '';
         srQteWrap.style.display = 'none';
         srQte.value = '';
@@ -2027,6 +2120,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         srQte.classList.remove('is-invalid');
         srSaveBtn.disabled = true;
         srSaveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        const etaitCorrection = modeCorrection;
 
         fetch(AJAX_URL, {
             method: 'POST',
@@ -2040,6 +2134,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 prix_vente:   parseFloat(srPrixVente.value) || null,
                 categorie_id: srCategorie.value ? parseInt(srCategorie.value) : null,
                 mode_accumulation: modeAccumulation,
+                remplacer: etaitCorrection,
             })
         })
         .then(function(r) { return r.json(); })
@@ -2051,12 +2146,17 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 const ecartTxt = data.ecart > 0 ? ' <span class="text-success">(+' + data.ecart + ')</span>'
                                : data.ecart < 0 ? ' <span class="text-danger">(' + data.ecart + ')</span>'
                                : ' <span class="text-secondary">(=)</span>';
-                showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + data.stock_physique + ' ' + (data.unite_base || 'pcs') + ecartTxt, 'success');
+                const corrTxt = etaitCorrection
+                    ? ' <span class="badge bg-warning text-dark">corrigé</span>' : '';
+                showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + data.stock_physique + ' ' + (data.unite_base || 'pcs') + ecartTxt + corrTxt, 'success');
 
                 // Mettre à jour la ligne dans le tableau si visible
                 const tableInput = document.querySelector('input[name="stock_physique_' + data.ligne_id + '"]');
                 if (tableInput) {
                     tableInput.value = data.stock_physique;
+                    // La valeur affichée devient la nouvelle référence : une
+                    // prochaine soumission ne la corrigera pas à nouveau.
+                    tableInput.dataset.original = String(data.stock_physique);
                     tableInput.dispatchEvent(new Event('input'));
                 } else if (selectedArticle) {
                     // Article introuvable dans le tableau (ajouté pendant
@@ -2081,6 +2181,8 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                     } else {
                         srQte.value = data.stock_physique;
                     }
+                    // Valeur enregistrée : on repasse en accumulation
+                    majModeCorrection(false, selectedArticle);
                 }
 
                 // Mettre à jour les compteurs
@@ -2117,11 +2219,13 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     // la recherche du tableau sans recharger la page.
     function insererLigneTableau(e) {
         const inputMode = document.getElementById('modeAccumulationInput');
-        if (!inputMode) return; // vue collaborateur : pas de tableau principal
-        const tbody = inputMode.closest('form').querySelector('tbody');
-        if (!tbody) return;
+        if (!inputMode) return false; // vue collaborateur : pas de tableau principal
+        const formPrincipal = inputMode.closest('form');
+        if (!formPrincipal) return false;
+        const tbody = formPrincipal.querySelector('tbody');
+        if (!tbody) return false;
         const ligneId = e.ligne_id;
-        if (document.querySelector('input[name="stock_physique_' + ligneId + '"]')) return;
+        if (document.querySelector('input[name="stock_physique_' + ligneId + '"]')) return false;
 
         const nom = e.nom || e.article_nom || '';
         const code = e.code || e.article_code || '';
@@ -2147,7 +2251,8 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 
         const tr = document.createElement('tr');
         if (ecart !== null) tr.className = ecart > 0 ? 'table-success' : (ecart < 0 ? 'table-danger' : '');
-        tr.setAttribute('data-search', (nom + ' ' + code).toLowerCase());
+        const codesLigne = (e.codes && e.codes.length) ? e.codes.join(' ') : '';
+        tr.setAttribute('data-search', (nom + ' ' + code + ' ' + codesLigne).toLowerCase());
         if (e.article_id) tr.setAttribute('data-article-id', e.article_id);
         tr.setAttribute('data-code-barre', code);
         tr.innerHTML =
@@ -2159,6 +2264,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             + '<td class="text-center"><input type="number" name="stock_physique_' + ligneId + '"'
             + ' class="form-control form-control-lg text-center stock-input piece-mode-input"'
             + ' value="' + (saisi ? e.stock_physique : '') + '" min="0" placeholder="?"'
+            + ' data-original="' + (saisi ? e.stock_physique : '') + '"'
             + ' data-theorique="' + theo + '" data-ligne-id="' + ligneId + '" data-prix-vente="' + prixV + '"></td>'
             + '<td class="text-center align-middle"><span class="ecart-display" id="ecart_' + ligneId + '">' + ecartHtml + '</span></td>'
             + '<td class="text-end align-middle"><span class="valeur-stock fw-bold" id="valeur_' + ligneId + '">'
@@ -2190,7 +2296,9 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             cache.push({article_id: e.article_id, prix_vente: prixV, devise: e.devise || 'CDF', stock_physique: 0});
             if (window.recalculerValeurInventoriee) window.recalculerValeurInventoriee();
         }
+        return true;
     }
+    window.insererLigneTableau = insererLigneTableau;
 
     // === Recherche LIVE des lignes de l'inventaire (toutes sessions) ===
     // Même si la page n'a pas été rechargée, un article ajouté ou saisi
