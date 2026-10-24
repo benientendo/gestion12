@@ -1,5 +1,6 @@
 {% extends 'inventory/base.html' %}
 {% load static %}
+{% load l10n %}
 
 {% block title %}Articles - {{ boutique.nom }}{% endblock %}
 
@@ -283,13 +284,14 @@
                                         onclick="setArticleForStock(parseInt(this.dataset.articleId), this.dataset.articleNom, parseInt(this.dataset.articleStock), this.dataset.hasVariantes === 'true', this.dataset.conditionnements || '')" title="Stock">
                                     <i class="fas fa-boxes"></i>
                                 </button>
-                                <button type="button" class="btn btn-outline-info btn-sm" 
+                                <button type="button" class="btn btn-outline-info btn-sm"
                                         data-bs-toggle="modal" data-bs-target="#modifierPrixModal"
                                         data-article-id="{{ article.id }}"
                                         data-article-nom="{{ article.nom|escapejs }}"
                                         data-article-prix="{{ article.prix_vente }}"
                                         data-article-devise="{{ article.devise }}"
-                                        onclick="setArticleForPrice(parseInt(this.dataset.articleId), this.dataset.articleNom, parseFloat(this.dataset.articlePrix), this.dataset.articleDevise)" title="Prix">
+                                        {% if boutique.type_commerce == 'BOUCHERIE' %}data-prix-unites="{% localize off %}{% for c in article.conditionnements.all %}{% if c.est_actif %}{{ c.id }}:{{ c.libelle|escapejs }}:{{ c.coefficient }}:{% if c.prix_vente is not None %}{{ c.prix_vente }}{% endif %}{% if not forloop.last %}|{% endif %}{% endif %}{% endfor %}{% endlocalize %}"{% endif %}
+                                        onclick="setArticleForPrice(parseInt(this.dataset.articleId), this.dataset.articleNom, parseFloat(this.dataset.articlePrix), this.dataset.articleDevise, this.dataset.prixUnites || '')" title="Prix">
                                     <i class="fas fa-tag"></i>
                                 </button>
                                 <form method="post" action="{% url 'inventory:supprimer_article_boutique' boutique.id article.id %}" style="display:inline;" onsubmit="return confirm('Êtes-vous sûr de vouloir supprimer cet article ?');">
@@ -1105,6 +1107,22 @@
                         <small class="text-success" id="beneficeModifInfo" style="display:none;"></small>
                     </div>
                     <span id="prixDeviseLabel" class="d-none">(CDF)</span>
+
+                    {% if boutique.type_commerce == 'BOUCHERIE' %}
+                    <!-- Prix par unité (Boucherie) : demi, carton, rame, kg… -->
+                    <div id="prixUnitesContainer" class="mt-3 pt-2 border-top" style="display:none;">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label small mb-0 fw-bold">
+                                <i class="fas fa-weight-hanging me-1"></i>Prix des unités
+                            </label>
+                            <small class="text-muted">vide = prix auto</small>
+                        </div>
+                        <div id="prixUnitesListe"></div>
+                        <small class="text-muted d-block mt-1">
+                            Laissez vide pour suivre le prix de base (× quantité) ; une valeur saisie est gardée telle quelle.
+                        </small>
+                    </div>
+                    {% endif %}
                 </form>
             </div>
             <div class="modal-footer py-2">
@@ -3128,7 +3146,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     let currentPrixDevise = 'CDF';
     
-    window.setArticleForPrice = function(articleId, articleNom, prixActuel, devise = 'CDF') {
+    window.setArticleForPrice = function(articleId, articleNom, prixActuel, devise = 'CDF', unitesStr = '') {
         currentPrixArticleId = articleId;
         currentPrixActuel = prixActuel;
         currentPrixDevise = devise;
@@ -3154,7 +3172,60 @@ document.addEventListener('DOMContentLoaded', function() {
         // Reset marge fields
         document.getElementById('prixAchatModif').value = '';
         document.getElementById('beneficeModifInfo').style.display = 'none';
+        
+        remplirPrixUnites(unitesStr, prixActuel, devise);
     };
+
+    // === Prix par unité (Boucherie) dans le modal « Modifier Prix » ===
+    // Format : "id:libelle:coefficient:prix|…" (prix vide = auto, c'est-à-dire
+    // prix de base × coefficient).
+    let unitesPrixModal = [];
+
+    function remplirPrixUnites(unitesStr, prixBase, devise) {
+        const container = document.getElementById('prixUnitesContainer');
+        if (!container) return;                       // non-Boucherie : pas de bloc
+        const liste = document.getElementById('prixUnitesListe');
+        unitesPrixModal = (unitesStr || '').split('|').filter(function(p) { return p.includes(':'); });
+        if (!unitesPrixModal.length) {
+            container.style.display = 'none';
+            liste.innerHTML = '';
+            return;
+        }
+        container.style.display = '';
+        const symbole = devise === 'USD' ? '$' : 'FC';
+        const decimales = devise === 'USD' ? 2 : 0;
+        let html = '';
+        unitesPrixModal.forEach(function(u) {
+            const parts = u.split(':');
+            const condId = parts[0];
+            const libelle = parts[1];
+            const coeff = parseFloat(parts[2]) || 1;
+            const prixSaisi = parts.slice(3).join(':');
+            const auto = (parseFloat(prixBase) || 0) * coeff;
+            html += '<div class="input-group input-group-sm mb-1">'
+                  + '<span class="input-group-text" style="min-width:96px;">'
+                  +   '<span class="text-truncate">' + libelle + '</span>'
+                  +   '<small class="text-muted ms-1">&times;' + coeff + '</small></span>'
+                  + '<input type="number" class="form-control text-end prix-unite-input"'
+                  +        ' name="cond_prix_' + condId + '" min="0" step="0.01"'
+                  +        ' data-coefficient="' + coeff + '"'
+                  +        ' placeholder="' + auto.toFixed(decimales) + '"'
+                  +        ' value="' + prixSaisi + '">'
+                  + '<span class="input-group-text">' + symbole + '</span>'
+                  + '</div>';
+        });
+        liste.innerHTML = html;
+    }
+
+    // Le prix auto affiché dans le placeholder suit le nouveau prix de base
+    document.getElementById('nouveau_prix').addEventListener('input', function() {
+        const base = parseFloat(this.value) || 0;
+        const decimales = currentPrixDevise === 'USD' ? 2 : 0;
+        document.querySelectorAll('#prixUnitesListe .prix-unite-input').forEach(function(inp) {
+            const coeff = parseFloat(inp.dataset.coefficient) || 1;
+            inp.placeholder = (base * coeff).toFixed(decimales);
+        });
+    });
     
     // ===== AFFICHAGE DES VARIANTES =====
     window.afficherVariantes = function(articleId, articleNom) {

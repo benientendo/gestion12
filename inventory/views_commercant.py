@@ -4371,19 +4371,58 @@ def modifier_prix_article(request, boutique_id, article_id):
                 return JsonResponse({'success': False, 'message': 'Le prix ne peut pas être négatif'})
             
             ancien_prix = article.prix_vente or Decimal('0')
+            
+            # Prix par unité (Boucherie) : cond_prix_<id> sur les
+            # conditionnements de CET article ; vide = repasser en prix auto
+            # (prix de base × coefficient). Validés AVANT toute écriture.
+            modifs_unites = []
+            unites_modifiees = 0
+            if boutique.type_commerce == 'BOUCHERIE':
+                from .models import Conditionnement
+                conds = {
+                    str(c.id): c
+                    for c in Conditionnement.objects.filter(article=article)
+                }
+                for cle, valeur in request.POST.items():
+                    if not cle.startswith('cond_prix_'):
+                        continue
+                    cond = conds.get(cle.replace('cond_prix_', ''))
+                    if cond is None:
+                        continue
+                    if str(valeur).strip() == '':
+                        prix_cond = None
+                    else:
+                        prix_cond = Decimal(str(valeur).strip())
+                        if prix_cond < 0:
+                            return JsonResponse({
+                                'success': False,
+                                'message': f"Prix négatif pour l'unité {cond.libelle}",
+                            })
+                    if prix_cond != cond.prix_vente:
+                        modifs_unites.append((cond, prix_cond))
+            
             article.prix_vente = nouveau_prix
             article.save()
+            
+            for cond, prix_cond in modifs_unites:
+                cond.prix_vente = prix_cond
+                cond.save(update_fields=['prix_vente', 'date_mise_a_jour'])
+                unites_modifiees += 1
             
             from .websocket_utils import notify_sync_required
             # notify_price_updated (WebSocket + FCM, avec l'ecart de valeur)
             # est envoye par le signal notifier_ajustement_prix (inventory/signals.py)
             notify_sync_required(boutique.id, f"Prix modifié: {article.nom}")
             
+            message = f'Prix modifié: {ancien_prix} → {nouveau_prix} CDF'
+            if unites_modifiees:
+                message += f' ({unites_modifiees} unité(s) mise(s) à jour)'
             return JsonResponse({
                 'success': True,
-                'message': f'Prix modifié: {ancien_prix} → {nouveau_prix} CDF',
+                'message': message,
                 'ancien_prix': float(ancien_prix),
-                'nouveau_prix': float(nouveau_prix)
+                'nouveau_prix': float(nouveau_prix),
+                'unites_modifiees': unites_modifiees,
             })
             
         except Article.DoesNotExist:
