@@ -149,6 +149,7 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/saisir-ligne/', views_commercant.saisir_ligne_inventaire_ajax, name='saisir_ligne_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/ajouter-article/', views_commercant.ajouter_article_inventaire_ajax, name='ajouter_article_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/articles-autres-pdv/', views_commercant.articles_autres_pdv_inventaire_ajax, name='articles_autres_pdv_inventaire_ajax'),
+    path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/lignes-recherche/', views_commercant.lignes_recherche_inventaire_ajax, name='lignes_recherche_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/reset-ligne/', views_commercant.reset_ligne_inventaire_ajax, name='reset_ligne_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/lock-ligne/', views_commercant.lock_ligne_inventaire_ajax, name='lock_ligne_inventaire_ajax'),
     path('commercant/boutiques/<int:boutique_id>/inventaires/<int:inventaire_id>/unlock-ligne/', views_commercant.unlock_ligne_inventaire_ajax, name='unlock_ligne_inventaire_ajax'),

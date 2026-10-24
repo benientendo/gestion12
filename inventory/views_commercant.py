@@ -8486,25 +8486,10 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         current_user_nom = request.user.get_full_name() or request.user.username
     
     # Données complètes pour l'autocomplete de la saisie rapide (toutes les lignes, sans filtre)
+    # stock_physique reste null tant que la ligne n'est pas saisi (et non 0),
+    # pour que la recherche distingue correctement les articles saisis.
     all_articles_json = json.dumps([
-        {
-            'ligne_id': l.id,
-            'article_id': l.article.id,
-            'nom': str(l.article.nom) if l.article.nom else '',
-            'code': str(l.article.code) if l.article.code else '',
-            # 🔍 Codes-barres supplémentaires : toutes les VARIANTES de l'article
-            'codes': ([str(l.article.code) if l.article.code else '']
-                      + [str(v.code_barre) for v in l.article.variantes.filter(est_actif=True) if v.code_barre]),
-            'stock_theorique': l.stock_theorique or 0,
-            'stock_physique': l.stock_physique or 0,
-            'assigne_a': str(l.assigne_a) if l.assigne_a else '',
-            'quantite_stock': l.article.quantite_stock or 0,
-            'unite_base': str(l.article.unite_base) if l.article.unite_base else 'pcs',
-            'prix_vente': float(l.article.prix_vente) if l.article.prix_vente else 0,
-            'devise': str(l.article.devise) if l.article.devise else '',
-            'categorie_id': l.article.categorie_id,
-            'categorie_nom': str(l.article.categorie.nom) if l.article.categorie and l.article.categorie.nom else '',
-        }
+        _ligne_recherche_json(l)
         for l in inventaire.lignes.select_related('article', 'article__categorie').order_by('article__nom')
     ], ensure_ascii=False)
 
@@ -8698,6 +8683,65 @@ def articles_autres_pdv_inventaire_ajax(request, boutique_id, inventaire_id):
             'boutique_nom': a.boutique.nom,
             'quantite_stock': a.quantite_stock,
         } for a in articles],
+    })
+
+
+def _ligne_recherche_json(l):
+    """Ligne d'inventaire → dict pour la recherche LIVE côté client.
+
+    `stock_physique` est null tant que la ligne n'est pas saisi (et non 0),
+    pour distinguer correctement les articles saisis des articles non comptés.
+    """
+    a = l.article
+    return {
+        'ligne_id': l.id,
+        'article_id': a.id,
+        'nom': str(a.nom) if a.nom else '',
+        'code': str(a.code) if a.code else '',
+        'codes': ([str(a.code) if a.code else '']
+                  + [str(v.code_barre) for v in a.variantes.filter(est_actif=True) if v.code_barre]),
+        'stock_theorique': l.stock_theorique or 0,
+        'stock_physique': l.stock_physique,
+        'assigne_a': str(l.assigne_a) if l.assigne_a else '',
+        'ecart': l.ecart,
+        'quantite_stock': a.quantite_stock or 0,
+        'unite_base': str(a.unite_base) if a.unite_base else 'pcs',
+        'prix_vente': float(a.prix_vente) if a.prix_vente else 0,
+        'prix_achat': float(a.prix_achat) if a.prix_achat else 0,
+        'devise': str(a.devise) if a.devise else '',
+        'categorie_id': a.categorie_id,
+        'categorie_nom': str(a.categorie.nom) if a.categorie and a.categorie.nom else '',
+    }
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def lignes_recherche_inventaire_ajax(request, boutique_id, inventaire_id):
+    """GET : recherche LIVE dans les lignes de l'inventaire en cours.
+
+    Retrouve à tout moment les articles ajoutés ou saisis pendant l'inventaire,
+    même par un autre utilisateur (autre onglet, autre collaborateur), sans
+    avoir à recharger la page. Recherche sur nom, code et codes-barres variantes.
+    """
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+
+    q = str(request.GET.get('q') or '').strip()
+    if not q:
+        return JsonResponse({'success': True, 'results': []})
+
+    lignes = inventaire.lignes.filter(
+        Q(article__nom__icontains=q)
+        | Q(article__code__icontains=q)
+        | Q(article__variantes__code_barre__icontains=q)
+    ).select_related(
+        'article', 'article__categorie'
+    ).distinct().order_by('article__nom')[:12]
+
+    return JsonResponse({
+        'success': True,
+        'results': [_ligne_recherche_json(l) for l in lignes],
     })
 
 
