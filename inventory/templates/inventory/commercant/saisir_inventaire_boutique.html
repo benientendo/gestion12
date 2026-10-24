@@ -1457,6 +1457,9 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     let selectedArticle = null;
     let activeIdx = -1;
     let articlesList = [];
+    // Horodatage de la dernière mise à jour locale (saisie / réinit.) :
+    // une réponse de recherche LIVE plus ancienne ne doit pas l'écraser.
+    let derniereMajLocale = 0;
 
     function updateLocalStock(ligneId, newStock) {
         const a = ARTICLES.find(x => x.ligne_id === ligneId);
@@ -1469,6 +1472,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             selectedArticle.assigne_a = CURRENT_USER_NOM;
             ARTICLES.push(selectedArticle);
         }
+        derniereMajLocale = Date.now();
     }
 
     // === Feature 1 : Verrouillage ===
@@ -1622,28 +1626,48 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         renderSessionTable();
     });
 
+    function badgeEtat(a) {
+        return (a.stock_physique !== null && a.stock_physique !== undefined)
+            ? '<span class="sr-badge-ok">&#10003; ' + a.stock_physique + '</span>'
+            : '<span class="sr-badge-nok">&#8212; vide</span>';
+    }
+
+    function contenuItemDropdown(a) {
+        const lockNom = activeLocks[String(a.ligne_id)];
+        const lockBadge = lockNom
+            ? ' <span style="font-size:.72rem;background:#fff3cd;color:#856404;border-radius:4px;padding:1px 5px;">&#128274; ' + lockNom + '</span>'
+            : '';
+        // Article déjà compté : afficher qui l'a saisi (collaborateur)
+        const saisiPar = (a.stock_physique !== null && a.stock_physique !== undefined && a.assigne_a)
+            ? ' <small class="text-muted" style="font-size:.72rem;">(' + escapeHtml(a.assigne_a) + ')</small>'
+            : '';
+        return '<span><strong>' + escapeHtml(a.nom) + '</strong> <small class="text-muted">' + escapeHtml(a.code) + '</small>'
+            + saisiPar + lockBadge + '</span>' + badgeEtat(a);
+    }
+
+    function ouvrirItemDropdown(a) {
+        const div = document.createElement('div');
+        div.className = 'sr-item';
+        div.dataset.ligneId = a.ligne_id;
+        div.innerHTML = contenuItemDropdown(a);
+        if (activeLocks[String(a.ligne_id)]) div.style.opacity = '0.65';
+        div.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            // Relire la donnée la plus fraîche (peut avoir été mise à jour
+            // par la recherche LIVE depuis l'affichage de cette suggestion)
+            const courant = articlesList.find(x => String(x.ligne_id) === String(a.ligne_id)) || a;
+            selectArticle(courant);
+        });
+        return div;
+    }
+
     function openDropdown(items) {
         srDropdown.innerHTML = '';
         activeIdx = -1;
         articlesList = items;
         if (!items.length) { srDropdown.style.display = 'none'; return; }
-        items.forEach(function(art, idx) {
-            const div = document.createElement('div');
-            div.className = 'sr-item';
-            const badge = art.stock_physique !== null
-                ? '<span class="sr-badge-ok">&#10003; ' + art.stock_physique + '</span>'
-                : '<span class="sr-badge-nok">&#8212; vide</span>';
-            const lockNom = activeLocks[String(art.ligne_id)];
-            const lockBadge = lockNom
-                ? ' <span style="font-size:.72rem;background:#fff3cd;color:#856404;border-radius:4px;padding:1px 5px;">&#128274; ' + lockNom + '</span>'
-                : '';
-            div.innerHTML = '<span><strong>' + art.nom + '</strong> <small class="text-muted">' + art.code + '</small>' + lockBadge + '</span>' + badge;
-            if (lockNom) div.style.opacity = '0.65';
-            div.addEventListener('mousedown', function(e) {
-                e.preventDefault();
-                selectArticle(art);
-            });
-            srDropdown.appendChild(div);
+        items.forEach(function(art) {
+            srDropdown.appendChild(ouvrirItemDropdown(art));
         });
         srDropdown.style.display = 'block';
     }
@@ -2175,32 +2199,36 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     let srvToken = 0;
     let srvTimer = null;
 
-    function appendResultatsServeur(items) {
+    function appendResultatsServeur(items, debutReq) {
         if (srDropdown.style.display === 'none') return;
-        const manquants = (items || []).filter(function(s) {
-            return !articlesList.some(function(a) { return a.ligne_id === s.ligne_id; });
-        }).slice(0, 12);
-        if (!manquants.length) return;
+        const serveur = (items || []).slice(0, 12);
+        if (!serveur.length) return;
+        // Réponse antérieure à une saisie/ réinit. locale : ne rien écraser.
+        if (debutReq && debutReq < derniereMajLocale) return;
 
-        // Remplacer la suggestion « Créer » si le serveur trouve l'article
-        if (!articlesList.length) {
+        serveur.forEach(function(s) {
+            const idx = articlesList.findIndex(function(a) { return a.ligne_id === s.ligne_id; });
+            if (idx >= 0) {
+                // Déjà affiché : le serveur a la donnée la plus fraîche
+                // (article saisi ou réinitialisé entre-temps, par ce
+                // collaborateur ou par un autre). Mettre à jour l'objet ET
+                // l'affichage pour que la recherche le montre comme saisi.
+                Object.assign(articlesList[idx], s);
+                const div = srDropdown.querySelector('.sr-item[data-ligne-id="' + s.ligne_id + '"]');
+                if (div) {
+                    div.innerHTML = contenuItemDropdown(articlesList[idx]);
+                    div.style.opacity = activeLocks[String(s.ligne_id)] ? '0.65' : '';
+                }
+                return;
+            }
+            // Remplacer la suggestion « Créer » si le serveur trouve l'article
             const creer = srDropdown.querySelector('.sr-create');
             if (creer) creer.remove();
-        }
-
-        manquants.forEach(function(s) {
-            const div = document.createElement('div');
-            div.className = 'sr-item';
-            const badge = (s.stock_physique !== null && s.stock_physique !== undefined)
-                ? '<span class="sr-badge-ok">&#10003; ' + s.stock_physique + '</span>'
-                : '<span class="sr-badge-nok">&#8212; vide</span>';
-            div.innerHTML = '<span><strong>' + escapeHtml(s.nom) + '</strong> '
-                + '<small class="text-muted">' + escapeHtml(s.code) + '</small></span>' + badge;
-            div.addEventListener('mousedown', function(ev) { ev.preventDefault(); selectArticle(s); });
-            srDropdown.appendChild(div);
+            srDropdown.appendChild(ouvrirItemDropdown(s));
             articlesList.push(s);
             insererLigneTableau(s);
         });
+
         srDropdown.style.display = 'block';
     }
 
@@ -2208,12 +2236,13 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         const token = ++srvToken;
         if (srvTimer) clearTimeout(srvTimer);
         if (!q) return;
+        const debutReq = Date.now();
         srvTimer = setTimeout(function() {
             fetch(LIGNES_URL + '?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (token !== srvToken) return;
-                    appendResultatsServeur((data && data.results) ? data.results : []);
+                    appendResultatsServeur((data && data.results) ? data.results : [], debutReq);
                 })
                 .catch(function() {});
         }, 250);
