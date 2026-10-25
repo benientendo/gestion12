@@ -197,3 +197,44 @@ class PrixUnitesAffichageTest(PrixUnitesBoucherieBase):
         self.assertNotContains(r, 'id="prixUnitesContainer"')
         self.assertNotContains(r, 'data-prix-unites')
         self.assertNotContains(r, 'Prix des unités')
+
+
+class PrixUnitesRechercheAjaxTest(PrixUnitesBoucherieBase):
+    """La recherche AJAX doit fournir les unités aux boutons Prix des
+    lignes filtrées et du dropdown de recherche rapide."""
+
+    def _search(self, q='Boeuf'):
+        r = self.client.get(
+            reverse('inventory:articles_search_ajax', args=[self.boucherie.id]),
+            {'q': q},
+        )
+        self.assertEqual(r.status_code, 200)
+        return r.json()['articles']
+
+    def test_recherche_retourne_prix_unites_au_format_complet(self):
+        articles = self._search()
+        self.assertEqual(len(articles), 1)
+        data = articles[0]
+        self.assertEqual(
+            data['prix_unites'],
+            f'{self.kg.id}:kg:1000:|'
+            f'{self.carton.id}:carton:10000:60000.00|'
+            f'{self.rame.id}:rame:500:',
+        )
+        # le format stock (libelle:coefficient) reste inchangé
+        self.assertEqual(data['conditionnements'], 'kg:1000|carton:10000|rame:500')
+
+    def test_recherche_hors_boucherie_sans_prix_unites(self):
+        boutique = Boutique.objects.create(
+            nom='Quincaillerie', commercant=self.commercant,
+            code_boutique='BT-QIN-002', type_commerce='QUINCAILLERIE',
+        )
+        Article.objects.create(
+            boutique=boutique, code='QIN-02', nom='Marteau',
+            prix_vente=2500, quantite_stock=5,
+        )
+        r = self.client.get(
+            reverse('inventory:articles_search_ajax', args=[boutique.id]),
+            {'q': 'Marteau'},
+        )
+        self.assertEqual(r.json()['articles'][0]['prix_unites'], '')

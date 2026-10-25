@@ -2667,6 +2667,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
                                 data-article-prix="${article.prix_vente}"
                                 data-article-devise="${article.devise || 'CDF'}"
+                                {% if boutique.type_commerce == 'BOUCHERIE' %}data-prix-unites="${article.prix_unites || ''}"{% endif %}
                                 title="Prix">
                             <i class="fas fa-tag"></i>
                         </button>
@@ -2704,7 +2705,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const articleNom = this.dataset.articleNom;
                 const prix = parseFloat(this.dataset.articlePrix);
                 const devise = this.dataset.articleDevise || 'CDF';
-                setArticleForPrice(articleId, articleNom, prix, devise);
+                setArticleForPrice(articleId, articleNom, prix, devise, this.dataset.prixUnites || '');
             });
         });
         
@@ -2974,6 +2975,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                             data-article-nom="${article.nom.replace(/"/g, '&quot;')}"
                                             data-article-prix="${article.prix_vente}"
                                             data-article-devise="${article.devise || 'CDF'}"
+                                            {% if boutique.type_commerce == 'BOUCHERIE' %}data-prix-unites="${article.prix_unites || ''}"{% endif %}
                                             data-action="prix">
                                         <i class="fas fa-dollar-sign"></i> Prix
                                     </button>
@@ -3024,7 +3026,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     } else if (action === 'prix') {
                         const prix = parseFloat(this.getAttribute('data-article-prix'));
                         const devise = this.getAttribute('data-article-devise') || 'CDF';
-                        setArticleForPrice(articleId, articleNom, prix, devise);
+                        setArticleForPrice(articleId, articleNom, prix, devise, this.dataset.prixUnites || '');
                         // Ouvrir le modal
                         const modal = new bootstrap.Modal(document.getElementById('modifierPrixModal'));
                         modal.show();

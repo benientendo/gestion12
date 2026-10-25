@@ -1233,6 +1233,15 @@ def articles_search_ajax(request, boutique_id):
             'conditionnements': '|'.join(
                 f'{c.libelle}:{c.coefficient}' for c in art.conditionnements.all() if c.est_actif
             ),
+            # Prix par unité (Boucherie) : "id:libelle:coefficient:prix|…"
+            # (prix vide = prix auto = prix de base × coefficient)
+            'prix_unites': '|'.join(
+                '{}:{}:{}:{}'.format(
+                    c.id, c.libelle, c.coefficient,
+                    '' if c.prix_vente is None else c.prix_vente,
+                )
+                for c in art.conditionnements.all() if c.est_actif
+            ) if boutique.type_commerce == 'BOUCHERIE' else '',
             'a_variantes': art.a_variantes,
             'nb_variantes': art.nb_variantes if art.a_variantes else 0,
             'image_url': art.image.url if art.image else None,
