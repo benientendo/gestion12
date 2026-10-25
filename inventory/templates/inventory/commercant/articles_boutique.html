@@ -1242,6 +1242,7 @@
 .table-header {
     flex-shrink: 0;
     background: #343a40;
+    overflow-x: hidden;
 }
 
 .table-header table {
@@ -1266,7 +1267,7 @@
 .table-body {
     flex: 1;
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: auto;
 }
 
 .table-body table {
@@ -1302,7 +1303,35 @@
 .col-exp { width: 90px; }
 .col-qteatt { width: 100px; }
 .col-pv { width: 140px; }
-.col-actions { width: 130px; }
+.col-actions { width: 150px; }
+
+/* Les boutons d'action doivent toujours tenir dans la colonne */
+.col-actions .btn-group {
+    display: flex;
+    width: 100%;
+    gap: 3px;
+}
+.col-actions .btn-group > .btn,
+.col-actions .btn-group > form {
+    flex: 1 1 0;
+    min-width: 0;
+}
+.col-actions .btn-group > .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 2px;
+}
+.col-actions .btn-group > form {
+    display: flex;
+}
+.col-actions .btn-group > form > .btn {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 2px;
+}
 
 .table-body table td.col-nom {
     overflow: hidden;
@@ -1826,6 +1855,16 @@
 
 {% block extra_js %}
 <script>
+// ===== SCROLL HORIZONTAL : EN-TÊTE FIXE SYNCHRONISÉ AVEC LE CORPS =====
+(function () {
+    var tableBody = document.querySelector('.table-body');
+    var tableHeader = document.querySelector('.table-header');
+    if (tableBody && tableHeader) {
+        tableBody.addEventListener('scroll', function () {
+            tableHeader.scrollLeft = tableBody.scrollLeft;
+        });
+    }
+})();
 // ===== CONDITIONNEMENTS RAPIDES (BOUCHERIE) =====
 // NB: en portee globale — appeles par onclick inline (hors closure DOMContentLoaded)
 function ajouterLigneConditionnementRapide() {
