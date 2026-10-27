@@ -3320,14 +3320,19 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Idem pour les unités du modal de recherche par code-barres
-    prixModifiableInput.addEventListener('input', function() {
-        const base = parseFloat(this.value) || 0;
-        const decimales = (document.getElementById('prixModifiableDevise').textContent || '').includes('$') ? 2 : 0;
-        document.querySelectorAll('#recherchePrixUnitesListe .prix-unite-recherche').forEach(function(inp) {
-            const coeff = parseFloat(inp.dataset.coefficient) || 1;
-            inp.placeholder = (base * coeff).toFixed(decimales);
+    // (lookup direct : prixModifiableInput est déclaré plus bas, hors de portée ici)
+    const prixModifiableInputUnites = document.getElementById('prixModifiable');
+    if (prixModifiableInputUnites) {
+        prixModifiableInputUnites.addEventListener('input', function() {
+            const base = parseFloat(this.value) || 0;
+            const deviseEl = document.getElementById('prixModifiableDevise');
+            const decimales = (deviseEl && deviseEl.textContent || '').includes('$') ? 2 : 0;
+            document.querySelectorAll('#recherchePrixUnitesListe .prix-unite-recherche').forEach(function(inp) {
+                const coeff = parseFloat(inp.dataset.coefficient) || 1;
+                inp.placeholder = (base * coeff).toFixed(decimales);
+            });
         });
-    });
+    }
     
     // ===== AFFICHAGE DES VARIANTES =====
     window.afficherVariantes = function(articleId, articleNom) {
