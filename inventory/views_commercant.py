@@ -2887,6 +2887,7 @@ def verifier_code_barre(request, boutique_id):
                 'a_variantes': len(variantes) > 0,
                 'variantes': variantes,
                 'date_expiration': article.date_expiration.isoformat() if article.date_expiration else None,
+                'unites': _unites_prix_article(article),
             }
         })
     
@@ -2916,6 +2917,7 @@ def verifier_code_barre(request, boutique_id):
                 'devise': parent.devise,
                 'a_variantes': True,
                 'date_expiration': parent.date_expiration.isoformat() if parent.date_expiration else None,
+                'unites': _unites_prix_article(parent),
             },
             'variante': {
                 'id': variante.id,
@@ -2987,6 +2989,10 @@ def modifier_article_existant(request, boutique_id):
         
         article = variante.article_parent
         nom_element = variante.nom_complet
+
+        changements_unites, erreur_unites = _prix_unites_global(request, article)
+        if erreur_unites:
+            return JsonResponse({'success': False, 'message': erreur_unites})
         
         # Le prix se modifie sur l'article parent (hérité par toutes les variantes)
         if prix_vente is not None and prix_vente > 0:
@@ -3021,6 +3027,15 @@ def modifier_article_existant(request, boutique_id):
                 commentaire=f"Ajout stock via variante '{variante.nom_variante}'"
             )
         
+        for cond, prix in changements_unites:
+            cond.prix_vente = prix
+            cond.save(update_fields=['prix_vente', 'date_mise_a_jour'])
+            modifications.append(
+                f"Prix {cond.libelle}: {'auto' if prix is None else prix}"
+            )
+        if changements_unites:
+            article.save()
+        
         if modifications:
             try:
                 from .websocket_utils import notify_article_updated, notify_sync_required
@@ -3051,6 +3066,10 @@ def modifier_article_existant(request, boutique_id):
         return JsonResponse({'success': False, 'message': 'Article non trouvé'})
     
     nom_element = article.nom
+
+    changements_unites, erreur_unites = _prix_unites_global(request, article)
+    if erreur_unites:
+        return JsonResponse({'success': False, 'message': erreur_unites})
     
     # Modifier le prix si fourni et différent
     if prix_vente is not None and prix_vente > 0:
@@ -3071,6 +3090,13 @@ def modifier_article_existant(request, boutique_id):
         #  ACCUMULER (pas d'écrasement) : préserver un ajout déjà en attente
         article.quantite_envoyee = (article.quantite_envoyee or 0) + quantite
         modifications.append(f"Stock: +{quantite} envoyé pour validation client")
+    
+    for cond, prix in changements_unites:
+        cond.prix_vente = prix
+        cond.save(update_fields=['prix_vente', 'date_mise_a_jour'])
+        modifications.append(
+            f"Prix {cond.libelle}: {'auto' if prix is None else prix}"
+        )
     
     if modifications:
         article.save()
@@ -8422,6 +8448,33 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                 except (LigneInventaire.DoesNotExist, ValueError, InvalidOperation):
                     pass
         
+        # Prix des unités (Boucherie) : champs cond_prix_<conditionnement_id>
+        if boutique.type_commerce == 'BOUCHERIE':
+            from .models import Conditionnement
+            conditions_inventaire = {
+                str(c.id): c
+                for c in Conditionnement.objects.filter(
+                    article__lignes_inventaire__inventaire=inventaire
+                ).distinct()
+            }
+            for key, value in request.POST.items():
+                if not key.startswith('cond_prix_'):
+                    continue
+                cond = conditions_inventaire.get(key.replace('cond_prix_', ''))
+                if cond is None:
+                    continue
+                brut = value.strip()
+                try:
+                    prix_unite = Decimal(brut) if brut else None
+                except (ValueError, InvalidOperation):
+                    continue
+                if prix_unite is not None and prix_unite < 0:
+                    continue
+                if prix_unite != cond.prix_vente:
+                    cond.prix_vente = prix_unite
+                    cond.save(update_fields=['prix_vente', 'date_mise_a_jour'])
+                    prix_modifies += 1
+        
         # Nom d'affichage du collaborateur connecté
         if hasattr(request.user, 'profil_collaborateur'):
             user_nom_batch = request.user.profil_collaborateur.nom_complet
@@ -8663,6 +8716,36 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         user_nom_ajax = request.user.get_full_name() or request.user.username
 
     ancien_stock_physique = ligne.stock_physique
+
+    # Prix des unités (Boucherie) : {id_conditionnement: prix} ; vide = auto.
+    # Validation AVANT toute écriture pour ne rien enregistrer en cas d'erreur.
+    from decimal import InvalidOperation
+    changements_unites = []
+    cond_prix_raw = data.get('cond_prix') or {}
+    if isinstance(cond_prix_raw, dict) and boutique.type_commerce == 'BOUCHERIE':
+        conditions = {str(c.id): c for c in ligne.article.conditionnements.all()}
+        for cond_id, valeur in cond_prix_raw.items():
+            cond = conditions.get(str(cond_id))
+            if cond is None:
+                continue
+            brut = '' if valeur is None else str(valeur).strip()
+            if brut == '':
+                prix_unite = None
+            else:
+                try:
+                    prix_unite = Decimal(brut.replace(',', '.'))
+                except (ValueError, TypeError, InvalidOperation):
+                    return JsonResponse(
+                        {'success': False, 'error': f"Prix invalide pour l'unité {cond.libelle}"},
+                        status=400,
+                    )
+                if prix_unite < 0:
+                    return JsonResponse(
+                        {'success': False, 'error': f"Prix négatif pour l'unité {cond.libelle}"},
+                        status=400,
+                    )
+            if prix_unite != cond.prix_vente:
+                changements_unites.append((cond, prix_unite))
     
     # Correction d'une erreur : remplacer la valeur existante.
     # Sinon mode accumulation : toujours ajouter à la valeur existante.
@@ -8724,6 +8807,13 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
     if article_fields_updated:
         ligne.article.save(update_fields=article_fields_updated)
 
+    for cond, prix in changements_unites:
+        cond.prix_vente = prix
+        cond.save(update_fields=['prix_vente', 'date_mise_a_jour'])
+    if changements_unites:
+        # save() complet → last_updated/version → synchronisation MAUI
+        ligne.article.save()
+
     inventaire.calculer_statistiques()
 
     nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
@@ -8744,6 +8834,8 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         'nb_saisis': nb_saisis,
         'nb_total': nb_total,
         'saisi_par_nom': user_nom_ajax,
+        'unites_modifiees': len(changements_unites),
+        'unites': _unites_prix_article(ligne.article),
     })
 
 
@@ -8813,6 +8905,7 @@ def _ligne_recherche_json(l):
         'devise': str(a.devise) if a.devise else '',
         'categorie_id': a.categorie_id,
         'categorie_nom': str(a.categorie.nom) if a.categorie and a.categorie.nom else '',
+        'unites': _unites_prix_article(a),
     }
 
 
@@ -10431,6 +10524,52 @@ def detail_valeur_journal(request, boutique_id, journal_id, champ):
 
 # ===== SCANNER GLOBAL - Recherche code-barres toutes boutiques =====
 
+
+def _unites_prix_article(article):
+    """Unités actives d'un article pour l'édition des prix (Boucherie)."""
+    if article is None or article.boutique.type_commerce != 'BOUCHERIE':
+        return []
+    return [
+        {
+            'id': c.id,
+            'libelle': c.libelle,
+            'coefficient': c.coefficient,
+            'prix': None if c.prix_vente is None else float(c.prix_vente),
+        }
+        for c in article.conditionnements.filter(est_actif=True).order_by('ordre', 'id')
+    ]
+
+
+def _prix_unites_global(request, article):
+    """Lit cond_prix_<id> du scanner global ; renvoie (changements, erreur)."""
+    from decimal import InvalidOperation
+
+    if article is None or article.boutique.type_commerce != 'BOUCHERIE':
+        return [], None
+
+    conditions = {str(c.id): c for c in article.conditionnements.all()}
+    changements = []
+    for cle, valeur in request.POST.items():
+        if not cle.startswith('cond_prix_'):
+            continue
+        cond = conditions.get(cle.replace('cond_prix_', ''))
+        if cond is None:
+            continue
+        brut = str(valeur).strip()
+        if brut == '':
+            prix = None
+        else:
+            try:
+                prix = Decimal(brut.replace(',', '.'))
+            except (ValueError, TypeError, InvalidOperation):
+                return [], f"Prix invalide pour l'unité {cond.libelle}"
+            if prix < 0:
+                return [], f"Prix négatif pour l'unité {cond.libelle}"
+        if prix != cond.prix_vente:
+            changements.append((cond, prix))
+    return changements, None
+
+
 @login_required
 @commercant_required
 def verifier_code_barre_global(request):
@@ -10483,6 +10622,7 @@ def verifier_code_barre_global(request):
                 'devise': article.devise,
                 'a_variantes': len(variantes) > 0,
                 'variantes': variantes,
+                'unites': _unites_prix_article(article),
                 'date_expiration': article.date_expiration.isoformat() if article.date_expiration else None,
             },
             'boutique': {
@@ -10513,6 +10653,7 @@ def verifier_code_barre_global(request):
                 'prix': float(parent.prix_vente or 0),
                 'devise': parent.devise,
                 'a_variantes': True,
+                'unites': _unites_prix_article(parent),
                 'date_expiration': parent.date_expiration.isoformat() if parent.date_expiration else None,
             },
             'variante': {
@@ -10591,6 +10732,10 @@ def modifier_article_global(request):
 
         article = variante.article_parent
 
+        changements_unites, erreur_unites = _prix_unites_global(request, article)
+        if erreur_unites:
+            return JsonResponse({'success': False, 'message': erreur_unites})
+
         if prix_vente is not None and prix_vente > 0:
             ancien_prix = article.prix_vente or Decimal('0')
             if abs(ancien_prix - prix_vente) > Decimal('0.01'):
@@ -10623,6 +10768,15 @@ def modifier_article_global(request):
                 commentaire=f"Ajout stock via scanner global (variante '{variante.nom_variante}')"
             )
 
+        for cond, prix in changements_unites:
+            cond.prix_vente = prix
+            cond.save(update_fields=['prix_vente', 'date_mise_a_jour'])
+            modifications.append(
+                f"Prix {cond.libelle}: {'auto' if prix is None else prix}"
+            )
+        if changements_unites:
+            article.save()
+
         return JsonResponse({
             'success': True,
             'message': f"Modifié ({variante.nom_variante}): {', '.join(modifications)}" if modifications else 'Aucune modification',
@@ -10642,6 +10796,10 @@ def modifier_article_global(request):
         article = Article.objects.get(id=article_id, boutique__commercant=commercant)
     except Article.DoesNotExist:
         return JsonResponse({'success': False, 'message': 'Article non trouvé'})
+
+    changements_unites, erreur_unites = _prix_unites_global(request, article)
+    if erreur_unites:
+        return JsonResponse({'success': False, 'message': erreur_unites})
 
     if prix_vente is not None and prix_vente > 0:
         ancien_prix = article.prix_vente or Decimal('0')
@@ -10669,6 +10827,13 @@ def modifier_article_global(request):
             stock_apres=article.quantite_stock,
             reference_document=f"SCAN-ART-{article.id}",
             commentaire="Ajout stock via scanner global"
+        )
+
+    for cond, prix in changements_unites:
+        cond.prix_vente = prix
+        cond.save(update_fields=['prix_vente', 'date_mise_a_jour'])
+        modifications.append(
+            f"Prix {cond.libelle}: {'auto' if prix is None else prix}"
         )
 
     if modifications:

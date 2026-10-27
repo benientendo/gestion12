@@ -152,6 +152,12 @@ kbd {
                 <span class="input-group-text px-1" id="srDevise" style="font-size:.75rem;">CDF</span>
             </div>
 
+            <!-- Prix des unités (Boucherie) -->
+            <button type="button" class="btn btn-outline-primary btn-sm" id="srUnitesBtn"
+                    style="display:none;" title="Modifier les prix des unités (kg, demi, carton…)">
+                <i class="fas fa-weight-hanging"></i>
+            </button>
+
             <!-- Catégorie -->
             <select id="srCategorie" class="form-select form-select-sm" style="max-width:150px;" title="Catégorie"></select>
 
@@ -171,6 +177,30 @@ kbd {
             <button class="btn btn-outline-secondary btn-sm" id="srCancelBtn" type="button">
                 <i class="fas fa-times"></i>
             </button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL PRIX DES UNITÉS (SAISIE RAPIDE) -->
+<div class="modal fade" id="srPrixUnitesModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title">
+                    <i class="fas fa-weight-hanging me-1"></i>Prix des unités
+                    <span id="srUnitesArticleNom" class="text-muted fw-normal"></span>
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="srUnitesListe"></div>
+                <small class="text-muted d-block mt-2">
+                    Laisser vide pour calculer automatiquement (prix de base × coefficient).
+                </small>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
         </div>
     </div>
 </div>
@@ -1497,6 +1527,12 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     const srSessionTbody= document.getElementById('srSessionTbody');
     const srSessionCount= document.getElementById('srSessionCount');
     const srClearSession= document.getElementById('srClearSession');
+    const srUnitesBtn   = document.getElementById('srUnitesBtn');
+    const srUnitesListe = document.getElementById('srUnitesListe');
+    const srUnitesArticleNom = document.getElementById('srUnitesArticleNom');
+    
+    // Unités de l'article sélectionné (Boucherie) : [{id, libelle, coefficient, prix}]
+    let srUnitesState = [];
 
     let sessionEntries = [];  // {nom, collaborateur, stock_theorique, stock_physique, ecart, prix_vente, devise, categorie_nom, ligne_id}
 
@@ -1781,6 +1817,12 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         srStockActuel.textContent = art.quantite_stock + ' ' + (art.unite_base || 'pcs');
         srPrixVente.value      = art.prix_vente;
         srDevise.textContent   = art.devise || 'CDF';
+
+        // Prix des unités (Boucherie)
+        srUnitesState = Array.isArray(art.unites) ? art.unites : [];
+        srUnitesBtn.style.display = srUnitesState.length ? '' : 'none';
+        srUnitesListe.innerHTML = '';
+        srUnitesArticleNom.textContent = srUnitesState.length ? '— ' + art.nom : '';
         
         // Afficher le stock déjà inventorié si existe
         const srStockInventorieEl = document.getElementById('srStockInventorie');
@@ -1843,12 +1885,54 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         srQteWrap.style.display = 'none';
         srQte.value = '';
         srPrixVente.value = '';
+        srUnitesState = [];
+        srUnitesBtn.style.display = 'none';
+        srUnitesListe.innerHTML = '';
+        srUnitesArticleNom.textContent = '';
         srLabel.textContent = '';
         srStockActuel.textContent = '—';
         document.getElementById('srStockInventorie').style.display = 'none';
         closeDropdown();
         srSearch.focus();
     }
+
+    // === Prix des unités (Boucherie) dans la saisie rapide ===
+    function ouvrirPrixUnites() {
+        if (!srUnitesState.length) return;
+        const devise = (srDevise.textContent || 'CDF').trim();
+        const symbole = devise === 'USD' ? '$' : 'FC';
+        const decimales = devise === 'USD' ? 2 : 0;
+        const base = parseFloat(srPrixVente.value) || 0;
+        srUnitesListe.innerHTML = srUnitesState.map(function(u) {
+            const coeff = parseFloat(u.coefficient) || 1;
+            const auto = base * coeff;
+            const prixSaisi = (u.prix === null || u.prix === undefined) ? '' : u.prix;
+            return '<div class="input-group input-group-sm mb-1">'
+                + '<span class="input-group-text" style="min-width:96px;">'
+                + '<span class="text-truncate">' + escapeHtml(u.libelle) + '</span>'
+                + '<small class="text-muted ms-1">&times;' + coeff + '</small></span>'
+                + '<input type="number" class="form-control text-end sr-prix-unite"'
+                + ' data-cond-id="' + u.id + '" data-coefficient="' + coeff + '"'
+                + ' min="0" step="0.01"'
+                + ' placeholder="' + auto.toFixed(decimales) + '"'
+                + ' value="' + prixSaisi + '">'
+                + '<span class="input-group-text">' + symbole + '</span>'
+                + '</div>';
+        }).join('');
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('srPrixUnitesModal')).show();
+    }
+
+    srUnitesBtn.addEventListener('click', ouvrirPrixUnites);
+
+    srPrixVente.addEventListener('input', function() {
+        const base = parseFloat(this.value) || 0;
+        const devise = (srDevise.textContent || 'CDF').trim();
+        const decimales = devise === 'USD' ? 2 : 0;
+        srUnitesListe.querySelectorAll('.sr-prix-unite').forEach(function(inp) {
+            const coeff = parseFloat(inp.dataset.coefficient) || 1;
+            inp.placeholder = (base * coeff).toFixed(decimales);
+        });
+    });
 
     function showToast(msg, type) {
         const t = document.createElement('div');
@@ -2135,6 +2219,13 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 categorie_id: srCategorie.value ? parseInt(srCategorie.value) : null,
                 mode_accumulation: modeAccumulation,
                 remplacer: etaitCorrection,
+                cond_prix: (function() {
+                    const map = {};
+                    srUnitesListe.querySelectorAll('.sr-prix-unite').forEach(function(inp) {
+                        map[inp.dataset.condId] = inp.value;
+                    });
+                    return map;
+                })(),
             })
         })
         .then(function(r) { return r.json(); })

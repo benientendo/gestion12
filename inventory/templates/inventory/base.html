@@ -352,6 +352,15 @@
                                 </div>
                             </div>
 
+                            <!-- Prix des unités (Boucherie) -->
+                            <div id="globalPrixUnitesCol" class="mt-3" style="display:none;">
+                                <label class="form-label fw-bold">
+                                    <i class="fas fa-weight-hanging text-info"></i> Prix des unités
+                                    <small class="text-muted fw-normal">(vide = prix auto)</small>
+                                </label>
+                                <div id="globalPrixUnitesListe"></div>
+                            </div>
+
                             <!-- Aperçu stock -->
                             <div class="alert alert-info mt-3">
                                 <div class="row text-center">
@@ -501,6 +510,7 @@
         let gVariante = null;
         let gPrixOriginal = 0;
         let gStockCourant = 0;
+        let gUnites = [];
 
         const URL_VERIFIER = "{% url 'inventory:verifier_code_barre_global' %}";
         const URL_MODIFIER = "{% url 'inventory:modifier_article_global' %}";
@@ -538,8 +548,46 @@
             globalResetModal();
         });
 
+        function renderGlobalPrixUnites(unites, prixBase, devise) {
+            gUnites = Array.isArray(unites) ? unites : [];
+            const col = document.getElementById('globalPrixUnitesCol');
+            const liste = document.getElementById('globalPrixUnitesListe');
+            if (!col || !liste) return;
+            liste.innerHTML = '';
+            if (!gUnites.length) {
+                col.style.display = 'none';
+                return;
+            }
+            const symbole = devise === 'USD' ? '$' : 'FC';
+            const decimales = devise === 'USD' ? 2 : 0;
+            const echapper = function(v) {
+                return String(v === null || v === undefined ? '' : v)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            };
+            let html = '';
+            gUnites.forEach(function(u) {
+                const coeff = parseFloat(u.coefficient) || 1;
+                const auto = (parseFloat(prixBase) || 0) * coeff;
+                html += '<div class="input-group input-group-sm mb-1">'
+                      + '<span class="input-group-text" style="min-width:110px;">'
+                      +   '<span class="text-truncate">' + echapper(u.libelle) + '</span>'
+                      +   '<small class="text-muted ms-1">&times;' + coeff + '</small></span>'
+                      + '<input type="number" class="form-control text-end global-prix-unite"'
+                      +        ' name="cond_prix_' + parseInt(u.id, 10) + '" min="0" step="0.01"'
+                      +        ' data-coefficient="' + coeff + '"'
+                      +        ' placeholder="' + auto.toFixed(decimales) + '"'
+                      +        ' value="' + echapper(u.prix) + '">'
+                      + '<span class="input-group-text">' + symbole + '</span>'
+                      + '</div>';
+            });
+            liste.innerHTML = html;
+            col.style.display = '';
+        }
+
         function globalResetModal() {
-            gArticle = null; gVariante = null; gPrixOriginal = 0; gStockCourant = 0;
+            gArticle = null; gVariante = null; gPrixOriginal = 0; gStockCourant = 0; gUnites = [];
             document.getElementById('globalScanCodeBarre').value = '';
             document.getElementById('globalScanFeedback').style.display = 'none';
             document.getElementById('globalArticleTrouve').style.display = 'none';
@@ -556,6 +604,10 @@
             document.getElementById('globalPrixCol').style.display = 'block';
             document.getElementById('globalPrixCol').className = 'col-6';
             document.getElementById('globalQteCol').className = 'col-6';
+            const unitesCol = document.getElementById('globalPrixUnitesCol');
+            if (unitesCol) unitesCol.style.display = 'none';
+            const unitesListe = document.getElementById('globalPrixUnitesListe');
+            if (unitesListe) unitesListe.innerHTML = '';
         }
 
         // === Recherche ===
@@ -616,6 +668,7 @@
                     document.getElementById('globalPrixVente').value = gPrixOriginal;
                     document.getElementById('globalPrixVente').step = isUSD ? '0.01' : '1';
                     document.getElementById('globalPrixOriginal').textContent = gPrixOriginal.toFixed(isUSD ? 2 : 0) + ' ' + symbole;
+                    renderGlobalPrixUnites(data.article.unites || [], gPrixOriginal, devise);
 
                     // === Variante directe ===
                     if (data.type === 'variante' && data.variante) {
@@ -630,6 +683,8 @@
                         if (gPrixOriginal > 0) {
                             document.getElementById('globalPrixCol').style.display = 'none';
                             document.getElementById('globalQteCol').className = 'col-12';
+                            const unitesCol = document.getElementById('globalPrixUnitesCol');
+                            if (unitesCol) unitesCol.style.display = 'none';
                         }
                     }
                     // === Article avec variantes ===
@@ -712,6 +767,14 @@
         });
         document.getElementById('globalQteAjout').addEventListener('input', globalUpdateApercu);
         document.getElementById('globalPrixVente').addEventListener('input', globalCheckPrix);
+        document.getElementById('globalPrixVente').addEventListener('input', function() {
+            const base = parseFloat(this.value) || 0;
+            const decimales = (gArticle && gArticle.devise === 'USD') ? 2 : 0;
+            document.querySelectorAll('#globalPrixUnitesListe .global-prix-unite').forEach(function(inp) {
+                const coeff = parseFloat(inp.dataset.coefficient) || 1;
+                inp.placeholder = (base * coeff).toFixed(decimales);
+            });
+        });
         document.getElementById('globalQteAjout').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') { e.preventDefault(); document.getElementById('globalBtnConfirmer').click(); }
         });
@@ -768,6 +831,9 @@
             fd.append('prix_vente', prix);
             fd.append('date_expiration', document.getElementById('globalDateExp').value);
             if (varId) fd.append('variante_id', varId);
+            document.querySelectorAll('#globalPrixUnitesListe .global-prix-unite').forEach(function(inp) {
+                fd.append(inp.name, inp.value);
+            });
 
             fetch(URL_MODIFIER, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
             .then(r => r.json())
@@ -792,6 +858,11 @@
                     document.getElementById('globalQteAjout').value = 0;
                     document.getElementById('globalPrixVente').value = '';
                     document.getElementById('globalPrixModifieAlert').style.display = 'none';
+                    gUnites = [];
+                    const unitesColSucces = document.getElementById('globalPrixUnitesCol');
+                    if (unitesColSucces) unitesColSucces.style.display = 'none';
+                    const unitesListeSucces = document.getElementById('globalPrixUnitesListe');
+                    if (unitesListeSucces) unitesListeSucces.innerHTML = '';
                     document.getElementById('globalVarId').value = '';
                     document.getElementById('globalDateExp').value = '';
                     document.getElementById('globalDateExpStatus').innerHTML = '';

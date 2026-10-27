@@ -11,6 +11,7 @@ d'édition complet. Ici :
 - prix négatif refusé, conditionnement d'un autre article ignoré
 """
 from datetime import date
+import json
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -18,6 +19,7 @@ from django.urls import reverse
 
 from inventory.models import (
     Article, Boutique, Categorie, Commercant, Conditionnement, Inventaire,
+    LigneInventaire,
 )
 
 User = get_user_model()
@@ -196,7 +198,6 @@ class PrixUnitesAffichageTest(PrixUnitesBoucherieBase):
         # le bloc n'existe que pour les boutiques de type Boucherie
         self.assertNotContains(r, 'id="prixUnitesContainer"')
         self.assertNotContains(r, 'data-prix-unites')
-        self.assertNotContains(r, 'Prix des unités')
 
 
 class PrixUnitesRechercheAjaxTest(PrixUnitesBoucherieBase):
@@ -238,3 +239,266 @@ class PrixUnitesRechercheAjaxTest(PrixUnitesBoucherieBase):
             {'q': 'Marteau'},
         )
         self.assertEqual(r.json()['articles'][0]['prix_unites'], '')
+
+
+class PrixUnitesScannerGlobalTest(PrixUnitesBoucherieBase):
+    """Le scanner global (présent sur tous les écrans) doit aussi permettre de
+    modifier les prix des unités d'un article de Boucherie."""
+
+    def test_verification_renvoie_les_unites_boucherie(self):
+        r = self.client.get(
+            reverse('inventory:verifier_code_barre_global'),
+            {'code': 'BCH-VI', 'boutique_id': self.boucherie.id},
+        )
+        data = r.json()
+        self.assertTrue(data['existe'], data)
+        unites = data['article']['unites']
+        self.assertEqual(
+            [(u['id'], u['libelle'], u['coefficient'], u['prix']) for u in unites],
+            [
+                (self.kg.id, 'kg', 1000, None),
+                (self.carton.id, 'carton', 10000, 60000.0),
+                (self.rame.id, 'rame', 500, None),
+            ],
+        )
+
+    def test_modification_globale_change_prix_des_unites(self):
+        r = self.client.post(
+            reverse('inventory:modifier_article_global'),
+            {
+                'article_id': self.article.id,
+                'prix_vente': '5500',
+                'cond_prix_' + str(self.carton.id): '72000',
+                'cond_prix_' + str(self.kg.id): '',
+            },
+        )
+        data = r.json()
+        self.assertTrue(data['success'], data)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.prix_vente, 5500)
+        self.carton.refresh_from_db()
+        self.assertEqual(self.carton.prix_vente, 72000)
+        self.kg.refresh_from_db()
+        self.assertIsNone(self.kg.prix_vente)
+
+    def test_modification_globale_refuse_prix_unite_negatif(self):
+        r = self.client.post(
+            reverse('inventory:modifier_article_global'),
+            {
+                'article_id': self.article.id,
+                'prix_vente': '5500',
+                'cond_prix_' + str(self.carton.id): '-1',
+            },
+        )
+        data = r.json()
+        self.assertFalse(data['success'])
+        self.assertIn('carton', data['message'])
+        self.carton.refresh_from_db()
+        self.assertEqual(self.carton.prix_vente, 60000)
+
+    def test_verification_hors_boucherie_sans_unites(self):
+        boutique = Boutique.objects.create(
+            nom='Quincaillerie', commercant=self.commercant,
+            code_boutique='BT-QIN-003', type_commerce='QUINCAILLERIE',
+        )
+        Article.objects.create(
+            boutique=boutique, code='QIN-03', nom='Marteau',
+            prix_vente=2500, quantite_stock=5,
+        )
+        r = self.client.get(
+            reverse('inventory:verifier_code_barre_global'),
+            {'code': 'QIN-03', 'boutique_id': boutique.id},
+        )
+        self.assertEqual(r.json()['article']['unites'], [])
+
+
+class PrixUnitesRechercheCodeBarreTest(PrixUnitesBoucherieBase):
+    """Le modal de recherche par code-barres de l'écran Article doit aussi
+    afficher et enregistrer les prix des unités."""
+
+    def test_verification_renvoie_les_unites_boucherie(self):
+        r = self.client.get(
+            reverse('inventory:verifier_code_barre', args=[self.boucherie.id]),
+            {'code': 'BCH-VI'},
+        )
+        data = r.json()
+        self.assertTrue(data['existe'], data)
+        self.assertEqual(
+            [(u['id'], u['libelle'], u['coefficient'], u['prix'])
+             for u in data['article']['unites']],
+            [
+                (self.kg.id, 'kg', 1000, None),
+                (self.carton.id, 'carton', 10000, 60000.0),
+                (self.rame.id, 'rame', 500, None),
+            ],
+        )
+
+    def test_modification_enregistre_les_prix_des_unites(self):
+        r = self.client.post(
+            reverse('inventory:modifier_article_existant', args=[self.boucherie.id]),
+            {
+                'article_id': self.article.id,
+                'prix_vente': '5500',
+                'cond_prix_' + str(self.carton.id): '72000',
+                'cond_prix_' + str(self.kg.id): '',
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        data = r.json()
+        self.assertTrue(data['success'], data)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.prix_vente, 5500)
+        self.carton.refresh_from_db()
+        self.assertEqual(self.carton.prix_vente, 72000)
+        self.kg.refresh_from_db()
+        self.assertIsNone(self.kg.prix_vente)
+        self.assertIn('carton', data['message'])
+
+    def test_modification_refuse_prix_unite_negatif(self):
+        r = self.client.post(
+            reverse('inventory:modifier_article_existant', args=[self.boucherie.id]),
+            {
+                'article_id': self.article.id,
+                'prix_vente': '5500',
+                'cond_prix_' + str(self.carton.id): '-5',
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+        )
+        data = r.json()
+        self.assertFalse(data['success'])
+        self.assertIn('carton', data['message'])
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.prix_vente, 5000)
+        self.carton.refresh_from_db()
+        self.assertEqual(self.carton.prix_vente, 60000)
+
+    def test_verification_hors_boucherie_sans_unites(self):
+        boutique = Boutique.objects.create(
+            nom='Quincaillerie', commercant=self.commercant,
+            code_boutique='BT-QIN-004', type_commerce='QUINCAILLERIE',
+        )
+        Article.objects.create(
+            boutique=boutique, code='QIN-04', nom='Marteau',
+            prix_vente=2500, quantite_stock=5,
+        )
+        r = self.client.get(
+            reverse('inventory:verifier_code_barre', args=[boutique.id]),
+            {'code': 'QIN-04'},
+        )
+        self.assertEqual(r.json()['article']['unites'], [])
+
+
+class PrixUnitesInventaireTest(PrixUnitesBoucherieBase):
+    """La saisie rapide d'inventaire doit aussi permettre de modifier les prix
+    des unités (kg, demi, carton…) de l'article compté."""
+
+    def setUp(self):
+        super().setUp()
+        self.inventaire = Inventaire.objects.create(
+            boutique=self.boucherie, reference='INV-TEST-UNITES',
+            date_inventaire=date.today(), cree_par=self.user,
+        )
+        self.ligne = LigneInventaire.objects.create(
+            inventaire=self.inventaire, article=self.article,
+            stock_theorique=100, prix_unitaire=0,
+        )
+        self.autre_ligne = LigneInventaire.objects.create(
+            inventaire=self.inventaire, article=self.autre_article,
+            stock_theorique=50, prix_unitaire=0,
+        )
+        self.url_ajax = reverse(
+            'inventory:saisir_ligne_inventaire_ajax',
+            args=[self.boucherie.id, self.inventaire.id],
+        )
+
+    def _post_ajax(self, body):
+        body.setdefault('ligne_id', self.ligne.id)
+        body.setdefault('stock_physique', 10)
+        return self.client.post(
+            self.url_ajax, data=json.dumps(body), content_type='application/json',
+        )
+
+    def test_recherche_lignes_renvoie_les_unites(self):
+        r = self.client.get(
+            reverse('inventory:lignes_recherche_inventaire_ajax',
+                    args=[self.boucherie.id, self.inventaire.id]),
+            {'q': 'Boeuf'},
+        )
+        data = r.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(len(data['results']), 1)
+        self.assertEqual(
+            [(u['id'], u['libelle'], u['prix']) for u in data['results'][0]['unites']],
+            [(self.kg.id, 'kg', None), (self.carton.id, 'carton', 60000.0),
+             (self.rame.id, 'rame', None)],
+        )
+
+    def test_saisie_rapide_enregistre_les_prix_des_unites(self):
+        r = self._post_ajax({
+            'prix_vente': 5500,
+            'cond_prix': {
+                str(self.carton.id): '72000',
+                str(self.kg.id): '',
+                str(self.autre_cond.id): '99999',
+            },
+        })
+        data = r.json()
+        self.assertTrue(data['success'], data)
+        self.assertEqual(data['unites_modifiees'], 1)
+
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.prix_vente, 5500)
+        self.carton.refresh_from_db()
+        self.assertEqual(self.carton.prix_vente, 72000)
+        self.kg.refresh_from_db()
+        self.assertIsNone(self.kg.prix_vente)
+        # conditionnement d'un autre article : jamais touché
+        self.autre_cond.refresh_from_db()
+        self.assertEqual(self.autre_cond.prix_vente, 7000)
+
+    def test_saisie_rapide_refuse_prix_unite_negatif(self):
+        r = self._post_ajax({
+            'prix_vente': 5500,
+            'cond_prix': {str(self.carton.id): '-10'},
+        })
+        self.assertEqual(r.status_code, 400)
+        data = r.json()
+        self.assertFalse(data['success'])
+        self.assertIn('carton', data['error'])
+        self.ligne.refresh_from_db()
+        self.assertIsNone(self.ligne.stock_physique)
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.prix_vente, 5000)
+        self.carton.refresh_from_db()
+        self.assertEqual(self.carton.prix_vente, 60000)
+
+    def test_saisie_rapide_hors_boucherie_ignore_les_unites(self):
+        boutique = Boutique.objects.create(
+            nom='Quincaillerie', commercant=self.commercant,
+            code_boutique='BT-QIN-005', type_commerce='QUINCAILLERIE',
+        )
+        article = Article.objects.create(
+            boutique=boutique, code='QIN-05', nom='Marteau',
+            prix_vente=2500, quantite_stock=5,
+        )
+        inventaire = Inventaire.objects.create(
+            boutique=boutique, reference='INV-TEST-GEN',
+            date_inventaire=date.today(), cree_par=self.user,
+        )
+        ligne = LigneInventaire.objects.create(
+            inventaire=inventaire, article=article,
+            stock_theorique=5, prix_unitaire=0,
+        )
+        r = self.client.post(
+            reverse('inventory:saisir_ligne_inventaire_ajax',
+                    args=[boutique.id, inventaire.id]),
+            data=json.dumps({
+                'ligne_id': ligne.id, 'stock_physique': 7,
+                'cond_prix': {'1': '999'},
+            }),
+            content_type='application/json',
+        )
+        data = r.json()
+        self.assertTrue(data['success'], data)
+        self.assertEqual(data['unites_modifiees'], 0)
+        self.assertEqual(data['unites'], [])
