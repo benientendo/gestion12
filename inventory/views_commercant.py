@@ -5342,8 +5342,8 @@ def valider_transfert(request, transfert_id):
     if request.method == 'POST':
         try:
             with transaction.atomic():
-                transfert.valider_transfert(request.user.username)
-            
+                transfert.valider_transfert(request.user.username, ecraser_attributs=True)
+
             from .websocket_utils import _push_fcm, notify_sync_required
             notify_sync_required(
                 transfert.boutique_destination.id,
@@ -6322,7 +6322,9 @@ def transfert_multiple(request, depot_id):
                         )
                         # Validation directe - mise à jour des stocks
                         try:
-                            article_destination = transfert.valider_transfert(request.user.username)
+                            article_destination = transfert.valider_transfert(
+                                request.user.username, ecraser_attributs=True
+                            )
                         except ValidationError as exc:
                             # Stock épuisé entre-temps (concurrent) : on annule
                             # le transfert et on prévient l'utilisateur
@@ -6536,7 +6538,7 @@ def valider_transferts_multiples(request, depot_id):
             try:
                 transfert = TransfertStock.objects.get(id=transfert_id, depot_source=depot, statut='EN_ATTENTE')
                 with transaction.atomic():
-                    transfert.valider_transfert(request.user.username)
+                    transfert.valider_transfert(request.user.username, ecraser_attributs=True)
                 transferts_valides.append(transfert)
                 valides += 1
             except TransfertStock.DoesNotExist:

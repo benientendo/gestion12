@@ -1265,11 +1265,20 @@ def trouver_article_destination(article_source, boutique, avec_categorie=True,
     return article, True
 
 
-def appliquer_attributs_vente_destination(article_destination, article_source):
+def _normaliser_libelle_unite(libelle):
+    return (libelle or '').strip().casefold()
+
+
+def appliquer_attributs_vente_destination(article_destination, article_source,
+                                          unites_a_ecraser=None):
     """Recopie sur l'article de destination les attributs de vente de l'article
     source : unité de base, conditionnements, prix d'achat/vente, devise et
     pièces par carton. Permet au terminal récepteur de vendre à l'identique,
     même s'il ne possédait pas l'article avant le transfert.
+
+    ``unites_a_ecraser`` permet de ne remplacer que certains conditionnements
+    (par libellé). ``None`` = tous les conditionnements de la source,
+    liste vide = aucun conditionnement (seuls les attributs de base changent).
     """
     champs = ['description', 'devise', 'prix_vente', 'prix_achat',
               'pieces_par_carton', 'unite_base']
@@ -1280,8 +1289,19 @@ def appliquer_attributs_vente_destination(article_destination, article_source):
             setattr(article_destination, champ, getattr(article_source, champ))
         article_destination.save()
 
+    unites_filtre = None
+    if unites_a_ecraser is not None:
+        unites_filtre = {
+            _normaliser_libelle_unite(u)
+            for u in unites_a_ecraser
+            if _normaliser_libelle_unite(u)
+        }
+
     # Conditionnements : mise à jour par libellé (unique_together article/libellé)
     for cond_source in article_source.conditionnements.all():
+        if (unites_filtre is not None
+                and _normaliser_libelle_unite(cond_source.libelle) not in unites_filtre):
+            continue
         cond_dest, cree = Conditionnement.objects.get_or_create(
             article=article_destination,
             libelle=cond_source.libelle,
@@ -1340,8 +1360,18 @@ class TransfertStock(models.Model):
     def __str__(self):
         return f"Transfert {self.article.nom} - {self.depot_source.nom} → {self.boutique_destination.nom} ({self.quantite})"
     
-    def valider_transfert(self, valide_par_user):
-        """Valide le transfert et met à jour les stocks"""
+    def valider_transfert(self, valide_par_user, ecraser_attributs=False,
+                          unites_a_ecraser=None):
+        """Valide le transfert et met à jour les stocks.
+
+        ``ecraser_attributs`` : si True, les prix/unités de l'article source
+        remplacent ceux de l'article déjà présent dans la boutique
+        destination. Si False (défaut), le destinataire conserve ses prix et
+        unités ; seul le stock sera ajouté à la validation de réception.
+
+        ``unites_a_ecraser`` : conditionnements précis à remplacer (libellés).
+        None = tous ceux de la source ; liste vide = aucun.
+        """
         if self.statut != 'EN_ATTENTE':
             raise ValidationError("Ce transfert a déjà été traité")
         
@@ -1369,9 +1399,17 @@ class TransfertStock(models.Model):
         # Article de destination : par code, sinon par nom identique
         # (évite les doublons quand le point de vente a déjà le même article)
         article_boutique, cree = trouver_article_destination(article_depot, self.boutique_destination)
-        # Recopier unité, conditionnements et prix pour que le terminal récepteur
-        # puisse vendre à l'identique, même s'il ne possédait pas l'article.
-        appliquer_attributs_vente_destination(article_boutique, article_depot)
+        # Article nouvellement créé : on recopie ses attributs de vente.
+        # Article déjà présent : on ne l'écrase que si explicitement demandé
+        # (case cochée côté terminal source), sinon le destinataire garde ses
+        # prix et unités.
+        if cree:
+            appliquer_attributs_vente_destination(article_boutique, article_depot)
+        elif ecraser_attributs:
+            appliquer_attributs_vente_destination(
+                article_boutique, article_depot,
+                unites_a_ecraser=unites_a_ecraser,
+            )
         self.stock_boutique_avant = 0 if cree else article_boutique.quantite_stock
 
         article_boutique.est_valide_client = False

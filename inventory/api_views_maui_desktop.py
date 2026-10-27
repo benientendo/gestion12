@@ -639,6 +639,26 @@ def _get_user_id(request):
         return None
 
 
+def _as_bool(value):
+    """Accepte true/false, 1/0, 'oui'/'non' (payloads MAUI hétérogènes)."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ('1', 'true', 'oui', 'yes', 'on')
+    return bool(value)
+
+
+def _liste_unites(value):
+    """Normalise la liste des unités à écraser (None = toutes)."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple)):
+        return None
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
 # ===== TRANSFERTS ENTRE BOUTIQUES =====
 
 @csrf_exempt
@@ -678,6 +698,14 @@ def transfert_entre_boutiques(request):
 
         # 2. Lecture du payload (multi-lignes 'lignes' ou mono-article rétro-compatible)
         data = request.data
+
+        # Option d'écrasement des prix/unités du destinataire (défaut : non).
+        # Peut être définie globalement ou ligne par ligne.
+        ecraser_global = _as_bool(data.get(
+            'ecraser_prix_unites',
+            data.get('ecraser_attributs', False),
+        ))
+        unites_globales = _liste_unites(data.get('unites_a_ecraser'))
 
         try:
             boutique_destination_id = int(data.get('boutique_destination_id'))
@@ -771,10 +799,30 @@ def transfert_entre_boutiques(request):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            if article_ligne.id in articles_demandes:
-                articles_demandes[article_ligne.id]['quantite'] += qte_ligne
+            ecraser_ligne = _as_bool(ligne.get(
+                'ecraser_prix_unites',
+                ligne.get('ecraser_attributs', ecraser_global),
+            ))
+            if 'unites_a_ecraser' in ligne:
+                unites_ligne = _liste_unites(ligne.get('unites_a_ecraser'))
             else:
-                articles_demandes[article_ligne.id] = {'article': article_ligne, 'quantite': qte_ligne}
+                unites_ligne = unites_globales
+
+            if article_ligne.id in articles_demandes:
+                demande = articles_demandes[article_ligne.id]
+                demande['quantite'] += qte_ligne
+                demande['ecraser'] = demande['ecraser'] or ecraser_ligne
+                if unites_ligne is None:
+                    demande['unites'] = None
+                elif demande['unites'] is not None:
+                    demande['unites'].update(unites_ligne)
+            else:
+                articles_demandes[article_ligne.id] = {
+                    'article': article_ligne,
+                    'quantite': qte_ligne,
+                    'ecraser': ecraser_ligne,
+                    'unites': None if unites_ligne is None else set(unites_ligne),
+                }
 
         # 6. Stock suffisant pour chaque article
         for demande in articles_demandes.values():
@@ -819,7 +867,12 @@ def transfert_entre_boutiques(request):
             # On ne crédite PAS quantite_stock ici : le terminal de la boutique
             # destination validera la réception (comme un transfert validé depuis le
             # back-office). Créditer directement doublerait le stock à la validation.
-            article_dest = transfert.valider_transfert(valide_par_user=effectue_par)
+            unites = demande['unites']
+            article_dest = transfert.valider_transfert(
+                valide_par_user=effectue_par,
+                ecraser_attributs=demande['ecraser'],
+                unites_a_ecraser=None if unites is None else sorted(unites),
+            )
 
             quantite_totale += quantite
             transferts.append({
@@ -828,6 +881,7 @@ def transfert_entre_boutiques(request):
                 'article_destination_id': article_dest.id,
                 'article_nom': article.nom,
                 'quantite': quantite,
+                'attributs_ecrases': demande['ecraser'],
             })
 
         # Prévenir la boutique destination : stock reçu en attente de validation client
