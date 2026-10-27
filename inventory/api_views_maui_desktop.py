@@ -9,6 +9,7 @@ Endpoints pour:
 
 import json
 import logging
+import unicodedata
 import uuid
 from decimal import Decimal
 from django.utils import timezone
@@ -649,7 +650,7 @@ def _as_bool(value):
 
 
 def _liste_unites(value):
-    """Normalise la liste des unités à écraser (None = toutes)."""
+    """Normalise la liste des unitǸs �� Ǹcraser (None = toutes)."""
     if value is None:
         return None
     if isinstance(value, str):
@@ -657,6 +658,105 @@ def _liste_unites(value):
     if not isinstance(value, (list, tuple)):
         return None
     return [str(v).strip() for v in value if str(v).strip()]
+
+
+_UNITES_BASE = {
+    '', 'unite', 'unites', 'unit', 'units', 'piece', 'pieces', 'pcs',
+    'base', 'stock',
+}
+
+
+def _normaliser_unite(value):
+    """Minuscules sans accent ni espaces superflus (kg / Kg / KG...)."""
+    texte = unicodedata.normalize('NFKD', str(value or ''))
+    texte = texte.encode('ascii', 'ignore').decode('ascii')
+    return ' '.join(texte.split()).casefold()
+
+
+def _unites_transfert_article(article):
+    """UnitǸs de transfert possibles : unitǸ de base + conditionnements actifs.
+
+    Le coefficient est celui configurǸ sur l'article (ex. carton = 30 kg),
+    jamais une valeur envoyǸe par le client : la masse d'un carton diff��re
+    d'un article �� l'autre.
+    """
+    unites = [{
+        'id': None,
+        'libelle': article.unite_base or 'unite',
+        'coefficient': 1,
+        'est_base': True,
+    }]
+    for cond in article.conditionnements.filter(est_actif=True).order_by('ordre', 'id'):
+        coefficient = int(cond.coefficient or 1)
+        if coefficient < 1:
+            continue
+        unites.append({
+            'id': cond.id,
+            'libelle': cond.libelle,
+            'coefficient': coefficient,
+            'est_base': False,
+        })
+    return unites
+
+
+def _resoudre_unite_transfert(article, ligne, index, unite_defaut=None):
+    """Traduit l'unitǸ demandǸe par le terminal en coefficient vers l'unitǸ de base.
+
+    Ordre de prioritǸ : ``conditionnement_id`` puis ``unite`` (libellǸ exact,
+    insensible �� la casse/aux accents), puis ``unite_defaut`` du payload.
+    Sans unitǸ : unitǸ de base (rǸtro-compatibilitǸ avec les anciens clients).
+    """
+    unites = _unites_transfert_article(article)
+    conditionnement_id = ligne.get('conditionnement_id')
+    if conditionnement_id in (None, ''):
+        conditionnement_id = None
+    else:
+        try:
+            conditionnement_id = int(conditionnement_id)
+        except (TypeError, ValueError):
+            raise ValidationError(f"Ligne {index} : conditionnement_id invalide.")
+
+    if conditionnement_id is not None:
+        for unite in unites:
+            if unite['id'] == conditionnement_id:
+                return unite
+        raise ValidationError(
+            f"Ligne {index} : conditionnement {conditionnement_id} introuvable "
+            f"pour {article.nom}. UnitǸs disponibles : {_libelles_unites(unites)}."
+        )
+
+    unite_brute = ligne.get(
+        'unite', ligne.get('unite_transfert', ligne.get('conditionnement', unite_defaut))
+    )
+    if unite_brute in (None, '') or _normaliser_unite(unite_brute) in _UNITES_BASE:
+        return unites[0]
+
+    cible = _normaliser_unite(unite_brute)
+    for unite in unites:
+        if _normaliser_unite(unite['libelle']) == cible:
+            return unite
+    if cible == _normaliser_unite(article.unite_base):
+        return unites[0]
+
+    # Articles non spǸcialisǸs : le carton est dǸcrit par pieces_par_carton.
+    if cible == 'carton' and int(article.pieces_par_carton or 1) > 1:
+        return {
+            'id': None,
+            'libelle': 'carton',
+            'coefficient': int(article.pieces_par_carton),
+            'est_base': False,
+        }
+
+    raise ValidationError(
+        f"Ligne {index} : unitǸ '{unite_brute}' inconnue pour {article.nom}. "
+        f"UnitǸs disponibles : {_libelles_unites(unites)}."
+    )
+
+
+def _libelles_unites(unites):
+    return ', '.join(
+        f"{u['libelle']} (x{u['coefficient']})" for u in unites
+    )
 
 
 # ===== TRANSFERTS ENTRE BOUTIQUES =====
@@ -669,7 +769,23 @@ def _liste_unites(value):
 def transfert_entre_boutiques(request):
     """
     Transfert d'un article d'une boutique source vers une boutique destination
-    (même commerçant, boutiques différentes). Terminal identifié par X-Device-Serial.
+    (mǦme commer��ant, boutiques diffǸrentes). Terminal identifiǸ par X-Device-Serial.
+
+    Payload (multi-lignes) :
+    {
+      "boutique_destination_id": 12,
+      "unite": "carton",                    # unitǸ par dǸfaut des lignes
+      "lignes": [
+        {"article_id": 5, "quantite": 2, "unite": "carton"},
+        {"article_id": 6, "quantite": 10, "unite": "kg"},
+        {"article_id": 7, "quantite": 1, "conditionnement_id": 42}
+      ]
+    }
+
+    ``unite`` accepte l'unitǸ de base ("unite", "piece", "pcs", "kg"...) ou le
+    libellǸ d'un conditionnement actif de l'article ("carton"...). Le
+    coefficient (masse d'un carton) est toujours lu sur l'article, jamais sur
+    le payload. Sans unitǸ, la quantitǸ est en unitǸ de base (rǸtro-compatibilitǸ).
     """
     try:
         # 1. Authentification terminal
@@ -706,6 +822,8 @@ def transfert_entre_boutiques(request):
             data.get('ecraser_attributs', False),
         ))
         unites_globales = _liste_unites(data.get('unites_a_ecraser'))
+        # UnitǸ par dǸfaut des lignes (ex. 'carton') ; sans valeur = unitǸ de base.
+        unite_defaut = data.get('unite', data.get('unite_transfert'))
 
         try:
             boutique_destination_id = int(data.get('boutique_destination_id'))
@@ -753,6 +871,8 @@ def transfert_entre_boutiques(request):
                 'article_id': data.get('article_id'),
                 'article_code': data.get('article_code'),
                 'quantite': data.get('quantite'),
+                'unite': data.get('unite'),
+                'conditionnement_id': data.get('conditionnement_id'),
             }]
         if not isinstance(lignes_entree, list) or not lignes_entree:
             return Response(
@@ -799,6 +919,12 @@ def transfert_entre_boutiques(request):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+            # UnitǸ de saisie -> quantitǸ en unitǸ de base (stock/transfert).
+            unite = _resoudre_unite_transfert(
+                article_ligne, ligne, index, unite_defaut=unite_defaut,
+            )
+            quantite_base = qte_ligne * unite['coefficient']
+
             ecraser_ligne = _as_bool(ligne.get(
                 'ecraser_prix_unites',
                 ligne.get('ecraser_attributs', ecraser_global),
@@ -808,10 +934,19 @@ def transfert_entre_boutiques(request):
             else:
                 unites_ligne = unites_globales
 
+            detail = {
+                'unite': unite['libelle'],
+                'coefficient': unite['coefficient'],
+                'conditionnement_id': unite['id'],
+                'quantite_saisie': qte_ligne,
+                'quantite_base': quantite_base,
+            }
+
             if article_ligne.id in articles_demandes:
                 demande = articles_demandes[article_ligne.id]
-                demande['quantite'] += qte_ligne
+                demande['quantite'] += quantite_base
                 demande['ecraser'] = demande['ecraser'] or ecraser_ligne
+                demande['details'].append(detail)
                 if unites_ligne is None:
                     demande['unites'] = None
                 elif demande['unites'] is not None:
@@ -819,19 +954,21 @@ def transfert_entre_boutiques(request):
             else:
                 articles_demandes[article_ligne.id] = {
                     'article': article_ligne,
-                    'quantite': qte_ligne,
+                    'quantite': quantite_base,
                     'ecraser': ecraser_ligne,
                     'unites': None if unites_ligne is None else set(unites_ligne),
+                    'details': [detail],
                 }
 
         # 6. Stock suffisant pour chaque article
         for demande in articles_demandes.values():
             article_demande = demande['article']
             if article_demande.quantite_stock < demande['quantite']:
+                unite_base = article_demande.unite_base or 'unite'
                 return Response(
                     {'success': False, 'error': f"Stock insuffisant pour {article_demande.nom} "
-                                                f"(disponible: {article_demande.quantite_stock}, "
-                                                f"demandé: {demande['quantite']})."},
+                                                f"(disponible: {article_demande.quantite_stock} {unite_base}, "
+                                                f"demandǸ: {demande['quantite']} {unite_base})."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -875,14 +1012,25 @@ def transfert_entre_boutiques(request):
             )
 
             quantite_totale += quantite
-            transferts.append({
+            details = demande['details']
+            entree = {
                 'transfert_id': transfert.id,
                 'article_id': article.id,
                 'article_destination_id': article_dest.id,
                 'article_nom': article.nom,
+                # RǸtro-compatibilitǸ : quantitǸ toujours exprimǸe en unitǸ de base
                 'quantite': quantite,
+                'quantite_base': quantite,
+                'lignes': details,
                 'attributs_ecrases': demande['ecraser'],
-            })
+            }
+            if len(details) == 1:
+                entree.update({
+                    'unite': details[0]['unite'],
+                    'coefficient': details[0]['coefficient'],
+                    'quantite_saisie': details[0]['quantite_saisie'],
+                })
+            transferts.append(entree)
 
         # Prévenir la boutique destination : stock reçu en attente de validation client
         try:
@@ -895,23 +1043,31 @@ def transfert_entre_boutiques(request):
             logger.warning(f"Notification destination échouée: {e}")
 
         premier = transferts[0]
-        return Response({
+        reponse = {
             'success': True,
             'reference_lot': reference_lot,
             'boutique_destination': boutique_destination.nom,
             'nb_articles': len(transferts),
             'quantite_totale': quantite_totale,
             'transferts': transferts,
-            # Rétro-compatibilité mono-article
+            # RǸtro-compatibilitǸ mono-article
             'transfert_id': premier['transfert_id'] if len(transferts) == 1 else None,
             'article_destination_id': premier['article_destination_id'] if len(transferts) == 1 else None,
             'quantite_transferee': quantite_totale,
-        })
+        }
+        if len(transferts) == 1 and 'unite' in premier:
+            reponse.update({
+                'unite': premier['unite'],
+                'coefficient': premier['coefficient'],
+                'quantite_saisie': premier['quantite_saisie'],
+            })
+        return Response(reponse)
 
     except ValidationError as e:
-        logger.warning(f"Transfert refusé: {e}")
+        message = ' '.join(e.messages) if hasattr(e, 'messages') else str(e)
+        logger.warning(f"Transfert refusǸ: {message}")
         return Response(
-            {'success': False, 'error': str(e)},
+            {'success': False, 'error': message},
             status=status.HTTP_400_BAD_REQUEST,
         )
     except ParseError as e:

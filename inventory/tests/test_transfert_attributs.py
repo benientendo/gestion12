@@ -212,3 +212,153 @@ class TransfertAttributsTestCase(TestCase):
             self.article_dest.conditionnements.get(libelle='kg').prix_vente,
             Decimal('250'),
         )
+
+
+class TransfertUnitesApiTestCase(TestCase):
+    """Saisie de la quantitǸ dans l'unitǸ choisie par le terminal MAUI.
+
+    Le coefficient (masse d'un carton) est propre �� chaque article et toujours
+    lu c��tǸ serveur.
+    """
+
+    def setUp(self):
+        TransfertAttributsTestCase.setUp(self)
+
+    def _post_api_transfert(self, payload):
+        api = APIClient()
+        return api.post(
+            reverse('api_maui_desktop:transfert_entre_boutiques'),
+            payload,
+            format='json',
+            HTTP_X_DEVICE_SERIAL=self.terminal.numero_serie,
+        )
+
+    def test_transfert_en_cartons_convertit_avec_le_coefficient_de_larticle(self):
+        response = self._post_api_transfert({
+            'boutique_destination_id': self.dest.id,
+            'lignes': [{
+                'article_id': self.article_source.id,
+                'quantite': 2,
+                'unite': 'Carton',
+            }],
+        })
+
+        self.assertEqual(response.status_code, 200, response.content)
+        transfert = response.json()['transferts'][0]
+        self.assertEqual(transfert['quantite'], 60)
+        self.assertEqual(transfert['quantite_base'], 60)
+        self.assertEqual(transfert['quantite_saisie'], 2)
+        self.assertEqual(transfert['unite'], 'carton')
+        self.assertEqual(transfert['coefficient'], 30)
+        self.article_source.refresh_from_db()
+        self.assertEqual(self.article_source.quantite_stock, 40)
+        self.assertEqual(
+            TransfertStock.objects.get(id=transfert['transfert_id']).quantite, 60,
+        )
+
+    def test_chaque_article_garde_le_coefficient_de_son_propre_carton(self):
+        article_2 = Article.objects.create(
+            boutique=self.source, nom='Viande', code='VIANDE-1',
+            prix_vente=Decimal('100'), devise='CDF', quantite_stock=100,
+            est_actif=True, est_valide_client=True, unite_base='kg',
+        )
+        Conditionnement.objects.create(
+            article=article_2, libelle='carton', coefficient=12,
+            prix_vente=Decimal('1200'),
+        )
+
+        response = self._post_api_transfert({
+            'unite': 'carton',
+            'boutique_destination_id': self.dest.id,
+            'lignes': [
+                {'article_id': self.article_source.id, 'quantite': 2},
+                {'article_id': article_2.id, 'quantite': 2},
+            ],
+        })
+
+        self.assertEqual(response.status_code, 200, response.content)
+        par_article = {
+            t['article_id']: t for t in response.json()['transferts']
+        }
+        self.assertEqual(par_article[self.article_source.id]['quantite'], 60)
+        self.assertEqual(par_article[article_2.id]['quantite'], 24)
+        self.assertEqual(response.json()['quantite_totale'], 84)
+
+    def test_conditionnement_id_est_prioritaire_sur_le_libelle(self):
+        carton = self.article_source.conditionnements.get(libelle='carton')
+
+        response = self._post_api_transfert({
+            'boutique_destination_id': self.dest.id,
+            'lignes': [{
+                'article_id': self.article_source.id,
+                'quantite': 1,
+                'conditionnement_id': carton.id,
+            }],
+        })
+
+        self.assertEqual(response.status_code, 200, response.content)
+        transfert = response.json()['transferts'][0]
+        self.assertEqual(transfert['quantite'], 30)
+        self.assertEqual(transfert['coefficient'], 30)
+        self.assertEqual(transfert['lignes'][0]['conditionnement_id'], carton.id)
+
+    def test_lignes_du_meme_article_en_unites_differentes_sont_additionnees(self):
+        response = self._post_api_transfert({
+            'boutique_destination_id': self.dest.id,
+            'lignes': [
+                {'article_id': self.article_source.id, 'quantite': 1, 'unite': 'carton'},
+                {'article_id': self.article_source.id, 'quantite': 10, 'unite': 'kg'},
+            ],
+        })
+
+        self.assertEqual(response.status_code, 200, response.content)
+        transfert = response.json()['transferts'][0]
+        self.assertEqual(transfert['quantite'], 40)
+        self.assertEqual(len(transfert['lignes']), 2)
+        self.article_source.refresh_from_db()
+        self.assertEqual(self.article_source.quantite_stock, 60)
+
+    def test_unite_inconnue_est_refusee_avec_la_liste_des_unites(self):
+        response = self._post_api_transfert({
+            'boutique_destination_id': self.dest.id,
+            'lignes': [{
+                'article_id': self.article_source.id,
+                'quantite': 1,
+                'unite': 'sac',
+            }],
+        })
+
+        self.assertEqual(response.status_code, 400)
+        erreur = response.json()['error']
+        self.assertIn('sac', erreur)
+        self.assertIn('carton', erreur)
+        self.article_source.refresh_from_db()
+        self.assertEqual(self.article_source.quantite_stock, 100)
+
+    def test_stock_controle_en_unite_de_base_apres_conversion(self):
+        response = self._post_api_transfert({
+            'boutique_destination_id': self.dest.id,
+            'lignes': [{
+                'article_id': self.article_source.id,
+                'quantite': 4,
+                'unite': 'carton',
+            }],
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Stock insuffisant', response.json()['error'])
+        self.article_source.refresh_from_db()
+        self.assertEqual(self.article_source.quantite_stock, 100)
+
+    def test_sans_unite_la_quantite_reste_en_unite_de_base(self):
+        response = self._post_api_transfert({
+            'boutique_destination_id': self.dest.id,
+            'lignes': [{'article_id': self.article_source.id, 'quantite': 3}],
+        })
+
+        self.assertEqual(response.status_code, 200, response.content)
+        transfert = response.json()['transferts'][0]
+        self.assertEqual(transfert['quantite'], 3)
+        self.assertEqual(transfert['coefficient'], 1)
+        self.article_source.refresh_from_db()
+        self.assertEqual(self.article_source.quantite_stock, 97)
