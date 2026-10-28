@@ -11,11 +11,13 @@ import json
 import logging
 import unicodedata
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from django.utils import timezone
 from django.contrib.auth import authenticate
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, parser_classes
@@ -761,6 +763,343 @@ def _libelles_unites(unites):
 
 # ===== TRANSFERTS ENTRE BOUTIQUES =====
 
+STATUTS_TRANSFERT_LIBELLES = {
+    'EN_ATTENTE': 'En attente',
+    'VALIDE': 'Validé',
+    'ANNULE': 'Annulé',
+}
+
+SENS_TRANSFERT_LIBELLES = {
+    'ENVOI': 'Envoyé',
+    'RECEPTION': 'Reçu',
+}
+
+
+def _authentifier_terminal(request):
+    """Authentifie le terminal MAUI via X-Device-Serial.
+
+    Retourne (client, boutique, response_erreur). ``response_erreur`` vaut None
+    lorsque l'authentification a réussi.
+    """
+    numero_serie = request.headers.get('X-Device-Serial', '')
+    if not numero_serie:
+        return None, None, Response(
+            {'success': False, 'error': 'Header X-Device-Serial manquant.'},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    client = Client.objects.select_related('boutique__commercant').filter(
+        numero_serie=numero_serie, est_actif=True
+    ).first()
+    if not client:
+        return None, None, Response(
+            {'success': False, 'error': 'Terminal non reconnu ou inactif.'},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+    if not client.boutique_id:
+        return None, None, Response(
+            {'success': False, 'error': 'Ce terminal n\'est associé à aucune boutique.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return client, client.boutique, None
+
+
+def _boutique_vers_dict(boutique):
+    if not boutique:
+        return None
+    return {
+        'id': boutique.id,
+        'nom': boutique.nom,
+        'code_boutique': boutique.code_boutique,
+        'adresse': boutique.adresse or '',
+        'ville': boutique.ville or '',
+        'quartier': boutique.quartier or '',
+        'telephone': boutique.telephone or '',
+        'type_commerce': boutique.type_commerce,
+        'type_commerce_libelle': boutique.get_type_commerce_display(),
+        'est_depot': boutique.est_depot,
+    }
+
+
+def _commercant_vers_dict(commercant):
+    if not commercant:
+        return None
+    return {
+        'id': commercant.id,
+        'nom_entreprise': commercant.nom_entreprise,
+        'nom_responsable': commercant.nom_responsable or '',
+        'telephone': commercant.telephone or '',
+        'adresse': commercant.adresse or '',
+        'taux_dollar': float(commercant.taux_dollar or 0),
+    }
+
+
+def _date_iso(value):
+    if not value:
+        return None
+    return timezone.localtime(value).isoformat()
+
+
+def _serialiser_lot_transfert(transferts, boutique_courante=None):
+    """Transforme les lignes d'un lot de transfert en données de bon/historique.
+
+    Toutes les lignes d'un lot partagent la même référence, la même source et
+    la même destination. Les montants sont exprimés en francs congolais (FC).
+    """
+    if not transferts:
+        return None
+
+    lignes = sorted(transferts, key=lambda t: ((t.article.nom or '').lower(), t.id))
+    premier = min(transferts, key=lambda t: (t.date_transfert, t.id))
+    source = premier.depot_source
+    destination = premier.boutique_destination
+    commercant = getattr(source, 'commercant', None) or getattr(destination, 'commercant', None)
+    taux = Decimal('1')
+    if source and source.taux_dollar:
+        taux = Decimal(source.taux_dollar)
+    elif commercant and commercant.taux_dollar:
+        taux = Decimal(commercant.taux_dollar)
+
+    if boutique_courante is not None:
+        sens = 'ENVOI' if premier.depot_source_id == boutique_courante.id else 'RECEPTION'
+    elif destination and source and destination.id == source.id:
+        sens = 'ENVOI'
+    else:
+        sens = 'ENVOI'
+
+    articles = []
+    quantite_totale = 0
+    valeur_totale = Decimal('0')
+    for ligne in lignes:
+        article = ligne.article
+        prix_vente = Decimal(article.prix_vente or 0)
+        devise = getattr(article, 'devise', 'CDF') or 'CDF'
+        prix_vente_fc = prix_vente * taux if devise == 'USD' else prix_vente
+        total_ligne = prix_vente_fc * ligne.quantite
+        quantite_totale += ligne.quantite
+        valeur_totale += total_ligne
+        articles.append({
+            'transfert_id': ligne.id,
+            'article_id': article.id,
+            'article_nom': article.nom,
+            'article_code': article.code,
+            'categorie': getattr(getattr(article, 'categorie', None), 'nom', '') or '',
+            'quantite': ligne.quantite,
+            'unite_base': article.unite_base or 'unité',
+            'unite_libelle': article.unite_base or 'unité',
+            'prix_vente': float(prix_vente),
+            'prix_vente_fc': float(prix_vente_fc),
+            'devise': devise,
+            'total_ligne': float(total_ligne),
+        })
+
+    statut = premier.statut
+    reference = premier.reference_lot or f"TR-{premier.id}"
+    commentaire = next(
+        ((t.commentaire or '').strip() for t in lignes if (t.commentaire or '').strip()),
+        '',
+    )
+
+    return {
+        'reference_lot': reference,
+        'transfert_id': premier.id if len(lignes) == 1 else None,
+        'date_transfert': _date_iso(premier.date_transfert),
+        'date_validation': _date_iso(premier.date_validation),
+        'statut': statut,
+        'statut_libelle': STATUTS_TRANSFERT_LIBELLES.get(statut, statut),
+        'sens': sens,
+        'sens_libelle': SENS_TRANSFERT_LIBELLES.get(sens, sens),
+        'source': _boutique_vers_dict(source),
+        'destination': _boutique_vers_dict(destination),
+        'effectue_par': premier.effectue_par or '',
+        'valide_par': premier.valide_par or '',
+        'commentaire': commentaire,
+        'nb_articles': len(lignes),
+        'quantite_totale': quantite_totale,
+        'valeur_totale': float(valeur_totale),
+        'devise': 'CDF',
+        'commercant': _commercant_vers_dict(commercant),
+        'articles': articles,
+    }
+
+
+@csrf_exempt
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def historique_transferts_maui(request):
+    """Historique des transferts envoyés et reçus par la boutique du terminal.
+
+    Query params :
+    - sens : ``tous`` (défaut), ``envoi`` ou ``reception``
+    - statut : ``EN_ATTENTE``, ``VALIDE`` ou ``ANNULE``
+    - q : recherche (référence, article, boutique)
+    - date_debut / date_fin : AAAA-MM-JJ
+    - limit (défaut 30, max 100) / offset
+
+    Les lignes sont regroupées par ``reference_lot`` (un bon = un lot).
+    """
+    client, boutique, erreur = _authentifier_terminal(request)
+    if erreur:
+        return erreur
+
+    transferts_qs = TransfertStock.objects.filter(
+        Q(depot_source=boutique) | Q(boutique_destination=boutique)
+    ).select_related(
+        'article', 'article__categorie', 'depot_source', 'boutique_destination',
+        'depot_source__commercant', 'boutique_destination__commercant',
+    )
+
+    sens = (request.GET.get('sens') or 'tous').strip().lower()
+    if sens in ('envoi', 'envoye', 'envoyé', 'envoyes', 'envoyés', 'sortant'):
+        transferts_qs = transferts_qs.filter(depot_source=boutique)
+        sens_filtre = 'ENVOI'
+    elif sens in ('reception', 'reçu', 'recu', 'recus', 'reçus', 'entrant'):
+        transferts_qs = transferts_qs.filter(boutique_destination=boutique)
+        sens_filtre = 'RECEPTION'
+    else:
+        sens_filtre = 'TOUS'
+
+    statut = (request.GET.get('statut') or '').strip().upper()
+    if statut:
+        if statut not in STATUTS_TRANSFERT_LIBELLES:
+            return Response(
+                {'success': False, 'error': 'Statut de transfert invalide.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        transferts_qs = transferts_qs.filter(statut=statut)
+
+    recherche = (request.GET.get('q') or '').strip()
+    if recherche:
+        transferts_qs = transferts_qs.filter(
+            Q(reference_lot__icontains=recherche)
+            | Q(article__nom__icontains=recherche)
+            | Q(article__code__icontains=recherche)
+            | Q(depot_source__nom__icontains=recherche)
+            | Q(boutique_destination__nom__icontains=recherche)
+        )
+
+    for nom_param, lookup in (
+        ('date_debut', 'date_transfert__date__gte'),
+        ('date_fin', 'date_transfert__date__lte'),
+    ):
+        valeur = (request.GET.get(nom_param) or '').strip()
+        if not valeur:
+            continue
+        try:
+            date_valeur = datetime.strptime(valeur, '%Y-%m-%d').date()
+        except ValueError:
+            return Response(
+                {'success': False, 'error': f'{nom_param} invalide (format AAAA-MM-JJ).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        transferts_qs = transferts_qs.filter(**{lookup: date_valeur})
+
+    try:
+        limit = int(request.GET.get('limit', 30))
+    except (TypeError, ValueError):
+        limit = 30
+    limit = max(1, min(limit, 100))
+    try:
+        offset = int(request.GET.get('offset', 0))
+    except (TypeError, ValueError):
+        offset = 0
+    offset = max(0, offset)
+
+    transferts_qs = transferts_qs.order_by('-date_transfert', '-id')
+
+    groupes = {}
+    for transfert in transferts_qs:
+        cle = transfert.reference_lot or f"TR-{transfert.id}"
+        groupes.setdefault(cle, []).append(transfert)
+
+    stats = {
+        'total': len(groupes),
+        'envoyes': 0,
+        'recus': 0,
+        'en_attente': 0,
+        'valides': 0,
+        'annules': 0,
+    }
+    for lignes in groupes.values():
+        sens_lot = 'ENVOI' if lignes[0].depot_source_id == boutique.id else 'RECEPTION'
+        stats['envoyes' if sens_lot == 'ENVOI' else 'recus'] += 1
+        statut_lot = lignes[0].statut
+        if statut_lot == 'EN_ATTENTE':
+            stats['en_attente'] += 1
+        elif statut_lot == 'VALIDE':
+            stats['valides'] += 1
+        elif statut_lot == 'ANNULE':
+            stats['annules'] += 1
+
+    cles = list(groupes.keys())[offset:offset + limit]
+    transferts = [
+        _serialiser_lot_transfert(groupes[cle], boutique)
+        for cle in cles
+    ]
+
+    return Response({
+        'success': True,
+        'boutique': _boutique_vers_dict(boutique),
+        'commercant': _commercant_vers_dict(boutique.commercant),
+        'sens': sens_filtre,
+        'stats': stats,
+        'total': len(groupes),
+        'limit': limit,
+        'offset': offset,
+        'has_more': offset + len(transferts) < len(groupes),
+        'transferts': transferts,
+    })
+
+
+@csrf_exempt
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def bon_transfert_maui(request, reference_lot):
+    """Données complètes d'un bon de transfert, pour impression/réimpression.
+
+    ``reference_lot`` accepte la référence du lot (ex. ``LOT-...``) ou
+    ``TR-<id>`` pour les anciens transferts sans référence.
+    """
+    _client, boutique, erreur = _authentifier_terminal(request)
+    if erreur:
+        return erreur
+
+    transferts_qs = TransfertStock.objects.select_related(
+        'article', 'article__categorie', 'depot_source', 'boutique_destination',
+        'depot_source__commercant', 'boutique_destination__commercant',
+    )
+
+    identifiant_ancien = None
+    if reference_lot.upper().startswith('TR-'):
+        try:
+            identifiant_ancien = int(reference_lot[3:])
+        except (TypeError, ValueError):
+            identifiant_ancien = None
+
+    if identifiant_ancien is not None:
+        transferts_qs = transferts_qs.filter(pk=identifiant_ancien)
+    else:
+        transferts_qs = transferts_qs.filter(reference_lot=reference_lot)
+
+    transferts_qs = transferts_qs.filter(
+        Q(depot_source=boutique) | Q(boutique_destination=boutique)
+    ).order_by('article__nom', 'id')
+
+    lignes = list(transferts_qs)
+    if not lignes:
+        return Response(
+            {'success': False, 'error': 'Bon de transfert introuvable.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    bon = _serialiser_lot_transfert(lignes, boutique)
+    return Response({
+        'success': True,
+        'bon': bon,
+        'commercant': bon.get('commercant'),
+        'boutique': _boutique_vers_dict(boutique),
+    })
+
+
 @csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -982,6 +1321,7 @@ def transfert_entre_boutiques(request):
 
         # 8. Créer et valider chaque ligne (transaction globale : tout ou rien)
         transferts = []
+        transferts_objets = []
         quantite_totale = 0
         for demande in articles_demandes.values():
             article = demande['article']
@@ -1031,6 +1371,7 @@ def transfert_entre_boutiques(request):
                     'quantite_saisie': details[0]['quantite_saisie'],
                 })
             transferts.append(entree)
+            transferts_objets.append(transfert)
 
         # Prévenir la boutique destination : stock reçu en attente de validation client
         try:
@@ -1043,14 +1384,18 @@ def transfert_entre_boutiques(request):
             logger.warning(f"Notification destination échouée: {e}")
 
         premier = transferts[0]
+        bon = _serialiser_lot_transfert(transferts_objets, boutique_source)
         reponse = {
             'success': True,
             'reference_lot': reference_lot,
             'boutique_destination': boutique_destination.nom,
+            'boutique_source': _boutique_vers_dict(boutique_source),
             'nb_articles': len(transferts),
             'quantite_totale': quantite_totale,
             'transferts': transferts,
-            # RǸtro-compatibilitǸ mono-article
+            # Bon de transfert prêt à imprimer côté MAUI
+            'bon': bon,
+            # Rétro-compatibilité mono-article
             'transfert_id': premier['transfert_id'] if len(transferts) == 1 else None,
             'article_destination_id': premier['article_destination_id'] if len(transferts) == 1 else None,
             'quantite_transferee': quantite_totale,

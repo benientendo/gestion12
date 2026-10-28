@@ -26,4 +26,8 @@ urlpatterns = [
 
     # Transfert entre boutiques (même commerçant)
     path('transferts/', api_views_maui_desktop.transfert_entre_boutiques, name='transfert_entre_boutiques'),
+    path('transferts/historique/', api_views_maui_desktop.historique_transferts_maui,
+         name='historique_transferts_maui'),
+    path('transferts/<str:reference_lot>/bon/', api_views_maui_desktop.bon_transfert_maui,
+         name='bon_transfert_maui'),
 ]
