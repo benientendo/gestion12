@@ -2273,6 +2273,39 @@ class VenteAcompte(models.Model):
         ]
 
 
+class LigneVenteAcompte(models.Model):
+    """Ligne d'une vente à crédit : un article et sa quantité."""
+
+    vente = models.ForeignKey(
+        VenteAcompte, on_delete=models.CASCADE, related_name='lignes'
+    )
+    article = models.ForeignKey(
+        'Article', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='lignes_vente_acompte'
+    )
+    article_nom = models.CharField(
+        max_length=200, help_text="Nom snapshot de l'article"
+    )
+    quantite = models.IntegerField(
+        default=1, validators=[MinValueValidator(1)]
+    )
+    prix_unitaire = models.DecimalField(
+        max_digits=15, decimal_places=2, default=0
+    )
+    prix_total = models.DecimalField(
+        max_digits=15, decimal_places=2, default=0
+    )
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.article_nom} × {self.quantite}"
+
+    class Meta:
+        ordering = ['id']
+        verbose_name = "Ligne de vente à crédit"
+        verbose_name_plural = "Lignes de vente à crédit"
+
+
 class PaiementAcompte(models.Model):
     """Acompte versé sur une vente à crédit."""
     vente = models.ForeignKey(VenteAcompte, on_delete=models.CASCADE, related_name='paiements')

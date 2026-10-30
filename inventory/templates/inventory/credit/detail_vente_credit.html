@@ -90,16 +90,39 @@
                 </div>
             </div>
 
-            <!-- Article -->
+            <!-- Articles -->
             <div class="card border-0 shadow-sm mb-3">
                 <div class="card-header bg-warning text-dark py-2">
-                    <i class="fas fa-box"></i> Article
+                    <i class="fas fa-box"></i> Articles
                 </div>
                 <div class="card-body">
+                    {% if vente.lignes.exists %}
+                    <table class="table table-sm align-middle mb-2">
+                        <thead>
+                            <tr>
+                                <th>Désignation</th>
+                                <th class="text-center">Qté</th>
+                                <th class="text-end">P.U.</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ligne in vente.lignes.all %}
+                            <tr>
+                                <td>{{ ligne.article_nom }}</td>
+                                <td class="text-center">{{ ligne.quantite }}</td>
+                                <td class="text-end">{{ ligne.prix_unitaire|floatformat:0 }} FC</td>
+                                <td class="text-end fw-bold">{{ ligne.prix_total|floatformat:0 }} FC</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
                     <div class="info-block">
                         <div class="lbl">Désignation</div>
                         <div class="val">{{ vente.article_nom }}</div>
                     </div>
+                    {% endif %}
                     <div class="row g-2 mt-1">
                         <div class="col-12">
                             <div class="info-block">

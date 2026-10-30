@@ -10,7 +10,10 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, Client as TestClient
 from django.urls import reverse
 
-from inventory.models import Article, Boutique, Client, Commercant, MouvementStock, VenteAcompte
+from inventory.models import (
+    Article, Boutique, Client, Commercant, LigneVenteAcompte, MouvementStock,
+    VenteAcompte,
+)
 
 User = get_user_model()
 
@@ -45,6 +48,13 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
             prix_vente=Decimal('30000'),
             boutique=self.boutique,
             quantite_stock=10,
+            est_actif=True, est_valide_client=True,
+        )
+        self.article2 = Article.objects.create(
+            code='CRED-2', nom='Radio Philips',
+            prix_vente=Decimal('10000'),
+            boutique=self.boutique,
+            quantite_stock=5,
             est_actif=True, est_valide_client=True,
         )
 
@@ -123,6 +133,161 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
         )
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(VenteAcompte.objects.exists())
+
+    # ── Multi-articles (nouveau format `articles`) ───────────────────────
+
+    def _articles_payload(self, *lignes):
+        return [
+            {
+                'article_id': article.id,
+                'article_nom': article.nom,
+                'quantite': quantite,
+                'prix_total': float(article.prix_vente * quantite),
+            }
+            for article, quantite in lignes
+        ]
+
+    def test_creation_multi_articles(self):
+        payload = self._payload(articles=self._articles_payload(
+            (self.article, 2), (self.article2, 1),
+        ))
+        resp = self.api.post(
+            self.url_creer, data=payload,
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        vente = VenteAcompte.objects.get()
+        self.assertIsNone(vente.article)
+        self.assertEqual(vente.quantite, 3)
+        self.assertEqual(vente.prix_total, Decimal('70000.00'))
+        self.assertEqual(vente.article_nom, 'Televiseur Samsung, Radio Philips')
+
+        lignes = list(vente.lignes.order_by('id'))
+        self.assertEqual(len(lignes), 2)
+        self.assertEqual(lignes[0].article, self.article)
+        self.assertEqual(lignes[0].quantite, 2)
+        self.assertEqual(lignes[0].prix_unitaire, Decimal('30000.00'))
+        self.assertEqual(lignes[1].article, self.article2)
+        self.assertEqual(lignes[1].quantite, 1)
+        self.assertEqual(lignes[1].prix_unitaire, Decimal('10000.00'))
+
+        self.article.refresh_from_db()
+        self.article2.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 8)
+        self.assertEqual(self.article2.quantite_stock, 4)
+
+        data = resp.json()
+        self.assertEqual(len(data['lignes']), 2)
+        self.assertEqual(data['lignes'][0]['article_id'], self.article.id)
+        self.assertEqual(data['lignes'][0]['stock_avant'], 10)
+        self.assertEqual(data['lignes'][0]['stock_restant'], 8)
+        self.assertEqual(data['lignes'][1]['article_id'], self.article2.id)
+        self.assertEqual(data['lignes'][1]['stock_avant'], 5)
+        self.assertEqual(data['lignes'][1]['stock_restant'], 4)
+
+    def test_multi_articles_doublon_fusionne(self):
+        payload = self._payload(articles=self._articles_payload(
+            (self.article, 1), (self.article, 2),
+        ))
+        resp = self.api.post(
+            self.url_creer, data=payload,
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        vente = VenteAcompte.objects.get()
+        self.assertEqual(vente.lignes.count(), 1)
+        ligne = vente.lignes.get()
+        self.assertEqual(ligne.quantite, 3)
+        self.assertEqual(ligne.prix_total, Decimal('90000.00'))
+        self.assertEqual(vente.prix_total, Decimal('90000.00'))
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 7)
+
+    def test_multi_articles_stock_insuffisant_rejete(self):
+        payload = self._payload(articles=self._articles_payload(
+            (self.article, 2), (self.article2, 6),
+        ))
+        resp = self.api.post(
+            self.url_creer, data=payload,
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('stock insuffisant', resp.json()['error'].lower())
+        self.assertFalse(VenteAcompte.objects.exists())
+
+        self.article.refresh_from_db()
+        self.article2.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 10)
+        self.assertEqual(self.article2.quantite_stock, 5)
+
+    def test_multi_articles_prix_catalogue_rejete(self):
+        articles = self._articles_payload((self.article, 2), (self.article2, 1))
+        articles[1]['prix_total'] = 1
+        resp = self.api.post(
+            self.url_creer, data=self._payload(articles=articles),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('prix catalogue', resp.json()['error'].lower())
+        self.assertFalse(VenteAcompte.objects.exists())
+
+    def test_liste_et_detail_incluent_lignes(self):
+        payload = self._payload(articles=self._articles_payload(
+            (self.article, 2), (self.article2, 1),
+        ))
+        self.api.post(
+            self.url_creer, data=payload,
+            content_type='application/json', **self.entete,
+        )
+        vente = VenteAcompte.objects.get()
+
+        liste = self.api.get(
+            f'/api/credit/boutique/{self.boutique.id}/ventes/', **self.entete)
+        self.assertEqual(liste.status_code, 200)
+        self.assertEqual(len(liste.json()['ventes'][0]['lignes']), 2)
+
+        detail = self.api.get(f'/api/credit/vente/{vente.id}/', **self.entete)
+        self.assertEqual(detail.status_code, 200)
+        lignes = detail.json()['lignes']
+        self.assertEqual(len(lignes), 2)
+        self.assertEqual(lignes[0]['article_nom'], 'Televiseur Samsung')
+        self.assertEqual(lignes[0]['quantite'], 2)
+        self.assertEqual(lignes[1]['article_nom'], 'Radio Philips')
+
+    def test_annulation_multi_articles_rend_le_stock(self):
+        payload = self._payload(articles=self._articles_payload(
+            (self.article, 2), (self.article2, 3),
+        ))
+        resp = self.api.post(
+            self.url_creer, data=payload,
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        vente = VenteAcompte.objects.get()
+        self.article.refresh_from_db()
+        self.article2.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 8)
+        self.assertEqual(self.article2.quantite_stock, 2)
+
+        self.client.force_login(self.user)
+        url_annul = reverse('inventory:annuler_vente_credit',
+                            args=[self.boutique.id, vente.id])
+        resp = self.client.post(url_annul)
+        self.assertEqual(resp.status_code, 302)
+
+        vente.refresh_from_db()
+        self.assertEqual(vente.statut, 'ANNULE')
+        self.article.refresh_from_db()
+        self.article2.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 10)
+        self.assertEqual(self.article2.quantite_stock, 5)
+        self.assertEqual(MouvementStock.objects.filter(
+            type_mouvement='RETOUR', article=self.article).count(), 1)
+        self.assertEqual(MouvementStock.objects.filter(
+            type_mouvement='RETOUR', article=self.article2).count(), 1)
 
     def test_article_autre_boutique_rejete(self):
         autre_boutique = Boutique.objects.create(

@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from decimal import Decimal, InvalidOperation
 import json
 
-from .models import Boutique, Article, ClientAcompte, VenteAcompte, PaiementAcompte, Client, MouvementStock
+from .models import Boutique, Article, ClientAcompte, VenteAcompte, LigneVenteAcompte, PaiementAcompte, Client, MouvementStock
 from .decorators import commercant_required
 from .websocket_utils import notify_stock_updated
 
@@ -280,36 +280,68 @@ def annuler_vente_credit(request, boutique_id, vente_id):
     vente    = get_object_or_404(VenteAcompte, id=vente_id, boutique=boutique)
 
     if request.method == 'POST' and vente.statut == 'EN_COURS':
-        article = None
-        stock_restant = None
+        retours = []
         with transaction.atomic():
             # Retour du stock décrémenté à la création de la vente
-            if vente.article_id:
+            lignes = list(vente.lignes.all())
+            if lignes:
+                for ligne in lignes:
+                    if not ligne.article_id:
+                        continue
+                    article = Article.objects.select_for_update().filter(
+                        id=ligne.article_id).first()
+                    if article is None:
+                        continue
+                    stock_avant = int(article.quantite_stock or 0)
+                    quantite = int(ligne.quantite or 1)
+                    stock_restant = stock_avant + quantite
+                    article.quantite_stock = stock_restant
+                    article.save(update_fields=['quantite_stock'])
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='RETOUR',
+                        quantite=quantite,
+                        stock_avant=stock_avant,
+                        stock_apres=stock_restant,
+                        reference_document=f"ANNUL-CREDIT-{vente.reference}",
+                        utilisateur=request.user.get_full_name() or request.user.username,
+                        commentaire=f"Annulation vente à crédit {vente.reference} — "
+                                    f"retour {quantite} × {article.nom} en stock",
+                    )
+                    retours.append((article.id, article.nom, stock_restant))
+            elif vente.article_id:
+                # Anciennes ventes mono-article (créées avant les lignes)
                 article = Article.objects.select_for_update().filter(
                     id=vente.article_id).first()
-            if article is not None:
-                stock_avant = int(article.quantite_stock or 0)
-                stock_restant = stock_avant + int(vente.quantite or 1)
-                article.quantite_stock = stock_restant
-                article.save(update_fields=['quantite_stock'])
-                MouvementStock.objects.create(
-                    article=article,
-                    type_mouvement='RETOUR',
-                    quantite=int(vente.quantite or 1),
-                    stock_avant=stock_avant,
-                    stock_apres=stock_restant,
-                    reference_document=f"ANNUL-CREDIT-{vente.reference}",
-                    utilisateur=request.user.get_full_name() or request.user.username,
-                    commentaire=f"Annulation vente à crédit {vente.reference} — "
-                                f"retour {vente.quantite} × {article.nom} en stock",
-                )
+                if article is not None:
+                    stock_avant = int(article.quantite_stock or 0)
+                    quantite = int(vente.quantite or 1)
+                    stock_restant = stock_avant + quantite
+                    article.quantite_stock = stock_restant
+                    article.save(update_fields=['quantite_stock'])
+                    MouvementStock.objects.create(
+                        article=article,
+                        type_mouvement='RETOUR',
+                        quantite=quantite,
+                        stock_avant=stock_avant,
+                        stock_apres=stock_restant,
+                        reference_document=f"ANNUL-CREDIT-{vente.reference}",
+                        utilisateur=request.user.get_full_name() or request.user.username,
+                        commentaire=f"Annulation vente à crédit {vente.reference} — "
+                                    f"retour {quantite} × {article.nom} en stock",
+                    )
+                    retours.append((article.id, article.nom, stock_restant))
             vente.statut = 'ANNULE'
             vente.save()
 
-        if article is not None:
-            notify_stock_updated(boutique.id, article.id, stock_restant, article_nom=article.nom)
-            messages.warning(request, f"Vente {vente.reference} annulée — "
-                                      f"stock de '{article.nom}' remis à {stock_restant}.")
+        for article_id, article_nom, stock_restant in retours:
+            notify_stock_updated(boutique.id, article_id, stock_restant,
+                                 article_nom=article_nom)
+        if retours:
+            messages.warning(
+                request,
+                f"Vente {vente.reference} annulée — stock remis à jour pour "
+                f"{len(retours)} article(s).")
         else:
             messages.warning(request, f"Vente {vente.reference} annulée.")
 
@@ -367,48 +399,104 @@ def api_credit_creer_vente(request, boutique_id):
             adresse=(body.get('adresse') or '').strip(),
         )
 
-    # ── Article + montants ───────────────────────────────────────────────
-    article_nom = (body.get('article_nom') or '').strip()
-    if not article_nom:
-        return JsonResponse({'error': "Le nom de l'article est obligatoire"}, status=400)
+    # ── Lignes d'articles ───────────────────────────────────────────────
+    lignes_brutes = body.get('articles') or body.get('lignes')
+    if not lignes_brutes:
+        # Compatibilité avec l'ancien format mono-article
+        lignes_brutes = [{
+            'article_id':  body.get('article_id'),
+            'article_nom': body.get('article_nom'),
+            'quantite':    body.get('quantite', 1),
+            'prix_total':  body.get('prix_total', 0),
+        }]
+    if not isinstance(lignes_brutes, list) or not lignes_brutes:
+        return JsonResponse({'error': "Au moins un article est obligatoire"}, status=400)
 
-    try:
-        quantite = int(body.get('quantite', 1) or 1)
-    except (TypeError, ValueError):
-        return JsonResponse({'error': 'Quantité invalide'}, status=400)
-    if quantite < 1:
-        return JsonResponse({'error': 'La quantité doit être au moins 1'}, status=400)
+    lignes_normalisees = {}
+    ordre = []
+    for brute in lignes_brutes:
+        if not isinstance(brute, dict):
+            return JsonResponse({'error': 'Article invalide'}, status=400)
 
-    # Article du catalogue (optionnel) : le prix est toujours celui du catalogue
-    article = None
-    article_id = body.get('article_id')
-    if article_id:
+        article_nom = (brute.get('article_nom') or '').strip()
+        article_id = brute.get('article_id')
         try:
-            article = Article.objects.get(
-                id=article_id, boutique=boutique,
-                est_actif=True, est_valide_client=True, date_suppression__isnull=True,
-            )
-        except Article.DoesNotExist:
-            return JsonResponse({'error': "Article du catalogue introuvable"}, status=404)
-        article_nom = article.nom
+            quantite = int(brute.get('quantite', 1) or 1)
+        except (TypeError, ValueError):
+            return JsonResponse({'error': 'Quantité invalide'}, status=400)
+        if quantite < 1:
+            return JsonResponse({'error': 'La quantité doit être au moins 1'}, status=400)
 
-    try:
-        prix_total    = Decimal(str(body.get('prix_total', 0)))
-        acompte       = Decimal(str(body.get('acompte_initial', 0) or 0))
-    except (InvalidOperation, TypeError, ValueError):
-        return JsonResponse({'error': 'Montants invalides'}, status=400)
+        # Article du catalogue (optionnel) : le prix est toujours celui du catalogue
+        article = None
+        if article_id:
+            try:
+                article = Article.objects.get(
+                    id=article_id, boutique=boutique,
+                    est_actif=True, est_valide_client=True, date_suppression__isnull=True,
+                )
+            except Article.DoesNotExist:
+                return JsonResponse(
+                    {'error': f"Article du catalogue introuvable (id {article_id})"},
+                    status=404)
+            article_nom = article.nom
+        elif not article_nom:
+            return JsonResponse(
+                {'error': "Le nom de l'article est obligatoire"}, status=400)
 
+        try:
+            prix_total_ligne = Decimal(str(brute.get('prix_total', 0) or 0))
+        except (InvalidOperation, TypeError, ValueError):
+            return JsonResponse({'error': 'Montants invalides'}, status=400)
+
+        # Fusionne les doublons du même article
+        cle = f"id:{article.id}" if article is not None else f"nom:{article_nom.lower()}"
+        if cle in lignes_normalisees:
+            lignes_normalisees[cle]['quantite'] += quantite
+            lignes_normalisees[cle]['prix_total'] += prix_total_ligne
+            continue
+
+        lignes_normalisees[cle] = {
+            'article': article,
+            'article_nom': article_nom,
+            'quantite': quantite,
+            'prix_total': prix_total_ligne,
+        }
+        ordre.append(cle)
+
+    # Prix catalogue verrouillé : prix_vente × quantité (aucun prix saisi à la main)
+    for cle in ordre:
+        ligne = lignes_normalisees[cle]
+        article = ligne['article']
+        if article is not None:
+            prix_unitaire = article.prix_vente or Decimal('0')
+            prix_catalogue = prix_unitaire * ligne['quantite']
+            if abs(ligne['prix_total'] - prix_catalogue) > Decimal('0.5'):
+                return JsonResponse(
+                    {'error': f"Prix total incorrect pour {article.nom} : le prix "
+                               f"catalogue est de {prix_catalogue:.0f} pour "
+                               f"{ligne['quantite']} × {article.nom}."},
+                    status=400)
+            ligne['prix_total'] = prix_catalogue
+            ligne['prix_unitaire'] = prix_unitaire
+        else:
+            if ligne['prix_total'] <= 0:
+                return JsonResponse(
+                    {'error': f"Le prix total de {ligne['article_nom']} doit être positif"},
+                    status=400)
+            ligne['prix_unitaire'] = ligne['prix_total'] / ligne['quantite']
+
+    prix_total = sum(
+        (ligne['prix_total'] for ligne in lignes_normalisees.values()),
+        Decimal('0'),
+    )
     if prix_total <= 0:
         return JsonResponse({'error': 'Le prix total doit être positif'}, status=400)
 
-    # Prix catalogue verrouillé : prix_vente × quantité (aucun prix saisi à la main)
-    if article is not None:
-        prix_catalogue = (article.prix_vente or Decimal('0')) * quantite
-        if abs(prix_total - prix_catalogue) > Decimal('0.5'):
-            return JsonResponse(
-                {'error': f"Prix total incorrect : le prix catalogue est de "
-                           f"{prix_catalogue:.0f} pour {quantite} × {article.nom}."},
-                status=400)
+    try:
+        acompte = Decimal(str(body.get('acompte_initial', 0) or 0))
+    except (InvalidOperation, TypeError, ValueError):
+        return JsonResponse({'error': 'Montants invalides'}, status=400)
 
     # Plus de seuil de retrait : le retrait est autorisé uniquement quand la
     # facture est entièrement payée (seuil = prix total, champ historique).
@@ -417,29 +505,67 @@ def api_credit_creer_vente(request, boutique_id):
     if acompte < 0 or acompte > prix_total:
         return JsonResponse({'error': 'Acompte initial invalide'}, status=400)
 
+    article_nom_resume = ', '.join(
+        ligne['article_nom'] for ligne in lignes_normalisees.values()
+    )[:200]
+    quantite_totale = sum(
+        ligne['quantite'] for ligne in lignes_normalisees.values()
+    )
+    premier_article = next(
+        (ligne['article'] for ligne in lignes_normalisees.values()
+         if ligne['article'] is not None),
+        None,
+    )
+
+    lignes_reponse = []
+    articles_a_notifier = []
+
     with transaction.atomic():
         # ── Stock : contrôle + décrément immédiat à la création ─────────
-        stock_avant  = None
-        stock_restant = None
-        if article is not None:
-            article = Article.objects.select_for_update().get(id=article.id)
-            stock_avant = int(article.quantite_stock or 0)
-            if stock_avant < quantite:
+        articles_verrouilles = {}
+        for ligne in lignes_normalisees.values():
+            article = ligne['article']
+            if article is None:
+                continue
+            if article.id not in articles_verrouilles:
+                article = Article.objects.select_for_update().get(id=article.id)
+                articles_verrouilles[article.id] = {
+                    'article': article,
+                    'stock_avant': int(article.quantite_stock or 0),
+                    'quantite_demandee': 0,
+                }
+            info = articles_verrouilles[article.id]
+            info['quantite_demandee'] += ligne['quantite']
+            if info['stock_avant'] < info['quantite_demandee']:
                 return JsonResponse(
                     {'error': f"Stock insuffisant pour {article.nom} : "
-                              f"{stock_avant} disponible(s), {quantite} demandé(s)."},
+                              f"{info['stock_avant']} disponible(s), "
+                              f"{info['quantite_demandee']} demandé(s)."},
                     status=400)
 
         vente = VenteAcompte.objects.create(
             boutique=boutique,
             client=client,
-            article=article,
-            article_nom=article_nom,
-            quantite=quantite,
+            article=premier_article if len(lignes_normalisees) == 1 else None,
+            article_nom=article_nom_resume,
+            quantite=quantite_totale,
             prix_total=prix_total,
             seuil_retrait=seuil_retrait,
             montant_paye=Decimal('0'),
+            commentaire=(body.get('commentaire') or '').strip(),
         )
+
+        for cle in ordre:
+            ligne = lignes_normalisees[cle]
+            LigneVenteAcompte.objects.create(
+                vente=vente,
+                article=ligne['article'],
+                article_nom=ligne['article_nom'],
+                quantite=ligne['quantite'],
+                prix_unitaire=ligne['prix_unitaire'],
+                prix_total=ligne['prix_total'],
+            )
+
         if acompte > 0:
             PaiementAcompte.objects.create(
                 vente=vente, montant=acompte,
@@ -451,36 +577,95 @@ def api_credit_creer_vente(request, boutique_id):
                 vente.statut = 'SOLDE'
             vente.save()
 
-        if article is not None:
-            article.quantite_stock = stock_avant - quantite
-            article.save(update_fields=['quantite_stock'])
-            stock_restant = article.quantite_stock
+        for cle in ordre:
+            ligne = lignes_normalisees[cle]
+            article = ligne['article']
+            if article is None:
+                lignes_reponse.append({
+                    'article_id':    None,
+                    'article_nom':   ligne['article_nom'],
+                    'quantite':      ligne['quantite'],
+                    'prix_unitaire': float(ligne['prix_unitaire']),
+                    'prix_total':    float(ligne['prix_total']),
+                    'stock_avant':   None,
+                    'stock_restant': None,
+                })
+                continue
+
+            info = articles_verrouilles[article.id]
+            article_obj = info['article']
+            stock_avant = info['stock_avant']
+            stock_restant = stock_avant - ligne['quantite']
+            article_obj.quantite_stock = stock_restant
+            article_obj.save(update_fields=['quantite_stock'])
             MouvementStock.objects.create(
-                article=article,
+                article=article_obj,
                 type_mouvement='VENTE',
-                quantite=-quantite,
+                quantite=-ligne['quantite'],
                 stock_avant=stock_avant,
                 stock_apres=stock_restant,
                 reference_document=vente.reference,
                 utilisateur=request.META.get('HTTP_X_DEVICE_SERIAL', 'MAUI'),
-                commentaire=f"Vente à crédit {vente.reference} — {quantite} × {article.nom}",
+                commentaire=(f"Vente à crédit {vente.reference} — "
+                             f"{ligne['quantite']} × {article_obj.nom}"),
             )
+            articles_a_notifier.append(
+                (article_obj.id, article_obj.nom, stock_restant)
+            )
+            lignes_reponse.append({
+                'article_id':    article_obj.id,
+                'article_nom':   article_obj.nom,
+                'quantite':      ligne['quantite'],
+                'prix_unitaire': float(ligne['prix_unitaire']),
+                'prix_total':    float(ligne['prix_total']),
+                'stock_avant':   stock_avant,
+                'stock_restant': stock_restant,
+            })
 
     # Après commit : pousser le nouveau stock à tous les terminaux (WebSocket)
-    if article is not None:
-        notify_stock_updated(boutique.id, article.id, stock_restant, article_nom=article.nom)
+    for article_id, article_nom, stock_restant in articles_a_notifier:
+        notify_stock_updated(boutique.id, article_id, stock_restant,
+                             article_nom=article_nom)
 
+    premiere = lignes_reponse[0] if lignes_reponse else {}
     return JsonResponse({
-        'success':      True,
-        'vente_id':     vente.id,
-        'reference':    vente.reference,
-        'client_nom':   client.nom_complet,
-        'statut':       vente.statut,
-        'quantite':     vente.quantite,
-        'prix_total':   float(vente.prix_total),
-        'stock_avant':  stock_avant,
-        'stock_restant': stock_restant,
+        'success':       True,
+        'vente_id':      vente.id,
+        'reference':     vente.reference,
+        'client_nom':    client.nom_complet,
+        'statut':        vente.statut,
+        'quantite':      vente.quantite,
+        'prix_total':    float(vente.prix_total),
+        'lignes':        lignes_reponse,
+        'stock_avant':   premiere.get('stock_avant'),
+        'stock_restant': premiere.get('stock_restant'),
     }, status=201)
+
+
+def _lignes_vente_credit_json(vente):
+    """Lignes d'une vente à crédit, avec repli sur l'ancien format mono-article."""
+    lignes = list(vente.lignes.all())
+    if lignes:
+        return [{
+            'id':            ligne.id,
+            'article_id':    ligne.article_id,
+            'article_nom':   ligne.article_nom,
+            'quantite':      ligne.quantite,
+            'prix_unitaire': float(ligne.prix_unitaire),
+            'prix_total':    float(ligne.prix_total),
+        } for ligne in lignes]
+
+    quantite = vente.quantite or 1
+    prix_total = vente.prix_total or Decimal('0')
+    prix_unitaire = (prix_total / quantite) if quantite else prix_total
+    return [{
+        'id':            None,
+        'article_id':    vente.article_id,
+        'article_nom':   vente.article_nom,
+        'quantite':      quantite,
+        'prix_unitaire': float(prix_unitaire),
+        'prix_total':    float(prix_total),
+    }]
 
 
 def api_credit_ventes(request, boutique_id):
@@ -490,7 +675,9 @@ def api_credit_ventes(request, boutique_id):
         return err
     statut   = request.GET.get('statut', '')
 
-    ventes = VenteAcompte.objects.filter(boutique=boutique).select_related('client')
+    ventes = VenteAcompte.objects.filter(
+        boutique=boutique
+    ).select_related('client').prefetch_related('lignes')
     if statut:
         ventes = ventes.filter(statut=statut)
 
@@ -511,6 +698,7 @@ def api_credit_ventes(request, boutique_id):
         'peut_recuperer':   v.peut_recuperer,
         'pourcentage_paye': v.pourcentage_paye,
         'date_creation':    v.date_creation.isoformat(),
+        'lignes':           _lignes_vente_credit_json(v),
     } for v in ventes]
 
     return JsonResponse({'ventes': data, 'count': len(data)})
@@ -546,6 +734,7 @@ def api_credit_detail_vente(request, vente_id):
         'peut_recuperer':   vente.peut_recuperer,
         'pourcentage_paye': vente.pourcentage_paye,
         'paiements':        paiements,
+        'lignes':           _lignes_vente_credit_json(vente),
     })
 
 
