@@ -72,53 +72,29 @@ def _quantite_base_ligne(ligne):
 
 
 def _compute_dashboard_stats(boutique):
-    """Calcule les stats recette du jour/mois pour le push WebSocket dashboard."""
-    from .models import RapportCaisse
-    from .ca_remboursements import ca_net, remboursements, paiements_credit
+    """Calcule les stats recette du jour/mois pour le push WebSocket dashboard.
+
+    Source unique : ``cloture_service.resume_periode`` (même calcul que le
+    dashboard, le rapport CA quotidien et la page de clôture MAUI).
+    """
+    from .cloture_service import resume_periode
     today = timezone.localdate()
     premier_jour_mois = today.replace(day=1)
 
-    scope = Q(paye=True) & (Q(boutique=boutique) | Q(client_maui__boutique=boutique))
-    # Perimetre sans date : imputation des remboursements au jour d'annulation
-    perimetre = Vente.objects.filter(scope).distinct()
-    perimetre_cdf = perimetre.filter(devise='CDF')
-    perimetre_usd = perimetre.filter(devise='USD')
-
-    ventes_base = Q(paye=True, est_annulee=False) & (Q(boutique=boutique) | Q(client_maui__boutique=boutique))
-    ventes_jour = Vente.objects.filter(ventes_base, date_vente__date=today).distinct()
-    ventes_jour_toutes = Vente.objects.filter(scope, date_vente__date=today).distinct()
-    ca_jour_cdf = ca_net(ventes_jour_toutes.filter(devise='CDF'), perimetre_cdf, today, today)
-    ca_jour_usd = ca_net(ventes_jour_toutes.filter(devise='USD'), perimetre_usd, today, today)
-    remboursements_cdf = remboursements(perimetre_cdf, today, today)
-    remboursements_usd = remboursements(perimetre_usd, today, today)
-    depenses_jour = RapportCaisse.objects.filter(
-        boutique=boutique, date_rapport__date=today, depense_appliquee=True
-    ).aggregate(total=Sum('depense'))['total'] or 0
-
-    # Paiements credit (acomptes) encaisses aujourd'hui — ajoutés à la recette
-    credit_jour = paiements_credit(boutique, today, today)
-
-    ventes_mois = Vente.objects.filter(ventes_base, date_vente__date__gte=premier_jour_mois).distinct()
-    ventes_mois_toutes = Vente.objects.filter(scope, date_vente__date__gte=premier_jour_mois).distinct()
-    ca_mois_cdf = ca_net(ventes_mois_toutes.filter(devise='CDF'), perimetre_cdf, premier_jour_mois, today)
-    ca_mois_usd = ca_net(ventes_mois_toutes.filter(devise='USD'), perimetre_usd, premier_jour_mois, today)
-    depenses_mois = RapportCaisse.objects.filter(
-        boutique=boutique, date_rapport__date__gte=premier_jour_mois, date_rapport__date__lte=today, depense_appliquee=True
-    ).aggregate(total=Sum('depense'))['total'] or 0
-
-    credit_mois = paiements_credit(boutique, premier_jour_mois, today)
+    jour = resume_periode(boutique, today, today)
+    mois = resume_periode(boutique, premier_jour_mois, today)
 
     return {
-        'ca_jour': float(ca_jour_cdf - depenses_jour + credit_jour),
-        'ca_jour_usd': float(ca_jour_usd),
-        'ca_mois': float(ca_mois_cdf - depenses_mois + credit_mois),
-        'ca_mois_usd': float(ca_mois_usd),
-        'credit_jour': float(credit_jour),
-        'credit_mois': float(credit_mois),
-        'remboursements_jour': float(remboursements_cdf),
-        'remboursements_jour_usd': float(remboursements_usd),
-        'nb_ventes_jour': ventes_jour.count(),
-        'nb_ventes_mois': ventes_mois.count(),
+        'ca_jour': float(jour['cdf']['recette_nette']),
+        'ca_jour_usd': float(jour['usd']['recette_nette']),
+        'ca_mois': float(mois['cdf']['recette_nette']),
+        'ca_mois_usd': float(mois['usd']['recette_nette']),
+        'credit_jour': float(jour['cdf']['credit']),
+        'credit_mois': float(mois['cdf']['credit']),
+        'remboursements_jour': float(jour['cdf']['remboursements']),
+        'remboursements_jour_usd': float(jour['usd']['remboursements']),
+        'nb_ventes_jour': jour['cdf']['nb_ventes'] + jour['usd']['nb_ventes'],
+        'nb_ventes_mois': mois['cdf']['nb_ventes'] + mois['usd']['nb_ventes'],
     }
 
 
@@ -1916,18 +1892,11 @@ def statistiques_boutique_simple(request):
         #    - déduit les dépenses du RapportCaisse
         dashboard = _compute_dashboard_stats(boutique)
 
-        # Nombre de ventes jour/mois (paye=True, non annulées, boutique + MAUI)
+        # Nombre de ventes jour/mois : même source que la recette (dashboard)
         aujourd_hui = timezone.localdate()
         debut_mois = aujourd_hui.replace(day=1)
-        ventes_base = Q(paye=True, est_annulee=False) & (
-            Q(boutique=boutique) | Q(client_maui__boutique=boutique)
-        )
-        nb_ventes_jour = Vente.objects.filter(
-            ventes_base, date_vente__date=aujourd_hui
-        ).distinct().count()
-        nb_ventes_mois = Vente.objects.filter(
-            ventes_base, date_vente__date__gte=debut_mois
-        ).distinct().count()
+        nb_ventes_jour = dashboard['nb_ventes_jour']
+        nb_ventes_mois = dashboard['nb_ventes_mois']
 
         # Articles en stock bas
         articles_stock_bas = Article.objects.filter(
@@ -5213,7 +5182,7 @@ def journal_valeur_stock_simple(request):
         ligne_jour.valeur_stock_reel = valeur_stock_reel_live
         ligne_jour.save(update_fields=['valeur_stock_reel'])
     else:
-        # Creer la ligne du jour avec stock_precedent = valeur_stock_reel de la veille
+        # Créer la ligne du jour avec stock_precedent = stock restant de la veille
         from inventory.journal_valeur_stock import _get_ou_creer_ligne
         _get_ou_creer_ligne(boutique, aujourd_hui)
         JournalValeurStock.objects.filter(
@@ -5490,9 +5459,14 @@ def verifier_code_cloture_simple(request):
 
 
 def _boutique_depuis_requete(request):
-    """Résolution de la boutique depuis le body ou l'en-tête X-Device-Serial."""
-    boutique_id = request.data.get('boutique_id')
-    numero_serie = request.data.get('numero_serie') or request.headers.get('X-Device-Serial')
+    """Résolution de la boutique depuis le body, les query params ou l'en-tête X-Device-Serial."""
+    donnees = request.data if isinstance(request.data, dict) else {}
+    boutique_id = donnees.get('boutique_id') or request.GET.get('boutique_id')
+    numero_serie = (
+        donnees.get('numero_serie')
+        or request.GET.get('numero_serie')
+        or request.headers.get('X-Device-Serial')
+    )
 
     boutique = None
     if boutique_id:
@@ -5528,21 +5502,59 @@ def enregistrer_cloture_simple(request):
     if erreur is not None:
         return erreur
 
+    from .cloture_service import resume_journee
+
     today = timezone.localdate()
-    if ClotureJournee.objects.filter(
+    resume = resume_journee(boutique, today)
+
+    cloture_existante = ClotureJournee.objects.filter(
         boutique=boutique, date_jour=today, statut=ClotureJournee.STATUT_VALIDEE
-    ).exists():
-        return Response({'success': True, 'cloturee': True, 'code': 'DEJA_CLOTUREE'})
+    ).first()
+    if cloture_existante is not None:
+        return Response({
+            'success': True,
+            'cloturee': True,
+            'code': 'DEJA_CLOTUREE',
+            'resume': resume,
+        })
 
     numero_serie = request.data.get('numero_serie') or request.headers.get('X-Device-Serial') or ''
+
+    # ⭐ Les montants de la clôture sont recalculés côté serveur : c'est la
+    # même source que le dashboard, donc plus d'écart possible.
+    serveur_cdf = resume['recette']['cdf']
+    serveur_usd = resume['recette']['usd']
+    nombre_ventes_serveur = serveur_cdf['nb_ventes'] + serveur_usd['nb_ventes']
+    total_ventes_serveur = Decimal(str(serveur_cdf['recette_nette']))
+
+    # Valeurs envoyées par le terminal.
     try:
-        nombre_ventes = int(request.data.get('nombre_ventes') or 0)
+        nombre_ventes_maui = int(request.data.get('nombre_ventes') or 0)
     except (TypeError, ValueError):
-        nombre_ventes = 0
+        nombre_ventes_maui = 0
     try:
-        total_ventes = Decimal(str(request.data.get('total_ventes') or 0))
+        total_ventes_maui = Decimal(str(request.data.get('total_ventes') or 0))
     except (InvalidOperation, TypeError, ValueError):
-        total_ventes = Decimal('0')
+        total_ventes_maui = Decimal('0')
+
+    if (nombre_ventes_serveur, total_ventes_serveur) == (0, Decimal('0')) and \
+            (nombre_ventes_maui, total_ventes_maui) != (0, Decimal('0')):
+        # Aucune vente synchronisée : le terminal a vendu hors ligne. On
+        # conserve ses valeurs pour ne pas perdre la clôture ; la page de
+        # clôture affichera le résumé serveur (source unique) dès la sync.
+        nombre_ventes = nombre_ventes_maui
+        total_ventes = total_ventes_maui
+        source_cloture = 'terminal'
+    else:
+        nombre_ventes = nombre_ventes_serveur
+        total_ventes = total_ventes_serveur
+        source_cloture = 'serveur'
+        if (nombre_ventes_maui, total_ventes_maui) != (nombre_ventes, total_ventes):
+            logger.warning(
+                f"⚠️ Clôture {boutique.code_boutique} : écart terminal/serveur — "
+                f"MAUI={nombre_ventes_maui} vente(s)/{total_ventes_maui} CDF vs "
+                f"serveur={nombre_ventes} vente(s)/{total_ventes} CDF"
+            )
 
     ClotureJournee.objects.create(
         boutique=boutique,
@@ -5553,7 +5565,68 @@ def enregistrer_cloture_simple(request):
         total_ventes=total_ventes,
         date_cloture=timezone.now(),
     )
-    return Response({'success': True, 'cloturee': True, 'code': 'CLOTURE_OK'})
+    return Response({
+        'success': True,
+        'cloturee': True,
+        'code': 'CLOTURE_OK',
+        'resume': resume,
+        'source': source_cloture,
+        'ecart_terminal': {
+            'nombre_ventes_maui': nombre_ventes_maui,
+            'total_ventes_maui': float(total_ventes_maui),
+            'nombre_ventes_serveur': nombre_ventes_serveur,
+            'total_ventes_serveur': float(total_ventes_serveur),
+        },
+    })
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([AllowAny])
+def resume_cloture_simple(request):
+    """
+    GET/POST /api/v2/simple/cloture/resume/
+
+    Renvoie les valeurs officielles de la journée utilisées par le dashboard :
+    recette (brute, remboursements, dépenses, crédit, nette) en CDF/USD,
+    nombre de ventes, stock précédent / restant / réel.
+
+    Paramètres : boutique_id (ou X-Device-Serial), date (YYYY-MM-DD, defaut aujourd'hui).
+    """
+    boutique, erreur = _boutique_depuis_requete(request)
+    if erreur is not None:
+        return erreur
+
+    from datetime import datetime
+    from .cloture_service import resume_journee
+
+    date_str = request.GET.get('date')
+    if not date_str and isinstance(request.data, dict):
+        date_str = request.data.get('date')
+    try:
+        jour = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else timezone.localdate()
+    except ValueError:
+        return Response({
+            'error': 'Date invalide (format attendu YYYY-MM-DD)',
+            'code': 'INVALID_DATE',
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    resume = resume_journee(boutique, jour)
+    cloture = ClotureJournee.objects.filter(
+        boutique=boutique, date_jour=jour
+    ).order_by('-date_cloture').first()
+
+    return Response({
+        'success': True,
+        'boutique': {'id': boutique.id, 'nom': boutique.nom},
+        'cloture': {
+            'cloturee': bool(cloture and cloture.est_validee),
+            'annulee': bool(cloture and cloture.statut == ClotureJournee.STATUT_ANNULEE),
+            'statut': cloture.statut if cloture else None,
+            'date_cloture': to_local_iso(cloture.date_cloture) if cloture else None,
+            'terminal_serial': cloture.terminal_serial if cloture else None,
+        },
+        'resume': resume,
+    })
 
 
 @api_view(['POST'])

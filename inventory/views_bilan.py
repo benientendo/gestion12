@@ -301,31 +301,33 @@ def rafraichir_indicateurs(request):
 # ===== FONCTIONS UTILITAIRES =====
 
 def _calculer_indicateurs_temps_reel(commercant, boutiques):
-    """Calcule les indicateurs clés en temps réel"""
+    """Calcule les indicateurs clés en temps réel (source : cloture_service)"""
+    from .cloture_service import resume_periode
+
     aujourd_hui = timezone.localdate()
-    debut_mois = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    
-    # Ventes du jour
-    ventes_jour = Vente.objects.filter(
-        boutique__in=boutiques,
-        date_vente__date=aujourd_hui,
-        est_annulee=False
-    )
-    
-    # Ventes du mois
-    ventes_mois = Vente.objects.filter(
-        boutique__in=boutiques,
-        date_vente__gte=debut_mois,
-        est_annulee=False
-    )
-    
-    # Chiffre d'affaires
-    ca_jour = ventes_jour.aggregate(total=Sum('montant_total'))['total'] or 0
-    ca_mois = ventes_mois.aggregate(total=Sum('montant_total'))['total'] or 0
-    
-    # Nombre de ventes
-    nb_ventes_jour = ventes_jour.count()
-    nb_ventes_mois = ventes_mois.count()
+    debut_mois = aujourd_hui.replace(day=1)
+
+    ca_jour = Decimal('0')
+    ca_jour_usd = Decimal('0')
+    ca_mois = Decimal('0')
+    ca_mois_usd = Decimal('0')
+    nb_ventes_jour = 0
+    nb_ventes_mois = 0
+
+    for boutique in boutiques:
+        recette_jour = resume_periode(boutique, aujourd_hui, aujourd_hui)
+        recette_mois = resume_periode(boutique, debut_mois, aujourd_hui)
+
+        ca_jour += recette_jour['cdf']['recette_nette']
+        ca_jour_usd += recette_jour['usd']['recette_nette']
+        ca_mois += recette_mois['cdf']['recette_nette']
+        ca_mois_usd += recette_mois['usd']['recette_nette']
+        nb_ventes_jour += (
+            recette_jour['cdf']['nb_ventes'] + recette_jour['usd']['nb_ventes']
+        )
+        nb_ventes_mois += (
+            recette_mois['cdf']['nb_ventes'] + recette_mois['usd']['nb_ventes']
+        )
     
     # Articles en stock
     total_articles = Article.objects.filter(boutique__in=boutiques, est_actif=True).count()
@@ -337,7 +339,9 @@ def _calculer_indicateurs_temps_reel(commercant, boutiques):
     
     return {
         'ca_jour': ca_jour,
+        'ca_jour_usd': ca_jour_usd,
         'ca_mois': ca_mois,
+        'ca_mois_usd': ca_mois_usd,
         'nb_ventes_jour': nb_ventes_jour,
         'nb_ventes_mois': nb_ventes_mois,
         'total_articles': total_articles,
@@ -347,31 +351,42 @@ def _calculer_indicateurs_temps_reel(commercant, boutiques):
     }
 
 def _get_ca_jour(commercant, boutiques):
-    """Retourne le chiffre d'affaires du jour"""
+    """Retourne la recette nette du jour en CDF (même source que la clôture)"""
+    from .cloture_service import resume_journee
+
     aujourd_hui = timezone.localdate()
-    return Vente.objects.filter(
-        boutique__in=boutiques,
-        date_vente__date=aujourd_hui,
-        est_annulee=False
-    ).aggregate(total=Sum('montant_total'))['total'] or 0
+    return sum(
+        (resume_journee(b, aujourd_hui)['recette']['cdf']['recette_nette'] for b in boutiques),
+        Decimal('0'),
+    )
 
 def _get_ca_mois(commercant, boutiques):
-    """Retourne le chiffre d'affaires du mois"""
-    debut_mois = timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    return Vente.objects.filter(
-        boutique__in=boutiques,
-        date_vente__gte=debut_mois,
-        est_annulee=False
-    ).aggregate(total=Sum('montant_total'))['total'] or 0
+    """Retourne la recette nette du mois en CDF (même source que la clôture)"""
+    from .cloture_service import resume_periode
+
+    aujourd_hui = timezone.localdate()
+    debut_mois = aujourd_hui.replace(day=1)
+    return sum(
+        (
+            resume_periode(b, debut_mois, aujourd_hui)['cdf']['recette_nette']
+            for b in boutiques
+        ),
+        Decimal('0'),
+    )
 
 def _get_ventes_jour(commercant, boutiques):
-    """Retourne le nombre de ventes du jour"""
+    """Retourne le nombre de ventes du jour (CDF + USD)"""
+    from .cloture_service import resume_journee
+
     aujourd_hui = timezone.localdate()
-    return Vente.objects.filter(
-        boutique__in=boutiques,
-        date_vente__date=aujourd_hui,
-        est_annulee=False
-    ).count()
+    return sum(
+        (
+            resume_journee(b, aujourd_hui)['recette']['cdf']['nb_ventes']
+            + resume_journee(b, aujourd_hui)['recette']['usd']['nb_ventes']
+            for b in boutiques
+        ),
+        0,
+    )
 
 def _get_marge_moyenne(commercant, boutiques):
     """Calcule la marge moyenne"""

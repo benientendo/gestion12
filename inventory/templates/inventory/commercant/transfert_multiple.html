@@ -330,6 +330,18 @@
                                         <small class="text-muted">
                                             <code>{{ article.code }}</code>{% if article.categorie %} &bull; {{ article.categorie.nom }}{% endif %}
                                         </small>
+                                        {% if article.distribution %}
+                                        <div class="mt-1 d-flex flex-wrap gap-1">
+                                            <span class="badge {% if article.distribution.distribue >= article.distribution.recu %}bg-success{% elif article.distribution.distribue %}bg-warning text-dark{% else %}bg-secondary{% endif %}"
+                                                  title="Quantité déjà distribuée sur cette facture">
+                                                {{ article.distribution.distribue }} / {{ article.distribution.recu }} distribu&eacute;(s)
+                                            </span>
+                                            <span class="badge {% if article.distribution.restant <= 0 %}bg-success{% else %}bg-info text-dark{% endif %}"
+                                                  title="Quantité restant à distribuer sur cette facture">
+                                                {% if article.distribution.restant > 0 %}{{ article.distribution.restant }} restant{% else %}Tout distribu&eacute;{% endif %}
+                                            </span>
+                                        </div>
+                                        {% endif %}
                                         <!-- Prix achat / vente -->
                                         <div class="prix-row">
                                             <span class="text-muted">P.Achat&nbsp;: <strong>{{ article.prix_achat|floatformat:0 }} FC</strong></span>

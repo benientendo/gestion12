@@ -5,6 +5,7 @@ Toutes les fonctions qui écrivent dans JournalValeurStock passent par ici.
 Principe : get_or_create la ligne du jour, puis F() pour les cumuls atomiques.
 """
 
+from datetime import timedelta
 from decimal import Decimal
 from django.db import transaction
 from django.db.models import F, Sum
@@ -34,20 +35,25 @@ def _get_ou_creer_ligne(boutique, date=None):
             defaults={'valeur_stock_precedent': Decimal('0')}
         )
         if created:
-            # Stock préc. = valeur_stock_reel de la veille
-            # C'est la vraie valeur du stock en fin de journée précédente,
-            # donc ce avec quoi on démarre la journée actuelle.
+            # Stock préc. = stock RESTANT de la veille (formule du journal).
+            # On ne prend pas un instantané temps réel : il inclurait les
+            # mouvements déjà survenus aujourd'hui (surtout lors d'une sync
+            # retardée d'une vente de la veille).
             veille = (
                 JournalValeurStock.objects
                 .filter(boutique=boutique, date__lt=date)
                 .order_by('-date')
-                .values_list('valeur_stock_reel', flat=True)
+                .values('valeur_stock_restant', 'valeur_stock_reel')
                 .first()
             )
             if veille is not None:
-                ligne.valeur_stock_precedent = veille
+                ligne.valeur_stock_precedent = (
+                    veille['valeur_stock_restant']
+                    if veille['valeur_stock_restant'] is not None
+                    else veille['valeur_stock_reel']
+                ) or Decimal('0')
             else:
-                # Première ligne : calculer la valeur actuelle du stock
+                # Première ligne : ancrer sur la valeur actuelle du stock.
                 ligne.valeur_stock_precedent = _calculer_valeur_stock_reel(boutique)
             ligne.recalculer_valeur_restant()
             ligne.save(update_fields=['valeur_stock_precedent', 'valeur_stock_restant'])
@@ -87,6 +93,7 @@ def _incrementer(boutique, champ, montant, date=None):
         date = _aujourd_hui(boutique)
 
     montant = Decimal(str(montant))
+    aujourd_hui = timezone.localdate()
 
     with transaction.atomic():
         ligne, _ = _get_ou_creer_ligne(boutique, date)
@@ -95,9 +102,19 @@ def _incrementer(boutique, champ, montant, date=None):
         # Recharger et recalculer valeur_stock_restant
         ligne.refresh_from_db()
         ligne.recalculer_valeur_restant()
-        # Snapshot de la valeur réelle du stock
-        ligne.valeur_stock_reel = _calculer_valeur_stock_reel(boutique)
+        # Snapshot de la valeur réelle : uniquement pour aujourd'hui.
+        # Écrire la valeur live sur un jour passé la polluerait avec les
+        # mouvements des jours suivants (sync retardée d'une vente, etc.).
+        if date >= aujourd_hui:
+            ligne.valeur_stock_reel = _calculer_valeur_stock_reel(boutique)
+        elif not ligne.valeur_stock_reel:
+            ligne.valeur_stock_reel = ligne.valeur_stock_restant
         ligne.save(update_fields=['valeur_stock_restant', 'valeur_stock_reel', 'updated_at'])
+
+        # Un mouvement antidaté change le restant de ce jour : il faut
+        # propager le nouveau stock précédent aux jours suivants.
+        if date < aujourd_hui:
+            recalculer_chaines_depuis(boutique, date + timedelta(days=1))
 
 
 # ──────────────────────────────────────────────
@@ -176,7 +193,11 @@ def _enregistrer_detail_modification_prix(boutique, impact_valeur, details, date
     if creee:
         # Jamais de ligne journal « vierge » (impact nul, ex. stock à 0) :
         # on fige la valeur réelle du stock comme le ferait _incrementer.
-        ligne.valeur_stock_reel = _calculer_valeur_stock_reel(boutique)
+        # Un jour passé garde une valeur historique (pas le stock live).
+        if date >= timezone.localdate():
+            ligne.valeur_stock_reel = _calculer_valeur_stock_reel(boutique)
+        else:
+            ligne.valeur_stock_reel = ligne.valeur_stock_restant
         ligne.save(update_fields=['valeur_stock_reel', 'updated_at'])
 
     DetailModificationPrix.objects.create(
@@ -235,29 +256,60 @@ def maj_reductions_journal(boutique, date_debut, date_fin):
     return par_jour
 
 
-def recalculer_tout_depuis_debut(boutique):
+def recalculer_chaines_depuis(boutique, date):
     """
-    Recalcule toutes les lignes du journal dans l'ordre chronologique
-    pour garantir la cohérence des valeurs_stock_precedent.
-    Stock préc. du jour = valeur_stock_reel de la veille.
-    À appeler après import massif ou correction de données.
+    Propage le stock restant à partir de ``date`` (incluse) vers les jours
+    suivants : le stock précédent d'un jour = stock restant de la veille.
+
+    Utilisé après une synchronisation retardée (mouvement antidaté) pour que
+    la page de clôture et le journal restent cohérents.
     """
     from .models import JournalValeurStock
 
-    lignes = JournalValeurStock.objects.filter(boutique=boutique).order_by('date')
-    valeur_precedente = Decimal('0')
-    first = True
+    veille = (
+        JournalValeurStock.objects
+        .filter(boutique=boutique, date__lt=date)
+        .order_by('-date')
+        .first()
+    )
+    valeur_precedente = None
+    if veille is not None:
+        valeur_precedente = veille.valeur_stock_restant
+        if valeur_precedente is None:
+            valeur_precedente = veille.valeur_stock_reel
+
+    lignes = (
+        JournalValeurStock.objects
+        .filter(boutique=boutique, date__gte=date)
+        .order_by('date')
+    )
     for ligne in lignes:
-        if first:
-            # Première ligne : garder sa valeur_stock_precedent ou utiliser 0
-            if ligne.valeur_stock_reel and ligne.valeur_stock_reel > 0:
-                pass  # on garde la valeur existante pour la première ligne
-            first = False
-        else:
+        if valeur_precedente is not None:
             ligne.valeur_stock_precedent = valeur_precedente
         ligne.recalculer_valeur_restant()
         ligne.save(update_fields=[
             'valeur_stock_precedent', 'valeur_stock_restant', 'updated_at'
         ])
-        # Le stock_reel de ce jour devient le stock_precedent du lendemain
-        valeur_precedente = ligne.valeur_stock_reel if ligne.valeur_stock_reel else ligne.valeur_stock_restant
+        valeur_precedente = ligne.valeur_stock_restant
+
+
+def recalculer_tout_depuis_debut(boutique):
+    """
+    Recalcule toutes les lignes du journal dans l'ordre chronologique
+    pour garantir la cohérence des valeurs_stock_precedent.
+    Stock préc. du jour = stock restant de la veille.
+    À appeler après import massif ou correction de données.
+    """
+    from .models import JournalValeurStock
+
+    lignes = JournalValeurStock.objects.filter(boutique=boutique).order_by('date')
+    valeur_precedente = None
+    for ligne in lignes:
+        if valeur_precedente is not None:
+            ligne.valeur_stock_precedent = valeur_precedente
+        ligne.recalculer_valeur_restant()
+        ligne.save(update_fields=[
+            'valeur_stock_precedent', 'valeur_stock_restant', 'updated_at'
+        ])
+        # Le stock restant de ce jour devient le stock précédent du lendemain
+        valeur_precedente = ligne.valeur_stock_restant

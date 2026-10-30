@@ -420,9 +420,14 @@
             <div class="stat-card">
                 <div class="stat-value">{{ total_ca|floatformat:0 }}</div>
                 <div class="stat-label">CA NET (FC)</div>
-                {% if total_depenses_appliquees %}
+                {% if total_depenses_appliquees or total_remboursements or total_credit %}
                 <div class="mt-1">
-                    <small class="text-muted">Brut: {{ total_ca_brut|floatformat:0 }}</small>
+                    <small class="text-muted">
+                        Brut: {{ total_ca_brut|floatformat:0 }}
+                        {% if total_remboursements %} - Remb.: {{ total_remboursements|floatformat:0 }}{% endif %}
+                        {% if total_depenses_appliquees %} - Dép.: {{ total_depenses_appliquees|floatformat:0 }}{% endif %}
+                        {% if total_credit %} + Crédit: {{ total_credit|floatformat:0 }}{% endif %}
+                    </small>
                 </div>
                 {% endif %}
             </div>

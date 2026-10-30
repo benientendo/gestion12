@@ -598,8 +598,11 @@
                         </div>
                         <div class="mt-2">
                             {% for ligne in facture.lignes.all %}
-                            <span class="badge bg-light text-dark border me-1 mb-1" style="font-weight:500;">
+                            <span class="badge {% if ligne.etat and ligne.etat.restant <= 0 %}bg-success{% elif ligne.etat and ligne.etat.distribue %}bg-warning text-dark{% else %}bg-light text-dark border{% endif %} me-1 mb-1" style="font-weight:500;">
                                 {{ ligne.article.nom }}{% if ligne.quantite_unites %} &times; {{ ligne.quantite_unites }}{% endif %}
+                                {% if ligne.etat %}
+                                    &bull; {{ ligne.etat.distribue }} distribu&eacute;{% if ligne.etat.restant > 0 %}, {{ ligne.etat.restant }} restant{% endif %}
+                                {% endif %}
                             </span>
                             {% empty %}
                             <span class="text-muted small">Aucun article</span>

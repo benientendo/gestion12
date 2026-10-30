@@ -112,4 +112,6 @@ urlpatterns = [
     path('cloture/verifier-code', api_views_v2_simple.verifier_code_cloture_simple, name='verifier_code_cloture_no_slash'),
     path('cloture/enregistrer/', api_views_v2_simple.enregistrer_cloture_simple, name='enregistrer_cloture'),
     path('cloture/etat/', api_views_v2_simple.etat_cloture_simple, name='etat_cloture'),
+    path('cloture/resume/', api_views_v2_simple.resume_cloture_simple, name='resume_cloture'),
+    path('cloture/resume', api_views_v2_simple.resume_cloture_simple, name='resume_cloture_no_slash'),
 ]

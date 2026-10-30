@@ -114,6 +114,10 @@
                         <tr>
                             <th>Article</th>
                             <th class="text-center">Qté</th>
+                            {% if afficher_distribution %}
+                            <th class="text-center">Distribué</th>
+                            <th class="text-center">Restant</th>
+                            {% endif %}
                             <th class="text-end">P. Achat</th>
                             <th class="text-end">P. Vente</th>
                             <th class="text-end">Total Achat</th>
@@ -130,6 +134,32 @@
                                 <br><small class="text-muted">{{ ligne.article.code }}</small>
                             </td>
                             <td class="text-center"><strong id="qte-{{ ligne.id }}">{{ ligne.quantite_unites }}</strong></td>
+                            {% if afficher_distribution %}
+                            <td class="text-center">
+                                {% if ligne.etat %}
+                                    {% if ligne.etat.distribue %}
+                                        {% if ligne.etat.distribue >= ligne.etat.recu %}
+                                        <span class="badge bg-success" title="Article entièrement distribué">{{ ligne.etat.distribue }}</span>
+                                        {% else %}
+                                        <span class="badge bg-warning text-dark" title="Article partiellement distribué">{{ ligne.etat.distribue }}</span>
+                                        {% endif %}
+                                    {% else %}
+                                    <span class="badge bg-secondary" title="Aucune quantité distribuée">0</span>
+                                    {% endif %}
+                                {% else %}<span class="text-muted">—</span>{% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if ligne.etat %}
+                                    {% if ligne.etat.restant <= 0 %}
+                                    <span class="badge bg-success" title="Plus rien à distribuer">0</span>
+                                    {% elif ligne.etat.distribue %}
+                                    <span class="badge bg-warning text-dark" title="Quantité restant à distribuer">{{ ligne.etat.restant }}</span>
+                                    {% else %}
+                                    <span class="text-muted" title="Quantité restant à distribuer">{{ ligne.etat.restant }}</span>
+                                    {% endif %}
+                                {% else %}<span class="text-muted">—</span>{% endif %}
+                            </td>
+                            {% endif %}
                             <td class="text-end" id="pa-{{ ligne.id }}">{{ ligne.prix_achat_unitaire|floatformat:2 }}</td>
                             <td class="text-end" id="pv-{{ ligne.id }}">{{ ligne.prix_vente_unitaire|floatformat:2 }}</td>
                             <td class="text-end" id="total-{{ ligne.id }}">{{ ligne.prix_achat_total|format_number }} FC</td>
@@ -146,7 +176,11 @@
                     <tfoot>
                         <tr class="table-primary">
                             <td colspan="2"><strong>TOTAL ({{ lignes|length }} articles)</strong></td>
+                            {% if afficher_distribution %}
+                            <td colspan="4"></td>
+                            {% else %}
                             <td colspan="2"></td>
+                            {% endif %}
                             <td class="text-end" id="total-facture"><strong>{{ total_achat|format_number }} FC</strong></td>
                             <td class="text-end text-success" id="total-benefice"><strong>{{ total_benefice|format_number }} FC</strong></td>
                             <td class="text-end text-success" id="total-pct"><strong>{{ pourcentage_global|floatformat:1 }}%</strong></td>

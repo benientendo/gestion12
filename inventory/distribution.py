@@ -133,6 +133,7 @@ def etat_distribution(factures):
                 'recu': recu,
                 'distribue': distribue,
                 'restant': recu - distribue,
+                'statut': _statut(recu, distribue),
             }
             par_ligne[ligne.id] = info
             etat['recu'] += recu
