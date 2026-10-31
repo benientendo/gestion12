@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Sum, Q
+from django.db.models import Sum, Q, Count
 from django.utils import timezone
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -84,8 +84,10 @@ def liste_ventes_credit(request, boutique_id):
             Q(reference__icontains=search)
         )
 
-    # Liste des clients pour le formulaire de création
-    clients = ClientAcompte.objects.filter(boutique=boutique).order_by('nom')
+    # Liste des clients pour le formulaire de création et la gestion
+    clients = ClientAcompte.objects.filter(boutique=boutique).annotate(
+        nb_ventes_total=Count('ventes')
+    ).order_by('nom')
     # Articles disponibles pour la saisie rapide
     articles = boutique.articles.filter(est_actif=True).order_by('nom')[:200]
 
@@ -180,6 +182,31 @@ def creer_vente_credit(request, boutique_id):
 
     messages.success(request, f"Vente {vente.reference} créée pour {client.nom_complet}.")
     return redirect('inventory:detail_vente_credit', boutique_id=boutique_id, vente_id=vente.id)
+
+
+# ===== SUPPRIMER UN CLIENT =====
+
+@login_required
+@commercant_required
+def supprimer_client_credit(request, boutique_id, client_id):
+    """Supprime un client crédit sans vente associée (protection de l'historique)."""
+    boutique = _boutique_commercant(request, boutique_id)
+    client   = get_object_or_404(ClientAcompte, id=client_id, boutique=boutique)
+
+    if request.method != 'POST':
+        return redirect('inventory:liste_ventes_credit', boutique_id=boutique_id)
+
+    nom = client.nom_complet
+    if client.ventes.exists():
+        messages.error(
+            request,
+            f"Impossible de supprimer {nom} : ce client a des ventes à crédit "
+            f"associées. Annulez d'abord ses ventes ou conservez son historique.")
+    else:
+        client.delete()
+        messages.success(request, f"Client {nom} supprimé.")
+
+    return redirect('inventory:liste_ventes_credit', boutique_id=boutique_id)
 
 
 # ===== DÉTAIL D'UNE VENTE =====

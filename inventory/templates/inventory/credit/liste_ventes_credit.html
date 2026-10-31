@@ -40,6 +40,9 @@
             <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#modalCreer">
                 <i class="fas fa-plus"></i> Nouvelle vente
             </button>
+            <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalClients">
+                <i class="fas fa-users"></i> Gérer les clients
+            </button>
             <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary btn-sm">
                 <i class="fas fa-arrow-left"></i> Retour
             </a>
@@ -261,6 +264,76 @@
                     <button type="submit" class="btn btn-success btn-sm"><i class="fas fa-save"></i> Créer la vente</button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MODAL : Gestion des clients crédit ===== -->
+<div class="modal fade" id="modalClients" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-users"></i> Clients à crédit</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Client</th>
+                                <th>Téléphone</th>
+                                <th class="text-center">Ventes</th>
+                                <th class="text-end">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for c in clients %}
+                            <tr>
+                                <td>
+                                    <strong>{{ c.nom_complet }}</strong>
+                                    {% if c.adresse %}<br><small class="text-muted">{{ c.adresse }}</small>{% endif %}
+                                </td>
+                                <td>{{ c.telephone|default:"—" }}</td>
+                                <td class="text-center">
+                                    <span class="badge bg-secondary">{{ c.nb_ventes_total }}</span>
+                                </td>
+                                <td class="text-end">
+                                    {% if c.nb_ventes_total %}
+                                    <button type="button" class="btn btn-outline-danger btn-sm" disabled
+                                            title="Suppression impossible : ce client a des ventes associées">
+                                        <i class="fas fa-lock"></i> Supprimer
+                                    </button>
+                                    {% else %}
+                                    <form method="post"
+                                          action="{% url 'inventory:supprimer_client_credit' boutique.id c.id %}"
+                                          class="d-inline"
+                                          onsubmit="return confirm('Supprimer définitivement le client {{ c.nom_complet|escapejs }} ?');">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">
+                                            <i class="fas fa-trash"></i> Supprimer
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center py-4 text-muted">
+                                    Aucun client enregistré.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <small class="text-muted me-auto">
+                    Un client ayant des ventes ne peut pas être supprimé afin de préserver l'historique.
+                </small>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Fermer</button>
+            </div>
         </div>
     </div>
 </div>

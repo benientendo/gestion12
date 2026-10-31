@@ -605,3 +605,43 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
         self.assertEqual(resp.status_code, 201, resp.content)
         self.assertFalse(resp.json()['fusionnee'])
         self.assertEqual(VenteAcompte.objects.count(), 2)
+
+    # ── Suppression d'un client (back-office) ────────────────────────────
+
+    def test_supprimer_client_sans_vente(self):
+        client = ClientAcompte.objects.create(
+            boutique=self.boutique, nom='TEMP', prenom='Client')
+        self.client.force_login(self.user)
+        url = reverse('inventory:supprimer_client_credit',
+                      args=[self.boutique.id, client.id])
+
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertFalse(ClientAcompte.objects.filter(id=client.id).exists())
+
+    def test_liste_credit_affiche_la_gestion_des_clients(self):
+        ClientAcompte.objects.create(
+            boutique=self.boutique, nom='DUPONT', prenom='Jean')
+        self.client.force_login(self.user)
+        url = reverse('inventory:liste_ventes_credit',
+                      args=[self.boutique.id])
+
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'Gérer les clients')
+        self.assertContains(resp, 'DUPONT')
+
+    def test_supprimer_client_avec_vente_refuse(self):
+        self.api.post(
+            self.url_creer,
+            data=self._payload(articles=self._articles_payload((self.article, 1))),
+            content_type='application/json', **self.entete,
+        )
+        client = ClientAcompte.objects.get()
+        self.client.force_login(self.user)
+        url = reverse('inventory:supprimer_client_credit',
+                      args=[self.boutique.id, client.id])
+
+        resp = self.client.post(url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertTrue(ClientAcompte.objects.filter(id=client.id).exists())

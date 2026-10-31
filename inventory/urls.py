@@ -277,6 +277,7 @@ urlpatterns = [
     # ===== PAIEMENT PAR ACOMPTE (CRÉDIT) =====
     path('commercant/boutiques/<int:boutique_id>/credit/', views_credit.liste_ventes_credit, name='liste_ventes_credit'),
     path('commercant/boutiques/<int:boutique_id>/credit/creer/', views_credit.creer_vente_credit, name='creer_vente_credit'),
+    path('commercant/boutiques/<int:boutique_id>/credit/clients/<int:client_id>/supprimer/', views_credit.supprimer_client_credit, name='supprimer_client_credit'),
     path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/', views_credit.detail_vente_credit, name='detail_vente_credit'),
     path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/paiement/', views_credit.enregistrer_paiement, name='enregistrer_paiement'),
     path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/retrait/', views_credit.marquer_retrait, name='marquer_retrait'),
