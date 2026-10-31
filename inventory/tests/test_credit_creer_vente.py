@@ -11,8 +11,8 @@ from django.test import TestCase, Client as TestClient
 from django.urls import reverse
 
 from inventory.models import (
-    Article, Boutique, Client, Commercant, LigneVenteAcompte, MouvementStock,
-    VenteAcompte,
+    Article, Boutique, Client, ClientAcompte, Commercant, LigneVenteAcompte,
+    MouvementStock, PaiementAcompte, VenteAcompte,
 )
 
 User = get_user_model()
@@ -435,3 +435,173 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
         self.assertEqual(resp.status_code, 302)
         self.article.refresh_from_db()
         self.assertEqual(self.article.quantite_stock, 10)
+
+    # ── Un seul compte / une seule facture par client ────────────────────
+
+    def test_nouveau_credit_meme_client_fusionne_la_facture(self):
+        """Le 2e crédit du même client augmente la facture EN_COURS existante."""
+        self.api.post(
+            self.url_creer,
+            data=self._payload(articles=self._articles_payload((self.article, 2))),
+            content_type='application/json', **self.entete,
+        )
+        vente = VenteAcompte.objects.get()
+        client_id, reference = vente.client_id, vente.reference
+
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(
+                client_id=client_id,
+                articles=self._articles_payload((self.article2, 1)),
+            ),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        # Toujours une seule facture, avec le même numéro
+        self.assertEqual(VenteAcompte.objects.count(), 1)
+        vente.refresh_from_db()
+        self.assertEqual(vente.reference, reference)
+        self.assertEqual(vente.prix_total, Decimal('70000.00'))
+        self.assertEqual(vente.seuil_retrait, Decimal('70000.00'))
+        self.assertEqual(vente.quantite, 3)
+        self.assertEqual(vente.lignes.count(), 2)
+
+        data = resp.json()
+        self.assertTrue(data['fusionnee'])
+        self.assertEqual(data['vente_id'], vente.id)
+        self.assertEqual(data['reference'], reference)
+        self.assertEqual(data['prix_total'], 70000.0)
+        self.assertEqual(data['montant_restant'], 70000.0)
+        self.assertEqual(len(data['lignes']), 1)
+
+        self.article.refresh_from_db()
+        self.article2.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 8)
+        self.assertEqual(self.article2.quantite_stock, 4)
+
+    def test_meme_article_ajoute_fusionne_la_ligne(self):
+        """Deux passages avec le même article : une seule ligne, quantités cumulées."""
+        self.api.post(
+            self.url_creer,
+            data=self._payload(articles=self._articles_payload((self.article, 1))),
+            content_type='application/json', **self.entete,
+        )
+        vente = VenteAcompte.objects.get()
+
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(
+                client_id=vente.client_id,
+                articles=self._articles_payload((self.article, 2)),
+            ),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        vente.refresh_from_db()
+        self.assertEqual(vente.prix_total, Decimal('90000.00'))
+        self.assertEqual(vente.lignes.count(), 1)
+        ligne = vente.lignes.get()
+        self.assertEqual(ligne.quantite, 3)
+        self.assertEqual(ligne.prix_total, Decimal('90000.00'))
+        self.assertEqual(ligne.prix_unitaire, Decimal('30000.00'))
+        self.article.refresh_from_db()
+        self.assertEqual(self.article.quantite_stock, 7)
+
+    def test_acompte_du_nouveau_credit_augmente_le_paiement(self):
+        """L'acompte versé lors d'un 2e crédit s'ajoute à la même facture."""
+        self.api.post(
+            self.url_creer,
+            data=self._payload(articles=self._articles_payload((self.article, 2))),
+            content_type='application/json', **self.entete,
+        )
+        vente = VenteAcompte.objects.get()
+
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(
+                client_id=vente.client_id,
+                articles=self._articles_payload((self.article2, 1)),
+                acompte_initial=10000,
+            ),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        vente.refresh_from_db()
+        self.assertEqual(vente.prix_total, Decimal('70000.00'))
+        self.assertEqual(vente.montant_paye, Decimal('10000.00'))
+        self.assertEqual(vente.montant_restant, Decimal('60000.00'))
+        self.assertEqual(vente.statut, 'EN_COURS')
+        self.assertEqual(PaiementAcompte.objects.filter(vente=vente).count(), 1)
+
+    def test_client_reutilise_par_telephone_sans_client_id(self):
+        """Sans client_id, un téléphone connu réutilise le compte existant."""
+        self.api.post(
+            self.url_creer,
+            data=self._payload(articles=self._articles_payload((self.article, 1))),
+            content_type='application/json', **self.entete,
+        )
+        vente = VenteAcompte.objects.get()
+
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(
+                nom='AUTRE NOM', prenom='Autre', telephone='0810000000',
+                articles=self._articles_payload((self.article2, 1)),
+            ),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+        self.assertEqual(ClientAcompte.objects.count(), 1)
+        self.assertEqual(VenteAcompte.objects.count(), 1)
+        vente.refresh_from_db()
+        self.assertEqual(vente.client.nom, 'KABILA')
+        self.assertEqual(vente.prix_total, Decimal('40000.00'))
+        self.assertEqual(vente.lignes.count(), 2)
+
+    def test_client_different_cree_une_nouvelle_facture(self):
+        """Un autre client garde sa propre facture."""
+        self.api.post(
+            self.url_creer,
+            data=self._payload(articles=self._articles_payload((self.article, 1))),
+            content_type='application/json', **self.entete,
+        )
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(
+                nom='MUKENDI', prenom='Paul', telephone='0990000000',
+                articles=self._articles_payload((self.article2, 1)),
+            ),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(ClientAcompte.objects.count(), 2)
+        self.assertEqual(VenteAcompte.objects.count(), 2)
+
+    def test_facture_soldee_puis_nouveau_credit_cree_une_facture(self):
+        """Une facture soldée est clôturée : le crédit suivant ouvre une nouvelle facture."""
+        self.api.post(
+            self.url_creer,
+            data=self._payload(
+                articles=self._articles_payload((self.article, 1)),
+                acompte_initial=30000,
+            ),
+            content_type='application/json', **self.entete,
+        )
+        vente = VenteAcompte.objects.get()
+        self.assertEqual(vente.statut, 'SOLDE')
+
+        resp = self.api.post(
+            self.url_creer,
+            data=self._payload(
+                client_id=vente.client_id,
+                articles=self._articles_payload((self.article2, 1)),
+            ),
+            content_type='application/json', **self.entete,
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertFalse(resp.json()['fusionnee'])
+        self.assertEqual(VenteAcompte.objects.count(), 2)

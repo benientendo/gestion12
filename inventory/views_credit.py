@@ -384,20 +384,36 @@ def api_credit_creer_vente(request, boutique_id):
         return JsonResponse({'error': 'Corps JSON invalide'}, status=400)
 
     # ── Client ──────────────────────────────────────────────────────────
+    # Un client déjà enregistré doit être réutilisé : sa nouvelle dette
+    # s'ajoute ainsi à son compte au lieu de créer un doublon.
     client_id = body.get('client_id')
     if client_id:
         client = get_object_or_404(ClientAcompte, id=client_id, boutique=boutique)
     else:
-        nom = (body.get('nom') or '').strip()
+        nom       = (body.get('nom') or '').strip()
+        prenom    = (body.get('prenom') or '').strip()
+        telephone = (body.get('telephone') or '').strip()
+        adresse   = (body.get('adresse') or '').strip()
         if not nom:
             return JsonResponse({'error': 'Le nom du client est obligatoire'}, status=400)
-        client = ClientAcompte.objects.create(
-            boutique=boutique,
-            nom=nom,
-            prenom=(body.get('prenom') or '').strip(),
-            telephone=(body.get('telephone') or '').strip(),
-            adresse=(body.get('adresse') or '').strip(),
-        )
+
+        client = None
+        if telephone:
+            client = ClientAcompte.objects.filter(
+                boutique=boutique, telephone=telephone).first()
+        if client is None:
+            candidats = ClientAcompte.objects.filter(
+                boutique=boutique, nom__iexact=nom, prenom__iexact=prenom)
+            if candidats.count() == 1:
+                client = candidats.first()
+        if client is None:
+            client = ClientAcompte.objects.create(
+                boutique=boutique,
+                nom=nom,
+                prenom=prenom,
+                telephone=telephone,
+                adresse=adresse,
+            )
 
     # ── Lignes d'articles ───────────────────────────────────────────────
     lignes_brutes = body.get('articles') or body.get('lignes')
@@ -520,7 +536,21 @@ def api_credit_creer_vente(request, boutique_id):
     lignes_reponse = []
     articles_a_notifier = []
 
+    commentaire = (body.get('commentaire') or '').strip()
+
     with transaction.atomic():
+        # ── Compte crédit du client ─────────────────────────────────────
+        # Une seule facture ouverte par client : si elle existe, les
+        # nouveaux articles et l'acompte s'y ajoutent (la dette augmente).
+        vente = (
+            VenteAcompte.objects.select_for_update()
+            .filter(boutique=boutique, client=client, statut='EN_COURS')
+            .order_by('-date_creation')
+            .first()
+        )
+        fusionnee = vente is not None
+        avait_lignes = fusionnee and vente.lignes.exists()
+
         # ── Stock : contrôle + décrément immédiat à la création ─────────
         articles_verrouilles = {}
         for ligne in lignes_normalisees.values():
@@ -543,36 +573,86 @@ def api_credit_creer_vente(request, boutique_id):
                               f"{info['quantite_demandee']} demandé(s)."},
                     status=400)
 
-        vente = VenteAcompte.objects.create(
-            boutique=boutique,
-            client=client,
-            article=premier_article if len(lignes_normalisees) == 1 else None,
-            article_nom=article_nom_resume,
-            quantite=quantite_totale,
-            prix_total=prix_total,
-            seuil_retrait=seuil_retrait,
-            montant_paye=Decimal('0'),
-            commentaire=(body.get('commentaire') or '').strip(),
-        )
+        if vente is None:
+            vente = VenteAcompte.objects.create(
+                boutique=boutique,
+                client=client,
+                article=premier_article if len(lignes_normalisees) == 1 else None,
+                article_nom=article_nom_resume,
+                quantite=quantite_totale,
+                prix_total=prix_total,
+                seuil_retrait=seuil_retrait,
+                montant_paye=Decimal('0'),
+                commentaire=commentaire,
+            )
+        else:
+            vente.prix_total += prix_total
+            vente.seuil_retrait = vente.prix_total
+            vente.quantite = (vente.quantite or 0) + quantite_totale
+            noms = [n for n in (vente.article_nom, article_nom_resume) if n]
+            vente.article_nom = ', '.join(noms)[:200]
+            if commentaire:
+                vente.commentaire = (
+                    f"{vente.commentaire}\n{commentaire}".strip()
+                    if vente.commentaire else commentaire
+                )
+            vente.article_recupere = False
+            vente.save()
 
         for cle in ordre:
             ligne = lignes_normalisees[cle]
-            LigneVenteAcompte.objects.create(
-                vente=vente,
-                article=ligne['article'],
-                article_nom=ligne['article_nom'],
-                quantite=ligne['quantite'],
-                prix_unitaire=ligne['prix_unitaire'],
-                prix_total=ligne['prix_total'],
-            )
+            existante = None
+            if avait_lignes:
+                if ligne['article'] is not None:
+                    existante = vente.lignes.filter(article=ligne['article']).first()
+                else:
+                    existante = vente.lignes.filter(
+                        article__isnull=True,
+                        article_nom=ligne['article_nom'],
+                    ).first()
+
+            if existante is not None:
+                existante.quantite += ligne['quantite']
+                existante.prix_total += ligne['prix_total']
+                existante.prix_unitaire = (
+                    existante.prix_total / existante.quantite
+                    if existante.quantite else ligne['prix_unitaire']
+                )
+                existante.save(update_fields=['quantite', 'prix_total', 'prix_unitaire'])
+            else:
+                LigneVenteAcompte.objects.create(
+                    vente=vente,
+                    article=ligne['article'],
+                    article_nom=ligne['article_nom'],
+                    quantite=ligne['quantite'],
+                    prix_unitaire=ligne['prix_unitaire'],
+                    prix_total=ligne['prix_total'],
+                )
+
+        if fusionnee and avait_lignes:
+            toutes_lignes = list(vente.lignes.order_by('id'))
+            if len(toutes_lignes) == 1:
+                vente.article = toutes_lignes[0].article
+                vente.article_nom = toutes_lignes[0].article_nom[:200]
+            else:
+                vente.article = None
+                vente.article_nom = ', '.join(
+                    ligne.article_nom for ligne in toutes_lignes
+                )[:200]
+            vente.save(update_fields=['article', 'article_nom'])
+        elif fusionnee:
+            # Ancienne facture mono-article sans lignes : on conserve
+            # l'article d'origine et on ajoute le nom des nouveaux.
+            vente.article = None
+            vente.save(update_fields=['article'])
 
         if acompte > 0:
             PaiementAcompte.objects.create(
                 vente=vente, montant=acompte,
                 recu_par=request.META.get('HTTP_X_DEVICE_SERIAL', 'MAUI'),
-                notes=(body.get('commentaire') or '').strip(),
+                notes=commentaire,
             )
-            vente.montant_paye = acompte
+            vente.montant_paye += acompte
             if vente.montant_paye >= vente.prix_total:
                 vente.statut = 'SOLDE'
             vente.save()
@@ -629,16 +709,20 @@ def api_credit_creer_vente(request, boutique_id):
 
     premiere = lignes_reponse[0] if lignes_reponse else {}
     return JsonResponse({
-        'success':       True,
-        'vente_id':      vente.id,
-        'reference':     vente.reference,
-        'client_nom':    client.nom_complet,
-        'statut':        vente.statut,
-        'quantite':      vente.quantite,
-        'prix_total':    float(vente.prix_total),
-        'lignes':        lignes_reponse,
-        'stock_avant':   premiere.get('stock_avant'),
-        'stock_restant': premiere.get('stock_restant'),
+        'success':          True,
+        'fusionnee':        fusionnee,
+        'vente_id':         vente.id,
+        'reference':        vente.reference,
+        'client_id':        client.id,
+        'client_nom':       client.nom_complet,
+        'statut':           vente.statut,
+        'quantite':         vente.quantite,
+        'prix_total':       float(vente.prix_total),
+        'montant_paye':     float(vente.montant_paye),
+        'montant_restant':  float(vente.montant_restant),
+        'lignes':           lignes_reponse,
+        'stock_avant':      premiere.get('stock_avant'),
+        'stock_restant':    premiere.get('stock_restant'),
     }, status=201)
 
 
