@@ -105,9 +105,11 @@
     /* Pied de page */
     .pv-footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #ccc; text-align: center; font-size: .7rem; color: #999; }
 
-    /* Colonne Écart : masquée par défaut, activable via le bouton */
-    .pv-table:not(.show-ecart) th:nth-child(7),
-    .pv-table:not(.show-ecart) td:nth-child(7) { display: none; }
+    /* Colonnes d'analyse (Théorique + Écart) : masquées par défaut, activables via le bouton */
+    .pv-table:not(.show-analyse) th:nth-child(5),
+    .pv-table:not(.show-analyse) td:nth-child(5),
+    .pv-table:not(.show-analyse) th:nth-child(7),
+    .pv-table:not(.show-analyse) td:nth-child(7) { display: none; }
 
     /* Actions */
     .pv-actions { margin-bottom: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
@@ -120,10 +122,10 @@
         <button onclick="window.print()" class="btn btn-primary">
             <i class="fas fa-print me-1"></i>Imprimer / PDF
         </button>
-        <button type="button" id="btn-toggle-ecart" class="btn btn-outline-primary"
-                onclick="toggleColonneEcart(this)" aria-pressed="false"
-                title="Afficher ou masquer la colonne Écart">
-            <i class="fas fa-columns me-1"></i><span>Afficher la colonne Écart</span>
+        <button type="button" id="btn-toggle-analyse" class="btn btn-outline-primary"
+                onclick="toggleColonnesAnalyse(this)" aria-pressed="false"
+                title="Afficher ou masquer les colonnes Théorique et Écart">
+            <i class="fas fa-columns me-1"></i><span>Afficher Théorique et Écart</span>
         </button>
         <a href="{% if est_depot %}{% url 'inventory:detail_inventaire' point_vente.id inventaire.id %}{% else %}{% url 'inventory:detail_inventaire_boutique' point_vente.id inventaire.id %}{% endif %}"
            class="btn btn-outline-secondary">
@@ -235,12 +237,12 @@
                     <td class="text-end">{{ ligne.stock_physique|mul:ligne.article.prix_vente|format_number }}</td>
                 </tr>
                 {% empty %}
-                <tr><td id="pv-empty-cell" colspan="7" class="text-center">Aucun article saisi dans cet inventaire</td></tr>
+                <tr><td id="pv-empty-cell" colspan="6" class="text-center">Aucun article saisi dans cet inventaire</td></tr>
                 {% endfor %}
             </tbody>
             <tfoot>
                 <tr>
-                    <td id="pv-tfoot-label" colspan="6" class="text-end">VALEUR TOTALE DU STOCK COMPTÉ (PRIX DE VENTE)</td>
+                    <td id="pv-tfoot-label" colspan="5" class="text-end">VALEUR TOTALE DU STOCK COMPTÉ (PRIX DE VENTE)</td>
                     <td class="text-end">{{ valeur_stock_vente|format_number }} FC</td>
                 </tr>
             </tfoot>
@@ -303,23 +305,24 @@
 
 {% block extra_js %}
 <script>
-    /* Colonne « Écart » masquée par défaut ; le bouton l'affiche/masque.
+    /* Colonnes d'analyse (Théorique + Écart) masquées par défaut ;
+       le bouton les affiche/masque toutes les deux.
        Le choix est conservé pour l'impression en cours (Ctrl+P après clic). */
-    function toggleColonneEcart(btn) {
+    function toggleColonnesAnalyse(btn) {
         const table = document.querySelector('.pv-table');
         if (!table) return;
-        const actif = table.classList.toggle('show-ecart');
+        const actif = table.classList.toggle('show-analyse');
         btn.setAttribute('aria-pressed', actif ? 'true' : 'false');
         const label = btn.querySelector('span');
         if (label) {
             label.textContent = actif
-                ? 'Masquer la colonne Écart'
-                : 'Afficher la colonne Écart';
+                ? 'Masquer Théorique et Écart'
+                : 'Afficher Théorique et Écart';
         }
         const tfootLabel = document.getElementById('pv-tfoot-label');
-        if (tfootLabel) tfootLabel.colSpan = actif ? 7 : 6;
+        if (tfootLabel) tfootLabel.colSpan = actif ? 7 : 5;
         const emptyCell = document.getElementById('pv-empty-cell');
-        if (emptyCell) emptyCell.colSpan = actif ? 8 : 7;
+        if (emptyCell) emptyCell.colSpan = actif ? 8 : 6;
     }
 </script>
 {% endblock %}
