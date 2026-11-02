@@ -10,12 +10,36 @@
     @media print {
         body { margin: 0; padding: 0; font-size: 10pt; background: #fff; }
         .no-print { display: none !important; }
+        .loader-wrapper { display: none !important; }
+        .pv-wrapper { margin: 0 !important; padding: 0 !important; max-width: none !important; }
         .pv-page { box-shadow: none !important; border: none !important; padding: 0 !important; }
         .navbar, .sidebar, footer { display: none !important; }
         .pv-table thead { display: table-header-group; }
         .pv-table tr { page-break-inside: avoid; }
         .pv-signatures, .pv-engagement, .pv-totaux { page-break-inside: avoid; }
-        @page { margin: 12mm 12mm; size: A4 portrait; }
+        @page { margin: 10mm 10mm; size: A4 portrait; }
+        /* Compactage impression : économie de place / nombre de pages */
+        .pv-header { margin-bottom: 10px !important; padding-bottom: 6px !important; }
+        .pv-header-left h2 { font-size: 1.15rem !important; }
+        .pv-info-grid { gap: 8px !important; margin-bottom: 10px !important; }
+        .pv-info-bloc { padding: 6px 10px !important; }
+        .pv-info-bloc h6 { margin-bottom: 3px !important; font-size: .66rem !important; }
+        .pv-info-bloc .val { font-size: .8rem !important; }
+        .pv-totaux { gap: 8px !important; margin-bottom: 10px !important; }
+        .pv-totaux-card { padding: 7px 10px !important; }
+        .pv-totaux-row { padding: 1px 0 !important; font-size: .8rem !important; }
+        .pv-totaux-row.total { margin-top: 3px !important; padding-top: 3px !important; font-size: .88rem !important; }
+        .pv-note { margin-bottom: 6px !important; padding: 4px 8px !important; font-size: .72rem !important; }
+        .pv-table { margin-bottom: 10px !important; }
+        .pv-table th, .pv-table td { padding: 3px 5px !important; font-size: .72rem !important; }
+        .pv-table thead th { font-size: .66rem !important; }
+        .pv-table tfoot td { font-size: .78rem !important; }
+        .pv-engagement { padding: 9px 12px !important; margin-bottom: 12px !important; }
+        .pv-engagement h6 { margin-bottom: 4px !important; font-size: .8rem !important; }
+        .pv-engagement p { margin-bottom: 4px !important; font-size: .76rem !important; line-height: 1.4 !important; }
+        .pv-signatures { margin-top: 12px !important; gap: 16px !important; }
+        .pv-sig-bloc .sig-name { margin-bottom: 20px !important; }
+        .pv-footer { margin-top: 10px !important; padding-top: 6px !important; }
     }
 
     /* === ÉCRAN === */
@@ -37,15 +61,15 @@
     .pv-header-right .date { font-size: .85rem; color: #666; }
 
     /* Info blocs */
-    .pv-info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 18px; }
-    .pv-info-bloc { background: #f8f9fa; border-radius: 6px; padding: 12px 16px; border-left: 4px solid #667eea; }
+    .pv-info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .pv-info-bloc { background: #f8f9fa; border-radius: 6px; padding: 10px 14px; border-left: 4px solid #667eea; }
     .pv-info-bloc h6 { margin: 0 0 6px; font-size: .74rem; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; }
     .pv-info-bloc .val { font-size: .92rem; font-weight: 600; color: #222; }
     .pv-info-bloc .val small { font-weight: 400; color: #666; }
 
     /* Récapitulatif valeurs */
-    .pv-totaux { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 18px; }
-    .pv-totaux-card { border: 2px solid #333; border-radius: 6px; padding: 12px 16px; }
+    .pv-totaux { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .pv-totaux-card { border: 2px solid #333; border-radius: 6px; padding: 9px 13px; }
     .pv-totaux-card h6 { margin: 0 0 8px; font-size: .76rem; text-transform: uppercase; letter-spacing: .5px; font-weight: 700; color: #444; }
     .pv-totaux-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: .88rem; }
     .pv-totaux-row strong { font-weight: 700; }
@@ -66,20 +90,20 @@
     .pv-ecart-neg { color: #b02a37; font-weight: 700; }
 
     /* Engagement */
-    .pv-engagement { background: #fffde7; border: 1px solid #f9e68c; border-radius: 6px; padding: 16px 20px; margin-bottom: 22px; }
-    .pv-engagement h6 { margin: 0 0 8px; font-weight: 700; font-size: .88rem; }
-    .pv-engagement p { margin: 0 0 7px; font-size: .83rem; color: #333; line-height: 1.55; }
+    .pv-engagement { background: #fffde7; border: 1px solid #f9e68c; border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; }
+    .pv-engagement h6 { margin: 0 0 6px; font-weight: 700; font-size: .88rem; }
+    .pv-engagement p { margin: 0 0 5px; font-size: .83rem; color: #333; line-height: 1.45; }
     .pv-engagement p:last-child { margin-bottom: 0; }
 
     /* Signatures */
-    .pv-signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; margin-top: 24px; }
+    .pv-signatures { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 16px; }
     .pv-sig-bloc { text-align: center; }
     .pv-sig-bloc .sig-title { font-size: .76rem; font-weight: 700; text-transform: uppercase; color: #555; margin-bottom: 5px; letter-spacing: .5px; }
-    .pv-sig-bloc .sig-name { font-size: .88rem; font-weight: 600; margin-bottom: 42px; min-height: 1.3em; word-break: break-word; }
+    .pv-sig-bloc .sig-name { font-size: .88rem; font-weight: 600; margin-bottom: 24px; min-height: 1.3em; word-break: break-word; }
     .pv-sig-bloc .sig-line { border-top: 1px solid #333; padding-top: 7px; font-size: .74rem; color: #888; }
 
     /* Pied de page */
-    .pv-footer { margin-top: 22px; padding-top: 10px; border-top: 1px solid #ccc; text-align: center; font-size: .7rem; color: #999; }
+    .pv-footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #ccc; text-align: center; font-size: .7rem; color: #999; }
 
     /* Actions */
     .pv-actions { margin-bottom: 18px; display: flex; gap: 10px; justify-content: center; }
@@ -176,12 +200,13 @@
             <thead>
                 <tr>
                     <th style="width:4%;">N°</th>
-                    <th style="width:26%;">Article</th>
-                    <th style="width:14%;">Code</th>
-                    <th style="width:8%;" class="text-center">Théorique</th>
-                    <th style="width:8%;" class="text-center">Compté</th>
-                    <th style="width:8%;" class="text-center">Écart</th>
-                    <th style="width:16%;" class="text-end">Valeur (vente)</th>
+                    <th style="width:24%;">Article</th>
+                    <th style="width:12%;">Code</th>
+                    <th style="width:12%;" class="text-end">Prix unitaire</th>
+                    <th style="width:9%;" class="text-center">Théorique</th>
+                    <th style="width:9%;" class="text-center">Compté</th>
+                    <th style="width:9%;" class="text-center">Écart</th>
+                    <th style="width:21%;" class="text-end">Valeur (vente)</th>
                 </tr>
             </thead>
             <tbody>
@@ -190,6 +215,7 @@
                     <td class="text-center">{{ forloop.counter }}</td>
                     <td><strong>{{ ligne.article.nom }}</strong></td>
                     <td><code>{{ ligne.article.code }}</code></td>
+                    <td class="text-end">{{ ligne.article.prix_vente|format_number }}</td>
                     <td class="text-center">{{ ligne.stock_theorique }}</td>
                     <td class="text-center">{{ ligne.stock_physique }}</td>
                     <td class="text-center">
@@ -200,12 +226,12 @@
                     <td class="text-end">{{ ligne.stock_physique|mul:ligne.article.prix_vente|format_number }}</td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="7" class="text-center">Aucun article saisi dans cet inventaire</td></tr>
+                <tr><td colspan="8" class="text-center">Aucun article saisi dans cet inventaire</td></tr>
                 {% endfor %}
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="6" class="text-end">VALEUR TOTALE DU STOCK COMPTÉ (PRIX DE VENTE)</td>
+                    <td colspan="7" class="text-end">VALEUR TOTALE DU STOCK COMPTÉ (PRIX DE VENTE)</td>
                     <td class="text-end">{{ valeur_stock_vente|format_number }} FC</td>
                 </tr>
             </tfoot>
