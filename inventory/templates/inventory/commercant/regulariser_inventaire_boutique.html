@@ -64,11 +64,11 @@
                         {% for ligne in lignes_ecarts %}
                         <tr class="{% if ligne.ecart > 0 %}table-success{% else %}table-danger{% endif %}">
                             <td><strong>{{ ligne.article.nom }}</strong></td>
-                            <td class="text-center">{{ ligne.stock_theorique }}</td>
-                            <td class="text-center"><strong>{{ ligne.stock_physique }}</strong></td>
+                            <td class="text-center">{% if ligne.affiche_unites %}{{ ligne.stock_theorique_decompose }}{% else %}{{ ligne.stock_theorique }}{% endif %}</td>
+                            <td class="text-center"><strong>{% if ligne.affiche_unites %}{{ ligne.stock_physique_decompose }}{% else %}{{ ligne.stock_physique }}{% endif %}</strong></td>
                             <td class="text-center">
-                                {% if ligne.ecart > 0 %}<span class="badge bg-success fs-6">+{{ ligne.ecart }}</span>
-                                {% else %}<span class="badge bg-danger fs-6">{{ ligne.ecart }}</span>{% endif %}
+                                {% if ligne.ecart > 0 %}<span class="badge bg-success fs-6">{{ ligne.ecart_decompose }}</span>
+                                {% else %}<span class="badge bg-danger fs-6">{{ ligne.ecart_decompose }}</span>{% endif %}
                             </td>
                             <td class="text-center">
                                 {% if ligne.ecart > 0 %}<span class="text-success"><i class="fas fa-arrow-up"></i> Entrée</span>

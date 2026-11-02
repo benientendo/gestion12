@@ -262,3 +262,154 @@ class FormulaireTableauUnitesTest(InventaireUnitesBoucherieBase):
         self.assertEqual(r.status_code, 200)
         contenu = r.content.decode()
         self.assertNotIn('unite_coefficient_' + str(ligne.id), contenu)
+
+
+class EcartDecomposeTest(InventaireUnitesBoucherieBase):
+    """Écarts et procès-verbal affichés en carton / rame / kg (Boucherie).
+
+    La décomposition suit les conditionnements de CHAQUE article : elle est
+    calculée par ligne (`LigneInventaire.ecart_decompose`), jamais globale.
+    """
+
+    def test_ecart_positif_decompose(self):
+        self.ligne.stock_physique = 100  # théorique 65 → +35 = 1 carton · 5 kg
+        self.ligne.save()
+        self.ligne.refresh_from_db()
+        self.assertTrue(self.ligne.affiche_unites)
+        self.assertEqual(self.ligne.ecart, 35)
+        self.assertEqual(self.ligne.ecart_decompose, '+1 carton · 5 kg')
+
+    def test_ecart_negatif_decompose_sur_la_valeur_absolue(self):
+        self.ligne.stock_physique = 30  # théorique 65 → -35 = manque 1 carton · 5 kg
+        self.ligne.save()
+        self.ligne.refresh_from_db()
+        self.assertEqual(self.ligne.ecart, -35)
+        # Jamais de « + » à l'intérieur d'un manque
+        self.assertEqual(self.ligne.ecart_decompose, '-1 carton · 5 kg')
+
+    def test_ecart_nul_et_non_saisi(self):
+        self.assertEqual(self.ligne.ecart_decompose, '0')
+        self.ligne.stock_physique = 65
+        self.ligne.save()
+        self.ligne.refresh_from_db()
+        self.assertEqual(self.ligne.ecart_decompose, '0')
+
+    def test_ecart_hors_boucherie_inchange(self):
+        general = Boutique.objects.create(
+            nom='General Ecart', commercant=self.commercant,
+            code_boutique='BT-INV-UNIT-004', type_commerce='GENERAL',
+        )
+        article = Article.objects.create(
+            boutique=general, code='SAV-ECART', nom='Savon écart',
+            prix_vente=500, quantite_stock=20, unite_base='pcs',
+        )
+        inventaire = Inventaire.objects.create(
+            boutique=general, reference='INV-UNIT-004',
+            date_inventaire=date.today(), statut='EN_COURS', cree_par=self.user,
+        )
+        ligne = LigneInventaire.objects.create(
+            inventaire=inventaire, article=article,
+            stock_theorique=20, prix_unitaire=100, stock_physique=17,
+        )
+        self.assertFalse(ligne.affiche_unites)
+        self.assertEqual(ligne.ecart, -3)
+        self.assertEqual(ligne.ecart_decompose, '-3')
+
+    def test_saisie_ajax_expose_ecart_decompose(self):
+        r = self.client.post(
+            self.url_ajax,
+            data=json.dumps({
+                'ligne_id': self.ligne.id,
+                'stock_physique': 2,
+                'unite_coefficient': 30,
+            }),
+            content_type='application/json',
+        )
+        data = r.json()
+        self.assertTrue(data['success'], data)
+        self.assertEqual(data['ecart'], -5)
+        self.assertEqual(data['ecart_decompose'], '-5 kg')
+
+    def test_recherche_ajax_expose_ecart_decompose(self):
+        self.ligne.stock_physique = 100
+        self.ligne.save()
+        data = self.client.get(self.url_recherche, {'q': 'Boeuf'}).json()
+        self.assertEqual(data['results'][0]['ecart_decompose'], '+1 carton · 5 kg')
+
+
+class RapportEtDetailEcartDecomposeTest(InventaireUnitesBoucherieBase):
+    """Procès-verbal, détail et régularisation affichent l'écart décomposé."""
+
+    def _url(self, nom, statut=None):
+        if statut:
+            self.inventaire.statut = statut
+            self.inventaire.save()
+        return reverse(
+            'inventory:' + nom,
+            args=[self.boucherie.id, self.inventaire.id],
+        )
+
+    def test_proces_verbal_affiche_ecart_decompose(self):
+        self.ligne.stock_physique = 100  # +35
+        self.ligne.save()
+
+        r = self.client.get(self._url('imprimer_inventaire_boutique'))
+        self.assertEqual(r.status_code, 200)
+        contenu = r.content.decode()
+        self.assertIn('+1 carton · 5 kg', contenu)
+        self.assertIn('2 carton · 5 kg', contenu)   # théorique décomposé
+        self.assertIn('3 carton · 1 rame', contenu)  # compté (100)
+        self.assertTrue(r.context['est_boucherie'])
+
+    def test_proces_verbal_hors_boucherie_en_nombre_brut(self):
+        general = Boutique.objects.create(
+            nom='General PV', commercant=self.commercant,
+            code_boutique='BT-INV-UNIT-005', type_commerce='GENERAL',
+        )
+        article = Article.objects.create(
+            boutique=general, code='SAV-PV', nom='Savon PV',
+            prix_vente=500, quantite_stock=20, unite_base='pcs',
+        )
+        inventaire = Inventaire.objects.create(
+            boutique=general, reference='INV-UNIT-005',
+            date_inventaire=date.today(), statut='EN_COURS', cree_par=self.user,
+        )
+        LigneInventaire.objects.create(
+            inventaire=inventaire, article=article,
+            stock_theorique=20, prix_unitaire=100, stock_physique=17,
+        )
+        r = self.client.get(reverse(
+            'inventory:imprimer_inventaire_boutique',
+            args=[general.id, inventaire.id],
+        ))
+        self.assertEqual(r.status_code, 200)
+        contenu = r.content.decode()
+        self.assertFalse(r.context['est_boucherie'])
+        self.assertIn('-3', contenu)
+        self.assertNotIn('carton', contenu)
+
+    def test_detail_affiche_ecarts_decomploses(self):
+        self.ligne.stock_physique = 100  # +35
+        self.ligne.save()
+
+        r = self.client.get(self._url('detail_inventaire_boutique'))
+        self.assertEqual(r.status_code, 200)
+        contenu = r.content.decode()
+        self.assertIn('+1 carton · 5 kg', contenu)   # écart positif
+        self.assertIn('2 carton · 5 kg', contenu)    # théorique décomposé
+
+    def test_regularisation_affiche_ecarts_decomploses(self):
+        self.ligne.stock_physique = 30  # -35
+        self.ligne.save()
+
+        r = self.client.get(
+            self._url('regulariser_inventaire_boutique', statut='TERMINE'))
+        self.assertEqual(r.status_code, 200)
+        contenu = r.content.decode()
+        self.assertIn('-1 carton · 5 kg', contenu)
+        self.assertNotIn('>-35<', contenu)
+
+    def test_tableau_de_bord_affiche_stock_non_saisi_decompose(self):
+        r = self.client.get(self._url('tableau_bord_inventaire'))
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('2 carton · 5 kg', r.content.decode())

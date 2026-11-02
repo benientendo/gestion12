@@ -125,7 +125,7 @@
                                 {% for ligne in ecarts_positifs %}
                                 <tr>
                                     <td><strong>{{ ligne.article.nom }}</strong></td>
-                                    <td class="text-center"><span class="badge bg-success">+{{ ligne.ecart }}</span></td>
+                                    <td class="text-center"><span class="badge bg-success">{{ ligne.ecart_decompose }}</span></td>
                                     <td class="text-end text-success">+{{ ligne.ecart|mul:ligne.article.prix_vente|floatformat:0 }} FC</td>
                                 </tr>
                                 {% endfor %}
@@ -156,7 +156,7 @@
                                 {% for ligne in ecarts_negatifs %}
                                 <tr>
                                     <td><strong>{{ ligne.article.nom }}</strong></td>
-                                    <td class="text-center"><span class="badge bg-danger">{{ ligne.ecart }}</span></td>
+                                    <td class="text-center"><span class="badge bg-danger">{{ ligne.ecart_decompose }}</span></td>
                                     <td class="text-end text-danger">{{ ligne.ecart|mul:ligne.article.prix_vente|floatformat:0 }} FC</td>
                                 </tr>
                                 {% endfor %}
@@ -193,7 +193,7 @@
                                 {% for ligne in lignes_non_saisies_qs %}
                                 <tr>
                                     <td><strong>{{ ligne.article.nom }}</strong></td>
-                                    <td class="text-center">{{ ligne.stock_theorique }}</td>
+                                    <td class="text-center">{% if ligne.affiche_unites %}{{ ligne.stock_theorique_decompose }}{% else %}{{ ligne.stock_theorique }}{% endif %}</td>
                                     <td class="text-end">{{ ligne.stock_theorique|mul:ligne.prix_unitaire|floatformat:0 }} FC</td>
                                 </tr>
                                 {% endfor %}
@@ -226,11 +226,11 @@
                         {% for ligne in lignes %}
                         <tr class="{% if ligne.ecart > 0 %}table-success{% elif ligne.ecart < 0 %}table-danger{% endif %}">
                             <td><strong>{{ ligne.article.nom }}</strong></td>
-                            <td class="text-center">{{ ligne.stock_theorique }}</td>
-                            <td class="text-center">{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% else %}-{% endif %}</td>
+                            <td class="text-center">{% if ligne.affiche_unites %}{{ ligne.stock_theorique_decompose }}{% else %}{{ ligne.stock_theorique }}{% endif %}</td>
+                            <td class="text-center">{% if ligne.stock_physique is None %}-{% elif ligne.affiche_unites %}{{ ligne.stock_physique_decompose }}{% else %}{{ ligne.stock_physique }}{% endif %}</td>
                             <td class="text-center">
-                                {% if ligne.ecart > 0 %}<span class="badge bg-success">+{{ ligne.ecart }}</span>
-                                {% elif ligne.ecart < 0 %}<span class="badge bg-danger">{{ ligne.ecart }}</span>
+                                {% if ligne.ecart > 0 %}<span class="badge bg-success">{{ ligne.ecart_decompose }}</span>
+                                {% elif ligne.ecart < 0 %}<span class="badge bg-danger">{{ ligne.ecart_decompose }}</span>
                                 {% elif ligne.stock_physique is not None %}<span class="badge bg-secondary">0</span>{% endif %}
                             </td>
                             <td class="text-end">

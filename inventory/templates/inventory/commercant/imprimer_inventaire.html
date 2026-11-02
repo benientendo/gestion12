@@ -206,6 +206,10 @@
         <p class="pv-note">
             <i class="fas fa-info-circle me-1"></i>Seuls les <strong>{{ nb_saisis }} article(s) saisis</strong> (comptés)
             figurent ci-dessous ; {{ nb_non_saisis }} article(s) non saisis sont exclus du présent document.
+            {% if est_boucherie %}
+            Les quantités sont exprimées dans les <strong>unités de chaque article</strong>
+            (carton, rame, kg…) selon ses conditionnements.
+            {% endif %}
         </p>
         <table class="pv-table">
             <thead>
@@ -227,11 +231,11 @@
                     <td><strong>{{ ligne.article.nom }}</strong></td>
                     <td><code>{{ ligne.article.code }}</code></td>
                     <td class="text-end">{{ ligne.article.prix_vente|format_number }}</td>
-                    <td class="text-center">{{ ligne.stock_theorique }}</td>
-                    <td class="text-center">{{ ligne.stock_physique }}</td>
+                    <td class="text-center">{% if ligne.affiche_unites %}{{ ligne.stock_theorique_decompose }}{% else %}{{ ligne.stock_theorique }}{% endif %}</td>
+                    <td class="text-center">{% if ligne.affiche_unites %}{{ ligne.stock_physique_decompose }}{% else %}{{ ligne.stock_physique }}{% endif %}</td>
                     <td class="text-center">
-                        {% if ligne.ecart > 0 %}<span class="pv-ecart-pos">+{{ ligne.ecart }}</span>
-                        {% elif ligne.ecart < 0 %}<span class="pv-ecart-neg">{{ ligne.ecart }}</span>
+                        {% if ligne.ecart > 0 %}<span class="pv-ecart-pos">{{ ligne.ecart_decompose }}</span>
+                        {% elif ligne.ecart < 0 %}<span class="pv-ecart-neg">{{ ligne.ecart_decompose }}</span>
                         {% else %}0{% endif %}
                     </td>
                     <td class="text-end">{{ ligne.stock_physique|mul:ligne.article.prix_vente|format_number }}</td>

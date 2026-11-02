@@ -178,7 +178,7 @@
                         {% for l in non_saisis %}
                         <tr>
                             <td class="fw-semibold">{{ l.article.nom }}</td>
-                            <td class="text-center text-muted">{{ l.stock_theorique|default:"—" }}</td>
+                            <td class="text-center text-muted">{% if l.affiche_unites %}{{ l.stock_theorique_decompose }}{% else %}{{ l.stock_theorique|default:"—" }}{% endif %}</td>
                             <td class="text-muted">{{ l.article.categorie.nom|default:"—" }}</td>
                         </tr>
                         {% endfor %}

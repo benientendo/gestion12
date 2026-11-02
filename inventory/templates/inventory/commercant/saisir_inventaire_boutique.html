@@ -494,8 +494,8 @@ kbd {
                                 </td>
                                 <td class="text-center align-middle">
                                     <span class="ecart-display" id="ecart_{{ ligne.id }}">
-                                        {% if ligne.ecart > 0 %}<span class="badge bg-success">+{{ ligne.ecart }}</span>
-                                        {% elif ligne.ecart < 0 %}<span class="badge bg-danger">{{ ligne.ecart }}</span>
+                                        {% if ligne.ecart > 0 %}<span class="badge bg-success">{{ ligne.ecart_decompose }}</span>
+                                        {% elif ligne.ecart < 0 %}<span class="badge bg-danger">{{ ligne.ecart_decompose }}</span>
                                         {% elif ligne.stock_physique is not None %}<span class="badge bg-secondary">0</span>{% endif %}
                                     </span>
                                 </td>
@@ -1284,6 +1284,32 @@ function decomposerQuantite(base, sel) {
     return parties.join(' · ') || '0 ' + uniteBase;
 }
 
+// Écart décomposé en unités de l'article (Boucherie) :
+// « +2 carton · 5 kg » (surplus), « -1 carton · 5 kg » (manque).
+// L'écart est décomposé sur sa valeur absolue puis signé.
+// Hors Boucherie (aucun sélecteur d'unité) : « +12 », « -3 », « 0 ».
+function decomposerEcart(ecart, sel) {
+    if (!ecart) return '0';
+    const signe = ecart > 0 ? '+' : '-';
+    let restant = Math.abs(Math.round(ecart));
+    const unites = unitesDuSelect(sel).sort(function(a, b) {
+        return b.coefficient - a.coefficient;
+    });
+    if (!unites.length) return signe + restant;
+    const parties = [];
+    unites.forEach(function(u) {
+        if (u.coefficient < 1) return;
+        const q = Math.floor(restant / u.coefficient);
+        if (q > 0) {
+            parties.push(q + ' ' + u.libelle);
+            restant -= q * u.coefficient;
+        }
+    });
+    const uniteBase = (sel && sel.dataset.uniteBase) || 'unités';
+    if (restant > 0) parties.push(restant + ' ' + uniteBase);
+    return signe + (parties.join(' · ') || ('0 ' + uniteBase));
+}
+
 function majHintLigne(input) {
     const row = input.closest('tr');
     if (!row) return;
@@ -1326,12 +1352,14 @@ function bindStockInput(input) {
             const ecart = physique - theorique;
             const valeurStock = physique * prixVente;
             
-            // Mise à jour écart
+            // Mise à jour écart (décomposé en carton / rame / kg si Boucherie)
+            const uniteSel = this.closest('tr') ? this.closest('tr').querySelector('.unite-select') : null;
+            const ecartTxt = decomposerEcart(ecart, uniteSel);
             if (ecart > 0) {
-                ecartEl.innerHTML = '<span class="badge bg-success">+' + ecart + '</span>';
+                ecartEl.innerHTML = '<span class="badge bg-success">' + ecartTxt + '</span>';
                 this.closest('tr').className = 'table-success';
             } else if (ecart < 0) {
-                ecartEl.innerHTML = '<span class="badge bg-danger">' + ecart + '</span>';
+                ecartEl.innerHTML = '<span class="badge bg-danger">' + ecartTxt + '</span>';
                 this.closest('tr').className = 'table-danger';
             } else {
                 ecartEl.innerHTML = '<span class="badge bg-secondary">0</span>';
@@ -1763,6 +1791,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             stock_physique: qte,
             stock_physique_decompose: data.stock_physique_decompose || '',
             ecart: data.ecart,
+            ecart_decompose: data.ecart_decompose || '',
             prix_vente: data.prix_vente,
             devise: data.devise || 'CDF',
             categorie_nom: data.categorie_nom || '',
@@ -1790,7 +1819,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 
         sessionEntries.forEach(function(e, i) {
             const ecartClass = e.ecart > 0 ? 'text-success' : e.ecart < 0 ? 'text-danger' : 'text-secondary';
-            const ecartTxt   = e.ecart > 0 ? '+' + e.ecart : e.ecart;
+            const ecartTxt   = e.ecart_decompose || (e.ecart > 0 ? '+' + e.ecart : e.ecart);
             const valeur     = e.stock_physique * e.prix_vente;
             if (e.devise === 'USD') totalUsd += valeur;
             else                   totalCdf += valeur;
@@ -2381,7 +2410,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 assigne_a: d.assigne_a || '', quantite_stock: d.quantite_stock, unite_base: d.unite_base,
                 est_boucherie: !!d.est_boucherie, unites: d.unites || [],
                 prix_vente: d.prix_vente, prix_achat: d.prix_achat, devise: d.devise,
-                ecart: d.ecart, saisi_par_nom: d.saisi_par_nom || '',
+                ecart: d.ecart, ecart_decompose: d.ecart_decompose || '', saisi_par_nom: d.saisi_par_nom || '',
                 categorie_id: d.categorie_id, categorie_nom: d.categorie_nom,
             };
             const pos = ARTICLES.findIndex(function(x) { return x.ligne_id === d.ligne_id; });
@@ -2401,7 +2430,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 '<i class="fas fa-plus-circle me-2"></i><strong>' + escapeHtml(d.article_nom)
                 + '</strong> ajouté à l\'inventaire'
                 + (d.importe_depuis ? ' (importé depuis ' + escapeHtml(d.importe_depuis) + ')' : '')
-                + (compte ? ' (' + d.stock_physique + ' compté(s), écart ' + d.ecart + ')' : ''),
+                + (compte ? ' (' + d.stock_physique + ' compté(s), écart ' + (d.ecart_decompose || d.ecart) + ')' : ''),
                 'success'
             );
             playBeep();
@@ -2456,9 +2485,12 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 unlockArticle(data.ligne_id);
                 updateLocalStock(data.ligne_id, data.stock_physique);
                 addSessionEntry(data, data.stock_physique);
-                const ecartTxt = data.ecart > 0 ? ' <span class="text-success">(+' + data.ecart + ')</span>'
-                               : data.ecart < 0 ? ' <span class="text-danger">(' + data.ecart + ')</span>'
-                               : ' <span class="text-secondary">(=)</span>';
+                const ecartDecompose = data.ecart_decompose || '';
+                const ecartTxt = data.ecart > 0
+                    ? ' <span class="text-success">(' + (ecartDecompose || '+' + data.ecart) + ')</span>'
+                    : data.ecart < 0
+                    ? ' <span class="text-danger">(' + (ecartDecompose || data.ecart) + ')</span>'
+                    : ' <span class="text-secondary">(=)</span>';
                 const corrTxt = etaitCorrection
                     ? ' <span class="badge bg-warning text-dark">corrigé</span>' : '';
                 const qteTxt = (data.est_boucherie && data.stock_physique_decompose)
@@ -2494,6 +2526,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                     insererLigneTableau(Object.assign({}, selectedArticle, {
                         stock_physique: data.stock_physique,
                         ecart: data.ecart,
+                        ecart_decompose: data.ecart_decompose || '',
                         saisi_par_nom: data.saisi_par_nom || CURRENT_USER_NOM,
                     }));
                 }
@@ -2594,8 +2627,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         const estBoucherie = !!e.est_boucherie;
         const uniteBase = e.unite_base || 'pcs';
         const unitesHtml = estBoucherie ? optionsUnitesHtml(e) : '';
-        const nbUnites = estBoucherie ? (unitesHtml.match(/<option/g) || []).length : 0;
-        const afficherUnite = estBoucherie && nbUnites > 1;
+        const afficherUnite = estBoucherie;
         const theoTxt = (estBoucherie && e.stock_theorique_decompose)
             ? e.stock_theorique_decompose : theo;
         const physiqueDecompose = e.stock_physique_decompose || '';
@@ -2611,8 +2643,9 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         }
         let ecartHtml = '';
         if (ecart !== null) {
-            if (ecart > 0) ecartHtml = '<span class="badge bg-success">+' + ecart + '</span>';
-            else if (ecart < 0) ecartHtml = '<span class="badge bg-danger">' + ecart + '</span>';
+            // Écart décomposé en carton / rame / kg (Boucherie) si disponible
+            if (ecart > 0) ecartHtml = '<span class="badge bg-success">' + (e.ecart_decompose || '+' + ecart) + '</span>';
+            else if (ecart < 0) ecartHtml = '<span class="badge bg-danger">' + (e.ecart_decompose || String(ecart)) + '</span>';
             else ecartHtml = '<span class="badge bg-secondary">0</span>';
         }
 
@@ -2821,12 +2854,14 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         sessionEntries.forEach(function(e, i) {
             const valeur = e.stock_physique * e.prix_vente;
             if (e.devise === 'USD') totalUsd += valeur; else totalCdf += valeur;
-            const ecartTxt = e.ecart > 0 ? '+' + e.ecart : e.ecart;
+            const ecartTxt = e.ecart_decompose || (e.ecart > 0 ? '+' + e.ecart : e.ecart);
             const ecartCol = e.ecart > 0 ? 'color:green' : e.ecart < 0 ? 'color:red' : 'color:grey';
+            const theoTxt = (e.est_boucherie && e.stock_theorique_decompose) ? e.stock_theorique_decompose : e.stock_theorique;
+            const phyTxt = (e.est_boucherie && e.stock_physique_decompose) ? e.stock_physique_decompose : e.stock_physique;
             rows += '<tr><td>' + (i+1) + '</td><td><strong>' + e.nom + '</strong></td>'
                 + '<td>' + e.collaborateur + '</td>'
-                + '<td style="text-align:center">' + e.stock_theorique + '</td>'
-                + '<td style="text-align:center;font-weight:bold">' + e.stock_physique + '</td>'
+                + '<td style="text-align:center">' + theoTxt + '</td>'
+                + '<td style="text-align:center;font-weight:bold">' + phyTxt + '</td>'
                 + '<td style="text-align:center;' + ecartCol + ';font-weight:bold">' + ecartTxt + '</td>'
                 + '<td style="text-align:right">' + e.prix_vente.toLocaleString('fr-FR') + ' ' + e.devise + '</td>'
                 + '<td>' + (e.categorie_nom || '—') + '</td></tr>';

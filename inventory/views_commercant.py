@@ -7916,7 +7916,11 @@ def _context_rapport_inventaire(request, inventaire, point_vente, commercant, es
     Le tableau liste uniquement les articles SAISIS (comptés) : les lignes sans
     quantité comptée sont exclues du document, leur nombre étant rappelé en tête.
     """
-    toutes_lignes = list(inventaire.lignes.select_related('article', 'article__categorie').all())
+    toutes_lignes = list(
+        inventaire.lignes.select_related(
+            'article', 'article__categorie', 'article__boutique'
+        ).prefetch_related('article__conditionnements').all()
+    )
     lignes = [l for l in toutes_lignes if l.stock_physique is not None]
     nb_saisis = len(lignes)
     nb_ecarts = sum(1 for l in lignes if l.ecart != 0)
@@ -7924,6 +7928,7 @@ def _context_rapport_inventaire(request, inventaire, point_vente, commercant, es
         'inventaire': inventaire,
         'point_vente': point_vente,
         'est_depot': est_depot,
+        'est_boucherie': getattr(point_vente, 'type_commerce', None) == 'BOUCHERIE',
         'type_point_vente': 'Dépôt' if est_depot else 'Point de vente',
         'commercant': commercant,
         'lignes': lignes,
@@ -8287,7 +8292,9 @@ def detail_inventaire_boutique(request, boutique_id, inventaire_id):
     boutique = request.boutique
     inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
     
-    lignes = inventaire.lignes.select_related('article', 'article__categorie').all()
+    lignes = inventaire.lignes.select_related(
+        'article', 'article__categorie', 'article__boutique'
+    ).prefetch_related('article__conditionnements').all()
     lignes_saisies = lignes.filter(stock_physique__isnull=False).count()
     lignes_avec_ecart = lignes.filter(stock_physique__isnull=False).exclude(ecart=0).count()
     ecarts_positifs = lignes.filter(stock_physique__isnull=False, ecart__gt=0)
@@ -8764,6 +8771,7 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         'prix_vente': float(ligne.article.prix_vente),
         'categorie_nom': ligne.article.categorie.nom if ligne.article.categorie else '',
         'ecart': ligne.ecart,
+        'ecart_decompose': ligne.ecart_decompose,
         'nb_saisis': nb_saisis,
         'nb_total': nb_total,
         'saisi_par_nom': user_nom_ajax,
@@ -8838,6 +8846,7 @@ def _ligne_recherche_json(l):
         'stock_physique_decompose': l.stock_physique_decompose,
         'assigne_a': str(l.assigne_a) if l.assigne_a else '',
         'ecart': l.ecart,
+        'ecart_decompose': l.ecart_decompose,
         'quantite_stock': a.quantite_stock or 0,
         'stock_decompose': a.stock_decompose_formate,
         'unite_base': str(a.unite_base) if a.unite_base else 'pcs',
@@ -9097,6 +9106,7 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
         'stock_physique': ligne.stock_physique,
         'stock_physique_decompose': ligne.stock_physique_decompose,
         'ecart': ligne.ecart,
+        'ecart_decompose': ligne.ecart_decompose,
         'prix_vente': float(article.prix_vente),
         'prix_achat': float(article.prix_achat),
         'prix_unitaire_ligne': float(ligne.prix_unitaire),
@@ -9354,7 +9364,9 @@ def tableau_bord_inventaire(request, boutique_id, inventaire_id):
         })
 
     # Articles non encore saisis
-    non_saisis = inventaire.lignes.filter(stock_physique__isnull=True).select_related('article')
+    non_saisis = inventaire.lignes.filter(stock_physique__isnull=True).select_related(
+        'article', 'article__boutique'
+    ).prefetch_related('article__conditionnements')
 
     context = {
         'boutique': boutique,
@@ -9475,7 +9487,9 @@ def regulariser_inventaire_boutique(request, boutique_id, inventaire_id):
     lignes_ecarts = inventaire.lignes.filter(
         stock_physique__isnull=False,
         est_regularise=False
-    ).exclude(ecart=0).select_related('article')
+    ).exclude(ecart=0).select_related(
+        'article', 'article__boutique'
+    ).prefetch_related('article__conditionnements')
     
     context = {
         'boutique': boutique,

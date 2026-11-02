@@ -1807,6 +1807,33 @@ class LigneInventaire(models.Model):
             return ''
         return self.article.decomposer_quantite_formate(self.stock_physique)
 
+    @property
+    def affiche_unites(self):
+        """Vrai si les quantités de cet article s'affichent en unités mixtes.
+
+        Les articles d'une Boucherie s'affichent en carton / rame / kg…
+        (d'après leurs conditionnements), les autres restent en nombre brut.
+        """
+        boutique = self.article.boutique
+        return bool(boutique and boutique.type_commerce == 'BOUCHERIE')
+
+    @property
+    def ecart_decompose(self):
+        """Écart décomposé en unités de l'article (Boucherie).
+
+        Ex: « +2 carton · 5 kg » (surplus) ou « -1 carton · 5 kg » (manque).
+        L'écart est décomposé sur sa valeur ABSOLUE puis signé : un manque de
+        35 unités s'affiche « -1 carton · 5 kg » et non « -1 carton · +5 kg ».
+
+        Hors Boucherie : « +12 », « -3 » ou « 0 » (inchangé).
+        """
+        if not self.ecart:
+            return '0'
+        signe = '+' if self.ecart > 0 else '-'
+        if not self.affiche_unites:
+            return f"{signe}{abs(self.ecart)}"
+        return signe + self.article.decomposer_quantite_formate(abs(self.ecart))
+
     def save(self, *args, **kwargs):
         # Calculer l'écart si stock physique renseigné
         if self.stock_physique is not None:
