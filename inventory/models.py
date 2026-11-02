@@ -210,24 +210,27 @@ class Article(models.Model):
         """
         return self.quantite_stock
 
-    @property
-    def stock_decompose(self):
-        """Décomposition gloutonne du stock en unités mixtes (Boucherie).
+    def decomposer_quantite(self, quantite):
+        """Décomposition gloutonne d'une quantité en unité de base (Boucherie).
 
-        Ex: stock 515500 g avec carton=25000, kg=1000, g=1
-        → [('carton', 20), ('kg', 15), ('g', 500)]  (soit « 20 cartons · 15 kg · 500 g »).
+        Ex: 65 avec carton=30, rame=10, kg=1
+        → [('carton', 2), ('kg', 5)]  (soit « 2 carton · 5 kg »).
 
         Le stock reste stocké en unité de base (la plus petite : g, PCE…).
-        Non-Boucherie ou sans conditionnement → [(unite_base, stock)].
+        Non-Boucherie, sans conditionnement ou quantité négative/nulle
+        → [(unite_base, quantité)].
         """
         unite = self.unite_base or 'unités'
+        try:
+            restant = int(quantite)
+        except (TypeError, ValueError):
+            restant = 0
         boutique = self.boutique
-        if boutique is None or boutique.type_commerce != 'BOUCHERIE':
-            return [(unite, self.quantite_stock)]
+        if restant <= 0 or boutique is None or boutique.type_commerce != 'BOUCHERIE':
+            return [(unite, restant)]
         conds = [c for c in self.conditionnements.all() if c.est_actif and c.coefficient >= 1]
         if not conds:
-            return [(unite, self.quantite_stock)]
-        restant = self.quantite_stock
+            return [(unite, restant)]
         parties = []
         for c in sorted(conds, key=lambda c: c.coefficient, reverse=True):
             q, restant = divmod(restant, c.coefficient)
@@ -237,10 +240,44 @@ class Article(models.Model):
             parties.append((unite, restant))
         return parties
 
+    def decomposer_quantite_formate(self, quantite):
+        """Formate une quantité décomposée, ex: « 2 carton · 5 kg »."""
+        return ' · '.join(f"{q} {lib}" for lib, q in self.decomposer_quantite(quantite))
+
+    @property
+    def stock_decompose(self):
+        """Décomposition gloutonne du stock en unités mixtes (Boucherie).
+
+        Ex: stock 515500 g avec carton=25000, kg=1000, g=1
+        → [('carton', 20), ('kg', 15), ('g', 500)]  (soit « 20 cartons · 15 kg · 500 g »).
+        """
+        return self.decomposer_quantite(self.quantite_stock)
+
     @property
     def stock_decompose_formate(self):
         """Ex: « 20 cartons · 15 kg · 500 g » — ou « 500 kg » / « 30 unités » hors Boucherie."""
-        return ' · '.join(f"{q} {lib}" for lib, q in self.stock_decompose)
+        return self.decomposer_quantite_formate(self.quantite_stock)
+
+    @property
+    def unites_inventaire(self):
+        """Unités actives utilisables pour la saisie d'inventaire (Boucherie).
+
+        Triées de la plus grande à la plus petite. La plus petite unité
+        (coefficient 1) est toujours présente pour pouvoir compter au détail.
+        """
+        if self.boutique is None or self.boutique.type_commerce != 'BOUCHERIE':
+            return []
+        conds = sorted(
+            (c for c in self.conditionnements.all() if c.est_actif and c.coefficient >= 1),
+            key=lambda c: c.coefficient, reverse=True,
+        )
+        unites = [
+            {'coefficient': c.coefficient, 'libelle': c.libelle}
+            for c in conds
+        ]
+        if not any(u['coefficient'] == 1 for u in unites):
+            unites.append({'coefficient': 1, 'libelle': self.unite_base or 'unités'})
+        return unites
 
     @property
     def unites_resume(self):
@@ -1755,6 +1792,21 @@ class LigneInventaire(models.Model):
     date_saisie = models.DateTimeField(null=True, blank=True)
     date_modification = models.DateTimeField(null=True, blank=True, help_text="Dernière modification du stock physique")
     
+    @property
+    def stock_theorique_decompose(self):
+        """Stock système du snapshot, décomposé en unités (Boucherie).
+
+        Ex: « 2 carton · 5 kg ». Hors Boucherie : « 65 pcs ».
+        """
+        return self.article.decomposer_quantite_formate(self.stock_theorique)
+
+    @property
+    def stock_physique_decompose(self):
+        """Quantité comptée décomposée en unités (Boucherie), vide si non saisie."""
+        if self.stock_physique is None:
+            return ''
+        return self.article.decomposer_quantite_formate(self.stock_physique)
+
     def save(self, *args, **kwargs):
         # Calculer l'écart si stock physique renseigné
         if self.stock_physique is not None:

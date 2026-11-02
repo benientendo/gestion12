@@ -161,10 +161,17 @@ kbd {
             <!-- Catégorie -->
             <select id="srCategorie" class="form-select form-select-sm" style="max-width:150px;" title="Catégorie"></select>
 
+            <!-- Unité de saisie (Boucherie) -->
+            <select id="srUnite" class="form-select form-select-sm" style="max-width:112px;display:none;"
+                    title="Unité de la quantité saisie"></select>
+
             <!-- Qté physique -->
             <input type="number" id="srQte" class="form-control form-control-sm text-center"
                    min="0" placeholder="Qté" title="Quantité physique"
                    style="max-width:72px;font-weight:700;font-size:1.05rem;border:2px solid #28a745;">
+            <span id="srQteBase" class="badge bg-light text-dark border align-self-center"
+                  style="display:none;font-size:.7rem;white-space:nowrap;"
+                  title="Équivalent en unité de base"></span>
 
             <!-- Boutons -->
             <button class="btn btn-outline-warning btn-sm" id="srCorrigerBtn" type="button"
@@ -437,39 +444,53 @@ kbd {
                                     {% endif %}
                                 </td>
                                 <td class="text-center align-middle">
+                                    {% if est_boucherie %}
+                                    <span class="badge bg-secondary fs-6"
+                                          title="Stock système : {{ ligne.stock_theorique }} {{ ligne.article.unite_base|default:'unités' }}">
+                                        {{ ligne.stock_theorique_decompose }}
+                                    </span>
+                                    {% else %}
                                     <span class="badge bg-secondary fs-6">{{ ligne.stock_theorique }}</span>
+                                    {% endif %}
                                 </td>
                                 <td class="text-center">
-                                    {% if filtre == 'non_saisis' %}
-                                    <div class="carton-mode-container" style="display:none;">
-                                        <div class="input-group input-group-sm">
-                                            <input type="number" 
-                                                   class="form-control text-center carton-input" 
-                                                   data-ligne-id="{{ ligne.id }}"
-                                                   data-pieces-par-carton="{{ ligne.article.pieces_par_carton|default:1 }}"
-                                                   min="0" 
-                                                   placeholder="Cartons"
-                                                   style="max-width: 70px;">
-                                            <span class="input-group-text">📦</span>
-                                            <input type="number" 
-                                                   class="form-control text-center pieces-input" 
-                                                   data-ligne-id="{{ ligne.id }}"
-                                                   min="0" 
-                                                   placeholder="Pcs"
-                                                   style="max-width: 60px;">
-                                        </div>
-                                        <small class="text-muted d-block mt-1">
-                                            = <span class="total-pieces-{{ ligne.id }}">0</span> pièces
-                                        </small>
+                                    {% if est_boucherie %}
+                                    <div class="d-flex align-items-center justify-content-center gap-1 flex-wrap">
+                                        <select class="form-select form-select-sm unite-select"
+                                                name="unite_coefficient_{{ ligne.id }}"
+                                                data-ligne-id="{{ ligne.id }}"
+                                                data-unite-base="{{ ligne.article.unite_base|default:'unités' }}"
+                                                style="max-width:112px;"
+                                                title="Unité de la quantité saisie">
+                                            {% for u in ligne.article.unites_inventaire %}
+                                            <option value="{{ u.coefficient }}" data-libelle="{{ u.libelle }}"{% if u.coefficient == 1 %} selected{% endif %}>
+                                                {{ u.libelle }}{% if u.coefficient != 1 %} ×{{ u.coefficient }}{% endif %}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                        <input type="number" name="stock_physique_{{ ligne.id }}"
+                                               class="form-control form-control-lg text-center stock-input"
+                                               value="{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% endif %}"
+                                               data-original="{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% endif %}"
+                                               min="0" placeholder="?" data-theorique="{{ ligne.stock_theorique }}"
+                                               data-ligne-id="{{ ligne.id }}" data-prix-vente="{{ ligne.article.prix_vente }}"
+                                               data-coefficient="1"
+                                               style="max-width:96px;"
+                                               tabindex="{{ forloop.counter }}">
                                     </div>
-                                    {% endif %}
-                                    <input type="number" name="stock_physique_{{ ligne.id }}" 
-                                           class="form-control form-control-lg text-center stock-input piece-mode-input"
+                                    <small class="conversion-hint text-muted d-block mt-1" id="hint_{{ ligne.id }}">
+                                        {% if ligne.stock_physique is not None %}= {{ ligne.stock_physique_decompose }}{% endif %}
+                                    </small>
+                                    {% else %}
+                                    <input type="number" name="stock_physique_{{ ligne.id }}"
+                                           class="form-control form-control-lg text-center stock-input"
                                            value="{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% endif %}"
                                            data-original="{% if ligne.stock_physique is not None %}{{ ligne.stock_physique }}{% endif %}"
                                            min="0" placeholder="?" data-theorique="{{ ligne.stock_theorique }}"
                                            data-ligne-id="{{ ligne.id }}" data-prix-vente="{{ ligne.article.prix_vente }}"
+                                           data-coefficient="1"
                                            tabindex="{{ forloop.counter }}">
+                                    {% endif %}
                                 </td>
                                 <td class="text-center align-middle">
                                     <span class="ecart-display" id="ecart_{{ ligne.id }}">
@@ -692,8 +713,12 @@ kbd {
                     </div>
                     <div class="col-6">
                         <label class="form-label small fw-bold mb-1" for="naQte">Quantité comptée</label>
-                        <input type="number" class="form-control form-control-sm" id="naQte" min="0" step="1"
-                               placeholder="Laisser vide si non comptée">
+                        <div class="input-group input-group-sm">
+                            <input type="number" class="form-control form-control-sm" id="naQte" min="0" step="1"
+                                   placeholder="Vide si non comptée">
+                            <select class="form-select form-select-sm" id="naUnite"
+                                    style="max-width:95px;display:none;" title="Unité de la quantité comptée"></select>
+                        </div>
                     </div>
                 </div>
                 <div class="text-muted small mb-1">
@@ -796,6 +821,11 @@ function iaAction(action) {
         let count = 0;
         inputs.forEach(input => {
             if (input.value === '' || input.value === null) {
+                // Revenir à l'unité de base pour copier le stock système brut.
+                const row = input.closest('tr');
+                const sel = row ? row.querySelector('.unite-select') : null;
+                if (sel) sel.value = '1';
+                input.dataset.coefficient = '1';
                 input.value = input.dataset.theorique;
                 input.dispatchEvent(new Event('input'));
                 count++;
@@ -1211,16 +1241,88 @@ console.log('Initialisation des stock-input...');
 const stockInputs = document.querySelectorAll('.stock-input');
 console.log('Nombre de stock-input trouvés:', stockInputs.length);
 
+// === Unités de saisie (Boucherie) ===
+// La quantité est saisie dans l'unité choisie (carton, rame, kg…) puis
+// convertie en unité de base pour l'écart, la valeur et l'enregistrement.
+function coefficientLigne(input) {
+    const row = input.closest('tr');
+    const sel = row ? row.querySelector('.unite-select') : null;
+    if (sel) return parseInt(sel.value, 10) || 1;
+    return parseFloat(input.dataset.coefficient) || 1;
+}
+
+function baseLigne(input) {
+    return Math.round((parseFloat(input.value) || 0) * coefficientLigne(input));
+}
+
+function unitesDuSelect(sel) {
+    if (!sel) return [];
+    return Array.prototype.map.call(sel.options, function(o) {
+        return {
+            coefficient: parseInt(o.value, 10) || 1,
+            libelle: o.dataset.libelle || o.textContent.trim(),
+        };
+    });
+}
+
+function decomposerQuantite(base, sel) {
+    const unites = unitesDuSelect(sel).sort(function(a, b) {
+        return b.coefficient - a.coefficient;
+    });
+    let restant = Math.max(0, Math.round(base || 0));
+    const parties = [];
+    unites.forEach(function(u) {
+        if (u.coefficient < 1) return;
+        const q = Math.floor(restant / u.coefficient);
+        if (q > 0) {
+            parties.push(q + ' ' + u.libelle);
+            restant -= q * u.coefficient;
+        }
+    });
+    const uniteBase = (sel && sel.dataset.uniteBase) || 'unités';
+    if (restant > 0) parties.push(restant + ' ' + uniteBase);
+    return parties.join(' · ') || '0 ' + uniteBase;
+}
+
+function majHintLigne(input) {
+    const row = input.closest('tr');
+    if (!row) return;
+    const hint = row.querySelector('.conversion-hint');
+    if (!hint) return;
+    if (input.value.trim() === '') { hint.textContent = ''; return; }
+    hint.textContent = '= ' + decomposerQuantite(baseLigne(input), row.querySelector('.unite-select'));
+}
+
+// Changement d'unité : conserve la même quantité de base si la conversion
+// est exacte, sinon vide le champ pour éviter une saisie ambiguë.
+document.addEventListener('change', function(e) {
+    if (!e.target || !e.target.classList.contains('unite-select')) return;
+    const row = e.target.closest('tr');
+    const input = row ? row.querySelector('.stock-input') : null;
+    if (!input) return;
+    const ancienCoeff = parseFloat(input.dataset.coefficient) || 1;
+    const nouveauCoeff = parseInt(e.target.value, 10) || 1;
+    const base = Math.round((parseFloat(input.value) || 0) * ancienCoeff);
+    input.dataset.coefficient = String(nouveauCoeff);
+    if (input.value.trim() !== '') {
+        input.value = (base > 0 && base % nouveauCoeff === 0)
+            ? String(base / nouveauCoeff) : '';
+    }
+    input.dispatchEvent(new Event('input'));
+});
+
 function bindStockInput(input) {
     input.addEventListener('input', function() {
         const theorique = parseInt(this.dataset.theorique) || 0;
-        const physique = parseInt(this.value);
         const ligneId = this.dataset.ligneId;
         const prixVente = parseFloat(this.dataset.prixVente) || 0;
         const ecartEl = document.getElementById('ecart_' + ligneId);
         const valeurEl = document.getElementById('valeur_' + ligneId);
-        
-        if (!isNaN(physique)) {
+
+        majHintLigne(this);
+
+        if (this.value.trim() !== '' && !isNaN(parseFloat(this.value))) {
+            const physique = baseLigne(this);
             const ecart = physique - theorique;
             const valeurStock = physique * prixVente;
             
@@ -1238,7 +1340,7 @@ function bindStockInput(input) {
             
             // Mise à jour valeur stock
             valeurEl.innerHTML = '<span class="text-info">' + valeurStock.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ' ') + ' FC</span>';
-} else {
+        } else {
             ecartEl.innerHTML = '';
             valeurEl.innerHTML = '<span class="text-muted">—</span>';
             this.closest('tr').className = '';
@@ -1324,7 +1426,8 @@ window.bindStockInput = bindStockInput;
             const artId = String(row.dataset.articleId || '');
             const art = ALL.find(function(a) { return String(a.article_id) === artId; });
             if (!art) return;
-            const qte = parseInt((row.querySelector('.stock-input')?.value) || 0) || 0;
+            const stockInput = row.querySelector('.stock-input');
+            const qte = stockInput ? baseLigne(stockInput) : 0;
             const prixInput = row.querySelector('.prix-vente-input');
             const prix = parseFloat(prixInput ? prixInput.value : (art.prix_vente || 0)) || 0;
             const baseValeur = (art.stock_physique || 0) * (art.prix_vente || 0);
@@ -1477,7 +1580,13 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         document.querySelectorAll('.stock-input').forEach(function(inp) {
             const original = inp.dataset.original;
             if (original === undefined || original === '') return;   // jamais saisi
-            if (inp.value.trim() === original) { inp.disabled = true; return; }
+            // Comparaison en unité de base (la quantité affichée peut être
+            // exprimée en carton / rame / kg selon l'unité choisie).
+            const valeurBase = baseLigne(inp);
+            if (inp.value.trim() === '' || String(valeurBase) === String(original)) {
+                inp.disabled = true;
+                return;
+            }
             const ligneId = inp.dataset.ligneId;
             if (ligneId) inp.name = 'stock_corrige_' + ligneId;
         });
@@ -1514,6 +1623,8 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     const srDropdown    = document.getElementById('srDropdown');
     const srQteWrap     = document.getElementById('srQteWrap');
     const srQte         = document.getElementById('srQte');
+    const srUnite       = document.getElementById('srUnite');
+    const srQteBase     = document.getElementById('srQteBase');
     const srLabel       = document.getElementById('srArticleLabel');
     const srStockActuel = document.getElementById('srStockActuel');
     const srPrixVente   = document.getElementById('srPrixVente');
@@ -1619,6 +1730,8 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                     if (ecartBadge) ecartBadge.innerHTML = '';
                     const valeurSpan = tr.querySelector('.valeur-stock');
                     if (valeurSpan) valeurSpan.innerHTML = '<span class="text-muted">—</span>';
+                    const hint = tr.querySelector('.conversion-hint');
+                    if (hint) hint.textContent = '';
                     const resetBtn = tr.querySelector('.btn-outline-danger');
                     if (resetBtn) resetBtn.remove();
                 }
@@ -1646,11 +1759,15 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             nom: data.article_nom,
             collaborateur: data.saisi_par_nom || CURRENT_USER_NOM,
             stock_theorique: data.stock_theorique,
+            stock_theorique_decompose: data.stock_theorique_decompose || '',
             stock_physique: qte,
+            stock_physique_decompose: data.stock_physique_decompose || '',
             ecart: data.ecart,
             prix_vente: data.prix_vente,
             devise: data.devise || 'CDF',
             categorie_nom: data.categorie_nom || '',
+            est_boucherie: !!data.est_boucherie,
+            unite_base: data.unite_base || 'pcs',
         };
         if (idx >= 0) sessionEntries[idx] = entry;
         else sessionEntries.unshift(entry);
@@ -1685,8 +1802,8 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 '<td class="text-muted">' + (i + 1) + '</td>' +
                 '<td class="fw-semibold">' + e.nom + '</td>' +
                 '<td>' + collabBadge + '</td>' +
-                '<td class="text-center text-muted">' + e.stock_theorique + '</td>' +
-                '<td class="text-center fw-bold">' + e.stock_physique + '</td>' +
+                '<td class="text-center text-muted">' + (e.est_boucherie && e.stock_theorique_decompose ? e.stock_theorique_decompose : e.stock_theorique) + '</td>' +
+                '<td class="text-center fw-bold">' + (e.est_boucherie && e.stock_physique_decompose ? e.stock_physique_decompose : e.stock_physique) + '</td>' +
                 '<td class="text-center fw-bold ' + ecartClass + '">' + ecartTxt + '</td>' +
                 '<td class="text-end">' + e.prix_vente.toLocaleString('fr-FR') + ' ' + e.devise + '</td>' +
                 '<td>' + (e.categorie_nom || '<span class="text-muted">—</span>') + '</td>' +
@@ -1792,15 +1909,66 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             : 'Quantité physique';
     }
 
+    // === Unités de saisie rapide (Boucherie) ===
+    function peuplerUnitesSaisie(art, uniteBase) {
+        srUnite.innerHTML = '';
+        const unites = (Array.isArray(art.unites) ? art.unites : [])
+            .map(function(u) {
+                return {
+                    coefficient: parseInt(u.coefficient, 10) || 1,
+                    libelle: u.libelle,
+                };
+            })
+            .filter(function(u) { return u.coefficient >= 1; })
+            .sort(function(a, b) { return b.coefficient - a.coefficient; });
+        if (!unites.some(function(u) { return u.coefficient === 1; })) {
+            unites.push({coefficient: 1, libelle: uniteBase || 'unités'});
+        }
+        unites.forEach(function(u) {
+            const opt = document.createElement('option');
+            opt.value = u.coefficient;
+            opt.dataset.libelle = u.libelle;
+            opt.textContent = u.coefficient === 1 ? u.libelle : (u.libelle + ' ×' + u.coefficient);
+            srUnite.appendChild(opt);
+        });
+        srUnite.dataset.uniteBase = uniteBase || 'unités';
+        srUnite.style.display = (art.est_boucherie && unites.length > 1) ? '' : 'none';
+        srQteBase.style.display = 'none';
+        srQteBase.textContent = '';
+    }
+
+    function coefficientSaisieRapide() {
+        return parseInt(srUnite.value, 10) || 1;
+    }
+
+    function majApercuQteRapide() {
+        if (!srQteBase) return;
+        if (srUnite.style.display === 'none' || srQte.value.trim() === '') {
+            srQteBase.style.display = 'none';
+            srQteBase.textContent = '';
+            return;
+        }
+        const base = Math.round((parseFloat(srQte.value) || 0) * coefficientSaisieRapide());
+        srQteBase.style.display = base > 0 ? '' : 'none';
+        srQteBase.textContent = base > 0 ? '= ' + decomposerQuantite(base, srUnite) : '';
+    }
+
+    srUnite.addEventListener('change', majApercuQteRapide);
+    srQte.addEventListener('input', majApercuQteRapide);
+
     document.getElementById('srCorrigerBtn').addEventListener('click', function() {
         if (!selectedArticle) return;
         majModeCorrection(!modeCorrection, selectedArticle);
         if (modeCorrection) {
+            // Quantité existante exprimée en unité de base.
+            srUnite.value = '1';
             srQte.value = selectedArticle.stock_physique;
+            majApercuQteRapide();
             srQte.focus();
             srQte.select();
         } else {
             srQte.value = '';
+            majApercuQteRapide();
             srQte.focus();
         }
     });
@@ -1814,12 +1982,17 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 
         // Remplir les champs
         srLabel.textContent    = art.nom;
-        srStockActuel.textContent = art.quantite_stock + ' ' + (art.unite_base || 'pcs');
+        const uniteBase = art.unite_base || 'pcs';
+        srStockActuel.textContent = art.stock_theorique_decompose
+            || ((art.stock_theorique || 0) + ' ' + uniteBase);
         srPrixVente.value      = art.prix_vente;
         srDevise.textContent   = art.devise || 'CDF';
 
-        // Prix des unités (Boucherie)
+        // Unités de saisie (Boucherie) : carton, rame, kg…
         srUnitesState = Array.isArray(art.unites) ? art.unites : [];
+        peuplerUnitesSaisie(art, uniteBase);
+
+        // Prix des unités (Boucherie)
         srUnitesBtn.style.display = srUnitesState.length ? '' : 'none';
         srUnitesListe.innerHTML = '';
         srUnitesArticleNom.textContent = srUnitesState.length ? '— ' + art.nom : '';
@@ -1828,17 +2001,24 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         const srStockInventorieEl = document.getElementById('srStockInventorie');
         const srStockInventorieValueEl = document.getElementById('srStockInventorieValue');
         const srStockInventorieUniteEl = document.getElementById('srStockInventorieUnite');
-        if (srStockInventorieUniteEl) srStockInventorieUniteEl.textContent = art.unite_base || 'pcs';
+        srUnite.value = '1';
+        if (srStockInventorieUniteEl) srStockInventorieUniteEl.textContent = uniteBase;
         if (art.stock_physique !== null) {
             srStockInventorieEl.style.display = '';
-            srStockInventorieValueEl.textContent = art.stock_physique;
+            if (art.est_boucherie && art.stock_physique_decompose) {
+                srStockInventorieValueEl.textContent = art.stock_physique_decompose;
+                if (srStockInventorieUniteEl) srStockInventorieUniteEl.textContent = '';
+            } else {
+                srStockInventorieValueEl.textContent = art.stock_physique;
+            }
             // En mode accumulation, le champ est vide pour saisir l'ajout
             // En mode normal, on affiche la valeur existante
-            srQte.value = (modeAccumulation || art.stock_physique === null) ? '' : art.stock_physique;
+            srQte.value = modeAccumulation ? '' : art.stock_physique;
         } else {
             srStockInventorieEl.style.display = 'none';
             srQte.value = '';
         }
+        majApercuQteRapide();
 
         // Sélectionner la catégorie courante dans le dropdown
         srCategorie.value = art.categorie_id || '';
@@ -1885,6 +2065,10 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         srQteWrap.style.display = 'none';
         srQte.value = '';
         srPrixVente.value = '';
+        srUnite.innerHTML = '';
+        srUnite.style.display = 'none';
+        srQteBase.style.display = 'none';
+        srQteBase.textContent = '';
         srUnitesState = [];
         srUnitesBtn.style.display = 'none';
         srUnitesListe.innerHTML = '';
@@ -1965,6 +2149,9 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         document.getElementById('naPrixAchat').value = '';
         document.getElementById('naPrix').value = '';
         document.getElementById('naQte').value = '';
+        const naUnite = document.getElementById('naUnite');
+        naUnite.innerHTML = '';
+        naUnite.style.display = 'none';
         document.getElementById('naError').style.display = 'none';
         document.getElementById('naSubmitBtn').disabled = false;
         reinitOrigine();
@@ -1989,6 +2176,34 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     }
     window.ouvrirNouvelArticle = ouvrirNouvelArticle;
 
+    // Unités de l'article importé (Boucherie) pour la quantité comptée.
+    function peuplerUnitesNouvelArticle(src) {
+        const sel = document.getElementById('naUnite');
+        sel.innerHTML = '';
+        const uniteBase = src.unite_base || 'pcs';
+        const unites = (Array.isArray(src.unites) ? src.unites : [])
+            .map(function(u) {
+                return {coefficient: parseInt(u.coefficient, 10) || 1, libelle: u.libelle};
+            })
+            .filter(function(u) { return u.coefficient >= 1; })
+            .sort(function(a, b) { return b.coefficient - a.coefficient; });
+        if (!unites.some(function(u) { return u.coefficient === 1; })) {
+            unites.push({coefficient: 1, libelle: uniteBase});
+        }
+        if (!src.est_boucherie || unites.length <= 1) {
+            sel.style.display = 'none';
+            return;
+        }
+        unites.forEach(function(u) {
+            const opt = document.createElement('option');
+            opt.value = u.coefficient;
+            opt.textContent = u.coefficient === 1 ? u.libelle : (u.libelle + ' ×' + u.coefficient);
+            sel.appendChild(opt);
+        });
+        sel.value = '1';
+        sel.style.display = '';
+    }
+
     // Import depuis un autre point de vente du même commerçant / même type :
     // l'article est copié dans cette boutique, prix + unités + conditionnements
     // repris, puis l'utilisateur saisit la quantité comptée.
@@ -2009,6 +2224,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 
         if (src.prix_vente) document.getElementById('naPrix').value = src.prix_vente;
         if (src.prix_achat) document.getElementById('naPrixAchat').value = src.prix_achat;
+        peuplerUnitesNouvelArticle(src);
 
         const selectCat = document.getElementById('naCategorie');
         selectCat.value = '';
@@ -2147,6 +2363,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             prix_vente: document.getElementById('naPrix').value || null,
             categorie_id: document.getElementById('naCategorie').value || null,
             quantite: quantiteBrute === '' ? null : parseInt(quantiteBrute, 10),
+            unite_coefficient: parseInt(document.getElementById('naUnite').value, 10) || 1,
             autre_article_id: document.getElementById('naOrigineId').value || null,
         }).then(function(d) {
             if (!d.success) {
@@ -2157,8 +2374,12 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
 
             const entree = {
                 ligne_id: d.ligne_id, article_id: d.article_id, nom: d.article_nom, code: d.article_code,
-                codes: [d.article_code], stock_theorique: d.stock_theorique, stock_physique: d.stock_physique,
+                codes: [d.article_code], stock_theorique: d.stock_theorique,
+                stock_theorique_decompose: d.stock_theorique_decompose || '',
+                stock_physique: d.stock_physique,
+                stock_physique_decompose: d.stock_physique_decompose || '',
                 assigne_a: d.assigne_a || '', quantite_stock: d.quantite_stock, unite_base: d.unite_base,
+                est_boucherie: !!d.est_boucherie, unites: d.unites || [],
                 prix_vente: d.prix_vente, prix_achat: d.prix_achat, devise: d.devise,
                 ecart: d.ecart, saisi_par_nom: d.saisi_par_nom || '',
                 categorie_id: d.categorie_id, categorie_nom: d.categorie_nom,
@@ -2215,6 +2436,7 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             body: JSON.stringify({
                 ligne_id:     selectedArticle.ligne_id,
                 stock_physique: qte,
+                unite_coefficient: coefficientSaisieRapide(),
                 prix_vente:   parseFloat(srPrixVente.value) || null,
                 categorie_id: srCategorie.value ? parseInt(srCategorie.value) : null,
                 mode_accumulation: modeAccumulation,
@@ -2233,18 +2455,34 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             if (data.success) {
                 unlockArticle(data.ligne_id);
                 updateLocalStock(data.ligne_id, data.stock_physique);
-                addSessionEntry(data, qte);
+                addSessionEntry(data, data.stock_physique);
                 const ecartTxt = data.ecart > 0 ? ' <span class="text-success">(+' + data.ecart + ')</span>'
                                : data.ecart < 0 ? ' <span class="text-danger">(' + data.ecart + ')</span>'
                                : ' <span class="text-secondary">(=)</span>';
                 const corrTxt = etaitCorrection
                     ? ' <span class="badge bg-warning text-dark">corrigé</span>' : '';
-                showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + data.stock_physique + ' ' + (data.unite_base || 'pcs') + ecartTxt + corrTxt, 'success');
+                const qteTxt = (data.est_boucherie && data.stock_physique_decompose)
+                    ? data.stock_physique_decompose
+                    : (data.stock_physique + ' ' + (data.unite_base || 'pcs'));
+                showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + qteTxt + ecartTxt + corrTxt, 'success');
 
                 // Mettre à jour la ligne dans le tableau si visible
-                const tableInput = document.querySelector('input[name="stock_physique_' + data.ligne_id + '"]');
+                let tableInput = document.querySelector('input[name="stock_physique_' + data.ligne_id + '"]')
+                    || document.querySelector('input[name="stock_corrige_' + data.ligne_id + '"]');
                 if (tableInput) {
-                    tableInput.value = data.stock_physique;
+                    const row = tableInput.closest('tr');
+                    const uniteSelect = row ? row.querySelector('.unite-select') : null;
+                    let coefficient = uniteSelect ? (parseInt(uniteSelect.value, 10) || 1) : 1;
+                    // La quantité enregistrée est en unité de base : l'afficher
+                    // dans l'unité choisie seulement si la conversion est exacte.
+                    if (coefficient > 1 && data.stock_physique % coefficient !== 0) {
+                        if (uniteSelect) uniteSelect.value = '1';
+                        coefficient = 1;
+                    }
+                    tableInput.dataset.coefficient = String(coefficient);
+                    tableInput.value = coefficient > 1
+                        ? (data.stock_physique / coefficient)
+                        : data.stock_physique;
                     // La valeur affichée devient la nouvelle référence : une
                     // prochaine soumission ne la corrigera pas à nouveau.
                     tableInput.dataset.original = String(data.stock_physique);
@@ -2263,15 +2501,22 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 // Mettre à jour l'affichage dans le panneau de saisie rapide si l'article est sélectionné
                 if (selectedArticle && selectedArticle.ligne_id === data.ligne_id) {
                     const srStockInventorieValueEl = document.getElementById('srStockInventorieValue');
+                    const srStockInventorieUniteEl = document.getElementById('srStockInventorieUnite');
                     if (srStockInventorieValueEl) {
-                        srStockInventorieValueEl.textContent = data.stock_physique;
+                        if (data.est_boucherie && data.stock_physique_decompose) {
+                            srStockInventorieValueEl.textContent = data.stock_physique_decompose;
+                            if (srStockInventorieUniteEl) srStockInventorieUniteEl.textContent = '';
+                        } else {
+                            srStockInventorieValueEl.textContent = data.stock_physique;
+                            if (srStockInventorieUniteEl) srStockInventorieUniteEl.textContent = data.unite_base || 'pcs';
+                        }
                     }
+                    selectedArticle.stock_physique = data.stock_physique;
+                    selectedArticle.stock_physique_decompose = data.stock_physique_decompose || '';
                     // En mode accumulation, vider le champ pour la prochaine saisie
-                    if (modeAccumulation) {
-                        srQte.value = '';
-                    } else {
-                        srQte.value = data.stock_physique;
-                    }
+                    srUnite.value = '1';
+                    srQte.value = modeAccumulation ? '' : data.stock_physique;
+                    majApercuQteRapide();
                     // Valeur enregistrée : on repasse en accumulation
                     majModeCorrection(false, selectedArticle);
                 }
@@ -2304,6 +2549,26 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
     // Les suggestions « autres PDV » ont été retirées du champ de recherche :
     // l'import reste possible via le bouton « Importer (autre PDV) ».
 
+    // Options du sélecteur d'unité d'une ligne ajoutée dynamiquement.
+    function optionsUnitesHtml(art) {
+        const uniteBase = art.unite_base || 'pcs';
+        const unites = (Array.isArray(art.unites) ? art.unites : [])
+            .map(function(u) {
+                return {coefficient: parseInt(u.coefficient, 10) || 1, libelle: u.libelle};
+            })
+            .filter(function(u) { return u.coefficient >= 1; })
+            .sort(function(a, b) { return b.coefficient - a.coefficient; });
+        if (!unites.some(function(u) { return u.coefficient === 1; })) {
+            unites.push({coefficient: 1, libelle: uniteBase});
+        }
+        return unites.map(function(u) {
+            return '<option value="' + u.coefficient + '" data-libelle="' + escapeHtml(u.libelle) + '"'
+                + (u.coefficient === 1 ? ' selected' : '') + '>'
+                + escapeHtml(u.libelle) + (u.coefficient !== 1 ? ' ×' + u.coefficient : '')
+                + '</option>';
+        }).join('');
+    }
+
     // === Insère une ligne dans le tableau principal (vue responsable) ===
     // Un article ajouté ou saisi PENDANT l'inventaire (par ce utilisateur ou
     // par un collaborateur depuis un autre appareil) doit être trouvable par
@@ -2326,6 +2591,17 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
         const prixA = e.prix_achat || 0;
         const ecart = (e.ecart !== null && e.ecart !== undefined) ? e.ecart : null;
         const assigne = e.assigne_a || e.saisi_par_nom || '';
+        const estBoucherie = !!e.est_boucherie;
+        const uniteBase = e.unite_base || 'pcs';
+        const unitesHtml = estBoucherie ? optionsUnitesHtml(e) : '';
+        const nbUnites = estBoucherie ? (unitesHtml.match(/<option/g) || []).length : 0;
+        const afficherUnite = estBoucherie && nbUnites > 1;
+        const theoTxt = (estBoucherie && e.stock_theorique_decompose)
+            ? e.stock_theorique_decompose : theo;
+        const physiqueDecompose = e.stock_physique_decompose || '';
+        const hintTxt = saisi
+            ? '= ' + (physiqueDecompose || (e.stock_physique + ' ' + uniteBase))
+            : '';
 
         let badgeCollab = '<span class="text-muted" style="font-size:.8rem;">—</span>';
         if (assigne) {
@@ -2351,12 +2627,27 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
             + '<td class="text-center align-middle">' + badgeCollab + '</td>'
             + '<td class="text-end align-middle"><span class="text-primary fw-bold">' + prixA.toLocaleString('fr-FR') + '</span></td>'
             + '<td class="text-end align-middle"><span class="fw-bold" style="color:#28a745;">' + prixV.toLocaleString('fr-FR') + '</span></td>'
-            + '<td class="text-center align-middle"><span class="badge bg-secondary fs-6">' + theo + '</span></td>'
-            + '<td class="text-center"><input type="number" name="stock_physique_' + ligneId + '"'
-            + ' class="form-control form-control-lg text-center stock-input piece-mode-input"'
+            + '<td class="text-center align-middle"><span class="badge bg-secondary fs-6"'
+            + (estBoucherie ? ' title="Stock système : ' + theo + ' ' + escapeHtml(uniteBase) + '"' : '')
+            + '>' + escapeHtml(String(theoTxt)) + '</span></td>'
+            + '<td class="text-center">'
+            + (afficherUnite ? '<div class="d-flex align-items-center justify-content-center gap-1 flex-wrap">' : '')
+            + (afficherUnite
+                ? '<select class="form-select form-select-sm unite-select" name="unite_coefficient_' + ligneId + '"'
+                    + ' data-ligne-id="' + ligneId + '" data-unite-base="' + escapeHtml(uniteBase) + '"'
+                    + ' style="max-width:112px;" title="Unité de la quantité saisie">' + unitesHtml + '</select>'
+                : '')
+            + '<input type="number" name="stock_physique_' + ligneId + '"'
+            + ' class="form-control form-control-lg text-center stock-input"'
             + ' value="' + (saisi ? e.stock_physique : '') + '" min="0" placeholder="?"'
             + ' data-original="' + (saisi ? e.stock_physique : '') + '"'
-            + ' data-theorique="' + theo + '" data-ligne-id="' + ligneId + '" data-prix-vente="' + prixV + '"></td>'
+            + ' data-theorique="' + theo + '" data-ligne-id="' + ligneId + '" data-prix-vente="' + prixV + '"'
+            + ' data-coefficient="1"' + (afficherUnite ? ' style="max-width:96px;"' : '') + '>'
+            + (afficherUnite ? '</div>' : '')
+            + (estBoucherie
+                ? '<small class="conversion-hint text-muted d-block mt-1" id="hint_' + ligneId + '">' + escapeHtml(hintTxt) + '</small>'
+                : '')
+            + '</td>'
             + '<td class="text-center align-middle"><span class="ecart-display" id="ecart_' + ligneId + '">' + ecartHtml + '</span></td>'
             + '<td class="text-end align-middle"><span class="valeur-stock fw-bold" id="valeur_' + ligneId + '">'
             + (saisi

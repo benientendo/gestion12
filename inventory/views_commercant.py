@@ -8393,9 +8393,14 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
             if key.startswith('stock_physique_'):
                 ligne_id = key.replace('stock_physique_', '')
                 try:
-                    ligne = LigneInventaire.objects.select_related('article').get(id=ligne_id, inventaire=inventaire)
+                    ligne = LigneInventaire.objects.select_related('article', 'article__boutique').get(id=ligne_id, inventaire=inventaire)
                     if value.strip():
-                        stock_physique_val = int(value)
+                        # La quantité peut être saisie dans une unité de l'article
+                        # (carton, rame, kg…) : conversion en unité de base.
+                        coefficient = _coefficient_unite_inventaire(
+                            ligne.article, request.POST.get(f'unite_coefficient_{ligne_id}')
+                        )
+                        stock_physique_val = int(value) * coefficient
                         commentaire_val = request.POST.get(f'commentaire_{ligne_id}', '')
                         
                         # Mode accumulation: toujours ajouter à la valeur existante
@@ -8437,9 +8442,12 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
             if key.startswith('stock_corrige_'):
                 ligne_id = key.replace('stock_corrige_', '')
                 try:
-                    ligne = LigneInventaire.objects.select_related('article').get(id=ligne_id, inventaire=inventaire)
+                    ligne = LigneInventaire.objects.select_related('article', 'article__boutique').get(id=ligne_id, inventaire=inventaire)
                     if value.strip():
-                        nouvelle_valeur = int(value)
+                        coefficient = _coefficient_unite_inventaire(
+                            ligne.article, request.POST.get(f'unite_coefficient_{ligne_id}')
+                        )
+                        nouvelle_valeur = int(value) * coefficient
                         ancien_stock = ligne.stock_physique
                         commentaire_val = request.POST.get(f'commentaire_{ligne_id}', '')
                         ancien_lib = ancien_stock if ancien_stock is not None else 'non saisi'
@@ -8490,7 +8498,9 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     assigne_a_filtre = request.GET.get('assigne_a', '')
     mode_accumulation = request.GET.get('mode_accumulation') != '0' # Activé par défaut
     
-    lignes = inventaire.lignes.select_related('article', 'article__categorie')
+    lignes = inventaire.lignes.select_related(
+        'article', 'article__categorie', 'article__boutique'
+    ).prefetch_related('article__conditionnements', 'article__variantes')
     
     if categorie_id:
         lignes = lignes.filter(article__categorie_id=categorie_id)
@@ -8541,7 +8551,11 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     # pour que la recherche distingue correctement les articles saisis.
     all_articles_json = json.dumps([
         _ligne_recherche_json(l)
-        for l in inventaire.lignes.select_related('article', 'article__categorie').order_by('article__nom')
+        for l in inventaire.lignes.select_related(
+            'article', 'article__categorie', 'article__boutique'
+        ).prefetch_related(
+            'article__conditionnements', 'article__variantes'
+        ).order_by('article__nom')
     ], ensure_ascii=False)
 
     categories_json = json.dumps([
@@ -8580,6 +8594,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'employes_list': employes_list,
         'current_user_nom': current_user_nom,
         'is_collaborateur': is_collaborateur,
+        'est_boucherie': boutique.type_commerce == 'BOUCHERIE',
         'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
         'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
         # Compté avec au moins 1 : correspond au filtre « Saisis »
@@ -8599,22 +8614,30 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
 def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
     """AJAX : sauvegarder une seule ligne d'inventaire (saisie rapide)."""
     boutique = request.boutique
+    est_boucherie = boutique.type_commerce == 'BOUCHERIE'
     inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique, statut='EN_COURS')
 
     try:
         data = json.loads(request.body)
         ligne_id = int(data.get('ligne_id'))
-        stock_physique = int(data.get('stock_physique'))
+        stock_physique_saisi = int(data.get('stock_physique'))
         mode_accumulation = data.get('mode_accumulation', True)  # Toujours activé par défaut
     except (ValueError, TypeError, KeyError):
         return JsonResponse({'success': False, 'error': 'Données invalides'}, status=400)
 
     try:
-        ligne = LigneInventaire.objects.select_related('article', 'article__categorie').get(
+        ligne = LigneInventaire.objects.select_related(
+            'article', 'article__categorie', 'article__boutique'
+        ).prefetch_related('article__conditionnements').get(
             id=ligne_id, inventaire=inventaire
         )
     except LigneInventaire.DoesNotExist:
         return JsonResponse({'success': False, 'error': 'Ligne introuvable'}, status=404)
+
+    # Quantité saisie dans une unité de l'article (carton, rame, kg…) :
+    # conversion en unité de base avant enregistrement.
+    coefficient_unite = _coefficient_unite_inventaire(ligne.article, data.get('unite_coefficient'))
+    stock_physique = stock_physique_saisi * coefficient_unite
 
     # Nom d'affichage du collaborateur connecté
     if hasattr(request.user, 'profil_collaborateur'):
@@ -8733,8 +8756,11 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         'article_nom': ligne.article.nom,
         'article_id': ligne.article.id,
         'stock_theorique': ligne.stock_theorique,
+        'stock_theorique_decompose': ligne.stock_theorique_decompose,
         'stock_physique': ligne.stock_physique,
+        'stock_physique_decompose': ligne.stock_physique_decompose,
         'unite_base': ligne.article.unite_base or 'pcs',
+        'est_boucherie': est_boucherie,
         'prix_vente': float(ligne.article.prix_vente),
         'categorie_nom': ligne.article.categorie.nom if ligne.article.categorie else '',
         'ecart': ligne.ecart,
@@ -8766,7 +8792,9 @@ def articles_autres_pdv_inventaire_ajax(request, boutique_id, inventaire_id):
     ).exclude(boutique=boutique)
     if q:
         articles = articles.filter(Q(nom__icontains=q) | Q(code__icontains=q))
-    articles = articles.select_related('boutique', 'categorie').order_by('nom')[:20]
+    articles = articles.select_related('boutique', 'categorie').prefetch_related(
+        'conditionnements'
+    ).order_by('nom')[:20]
 
     return JsonResponse({
         'success': True,
@@ -8783,6 +8811,8 @@ def articles_autres_pdv_inventaire_ajax(request, boutique_id, inventaire_id):
             'boutique_id': a.boutique_id,
             'boutique_nom': a.boutique.nom,
             'quantite_stock': a.quantite_stock,
+            'est_boucherie': a.boutique.type_commerce == 'BOUCHERIE',
+            'unites': _unites_prix_article(a),
         } for a in articles],
     })
 
@@ -8794,19 +8824,24 @@ def _ligne_recherche_json(l):
     pour distinguer correctement les articles saisis des articles non comptés.
     """
     a = l.article
+    est_boucherie = bool(a.boutique and a.boutique.type_commerce == 'BOUCHERIE')
     return {
         'ligne_id': l.id,
         'article_id': a.id,
         'nom': str(a.nom) if a.nom else '',
         'code': str(a.code) if a.code else '',
         'codes': ([str(a.code) if a.code else '']
-                  + [str(v.code_barre) for v in a.variantes.filter(est_actif=True) if v.code_barre]),
+                  + [str(v.code_barre) for v in a.variantes.all() if v.est_actif and v.code_barre]),
         'stock_theorique': l.stock_theorique or 0,
+        'stock_theorique_decompose': l.stock_theorique_decompose,
         'stock_physique': l.stock_physique,
+        'stock_physique_decompose': l.stock_physique_decompose,
         'assigne_a': str(l.assigne_a) if l.assigne_a else '',
         'ecart': l.ecart,
         'quantite_stock': a.quantite_stock or 0,
+        'stock_decompose': a.stock_decompose_formate,
         'unite_base': str(a.unite_base) if a.unite_base else 'pcs',
+        'est_boucherie': est_boucherie,
         'prix_vente': float(a.prix_vente) if a.prix_vente else 0,
         'prix_achat': float(a.prix_achat) if a.prix_achat else 0,
         'devise': str(a.devise) if a.devise else '',
@@ -8838,7 +8873,9 @@ def lignes_recherche_inventaire_ajax(request, boutique_id, inventaire_id):
         | Q(article__code__icontains=q)
         | Q(article__variantes__code_barre__icontains=q)
     ).select_related(
-        'article', 'article__categorie'
+        'article', 'article__categorie', 'article__boutique'
+    ).prefetch_related(
+        'article__conditionnements', 'article__variantes'
     ).distinct().order_by('article__nom')[:12]
 
     return JsonResponse({
@@ -8859,6 +8896,7 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
     comptée devient un écart, pris en compte à la régularisation.
     """
     boutique = request.boutique
+    est_boucherie = boutique.type_commerce == 'BOUCHERIE'
     inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique, statut='EN_COURS')
 
     try:
@@ -9016,6 +9054,11 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
                 ligne.prix_unitaire = prix_unitaire
                 ligne.save()
 
+        # Quantité éventuellement saisie dans une unité de l'article
+        # (carton, rame, kg…) : conversion en unité de base.
+        if quantite is not None:
+            quantite *= _coefficient_unite_inventaire(article, data.get('unite_coefficient'))
+
         if quantite is not None and ligne.stock_physique is None:
             ligne.stock_physique = quantite
             ligne.saisi_par = request.user
@@ -9050,7 +9093,9 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
         'article_code': article.code,
         'importe_depuis': source.boutique.nom if source is not None else '',
         'stock_theorique': ligne.stock_theorique,
+        'stock_theorique_decompose': ligne.stock_theorique_decompose,
         'stock_physique': ligne.stock_physique,
+        'stock_physique_decompose': ligne.stock_physique_decompose,
         'ecart': ligne.ecart,
         'prix_vente': float(article.prix_vente),
         'prix_achat': float(article.prix_achat),
@@ -9059,6 +9104,9 @@ def ajouter_article_inventaire_ajax(request, boutique_id, inventaire_id):
         'categorie_id': article.categorie_id,
         'categorie_nom': article.categorie.nom if article.categorie else '',
         'unite_base': article.unite_base or 'pcs',
+        'est_boucherie': est_boucherie,
+        'stock_decompose': article.stock_decompose_formate,
+        'unites': _unites_prix_article(article),
         'quantite_stock': article.quantite_stock,
         'assigne_a': ligne.assigne_a or '',
         'saisi_par_nom': user_nom,
@@ -10434,7 +10482,9 @@ def detail_valeur_journal(request, boutique_id, journal_id, champ):
 
 def _unites_prix_article(article):
     """Unités actives d'un article pour l'édition des prix (Boucherie)."""
-    if article is None or article.boutique.type_commerce != 'BOUCHERIE':
+    if article is None or article.boutique is None:
+        return []
+    if article.boutique.type_commerce != 'BOUCHERIE':
         return []
     return [
         {
@@ -10443,8 +10493,35 @@ def _unites_prix_article(article):
             'coefficient': c.coefficient,
             'prix': None if c.prix_vente is None else float(c.prix_vente),
         }
-        for c in article.conditionnements.filter(est_actif=True).order_by('ordre', 'id')
+        # .all() (et non .filter()) pour profiter du prefetch_related
+        for c in article.conditionnements.all()
+        if c.est_actif and c.coefficient >= 1
     ]
+
+
+def _coefficient_unite_inventaire(article, valeur):
+    """Coefficient de l'unité choisie pour saisir une quantité d'inventaire.
+
+    La quantité saisie est multipliée par ce coefficient pour être stockée
+    en unité de base. Retourne 1 (unité de base) si la valeur est absente,
+    invalide ou ne correspond à aucun conditionnement actif de l'article.
+    """
+    try:
+        coefficient = int(valeur)
+    except (TypeError, ValueError):
+        return 1
+    if coefficient <= 1:
+        return 1
+    if article is None or article.boutique is None:
+        return 1
+    if article.boutique.type_commerce != 'BOUCHERIE':
+        return 1
+    coefficients = {
+        c.coefficient
+        for c in article.conditionnements.all()
+        if c.est_actif and c.coefficient >= 1
+    }
+    return coefficient if coefficient in coefficients else 1
 
 
 def _prix_unites_global(request, article):
