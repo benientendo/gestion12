@@ -158,8 +158,21 @@
                         </div>
                         {% endif %}
 
+                        {% if boutique.type_commerce == 'BOUCHERIE' %}
+                        <!-- Propagation du prix aux autres boutiques Boucherie du commerçant -->
+                        <div class="form-check mt-3" id="propagerAutresBlock" style="display:none;">
+                            <input class="form-check-input" type="checkbox" name="propager_autres" value="1"
+                                   id="propagerAutres">
+                            <label class="form-check-label small" for="propagerAutres">
+                                Appliquer aussi ce prix (et ses unités) aux autres points de vente Boucherie
+                                du même commerçant ayant le même code
+                                <span class="text-muted d-block" id="propagerAutresListe"></span>
+                            </label>
+                        </div>
+                        {% endif %}
+
                         <!-- Boutons -->
-                        <div class="d-flex gap-2">
+                        <div class="d-flex gap-2 mt-3">
                             <a href="{% url 'inventory:commercant_articles_boutique' boutique.id %}" class="btn btn-secondary">
                                 Annuler
                             </a>
@@ -294,6 +307,28 @@ function updateSymbol() {
     if (symbolVente) symbolVente.textContent = symbol;
     if (symbolAchat) symbolAchat.textContent = symbol;
 }
+
+// ===== Propagation du prix aux autres boutiques Boucherie =====
+// Liste les autres boutiques du commerçant portant le même code et affiche
+// la case à cocher uniquement s'il existe au moins une cible.
+(function() {
+    const block = document.getElementById('propagerAutresBlock');
+    if (!block) return;
+    fetch("{% url 'inventory:autres_boutiques_article' boutique.id article.id %}", {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success || !data.boutiques || !data.boutiques.length) return;
+        block.style.display = '';
+        document.getElementById('propagerAutresListe').textContent =
+            'Concerne : ' + data.boutiques.map(b => b.nom).join(', ')
+            + (data.ignores && data.ignores.length
+                ? ' — ignoré : ' + data.ignores.map(i => i.nom).join(', ')
+                : '');
+    })
+    .catch(() => {});
+})();
 
 // ===== GESTION DES VARIANTES =====
 

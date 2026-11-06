@@ -3262,6 +3262,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   + '<input type="number" class="form-control text-end prix-unite-input"'
                   +        ' name="cond_prix_' + condId + '" min="0" step="0.01"'
                   +        ' data-coefficient="' + coeff + '"'
+                  +        ' data-original="' + prixSaisi + '"'
                   +        ' placeholder="' + auto.toFixed(decimales) + '"'
                   +        ' value="' + prixSaisi + '">'
                   + '<span class="input-group-text">' + symbole + '</span>'
@@ -3300,6 +3301,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   + '<input type="number" class="form-control text-end prix-unite-recherche"'
                   +        ' name="cond_prix_' + u.id + '" min="0" step="0.01"'
                   +        ' data-coefficient="' + coeff + '"'
+                  +        ' data-original="' + prixSaisi + '"'
                   +        ' placeholder="' + auto.toFixed(decimales) + '"'
                   +        ' value="' + prixSaisi + '">'
                   + '<span class="input-group-text">' + symbole + '</span>'
@@ -3503,18 +3505,38 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     // Soumission modification prix
+    // Détection de changement de prix (base ou unités) pour demander la
+    // propagation aux autres boutiques Boucherie.
+    function unitesModifiees(sel) {
+        let change = false;
+        document.querySelectorAll(sel).forEach(function(inp) {
+            const orig = (inp.dataset.original || '').trim();
+            const act = (inp.value || '').trim();
+            if (orig === act) return;
+            const o = parseFloat(orig), a = parseFloat(act);
+            if (isNaN(o) || isNaN(a)) { if (orig !== act) change = true; }
+            else if (Math.abs(o - a) > 0.01) change = true;
+        });
+        return change;
+    }
+
     document.getElementById('btnModifierPrix').addEventListener('click', function() {
         const form = document.getElementById('formModifierPrix');
         if (!form.checkValidity()) {
             form.reportValidity();
             return;
         }
-        
+
         const btn = this;
+        const prixSaisi = parseFloat(document.getElementById('nouveau_prix').value) || 0;
+        const prixChange = Math.abs(prixSaisi - currentPrixActuel) > 0.01;
+
+        const envoyer = function(propager) {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enregistrement...';
         
         const formData = new FormData(form);
+        if (propager) formData.append('propager_autres', '1');
         
         fetch(`/commercant/boutiques/{{ boutique.id }}/articles/${currentPrixArticleId}/modifier-prix/`, {
             method: 'POST',
@@ -3539,6 +3561,16 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Erreur réseau: ' + error);
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-check"></i> Enregistrer le Prix';
+        });
+        };
+
+        if (!prixChange && !unitesModifiees('#prixUnitesListe .prix-unite-input')) {
+            envoyer(false);
+            return;
+        }
+        window.demanderPropagationPrix(currentPrixArticleId, document.getElementById('prixArticleName').textContent, function(propager) {
+            if (propager === null) return;   // annulé
+            envoyer(propager === true);
         });
     });
     
@@ -3860,7 +3892,10 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        const btn = this;
+        const prixChange = Math.abs(nouveauPrix - prixOriginalRecherche) > 0.01;
+
+        const envoyer = function(propager) {
+        const btn = document.getElementById('btnConfirmerModification');
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
         
@@ -3869,6 +3904,7 @@ document.addEventListener('DOMContentLoaded', function() {
         formData.append('article_id', articleTrouveData.id);
         formData.append('quantite', quantite);
         formData.append('prix_vente', nouveauPrix);
+        if (propager) formData.append('propager_autres', '1');
         const dateExp = document.getElementById('dateExpirationModif').value;
         formData.append('date_expiration', dateExp);
         
@@ -3935,6 +3971,16 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Erreur réseau: ' + error);
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-check"></i> Confirmer';
+        });
+        };
+
+        if (!prixChange && !unitesModifiees('#recherchePrixUnitesListe .prix-unite-recherche')) {
+            envoyer(false);
+            return;
+        }
+        window.demanderPropagationPrix(articleTrouveData.id, articleTrouveData.nom, function(propager) {
+            if (propager === null) return;   // annulé
+            envoyer(propager === true);
         });
     });
 });

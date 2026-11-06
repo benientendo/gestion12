@@ -423,6 +423,35 @@
             </div>
         </div>
     </div>
+
+    <!-- ==================== MODAL PROPAGATION PRIX (autres boutiques Boucherie) ==================== -->
+    <div class="modal fade" id="propagationPrixModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark py-2">
+                    <h6 class="modal-title mb-0"><i class="fas fa-copy me-1"></i> Appliquer aussi aux autres points de vente ?</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2 small">Vous modifiez le prix de <strong id="propagationArticleNom"></strong>
+                        (code <code id="propagationArticleCode"></code>).</p>
+                    <div class="alert alert-info py-2 small mb-2" id="propagationListe"></div>
+                    <div class="small text-muted" id="propagationIgnores" style="display:none;"></div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="propagationBtnAnnuler">
+                        <i class="fas fa-times"></i> Annuler
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="propagationBtnNon">
+                        <i class="fas fa-store"></i> Uniquement ici
+                    </button>
+                    <button type="button" class="btn btn-success btn-sm" id="propagationBtnOui">
+                        <i class="fas fa-check"></i> Oui, partout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
     {% endif %}
 
     <!-- Bootstrap Bundle JS -->    
@@ -577,6 +606,7 @@
                       + '<input type="number" class="form-control text-end global-prix-unite"'
                       +        ' name="cond_prix_' + parseInt(u.id, 10) + '" min="0" step="0.01"'
                       +        ' data-coefficient="' + coeff + '"'
+                      +        ' data-original="' + echapper(u.prix) + '"'
                       +        ' placeholder="' + auto.toFixed(decimales) + '"'
                       +        ' value="' + echapper(u.prix) + '">'
                       + '<span class="input-group-text">' + symbole + '</span>'
@@ -821,6 +851,18 @@
 
             if (prix <= 0) { alert('Veuillez saisir un prix valide.'); return; }
 
+            // Prix modifié (base ou unités) dans une Boucherie → demander si la
+            // modification s'applique aussi aux autres boutiques du commerçant.
+            const prixChange = Math.abs(prix - gPrixOriginal) > 0.01;
+            let unitesChange = false;
+            document.querySelectorAll('#globalPrixUnitesListe .global-prix-unite').forEach(function(inp) {
+                const orig = parseFloat(inp.dataset.original || 'NaN');
+                const act = parseFloat(inp.value || '');
+                if (isNaN(orig) || isNaN(act)) { if ((inp.dataset.original || '') !== (inp.value || '')) unitesChange = true; }
+                else if (Math.abs(orig - act) > 0.01) unitesChange = true;
+            });
+
+            const envoyer = function(propager) {
             btn.disabled = true;
             btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Traitement...';
 
@@ -831,6 +873,7 @@
             fd.append('prix_vente', prix);
             fd.append('date_expiration', document.getElementById('globalDateExp').value);
             if (varId) fd.append('variante_id', varId);
+            if (propager) fd.append('propager_autres', '1');
             document.querySelectorAll('#globalPrixUnitesListe .global-prix-unite').forEach(function(inp) {
                 fd.append(inp.name, inp.value);
             });
@@ -878,10 +921,67 @@
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-check"></i> Confirmer';
             });
+            };
+
+            if (!prixChange && !unitesChange) { envoyer(false); return; }
+            window.demanderPropagationPrix(gArticle.id, gArticle.nom, function(propager) {
+                if (propager === null) return;   // annulé : on n'enregistre rien
+                envoyer(propager === true);
+            });
         });
 
         // === Exposer pour ouverture manuelle (bouton dans la navbar par ex.) ===
         window.openGlobalScanner = openGlobalScanner;
+
+        // === Propagation du prix aux autres boutiques Boucherie ===
+        // callback(true)  : propager le prix aux autres boutiques
+        // callback(false) : enregistrer uniquement ici
+        // callback(null)  : annuler l'enregistrement
+        // Fail-open : sans boutique dans l'URL ou sur erreur réseau, on
+        // enregistre localement sans poser la question.
+        window.demanderPropagationPrix = function(articleId, articleNom, callback) {
+            const boutiqueId = getCurrentBoutiqueId();
+            if (!articleId || !boutiqueId) { callback(false); return; }
+
+            const url = `/commercant/boutiques/${boutiqueId}/articles/${articleId}/autres-boutiques/`;
+            fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success || !data.boutiques || !data.boutiques.length) {
+                    callback(false);
+                    return;
+                }
+                document.getElementById('propagationArticleNom').textContent = articleNom || '';
+                document.getElementById('propagationArticleCode').textContent = data.code || '';
+                const liste = document.getElementById('propagationListe');
+                liste.innerHTML = '<i class="fas fa-store me-1"></i><strong>' + data.nb + '</strong> autre(s) point(s) de vente Boucherie portent cet article :<br>'
+                    + data.boutiques.map(b => '<span class="badge bg-secondary me-1">' + b.nom + '</span>').join('');
+                const ignores = document.getElementById('propagationIgnores');
+                if (data.ignores && data.ignores.length) {
+                    ignores.style.display = '';
+                    ignores.innerHTML = '<i class="fas fa-exclamation-circle text-warning me-1"></i>Ignoré(s) : '
+                        + data.ignores.map(i => i.nom + ' (' + i.raison + ')').join(', ');
+                } else {
+                    ignores.style.display = 'none';
+                    ignores.innerHTML = '';
+                }
+
+                const modalEl = document.getElementById('propagationPrixModal');
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                const closer = (result) => {
+                    modal.hide();
+                    document.getElementById('propagationBtnOui').onclick = null;
+                    document.getElementById('propagationBtnNon').onclick = null;
+                    document.getElementById('propagationBtnAnnuler').onclick = null;
+                    callback(result);
+                };
+                document.getElementById('propagationBtnOui').onclick = () => closer(true);
+                document.getElementById('propagationBtnNon').onclick = () => closer(false);
+                document.getElementById('propagationBtnAnnuler').onclick = () => closer(null);
+                modal.show();
+            })
+            .catch(() => callback(false));
+        };
     })();
     </script>
     {% endif %}

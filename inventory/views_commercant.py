@@ -2905,7 +2905,13 @@ def modifier_article_existant(request, boutique_id):
             )
         if changements_unites:
             article.save()
-        
+
+        propagation = None
+        if request.POST.get('propager_autres') in ('1', 'true', 'oui'):
+            propagation = _propager_prix_autres_boutiques(
+                article, article.prix_vente, changements_unites,
+            )
+
         if modifications:
             try:
                 from .websocket_utils import notify_article_updated, notify_sync_required
@@ -2916,6 +2922,7 @@ def modifier_article_existant(request, boutique_id):
             return JsonResponse({
                 'success': True,
                 'message': f"Modifié ({variante.nom_variante}): {', '.join(modifications)}",
+                'propagation': propagation,
                 'article': {
                     'id': article.id,
                     'nom': article.nom,
@@ -2967,7 +2974,13 @@ def modifier_article_existant(request, boutique_id):
         modifications.append(
             f"Prix {cond.libelle}: {'auto' if prix is None else prix}"
         )
-    
+
+    propagation = None
+    if request.POST.get('propager_autres') in ('1', 'true', 'oui'):
+        propagation = _propager_prix_autres_boutiques(
+            article, article.prix_vente, changements_unites,
+        )
+
     if modifications:
         article.save()
         try:
@@ -2979,6 +2992,7 @@ def modifier_article_existant(request, boutique_id):
         return JsonResponse({
             'success': True,
             'message': f"Article modifié: {', '.join(modifications)}",
+            'propagation': propagation,
             'article': {
                 'id': article.id,
                 'nom': article.nom,
@@ -3461,13 +3475,31 @@ def modifier_article_boutique(request, boutique_id, article_id):
                 _appliquer_conditionnements(
                     article, unites_cond, request.POST.get('unite_base', article.unite_base)
                 )
-            
+
+            # 🔁 Propagation aux autres boutiques Boucherie du même commerçant.
+            # Ici l'utilisateur édite les unités en entier : on recopie donc
+            # l'état final complet (et pas seulement les champs modifiés).
+            propagation = None
+            if request.POST.get('propager_autres') in ('1', 'true', 'oui'):
+                etat_unites = [(c, c.prix_vente)
+                               for c in article.conditionnements.all()]
+                propagation = _propager_prix_autres_boutiques(
+                    article, article.prix_vente, etat_unites,
+                )
+
             # 🔔 Notifier le(s) terminal(aux) MAUI : article modifié (prix, quantité, …)
             from .websocket_utils import notify_article_updated, notify_sync_required
             notify_article_updated(boutique.id, article)
             notify_sync_required(boutique.id, "Article modifié depuis le web")
             
-            messages.success(request, f'Article "{article.nom}" modifié avec succès.')
+            message_succes = f'Article "{article.nom}" modifié avec succès.'
+            if propagation and propagation['boutiques']:
+                message_succes += (
+                    f" Prix appliqué aussi sur {len(propagation['boutiques'])} "
+                    f"autre(s) boutique(s) : "
+                    f"{', '.join(propagation['boutiques'])}."
+                )
+            messages.success(request, message_succes)
             return redirect('inventory:commercant_articles_boutique', boutique_id=boutique.id)
         else:
             for field, errors in form.errors.items():
@@ -4255,6 +4287,134 @@ def ajuster_stock_article(request, boutique_id, article_id):
     
     return JsonResponse({'success': False, 'message': 'Méthode non autorisée'})
 
+def _boutiques_boucherie_cibles(article):
+    """Autres boutiques Boucherie du même commerçant portant le même code.
+
+    Retourne la liste des articles correspondants (un par boutique, le premier
+    rencontré). Rien si la boutique courante n'est pas une Boucherie ou si le
+    code est vide : la propagation n'a de sens que pour un point de vente
+    spécialisé partageant un identifiant d'article commun.
+    """
+    boutique = article.boutique
+    code = (article.code or '').strip()
+    if boutique is None or boutique.type_commerce != 'BOUCHERIE' or not code:
+        return []
+    autres = (Article.objects
+              .filter(code=code,
+                      boutique__commercant=boutique.commercant,
+                      boutique__type_commerce='BOUCHERIE')
+              .exclude(boutique=boutique)
+              .select_related('boutique'))
+    vus, cibles = set(), []
+    for autre in autres:
+        if autre.boutique_id in vus:
+            continue
+        vus.add(autre.boutique_id)
+        cibles.append(autre)
+    return cibles
+
+
+def _propager_prix_autres_boutiques(article, nouveau_prix, modifs_unites):
+    """Recopie le prix de base (et les prix d'unités modifiés) sur les autres
+    boutiques Boucherie du même commerçant portant le même code.
+
+    `modifs_unites` : liste de (conditionnement_source, prix) — repris par
+    (libellé, coefficient), les identifiants différant d'une boutique à l'autre.
+    Un prix saisi n'est donc recopié que sur une unité réellement modifiée.
+
+    Retourne {'boutiques': [noms], 'nb_unites': int, 'ignores': [(nom, raison)]}.
+    """
+    resultat = {'boutiques': [], 'nb_unites': 0, 'ignores': []}
+    cibles = _boutiques_boucherie_cibles(article)
+    if not cibles:
+        return resultat
+
+    attendu = {
+        (cond.libelle, cond.coefficient): prix
+        for cond, prix in (modifs_unites or [])
+    }
+    devise = (article.devise or 'CDF')
+
+    for cible in cibles:
+        # Un prix n'a pas de sens sans conversion : on signale plutôt que de
+        # recopier un montant dans l'autre devise.
+        if (cible.devise or 'CDF') != devise:
+            resultat['ignores'].append((cible.boutique.nom, 'devise différente'))
+            continue
+
+        modifie = False
+        if (cible.prix_vente or Decimal('0')) != (nouveau_prix or Decimal('0')):
+            cible.prix_vente = nouveau_prix
+            modifie = True
+
+        nb_unites = 0
+        if attendu:
+            for cond in cible.conditionnements.all():
+                cle = (cond.libelle, cond.coefficient)
+                if cle not in attendu or cond.prix_vente == attendu[cle]:
+                    continue
+                cond.prix_vente = attendu[cle]
+                cond.save(update_fields=['prix_vente', 'date_mise_a_jour'])
+                nb_unites += 1
+
+        if not (modifie or nb_unites):
+            continue
+
+        # save() complet → version + last_updated → sync MAUI ; les signaux
+        # journalisent l'écart de valeur et notifient les terminaux de CETTE
+        # boutique (notifier_ajustement_prix, enregistrer_impact_modification…).
+        cible.save()
+        resultat['boutiques'].append(cible.boutique.nom)
+        resultat['nb_unites'] += nb_unites
+        try:
+            from .websocket_utils import notify_sync_required
+            notify_sync_required(cible.boutique_id, f"Prix modifié: {article.nom}")
+        except Exception:
+            pass
+
+    return resultat
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def autres_boutiques_article(request, boutique_id, article_id):
+    """Autres boutiques Boucherie du commerçant qui ont le même code article.
+
+    Appelé par l'écran avant d'enregistrer un changement de prix, pour
+    demander à l'utilisateur si la modification doit aussi s'appliquer là-bas.
+    """
+    if (request.method != 'GET'
+            or request.headers.get('X-Requested-With') != 'XMLHttpRequest'):
+        return JsonResponse({'success': False, 'message': 'Requête invalide'},
+                            status=400)
+
+    boutique = request.boutique
+    article = get_object_or_404(Article, id=article_id, boutique=boutique)
+
+    cibles_ok, ignores = [], []
+    if boutique.type_commerce == 'BOUCHERIE':
+        devise = (article.devise or 'CDF')
+        for cible in _boutiques_boucherie_cibles(article):
+            if (cible.devise or 'CDF') != devise:
+                ignores.append({
+                    'id': cible.boutique_id,
+                    'nom': cible.boutique.nom,
+                    'raison': 'devise différente',
+                })
+            else:
+                cibles_ok.append({'id': cible.boutique_id,
+                                  'nom': cible.boutique.nom})
+
+    return JsonResponse({
+        'success': True,
+        'code': article.code,
+        'boutiques': cibles_ok,
+        'ignores': ignores,
+        'nb': len(cibles_ok),
+    })
+
+
 @login_required
 @commercant_required
 @boutique_access_required
@@ -4319,15 +4479,30 @@ def modifier_prix_article(request, boutique_id, article_id):
             # est envoye par le signal notifier_ajustement_prix (inventory/signals.py)
             notify_sync_required(boutique.id, f"Prix modifié: {article.nom}")
             
+            # Propagation aux autres boutiques Boucherie du même commerçant :
+            # demandée explicitement par l'écran après confirmation de
+            # l'utilisateur (voir autres_boutiques_article).
+            propagation = None
+            if request.POST.get('propager_autres') in ('1', 'true', 'oui'):
+                propagation = _propager_prix_autres_boutiques(
+                    article, nouveau_prix, modifs_unites,
+                )
+
             message = f'Prix modifié: {ancien_prix} → {nouveau_prix} CDF'
             if unites_modifiees:
                 message += f' ({unites_modifiees} unité(s) mise(s) à jour)'
+            if propagation and propagation['boutiques']:
+                message += (
+                    f" · appliqué aussi sur {len(propagation['boutiques'])} "
+                    "autre(s) boutique(s)"
+                )
             return JsonResponse({
                 'success': True,
                 'message': message,
                 'ancien_prix': float(ancien_prix),
                 'nouveau_prix': float(nouveau_prix),
                 'unites_modifiees': unites_modifiees,
+                'propagation': propagation,
             })
             
         except Article.DoesNotExist:
@@ -10775,9 +10950,16 @@ def modifier_article_global(request):
         if changements_unites:
             article.save()
 
+        propagation = None
+        if request.POST.get('propager_autres') in ('1', 'true', 'oui'):
+            propagation = _propager_prix_autres_boutiques(
+                article, article.prix_vente, changements_unites,
+            )
+
         return JsonResponse({
             'success': True,
             'message': f"Modifié ({variante.nom_variante}): {', '.join(modifications)}" if modifications else 'Aucune modification',
+            'propagation': propagation,
             'article': {
                 'id': article.id,
                 'nom': article.nom,
@@ -10834,11 +11016,18 @@ def modifier_article_global(request):
             f"Prix {cond.libelle}: {'auto' if prix is None else prix}"
         )
 
+    propagation = None
+    if request.POST.get('propager_autres') in ('1', 'true', 'oui'):
+        propagation = _propager_prix_autres_boutiques(
+            article, article.prix_vente, changements_unites,
+        )
+
     if modifications:
         article.save()
         return JsonResponse({
             'success': True,
             'message': f"Article modifié: {', '.join(modifications)}",
+            'propagation': propagation,
             'article': {
                 'id': article.id,
                 'nom': article.nom,
