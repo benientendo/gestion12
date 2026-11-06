@@ -6,6 +6,7 @@ Demande d'annulation (délai de 1 h dépassé) :
 """
 from datetime import timedelta
 from decimal import Decimal
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, Client as TestClient, RequestFactory
@@ -460,3 +461,63 @@ class DemandeAnnulationBackOfficeTestCase(DemandeAnnulationBase):
         r = self.web.get(reverse('inventory:commercant_dashboard'))
         self.assertEqual(r.status_code, 200)
         self.assertNotContains(r, "demande(s) d'annulation en attente")
+
+
+class PushAnnulationTerminalTestCase(DemandeAnnulationBase):
+    """
+    🔔 Le terminal reçoit un push FCM (son + notification visuelle, même
+    app en arrière-plan) quand le commerçant ACCORDE ou REFUSE la demande.
+    """
+
+    def _nouvelle_demande(self):
+        self.web.force_login(self.user)
+        vente = self._creer_vente(heures_ecoulees=3)
+        return DemandeAnnulationVente.objects.create(
+            boutique=self.boutique,
+            terminal=self.terminal,
+            vente=vente,
+            type_demande='FACTURE',
+            numero_facture=vente.numero_facture,
+            motif='Test push',
+        )
+
+    @mock.patch('inventory.services.firebase_push.envoyer_push_terminal')
+    def test_accord_pousse_notification_au_terminal(self, push):
+        demande = self._nouvelle_demande()
+        r = self.web.post(
+            reverse('inventory:accorder_extension_annulation', args=[self.boutique.id]),
+            {'demande_id': demande.id},
+        )
+        self.assertEqual(r.status_code, 302)
+        push.assert_called_once()
+        args, kwargs = push.call_args
+        self.assertEqual(args[0], self.terminal)
+        self.assertIn('Prolongation accordée', args[1])
+        self.assertEqual(kwargs['data']['type'], 'prolongation_accordee')
+        self.assertEqual(kwargs['data']['numero_facture'], demande.numero_facture)
+
+    @mock.patch('inventory.services.firebase_push.envoyer_push_terminal')
+    def test_refus_pousse_notification_au_terminal(self, push):
+        demande = self._nouvelle_demande()
+        r = self.web.post(
+            reverse('inventory:refuser_demande_annulation', args=[self.boutique.id]),
+            {'demande_id': demande.id, 'reponse': 'Non'},
+        )
+        self.assertEqual(r.status_code, 302)
+        push.assert_called_once()
+        args, kwargs = push.call_args
+        self.assertEqual(args[0], self.terminal)
+        self.assertIn('refusée', args[1])
+        self.assertEqual(kwargs['data']['type'], 'prolongation_refusee')
+
+    @mock.patch('inventory.services.firebase_push.envoyer_push_terminal')
+    def test_echec_push_ne_bloque_pas_accord(self, push):
+        push.side_effect = RuntimeError('FCM indisponible')
+        demande = self._nouvelle_demande()
+        r = self.web.post(
+            reverse('inventory:accorder_extension_annulation', args=[self.boutique.id]),
+            {'demande_id': demande.id},
+        )
+        self.assertEqual(r.status_code, 302)
+        demande.refresh_from_db()
+        self.assertEqual(demande.statut, 'ACCEPTEE')

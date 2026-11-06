@@ -894,6 +894,25 @@ def _demande_en_attente(request, demande_id):
     ).select_related('boutique', 'terminal', 'vente', 'ligne__article').first()
 
 
+def _pousser_alerte_terminal(demande, titre, corps, data=None):
+    """
+    🔔 Pousse FCM au terminal qui a fait la demande : le téléphone SONNE
+    (canal « notifications » avec son personnalisé) et affiche l'alerte,
+    même si l'application est en arrière-plan.
+    Best effort : un échec de push ne casse jamais l'accord ni le refus.
+    """
+    try:
+        if not demande.terminal_id:
+            return
+        from .services.firebase_push import envoyer_push_terminal
+        envoyer_push_terminal(demande.terminal, titre, corps, data=data or {})
+    except Exception as exc:  # pragma: no cover
+        import logging
+        logging.getLogger(__name__).warning(
+            f"🔔 Push annulation non envoyé (terminal {demande.terminal_id}): {exc}"
+        )
+
+
 @login_required
 @commercant_required
 @boutique_access_required
@@ -927,6 +946,20 @@ def accorder_extension_annulation(request, boutique_id):
         f"✅ Prolongation de {minutes} min accordée — le terminal peut "
         f"annuler « {cible} » jusqu'à {demande.expire_le.strftime('%H:%M')}."
     )
+
+    # 🔔 Le terminal sonne + alerte visuelle dès maintenant (FCM)
+    _pousser_alerte_terminal(
+        demande,
+        "✅ Prolongation accordée (+1 h)",
+        f"Le commerçant a autorisé l'annulation de « {cible} » "
+        f"(vente {demande.numero_facture}) pendant {minutes} min : "
+        "rouvrez le menu de la vente sur le terminal pour annuler.",
+        data={
+            "type": "prolongation_accordee",
+            "numero_facture": demande.numero_facture,
+            "type_demande": demande.type_demande,
+        },
+    )
     return _retour_dashboard(request)
 
 
@@ -952,6 +985,19 @@ def refuser_demande_annulation(request, boutique_id):
     messages.warning(
         request,
         f"🚫 Demande refusée — « {cible} » ne sera pas annulé sur le terminal."
+    )
+
+    # 🔔 Le terminal est prévenu du refus (alerte visuelle, sans son)
+    _pousser_alerte_terminal(
+        demande,
+        "🚫 Demande d'annulation refusée",
+        f"Le commerçant a refusé l'annulation de « {cible} » "
+        f"(vente {demande.numero_facture}). {demande.reponse}",
+        data={
+            "type": "prolongation_refusee",
+            "numero_facture": demande.numero_facture,
+            "type_demande": demande.type_demande,
+        },
     )
     return _retour_dashboard(request)
 
