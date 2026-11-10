@@ -161,6 +161,22 @@ def commercant_required(view_func):
                 return redirect('inventory:login_commercant')
     return wrapper
 
+def _refus_acces_boutique(request, message):
+    """403 : page soignée en HTML, JSON si la requête vient du JS (AJAX).
+
+    Les vues AJAX de la saisie attendent du JSON (`data.success`) : leur
+    renvoyer du HTML ferait échouer le `.json()` côté client sans message
+    exploitable.
+    """
+    if (request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+            or 'application/json' in (request.content_type or '')):
+        return JsonResponse({'success': False, 'error': message}, status=403)
+    return render(
+        request, 'inventory/403_boutique.html',
+        {'message': message}, status=403,
+    )
+
+
 def boutique_access_required(view_func):
     """Décorateur pour vérifier l'accès à une boutique spécifique (commerçant ou collaborateur)"""
     def wrapper(request, boutique_id, *args, **kwargs):
@@ -181,12 +197,15 @@ def boutique_access_required(view_func):
                 # boutiques cochées (sinon il ouvrait n'importe quel PDV du
                 # commerçant en tapant l'URL).
                 if not collaborateur.peut_acceder_boutique(boutique):
-                    return HttpResponseForbidden("Accès non autorisé à cette boutique")
+                    return _refus_acces_boutique(
+                        request,
+                        "Cette boutique n'est pas ouverte pour votre compte.",
+                    )
                 request.boutique = boutique
                 request.collaborateur = collaborateur  # Ajouter le collaborateur à la requête
                 return view_func(request, boutique_id, *args, **kwargs)
             except Collaborateur.DoesNotExist:
-                return HttpResponseForbidden("Accès non autorisé")
+                return _refus_acces_boutique(request, "Accès non autorisé.")
     return wrapper
 
 

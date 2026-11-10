@@ -122,11 +122,22 @@ class CollaborateurRestreintTest(BoutiquesAutoriseesBase):
             json.dumps({'ligne_id': self.ligne_b.id, 'stock_physique': 7}),
             content_type='application/json',
         )
+        # Le JS attend du JSON : la réponse 403 doit être du JSON, pas du HTML
         self.assertEqual(r.status_code, 403)
+        self.assertFalse(r.json()['success'])
+        self.assertIn('boutique', r.json()['error'])
 
         self.ligne_b.refresh_from_db()
         self.assertIsNone(self.ligne_b.stock_physique)
         self.assertEqual(PropositionInventaire.objects.count(), 0)
+
+    def test_page_403_soignee_pour_le_navigateur(self):
+        r = self.client.get(self._url('entrer_boutique', self.boutique_b))
+        self.assertEqual(r.status_code, 403)
+        self.assertContains(r, 'Accès non autorisé', status_code=403)
+        self.assertContains(r, "pas ouverte pour votre compte", status_code=403)
+        self.assertContains(r, 'Mon accueil', status_code=403)
+        self.assertContains(r, 'Retour', status_code=403)
 
     def test_terminer_refuse_sur_boutique_non_autorisee(self):
         r = self.client.post(
