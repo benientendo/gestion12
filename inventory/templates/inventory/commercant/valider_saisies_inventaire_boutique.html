@@ -1,0 +1,226 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+
+{% block title %}Valider les saisies - {{ inventaire.reference }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="fas fa-user-check text-primary"></i> Validation des saisies</h2>
+            <p class="mb-0 text-muted">{{ inventaire.reference }} - {{ boutique.nom }}</p>
+        </div>
+        <div>
+            <a href="{% url 'inventory:detail_inventaire_boutique' boutique.id inventaire.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Retour
+            </a>
+        </div>
+    </div>
+
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-1"></i>
+        Les saisies des collaborateurs <strong>ne sont pas appliquées</strong> tant que vous ne les avez pas
+        vérifiées ici. Vous pouvez corriger la quantité avant d'appliquer, ou refuser une saisie avec un motif.
+        La régularisation du stock reste l'étape suivante.
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <h3 class="text-warning mb-0">{{ nb_en_attente }}</h3>
+                    <small class="text-muted">En attente de validation</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h4 class="text-success mb-0">{{ nb_validees }}</h4>
+                    <small class="text-muted">Validées (appliquées)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-danger">
+                <div class="card-body text-center">
+                    <h4 class="text-danger mb-0">{{ nb_refusees }}</h4>
+                    <small class="text-muted">Refusées</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card">
+                <div class="card-body text-center">
+                    <h4 class="text-muted mb-0">{{ inventaire.reference }}</h4>
+                    <small class="text-muted">Inventaire</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if nb_en_attente > 0 %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="fas fa-list"></i> Saisies à vérifier ({{ nb_en_attente }})</h6>
+            <form method="post" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" name="action" value="valider_tout" class="btn btn-success btn-sm"
+                        onclick="return confirm('Appliquer les {{ nb_en_attente }} saisie(s) en attente à l’inventaire ?')">
+                    <i class="fas fa-check-double"></i> Tout appliquer
+                </button>
+            </form>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Article</th>
+                            <th class="text-center">Stock système</th>
+                            <th class="text-center">Stock actuel</th>
+                            <th class="text-center">Quantité proposée</th>
+                            <th class="text-center">Écart si appliqué</th>
+                            <th>Saisi par</th>
+                            <th>Heure</th>
+                            <th>Commentaire</th>
+                            <th style="min-width:260px;">Décision</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in lignes_affichees %}
+                        <tr>
+                            <td>
+                                <strong>{{ item.article.nom }}</strong><br>
+                                <small class="text-muted">{{ item.article.code }}</small>
+                            </td>
+                            <td class="text-center">{{ item.theorique }}</td>
+                            <td class="text-center">
+                                {% if item.applique == '—' %}
+                                    <span class="text-muted">—</span>
+                                {% else %}
+                                    <strong>{{ item.applique }}</strong>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-warning text-dark fs-6">{{ item.propose }}</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-{{ item.ecart_classe }} fs-6">{{ item.ecart_propose }}</span>
+                            </td>
+                            <td><small>{{ item.proposition.nom_saisi_par|default:"—" }}</small></td>
+                            <td><small>{{ item.date_proposition|date:'d/m H:i' }}</small></td>
+                            <td><small>{{ item.proposition.commentaire|default:"—" }}</small></td>
+                            <td>
+                                <form method="post" class="d-flex flex-wrap gap-1">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="proposition_id" value="{{ item.proposition.id }}">
+                                    <input type="number" name="quantite_retenu" class="form-control form-control-sm"
+                                           style="width:110px" min="0"
+                                           placeholder="{{ item.proposition.quantite_proposee }}"
+                                           title="Quantité à retenir (laisser vide = proposée)">
+                                    <button type="submit" name="action" value="valider"
+                                            class="btn btn-success btn-sm"
+                                            onclick="return confirm('Appliquer la saisie de {{ item.article.nom }} ({{ item.propose }}) à l’inventaire ?')">
+                                        <i class="fas fa-check"></i>
+                                    </button>
+                                    <input type="text" name="motif_refus" class="form-control form-control-sm"
+                                           style="width:150px" placeholder="Motif du refus (optionnel)">
+                                    <button type="submit" name="action" value="refuser"
+                                            class="btn btn-outline-danger btn-sm"
+                                            onclick="return confirm('Refuser la saisie de « {{ item.article.nom }} » ? Rien ne sera appliqué.')">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-danger mb-4">
+        <div class="card-body d-flex justify-content-between align-items-center">
+            <div>
+                <h6 class="text-danger mb-1"><i class="fas fa-ban"></i> Refuser toutes les saisies en attente</h6>
+                <small class="text-muted">Aucune quantité ne sera appliquée à l'inventaire.</small>
+            </div>
+            <form method="post" class="d-flex gap-2">
+                {% csrf_token %}
+                <input type="text" name="motif_refus" class="form-control form-control-sm" style="width:220px"
+                       placeholder="Motif (optionnel)">
+                <button type="submit" name="action" value="refuser_tout" class="btn btn-outline-danger btn-sm"
+                        onclick="return confirm('Refuser les {{ nb_en_attente }} saisie(s) en attente ?')">
+                    Tout refuser
+                </button>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="card mb-4">
+        <div class="card-body text-center py-5">
+            <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
+            <h5>Aucune saisie en attente de validation</h5>
+            <p class="text-muted">Toutes les saisies des collaborateurs ont été traitées.</p>
+            <a href="{% url 'inventory:detail_inventaire_boutique' boutique.id inventaire.id %}" class="btn btn-primary">
+                <i class="fas fa-arrow-left"></i> Retour à l'inventaire
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if propositions_traitees %}
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="fas fa-history"></i> Dernières décisions ({{ propositions_traitees|length }})</h6>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Article</th>
+                            <th class="text-center">Proposé</th>
+                            <th class="text-center">Appliqué</th>
+                            <th class="text-center">Écart</th>
+                            <th>Décision</th>
+                            <th>Par</th>
+                            <th>Le</th>
+                            <th>Motif</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in propositions_traitees %}
+                        <tr>
+                            <td><strong>{{ item.article.nom }}</strong></td>
+                            <td class="text-center">{{ item.qte_proposee }}</td>
+                            <td class="text-center">
+                                {% if item.proposition.statut == 'VALIDEE' %}
+                                    <strong>{{ item.qte_appliquee }}</strong>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">{{ item.ecart_txt }}</td>
+                            <td>
+                                {% if item.proposition.statut == 'VALIDEE' %}
+                                    <span class="badge bg-success">Validée</span>
+                                {% else %}
+                                    <span class="badge bg-danger">Refusée</span>
+                                {% endif %}
+                            </td>
+                            <td><small>{{ item.proposition.traite_par.get_full_name|default:item.proposition.traite_par.username|default:"—" }}</small></td>
+                            <td><small>{{ item.proposition.date_traitement|date:'d/m H:i' }}</small></td>
+                            <td><small>{{ item.proposition.motif_refus|default:"—" }}</small></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

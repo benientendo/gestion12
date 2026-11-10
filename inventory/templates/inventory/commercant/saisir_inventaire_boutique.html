@@ -303,6 +303,19 @@ kbd {
         </div>
     </div>
 
+    {% if mode_validation and nb_en_attente > 0 %}
+    <div class="alert alert-warning d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <i class="fas fa-hourglass-half me-1"></i>
+            <strong>{{ nb_en_attente }} saisie(s) de collaborateur(s) en attente de validation</strong>
+            — ces comptages ne sont pas encore appliqués à l'inventaire.
+        </div>
+        <a href="{{ url_validation }}" class="btn btn-warning btn-sm">
+            Vérifier et appliquer <i class="fas fa-arrow-right"></i>
+        </a>
+    </div>
+    {% endif %}
+
     {% if not is_collaborateur %}
     <!-- FILTRES + ACTIONS -->
     <div class="card mb-3 shadow-sm">
@@ -408,7 +421,7 @@ kbd {
                         </thead>
                         <tbody>
                             {% for ligne in lignes %}
-                            <tr class="{% if ligne.ecart > 0 %}table-success{% elif ligne.ecart < 0 %}table-danger{% endif %}"
+                            <tr class="{% if ligne.proposition_en_attente %}table-warning{% elif ligne.ecart > 0 %}table-success{% elif ligne.ecart < 0 %}table-danger{% endif %}"
                                         data-search="{{ ligne.article.nom|lower }} {{ ligne.article.code|lower }} {% for v in ligne.article.variantes.all %}{{ v.code_barre }} {% endfor %}"
                                         data-article-id="{{ ligne.article.id }}"
                                         data-code-barre="{{ ligne.article.code }}">
@@ -491,10 +504,21 @@ kbd {
                                            data-coefficient="1"
                                            tabindex="{{ forloop.counter }}">
                                     {% endif %}
+                                    {% if ligne.proposition_en_attente %}
+                                    <small class="d-block mt-1 fw-bold text-warning" style="font-size:.75rem;"
+                                           title="Saisie de {{ ligne.proposition_en_attente.nom_saisi_par }} en attente de validation du commerçant">
+                                        <i class="fas fa-hourglass-half"></i>
+                                        en attente : {{ ligne.proposition_en_attente.quantite_proposee_formate }}
+                                    </small>
+                                    {% endif %}
                                 </td>
                                 <td class="text-center align-middle">
                                     <span class="ecart-display" id="ecart_{{ ligne.id }}">
-                                        {% if ligne.ecart > 0 %}<span class="badge bg-success">{{ ligne.ecart_decompose }}</span>
+                                        {% if ligne.proposition_en_attente %}
+                                        <span class="badge bg-warning text-dark" title="Écart proposé, en attente de validation">
+                                            <i class="fas fa-hourglass-half"></i> {{ ligne.proposition_en_attente.ecart_propose_formate }}
+                                        </span>
+                                        {% elif ligne.ecart > 0 %}<span class="badge bg-success">{{ ligne.ecart_decompose }}</span>
                                         {% elif ligne.ecart < 0 %}<span class="badge bg-danger">{{ ligne.ecart_decompose }}</span>
                                         {% elif ligne.stock_physique is not None %}<span class="badge bg-secondary">0</span>{% endif %}
                                     </span>
@@ -569,6 +593,20 @@ kbd {
             <br><small class="text-muted">Le tableau complet de l'inventaire est réservé au responsable.</small>
         </div>
     </div>
+    {% if mode_validation %}
+    <div class="alert alert-warning d-flex align-items-center gap-3" style="border-left:4px solid #ffc107;">
+        <i class="fas fa-hourglass-half fa-lg"></i>
+        <div>
+            {% if nb_en_attente > 0 %}
+            <strong>{{ nb_en_attente }} saisie(s) en attente de validation</strong> — vos comptages sont transmis au
+            commerçant, qui les vérifie puis les applique. Ils ne modifient pas encore l'inventaire.
+            {% else %}
+            Vos comptages sont transmis au commerçant pour validation avant d'être appliqués à l'inventaire.
+            {% endif %}
+            <br><small class="text-muted">Un article déjà compté apparaît dans « Saisis » : ne le comptez pas deux fois.</small>
+        </div>
+    </div>
+    {% endif %}
     {% endif %}
 </div>
 
@@ -2485,18 +2523,34 @@ document.querySelectorAll('.commentaire-input').forEach(input => {
                 unlockArticle(data.ligne_id);
                 updateLocalStock(data.ligne_id, data.stock_physique);
                 addSessionEntry(data, data.stock_physique);
+                const enAttente = !!data.en_attente;
                 const ecartDecompose = data.ecart_decompose || '';
-                const ecartTxt = data.ecart > 0
-                    ? ' <span class="text-success">(' + (ecartDecompose || '+' + data.ecart) + ')</span>'
-                    : data.ecart < 0
-                    ? ' <span class="text-danger">(' + (ecartDecompose || data.ecart) + ')</span>'
-                    : ' <span class="text-secondary">(=)</span>';
+                let ecartTxt;
+                if (enAttente) {
+                    ecartTxt = ' <span class="badge bg-warning text-dark">en attente : '
+                        + (ecartDecompose || data.ecart) + '</span>';
+                } else if (data.ecart > 0) {
+                    ecartTxt = ' <span class="text-success">(' + (ecartDecompose || '+' + data.ecart) + ')</span>';
+                } else if (data.ecart < 0) {
+                    ecartTxt = ' <span class="text-danger">(' + (ecartDecompose || data.ecart) + ')</span>';
+                } else {
+                    ecartTxt = ' <span class="text-secondary">(=)</span>';
+                }
                 const corrTxt = etaitCorrection
                     ? ' <span class="badge bg-warning text-dark">corrigé</span>' : '';
                 const qteTxt = (data.est_boucherie && data.stock_physique_decompose)
                     ? data.stock_physique_decompose
                     : (data.stock_physique + ' ' + (data.unite_base || 'pcs'));
-                showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + qteTxt + ecartTxt + corrTxt, 'success');
+                if (enAttente) {
+                    // Mode validation (KMC) : la saisie n'est pas encore appliquée
+                    showToast(
+                        '<i class="fas fa-hourglass-half me-2"></i><strong>' + data.article_nom
+                        + '</strong> → ' + qteTxt
+                        + ' <span class="badge bg-warning text-dark">en attente de validation</span>',
+                        'warning');
+                } else {
+                    showToast('<i class="fas fa-check-circle me-2"></i><strong>' + data.article_nom + '</strong> → ' + qteTxt + ecartTxt + corrTxt, 'success');
+                }
 
                 // Mettre à jour la ligne dans le tableau si visible
                 let tableInput = document.querySelector('input[name="stock_physique_' + data.ligne_id + '"]')

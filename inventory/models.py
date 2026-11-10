@@ -856,6 +856,19 @@ class Commercant(models.Model):
     est_actif = models.BooleanField(default=True, help_text="Le commerçant peut-il accéder au système?")
     taux_dollar = models.DecimalField(max_digits=10, decimal_places=2, default=2800, 
                                       help_text="Taux de change: 1 USD = X CDF (appliqué à tous les points de vente)")
+
+    # Validation des saisies d'inventaire par le commerçant
+    # (activé uniquement pour KMC — voir migration de données 0084).
+    # Quand c'est activé, la saisie d'un COLLABORATEUR n'écrit plus directement
+    # dans l'inventaire : elle devient une PropositionInventaire que le
+    # commerçant doit valider (ou refuser) sur une page dédiée avant toute
+    # application. Le commerçant, lui, continue de saisir directement.
+    # Les commerçants dont le flag est à False gardent exactement l'ancien
+    # comportement (aucune régression).
+    validation_inventaire_requise = models.BooleanField(
+        default=False,
+        help_text="Les saisies des collaborateurs doivent être validées par le commerçant avant application",
+    )
     date_creation = models.DateTimeField(auto_now_add=True)
     date_mise_a_jour = models.DateTimeField(auto_now=True)
     
@@ -1883,6 +1896,112 @@ class HistoriqueSaisieInventaire(models.Model):
         ordering = ['-date_saisie']
         indexes = [
             models.Index(fields=['inventaire', 'article', '-date_saisie']),
+        ]
+
+
+class PropositionInventaire(models.Model):
+    """Saisie d'un collaborateur EN ATTENTE de validation du commerçant.
+
+    Mode « validation inventaire » (``Commercant.validation_inventaire_requise``) :
+    la saisie du collaborateur n'écrit pas dans ``LigneInventaire``. Elle est
+    mise en attente ici, puis le commerçant l'applique (ou la refuse) depuis la
+    page dédiée. Une seule proposition en attente par ligne : une nouvelle
+    saisie remplace l'attente en cours (contrainte unique ci-dessous).
+
+    Les commerçants sans le flag ne créent jamais de proposition : leur
+    comportement (saisie directe) est strictement inchangé.
+    """
+
+    STATUT_CHOICES = [
+        ('EN_ATTENTE', 'En attente de validation'),
+        ('VALIDEE', 'Validée'),
+        ('REFUSEE', 'Refusée'),
+    ]
+
+    inventaire = models.ForeignKey(
+        Inventaire, on_delete=models.CASCADE, related_name='propositions'
+    )
+    ligne = models.ForeignKey(
+        LigneInventaire, on_delete=models.CASCADE, related_name='propositions'
+    )
+
+    # Quantité comptée, en unité de base, représentant le TOTAL visé pour la
+    # ligne (cumul déjà appliqué + nouvelles quantités saisies).
+    quantite_proposee = models.IntegerField(
+        help_text="Stock physique total visé par le collaborateur (unité de base)"
+    )
+    commentaire = models.TextField(blank=True)
+
+    # Qui a compté
+    saisi_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='propositions_inventaire_saisies',
+    )
+    nom_saisi_par = models.CharField(max_length=150, blank=True)
+    date_proposition = models.DateTimeField(auto_now_add=True)
+
+    # Décision du commerçant
+    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_ATTENTE')
+    traite_par = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='propositions_inventaire_traitees',
+    )
+    date_traitement = models.DateTimeField(null=True, blank=True)
+    motif_refus = models.TextField(blank=True)
+    quantite_appliquee = models.IntegerField(
+        null=True, blank=True,
+        help_text="Quantité retenue par le commerçant s'il a corrigé la saisie à la validation",
+    )
+
+    @property
+    def ecart_propose(self):
+        """Écart résultant si la proposition est appliquée (proposé - théorique)."""
+        return self.quantite_proposee - self.ligne.stock_theorique
+
+    @property
+    def quantite_proposee_formate(self):
+        """Quantité proposée formatée (unités mixtes en Boucherie)."""
+        ligne = self.ligne
+        if ligne.affiche_unites:
+            return ligne.article.decomposer_quantite_formate(self.quantite_proposee)
+        return str(self.quantite_proposee)
+
+    @property
+    def ecart_propose_formate(self):
+        """Écart proposé signé et formaté (« +2 carton · 5 kg », « -3 »)."""
+        ligne = self.ligne
+        ecart = self.ecart_propose
+        if not ecart:
+            return '0'
+        signe = '+' if ecart > 0 else '-'
+        if ligne.affiche_unites:
+            return signe + ligne.article.decomposer_quantite_formate(abs(ecart))
+        return f"{signe}{abs(ecart)}"
+
+    @property
+    def stock_applique(self):
+        """Stock physique actuellement retenu dans l'inventaire (avant validation)."""
+        return self.ligne.stock_physique
+
+    def __str__(self):
+        return (
+            f"{self.ligne.article.nom}: {self.quantite_proposee} "
+            f"({self.get_statut_display()}) - {self.inventaire.reference}"
+        )
+
+    class Meta:
+        verbose_name = "Proposition d'inventaire"
+        verbose_name_plural = "Propositions d'inventaire"
+        ordering = ['-date_proposition']
+        indexes = [
+            models.Index(fields=['inventaire', 'statut']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['inventaire', 'ligne'],
+                condition=models.Q(statut='EN_ATTENTE'),
+                name='proposition_en_attente_unique_par_ligne',
+            ),
         ]
 
 

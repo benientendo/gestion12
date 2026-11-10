@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse, HttpResponse
-from django.db.models import Q, Sum, Count, F, Avg, Max, Min, Prefetch, ExpressionWrapper, DecimalField as OrmDecimalField
+from django.db.models import Q, Sum, Count, F, Avg, Max, Min, Prefetch, ExpressionWrapper, DecimalField as OrmDecimalField, Exists, OuterRef, Subquery
 from django.db import transaction, IntegrityError
 from django.utils import timezone
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
@@ -22,7 +22,7 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
-from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, TelechargementRapportMensuel, trouver_article_destination, appliquer_attributs_vente_destination, CodeCloture, ClotureJournee, DemandeAnnulationVente
+from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, PropositionInventaire, TelechargementRapportMensuel, trouver_article_destination, appliquer_attributs_vente_destination, CodeCloture, ClotureJournee, DemandeAnnulationVente
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
 from .distribution import etat_distribution
 import json
@@ -229,6 +229,97 @@ def journee_non_cloturee(view_func):
         )
         return redirect('inventory:commercant_detail_boutique', boutique_id=boutique.id)
     return wrapper
+
+
+# ===== VALIDATION DES SAISIES PAR LE COMMERCANT =====
+# Activé uniquement pour le commerçant KMC (flag
+# Commercant.validation_inventaire_requise, migration 0085).
+# Tous les autres commerçants renvoient False : leur fonctionnement
+# historique (saisie directe du collaborateur) reste strictement inchangé.
+
+
+def validation_inventaire_requise(boutique):
+    """Vrai si ce point de vente impose la validation des saisies par le commerçant."""
+    try:
+        return bool(boutique.commercant.validation_inventaire_requise)
+    except Exception:
+        return False
+
+
+def est_collaborateur(user):
+    """Vrai si l'utilisateur connecté est un collaborateur (pas le commerçant)."""
+    return hasattr(user, 'profil_collaborateur')
+
+
+def est_vrai_commercant(user):
+    """Vrai si l'utilisateur est bien le compte commerçant (pas un collaborateur)."""
+    try:
+        return user.profil_commercant is not None
+    except Commercant.DoesNotExist:
+        return False
+
+
+def saisie_soumise_a_validation(request, boutique):
+    """Vrai si la saisie de cet utilisateur doit devenir une proposition
+    (collaborateur d'un commerçant en mode validation)."""
+    return validation_inventaire_requise(boutique) and est_collaborateur(request.user)
+
+
+def nb_propositions_en_attente(inventaire):
+    """Nombre de saisies du collaborateur en attente de validation."""
+    return inventaire.propositions.filter(statut='EN_ATTENTE').count()
+
+
+def _nom_affiche_saisisseur(user):
+    """Nom d'affichage du saisisseur (collaborateur ou commerçant)."""
+    if hasattr(user, 'profil_collaborateur'):
+        return user.profil_collaborateur.nom_complet
+    return user.get_full_name() or user.username
+
+
+def enregistrer_proposition(request, inventaire, ligne, quantite, commentaire='',
+                            remplacer=False):
+    """Met à jour (ou crée) la proposition EN ATTENTE d'une ligne.
+
+    Le cumul reprend la même logique que la saisie directe : la proposition
+    représente le TOTAL visé pour la ligne.
+    - remplacer=True  → la valeur saisie remplace tout ;
+    - sinon           → on ajoute à (stock appliqué + déjà proposé).
+    Une seule proposition en attente par ligne (contrainte unique).
+    """
+    en_attente = inventaire.propositions.filter(
+        ligne=ligne, statut='EN_ATTENTE'
+    ).first()
+
+    if remplacer:
+        total = quantite
+    else:
+        base = (ligne.stock_physique or 0)
+        if en_attente:
+            base += en_attente.quantite_proposee
+        total = base + quantite
+
+    nom = _nom_affiche_saisisseur(request.user)
+
+    if en_attente:
+        en_attente.quantite_proposee = total
+        if commentaire:
+            en_attente.commentaire = commentaire
+        en_attente.saisi_par = request.user
+        en_attente.nom_saisi_par = nom
+        en_attente.save()
+        proposition = en_attente
+    else:
+        proposition = PropositionInventaire.objects.create(
+            inventaire=inventaire,
+            ligne=ligne,
+            quantite_proposee=total,
+            commentaire=commentaire or '',
+            saisi_par=request.user,
+            nom_saisi_par=nom,
+        )
+    return proposition
+
 
 # ===== AUTHENTIFICATION =====
 
@@ -8460,6 +8551,12 @@ def liste_inventaires_boutique(request, boutique_id):
 def nouvel_inventaire_boutique(request, boutique_id):
     """Créer un nouvel inventaire pour une boutique."""
     boutique = request.boutique
+
+    # Mode validation (KMC) : l'inventaire est démarré par le commerçant,
+    # le collaborateur ne fait que le saisir.
+    if validation_inventaire_requise(boutique) and est_collaborateur(request.user):
+        messages.error(request, "Seul le commerçant peut démarrer un inventaire.")
+        return redirect('inventory:liste_inventaires_boutique', boutique_id=boutique.id)
     
     inventaire_en_cours = Inventaire.objects.filter(boutique=boutique, statut='EN_COURS').first()
     if inventaire_en_cours:
@@ -8539,6 +8636,9 @@ def detail_inventaire_boutique(request, boutique_id, inventaire_id):
         'lignes_non_saisies': lignes_non_saisies_qs.count(),
         'lignes_non_saisies_qs': lignes_non_saisies_qs,
         'valeur_stock_non_inventorie': valeur_stock_non_inventorie,
+        # ── Mode validation (KMC) : saisies des collaborateurs en attente ──
+        'mode_validation': validation_inventaire_requise(boutique),
+        'nb_en_attente': nb_propositions_en_attente(inventaire),
         **_totaux_valeur_inventaire(lignes),
     }
     return render(request, 'inventory/commercant/detail_inventaire_boutique.html', context)
@@ -8568,23 +8668,32 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         lignes_mises_a_jour = 0
         prix_modifies = 0
         mode_accumulation = True  # Toujours activé
-        
+        propositions_crees = 0
+
+        # Mode validation (KMC) : un collaborateur ne modifie ni le stock ni
+        # les prix — ses saisies deviennent des propositions à valider.
+        # (Les commerçants sans le flag gardent le comportement historique.)
+        soumis_validation = saisie_soumise_a_validation(request, boutique)
+
         # Traiter les modifications de prix de vente
-        for key, value in request.POST.items():
-            if key.startswith('prix_vente_'):
-                ligne_id = key.replace('prix_vente_', '')
-                try:
-                    ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
-                    nouveau_prix = Decimal(value.strip())
-                    if nouveau_prix != ligne.article.prix_vente and nouveau_prix > 0:
-                        ligne.article.prix_vente = nouveau_prix
-                        ligne.article.save(update_fields=['prix_vente'])
-                        prix_modifies += 1
-                except (LigneInventaire.DoesNotExist, ValueError, InvalidOperation):
-                    pass
+        # (interdit à un collaborateur en mode validation : seul le commerçant
+        # change les prix — aucune écriture n'est faite pour lui.)
+        if not soumis_validation:
+            for key, value in request.POST.items():
+                if key.startswith('prix_vente_'):
+                    ligne_id = key.replace('prix_vente_', '')
+                    try:
+                        ligne = LigneInventaire.objects.get(id=ligne_id, inventaire=inventaire)
+                        nouveau_prix = Decimal(value.strip())
+                        if nouveau_prix != ligne.article.prix_vente and nouveau_prix > 0:
+                            ligne.article.prix_vente = nouveau_prix
+                            ligne.article.save(update_fields=['prix_vente'])
+                            prix_modifies += 1
+                    except (LigneInventaire.DoesNotExist, ValueError, InvalidOperation):
+                        pass
         
         # Prix des unités (Boucherie) : champs cond_prix_<conditionnement_id>
-        if boutique.type_commerce == 'BOUCHERIE':
+        if boutique.type_commerce == 'BOUCHERIE' and not soumis_validation:
             from .models import Conditionnement
             conditions_inventaire = {
                 str(c.id): c
@@ -8630,7 +8739,18 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                         )
                         stock_physique_val = int(value) * coefficient
                         commentaire_val = request.POST.get(f'commentaire_{ligne_id}', '')
-                        
+
+                        if soumis_validation:
+                            # Mode validation : la saisie devient une
+                            # proposition EN ATTENTE (aucune écriture dans
+                            # l'inventaire ni dans l'historique).
+                            enregistrer_proposition(
+                                request, inventaire, ligne, stock_physique_val,
+                                commentaire=commentaire_val, remplacer=False,
+                            )
+                            propositions_crees += 1
+                            continue
+
                         # Mode accumulation: toujours ajouter à la valeur existante
                         if ligne.stock_physique is not None:
                             ligne.stock_physique += stock_physique_val
@@ -8676,8 +8796,19 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                             ligne.article, request.POST.get(f'unite_coefficient_{ligne_id}')
                         )
                         nouvelle_valeur = int(value) * coefficient
-                        ancien_stock = ligne.stock_physique
                         commentaire_val = request.POST.get(f'commentaire_{ligne_id}', '')
+
+                        if soumis_validation:
+                            # Mode validation : la correction remplace aussi la
+                            # proposition en attente, jamais l'inventaire.
+                            enregistrer_proposition(
+                                request, inventaire, ligne, nouvelle_valeur,
+                                commentaire=commentaire_val, remplacer=True,
+                            )
+                            propositions_crees += 1
+                            continue
+
+                        ancien_stock = ligne.stock_physique
                         ancien_lib = ancien_stock if ancien_stock is not None else 'non saisi'
                         hist_commentaire = commentaire_val or f"Correction : {ancien_lib} → {nouvelle_valeur}"
 
@@ -8706,10 +8837,20 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
                     pass
         
         msg_parts = []
+        if propositions_crees > 0:
+            msg_parts.append(
+                f"{propositions_crees} saisie(s) enregistrée(s) — en attente de validation du commerçant"
+            )
         if lignes_mises_a_jour > 0:
             msg_parts.append(f"{lignes_mises_a_jour} lignes mises à jour")
         if prix_modifies > 0:
             msg_parts.append(f"{prix_modifies} prix modifiés")
+        if soumis_validation and any(k.startswith('prix_vente_') or k.startswith('cond_prix_')
+                                     for k in request.POST.keys()):
+            messages.warning(
+                request,
+                "Prix non modifiés : seul le commerçant peut changer les prix de vente.",
+            )
         
         if msg_parts:
             messages.success(request, " | ".join(msg_parts))
@@ -8726,10 +8867,32 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     assigne_a_filtre = request.GET.get('assigne_a', '')
     mode_accumulation = request.GET.get('mode_accumulation') != '0' # Activé par défaut
     
+    # ── Mode validation (KMC) : les saisies des collaborateurs sont mises en
+    # attente du commerçant. On les affiche (badge) et on les sort des filtres
+    # « non saisis » pour éviter un double comptage. ──
+    mode_validation = validation_inventaire_requise(boutique)
+    propositions_par_ligne = {}
+    nb_en_attente = 0
+    if mode_validation:
+        props_qs = inventaire.propositions.filter(
+            statut='EN_ATTENTE'
+        ).select_related('ligne', 'ligne__article', 'ligne__article__boutique')
+        nb_en_attente = props_qs.count()
+        propositions_par_ligne = {p.ligne_id: p for p in props_qs}
+
     lignes = inventaire.lignes.select_related(
         'article', 'article__categorie', 'article__boutique'
     ).prefetch_related('article__conditionnements', 'article__variantes')
-    
+
+    if mode_validation:
+        prop_attente = PropositionInventaire.objects.filter(
+            ligne=OuterRef('pk'), statut='EN_ATTENTE'
+        )
+        lignes = lignes.annotate(
+            a_en_attente=Exists(prop_attente),
+            qte_attente=Subquery(prop_attente.order_by().values('quantite_proposee')[:1]),
+        )
+
     if categorie_id:
         lignes = lignes.filter(article__categorie_id=categorie_id)
     
@@ -8742,12 +8905,26 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         )
     elif filtre == 'saisis':
         # « Saisis » : uniquement les articles comptés avec au moins 1
-        lignes = lignes.filter(stock_physique__gte=1)
+        # (en mode validation : aussi ceux comptés mais encore en attente)
+        if mode_validation:
+            lignes = lignes.filter(Q(stock_physique__gte=1) | Q(a_en_attente=True))
+        else:
+            lignes = lignes.filter(stock_physique__gte=1)
     elif filtre == 'non_saisis':
         # « Non saisis » : uniquement les articles jamais comptés
-        lignes = lignes.filter(stock_physique__isnull=True)
+        # (en mode validation : une saisie en attente compte déjà comme saisi)
+        if mode_validation:
+            lignes = lignes.filter(stock_physique__isnull=True, a_en_attente=False)
+        else:
+            lignes = lignes.filter(stock_physique__isnull=True)
     elif filtre == 'ecarts':
-        lignes = lignes.filter(stock_physique__isnull=False).exclude(ecart=0)
+        if mode_validation:
+            lignes = lignes.filter(
+                (Q(stock_physique__isnull=False) & ~Q(ecart=0))
+                | (Q(a_en_attente=True) & ~Q(qte_attente=F('stock_theorique')))
+            )
+        else:
+            lignes = lignes.filter(stock_physique__isnull=False).exclude(ecart=0)
     # 'tous' : tous les articles
     
     # Filtre par collaborateur (assigne_a auto-rempli au moment de la saisie)
@@ -8760,13 +8937,21 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     categories = Categorie.objects.filter(boutique=boutique)
 
     # Liste des collaborateurs uniques ayant effectué des saisies
-    employes_list = (
+    employes_list = list(
         inventaire.lignes
         .filter(stock_physique__isnull=False)
         .exclude(assigne_a='').exclude(assigne_a__isnull=True)
         .values_list('assigne_a', flat=True)
         .distinct().order_by('assigne_a')
     )
+    if mode_validation:
+        # Ajouter les collaborateurs qui ont des saisies encore en attente
+        noms_attente = set(
+            inventaire.propositions.filter(statut='EN_ATTENTE')
+            .exclude(nom_saisi_par='').values_list('nom_saisi_par', flat=True)
+        )
+        if noms_attente:
+            employes_list = sorted(set(employes_list) | noms_attente)
 
     # Nom d'affichage de l'utilisateur connecté
     if hasattr(request.user, 'profil_collaborateur'):
@@ -8778,7 +8963,7 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
     # stock_physique reste null tant que la ligne n'est pas saisi (et non 0),
     # pour que la recherche distingue correctement les articles saisis.
     all_articles_json = json.dumps([
-        _ligne_recherche_json(l)
+        _ligne_recherche_json(l, propositions_par_ligne.get(l.id))
         for l in inventaire.lignes.select_related(
             'article', 'article__categorie', 'article__boutique'
         ).prefetch_related(
@@ -8808,10 +8993,45 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
 
     is_collaborateur = hasattr(request.user, 'profil_collaborateur')
 
+    # Comptes affichés : en mode validation, une saisie EN ATTENTE compte
+    # déjà comme « saisi » (cohérent avec les filtres ci-dessus).
+    nb_non_saisis = inventaire.lignes.filter(stock_physique__isnull=True).count()
+    nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
+    nb_saisis_quantite = inventaire.lignes.filter(stock_physique__gte=1).count()
+    if mode_validation:
+        lignes_attente_ids = inventaire.propositions.filter(
+            statut='EN_ATTENTE'
+        ).values('ligne_id')
+        nb_non_saisis = inventaire.lignes.filter(
+            stock_physique__isnull=True
+        ).exclude(id__in=lignes_attente_ids).count()
+        nb_saisis = inventaire.lignes.filter(
+            Q(stock_physique__isnull=False) | Q(id__in=lignes_attente_ids)
+        ).distinct().count()
+        nb_saisis_quantite = inventaire.lignes.filter(
+            Q(stock_physique__gte=1) | Q(id__in=lignes_attente_ids)
+        ).distinct().count()
+
+    propositions_json = json.dumps({
+        str(ligne_id): {
+            'quantite': p.quantite_proposee,
+            'ecart': p.ecart_propose,
+            'nom': p.nom_saisi_par,
+        }
+        for ligne_id, p in propositions_par_ligne.items()
+    }, ensure_ascii=False)
+
+    # Page de lignes affichée : on y rattache la saisie en attente éventuelle
+    # pour afficher le badge « en attente » côté commerçant.
+    lignes_page = list(lignes[:50])
+    if mode_validation:
+        for l in lignes_page:
+            l.proposition_en_attente = propositions_par_ligne.get(l.id)
+
     context = {
         'boutique': boutique,
         'inventaire': inventaire,
-        'lignes': lignes[:50],
+        'lignes': lignes_page,
         'total_lignes': lignes.count(),
         'categories': categories,
         'filtre': filtre,
@@ -8823,14 +9043,22 @@ def saisir_inventaire_boutique(request, boutique_id, inventaire_id):
         'current_user_nom': current_user_nom,
         'is_collaborateur': is_collaborateur,
         'est_boucherie': boutique.type_commerce == 'BOUCHERIE',
-        'nb_non_saisis': inventaire.lignes.filter(stock_physique__isnull=True).count(),
-        'nb_saisis': inventaire.lignes.filter(stock_physique__isnull=False).count(),
+        'nb_non_saisis': nb_non_saisis,
+        'nb_saisis': nb_saisis,
         # Compté avec au moins 1 : correspond au filtre « Saisis »
-        'nb_saisis_quantite': inventaire.lignes.filter(stock_physique__gte=1).count(),
+        'nb_saisis_quantite': nb_saisis_quantite,
         'all_articles_json': all_articles_json,
         'categories_json': categories_json,
         'variants_scan_json': variants_scan_json,
         'ajax_url': f"/commercant/boutiques/{boutique.id}/inventaires/{inventaire.id}/saisir-ligne/",
+        # ── Mode validation (KMC) ──
+        'mode_validation': mode_validation,
+        'nb_en_attente': nb_en_attente,
+        'propositions_json': propositions_json,
+        'url_validation': reverse(
+            'inventory:valider_saisies_inventaire_boutique',
+            args=[boutique.id, inventaire.id],
+        ),
     }
     return render(request, 'inventory/commercant/saisir_inventaire_boutique.html', context)
 
@@ -8874,6 +9102,64 @@ def saisir_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
         user_nom_ajax = request.user.get_full_name() or request.user.username
 
     ancien_stock_physique = ligne.stock_physique
+
+    # ── Mode validation (KMC) : la saisie d'un COLLABORATEUR ne modifie pas
+    # l'inventaire. Elle devient une PropositionInventaire en attente que le
+    # commerçant appliquera (ou refusera) sur la page dédiée. Les prix et
+    # catégories ne sont pas modifiables par un collaborateur dans ce mode.
+    # Les commerçants sans le flag passent directement ci-dessous (comportement
+    # historique inchangé).
+    if saisie_soumise_a_validation(request, boutique):
+        proposition = enregistrer_proposition(
+            request, inventaire, ligne, stock_physique,
+            commentaire=data.get('commentaire', ''),
+            remplacer=bool(data.get('remplacer')),
+        )
+        total = proposition.quantite_proposee
+        ecart_prop = total - ligne.stock_theorique
+        if ecart_prop:
+            signe = '+' if ecart_prop > 0 else '-'
+            ecart_txt = (
+                signe + ligne.article.decomposer_quantite_formate(abs(ecart_prop))
+                if ligne.affiche_unites else f"{signe}{abs(ecart_prop)}"
+            )
+        else:
+            ecart_txt = '0'
+
+        from django.db.models import Exists, OuterRef
+        en_attente = PropositionInventaire.objects.filter(
+            ligne=OuterRef('pk'), statut='EN_ATTENTE'
+        )
+        nb_saisis = inventaire.lignes.annotate(
+            a_en_attente=Exists(en_attente)
+        ).filter(Q(stock_physique__isnull=False) | Q(a_en_attente=True)).count()
+        nb_total = inventaire.lignes.count()
+        nb_en_attente = inventaire.propositions.filter(statut='EN_ATTENTE').count()
+
+        return JsonResponse({
+            'success': True,
+            'en_attente': True,
+            'ligne_id': ligne.id,
+            'article_nom': ligne.article.nom,
+            'article_id': ligne.article.id,
+            'stock_theorique': ligne.stock_theorique,
+            'stock_theorique_decompose': ligne.stock_theorique_decompose,
+            'stock_physique': total,
+            'stock_physique_decompose': ligne.article.decomposer_quantite_formate(total),
+            'unite_base': ligne.article.unite_base or 'pcs',
+            'est_boucherie': est_boucherie,
+            'prix_vente': float(ligne.article.prix_vente),
+            'categorie_nom': ligne.article.categorie.nom if ligne.article.categorie else '',
+            'ecart': ecart_prop,
+            'ecart_decompose': ecart_txt,
+            'nb_saisis': nb_saisis,
+            'nb_total': nb_total,
+            'nb_en_attente': nb_en_attente,
+            'saisi_par_nom': user_nom_ajax,
+            'unites_modifiees': 0,
+            'unites': _unites_prix_article(ligne.article),
+            'message': 'Saisie enregistrée — en attente de validation du commerçant.',
+        })
 
     # Prix des unités (Boucherie) : {id_conditionnement: prix} ; vide = auto.
     # Validation AVANT toute écriture pour ne rien enregistrer en cas d'erreur.
@@ -9046,15 +9332,20 @@ def articles_autres_pdv_inventaire_ajax(request, boutique_id, inventaire_id):
     })
 
 
-def _ligne_recherche_json(l):
+def _ligne_recherche_json(l, proposition=None):
     """Ligne d'inventaire → dict pour la recherche LIVE côté client.
 
     `stock_physique` est null tant que la ligne n'est pas saisi (et non 0),
     pour distinguer correctement les articles saisis des articles non comptés.
+
+    En mode validation (KMC), `proposition` est la PropositionInventaire en
+    attente de la ligne : les champs `en_attente` / `quantite_proposee` /
+    `ecart_propose` permettent au client d'afficher le badge « en attente »
+    et d'éviter un double comptage.
     """
     a = l.article
     est_boucherie = bool(a.boutique and a.boutique.type_commerce == 'BOUCHERIE')
-    return {
+    data = {
         'ligne_id': l.id,
         'article_id': a.id,
         'nom': str(a.nom) if a.nom else '',
@@ -9079,6 +9370,12 @@ def _ligne_recherche_json(l):
         'categorie_nom': str(a.categorie.nom) if a.categorie and a.categorie.nom else '',
         'unites': _unites_prix_article(a),
     }
+    if proposition is not None:
+        data['en_attente'] = True
+        data['quantite_proposee'] = proposition.quantite_proposee
+        data['ecart_propose'] = proposition.ecart_propose
+        data['nom_saisi_par'] = proposition.nom_saisi_par
+    return data
 
 
 @login_required
@@ -9108,9 +9405,24 @@ def lignes_recherche_inventaire_ajax(request, boutique_id, inventaire_id):
         'article__conditionnements', 'article__variantes'
     ).distinct().order_by('article__nom')[:12]
 
+    resultats = list(lignes)
+
+    # Mode validation (KMC) : rattacher les saisies encore en attente pour
+    # afficher le badge « en attente » dans les résultats de recherche.
+    propositions = {}
+    if validation_inventaire_requise(boutique) and resultats:
+        propositions = {
+            p.ligne_id: p
+            for p in inventaire.propositions.filter(
+                statut='EN_ATTENTE',
+                ligne__in=[l.id for l in resultats],
+            )
+        }
+
     return JsonResponse({
         'success': True,
-        'results': [_ligne_recherche_json(l) for l in lignes],
+        'results': [_ligne_recherche_json(l, propositions.get(l.id))
+                    for l in resultats],
     })
 
 
@@ -9360,12 +9672,38 @@ def reset_ligne_inventaire_ajax(request, boutique_id, inventaire_id):
     inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=request.boutique, statut='EN_COURS')
     ligne = get_object_or_404(LigneInventaire, id=ligne_id, inventaire=inventaire)
 
+    # Mode validation (KMC) : le collaborateur annule SA saisie en attente.
+    # Les valeurs déjà appliquées à l'inventaire ne sont jamais touchées ici.
+    if saisie_soumise_a_validation(request, request.boutique):
+        inventaire.propositions.filter(
+            ligne=ligne, statut='EN_ATTENTE', saisi_par=request.user,
+        ).delete()
+        from django.db.models import Exists, OuterRef
+        en_attente = PropositionInventaire.objects.filter(
+            ligne=OuterRef('pk'), statut='EN_ATTENTE'
+        )
+        nb_saisis = inventaire.lignes.annotate(
+            a_en_attente=Exists(en_attente)
+        ).filter(Q(stock_physique__isnull=False) | Q(a_en_attente=True)).count()
+        return JsonResponse({
+            'success': True,
+            'ligne_id': ligne.id,
+            'article_nom': ligne.article.nom,
+            'nb_saisis': nb_saisis,
+            'nb_total': inventaire.lignes.count(),
+            'saisie_annulee': True,
+        })
+
     ligne.stock_physique = None
     ligne.ecart = 0
     ligne.valeur_ecart = 0
     ligne.date_modification = timezone.now()
     ligne.save()
     ligne.refresh_from_db()
+
+    # Une réinitialisation invalide aussi la saisie en attente éventuelle
+    # de cette ligne (sinon elle serait appliquée plus tard à tort).
+    inventaire.propositions.filter(ligne=ligne, statut='EN_ATTENTE').delete()
 
     inventaire.calculer_statistiques()
 
@@ -9613,6 +9951,31 @@ def terminer_inventaire_boutique(request, boutique_id, inventaire_id):
     inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique, statut='EN_COURS')
     
     if request.method == 'POST':
+        # ── Mode validation (KMC) : le commerçant doit d'abord valider les
+        # saisies en attente, et seul le commerçant peut clore l'inventaire. ──
+        if validation_inventaire_requise(boutique) and est_collaborateur(request.user):
+            messages.error(
+                request,
+                "Seul le commerçant peut terminer un inventaire : "
+                "vos saisies seront d'abord vérifiées puis validées.",
+            )
+            return redirect(
+                'inventory:saisir_inventaire_boutique',
+                boutique_id=boutique.id, inventaire_id=inventaire.id,
+            )
+
+        nb_attente = nb_propositions_en_attente(inventaire)
+        if nb_attente:
+            messages.error(
+                request,
+                f"{nb_attente} saisie(s) en attente de validation : "
+                "validez (ou refusez) ces saisies avant de terminer l'inventaire.",
+            )
+            return redirect(
+                'inventory:valider_saisies_inventaire_boutique',
+                boutique_id=boutique.id, inventaire_id=inventaire.id,
+            )
+
         nb_saisis = inventaire.lignes.filter(stock_physique__isnull=False).count()
         if nb_saisis == 0:
             messages.error(request, "Vous devez saisir au moins un article avant de terminer")
@@ -9636,7 +9999,31 @@ def regulariser_inventaire_boutique(request, boutique_id, inventaire_id):
     """Régulariser le stock d'une boutique selon l'inventaire."""
     boutique = request.boutique
     inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique, statut='TERMINE')
-    
+
+    # ── Mode validation (KMC) : rien ne s'applique tant que des saisies de
+    # collaborateurs attendent une validation, et seul le commerçant applique. ──
+    if validation_inventaire_requise(boutique) and est_collaborateur(request.user):
+        messages.error(
+            request,
+            "Seul le commerçant peut appliquer la régularisation du stock.",
+        )
+        return redirect(
+            'inventory:saisir_inventaire_boutique',
+            boutique_id=boutique.id, inventaire_id=inventaire.id,
+        )
+
+    nb_attente = nb_propositions_en_attente(inventaire)
+    if nb_attente:
+        messages.error(
+            request,
+            f"{nb_attente} saisie(s) en attente de validation : "
+            "validez (ou refusez) ces saisies avant d'appliquer la régularisation.",
+        )
+        return redirect(
+            'inventory:valider_saisies_inventaire_boutique',
+            boutique_id=boutique.id, inventaire_id=inventaire.id,
+        )
+
     if request.method == 'POST':
         with transaction.atomic():
             lignes_regularisees = 0
@@ -9721,6 +10108,257 @@ def regulariser_inventaire_boutique(request, boutique_id, inventaire_id):
         'total_negatif': abs(sum(l.valeur_ecart for l in lignes_ecarts if l.ecart < 0)),
     }
     return render(request, 'inventory/commercant/regulariser_inventaire_boutique.html', context)
+
+
+# ========== VALIDATION DES SAISIES DES COLLABORATEURS (KMC) ==========
+
+def _qte_affichee(ligne, valeur):
+    """Quantité formatée pour l'affichage (unités mixtes en Boucherie)."""
+    if valeur is None:
+        return '—'
+    if ligne.affiche_unites:
+        return ligne.article.decomposer_quantite_formate(valeur)
+    return str(valeur)
+
+
+def _ecart_affiche(ligne, ecart):
+    """Écart signé formaté pour l'affichage (« +2 carton · 5 kg », « -3 »)."""
+    if ecart is None:
+        return '—'
+    if not ecart:
+        return '0'
+    signe = '+' if ecart > 0 else '-'
+    if ligne.affiche_unites:
+        return signe + ligne.article.decomposer_quantite_formate(abs(ecart))
+    return f"{signe}{abs(ecart)}"
+
+
+def _appliquer_proposition(inventaire, proposition, quantite, user):
+    """Écrit une proposition VALIDÉE dans l'inventaire (LigneInventaire + historique).
+
+    Le commerçant peut retenir une quantité corrigée (`quantite`), qui remplace
+    alors la quantité proposée : la correction est tracée dans l'historique.
+    """
+    ligne = proposition.ligne
+    ligne.stock_physique = quantite
+    ligne.saisi_par = proposition.saisi_par or user
+    ligne.assigne_a = proposition.nom_saisi_par
+    ligne.date_modification = timezone.now()
+    ligne.save()
+    ligne.refresh_from_db()
+
+    nom_valideur = user.get_full_name() or user.username
+    detail = f"Validé par {nom_valideur}"
+    if quantite != proposition.quantite_proposee:
+        detail += f" (quantité corrigée : {proposition.quantite_proposee} → {quantite})"
+
+    commentaire = proposition.commentaire or ''
+    HistoriqueSaisieInventaire.objects.create(
+        ligne_inventaire=ligne,
+        article=ligne.article,
+        inventaire=inventaire,
+        stock_physique_saisi=quantite,
+        stock_theorique_au_moment=ligne.stock_theorique,
+        ecart_au_moment=ligne.ecart,
+        saisi_par=proposition.saisi_par,
+        nom_saisi_par=proposition.nom_saisi_par or nom_valideur,
+        commentaire=f"{commentaire} | {detail}" if commentaire else detail,
+    )
+
+    proposition.quantite_appliquee = quantite
+    proposition.statut = 'VALIDEE'
+    proposition.traite_par = user
+    proposition.date_traitement = timezone.now()
+    proposition.save()
+
+
+def _refuser_proposition(proposition, user, motif):
+    """Marque une proposition REFUSÉE (elle n'écrit jamais dans l'inventaire)."""
+    proposition.statut = 'REFUSEE'
+    proposition.traite_par = user
+    proposition.date_traitement = timezone.now()
+    proposition.motif_refus = motif or ''
+    proposition.save()
+
+
+@login_required
+@commercant_required
+@boutique_access_required
+def valider_saisies_inventaire_boutique(request, boutique_id, inventaire_id):
+    """Page détaillée des saisies des collaborateurs en attente de validation.
+
+    Le commerçant vérifie chaque saisie (stock théorique, stock appliqué,
+    quantité proposée, écart résultant, auteur, heure, commentaire), corrige
+    éventuellement la quantité puis applique ou refuse. Une saisie appliquée
+    est écrite dans l'inventaire (LigneInventaire + historique) : la
+    régularisation du stock reste l'étape suivante, strictement inchangée.
+    """
+    boutique = request.boutique
+    inventaire = get_object_or_404(Inventaire, id=inventaire_id, boutique=boutique)
+
+    # Seul le commerçant consulte et valide (jamais un collaborateur).
+    if not est_vrai_commercant(request.user):
+        messages.error(
+            request,
+            "Seul le commerçant peut vérifier et valider les saisies des collaborateurs.",
+        )
+        return redirect(
+            'inventory:saisir_inventaire_boutique',
+            boutique_id=boutique.id, inventaire_id=inventaire.id,
+        )
+
+    # Rien à appliquer après la régularisation (l'inventaire est clos).
+    if inventaire.statut in ('REGULARISE', 'ANNULE'):
+        messages.warning(request, "Cet inventaire est déjà clôturé : aucune saisie à valider.")
+        return redirect(
+            'inventory:detail_inventaire_boutique',
+            boutique_id=boutique.id, inventaire_id=inventaire.id,
+        )
+
+    if request.method == 'POST':
+        action = request.POST.get('action', '')
+        proposition_id = request.POST.get('proposition_id')
+
+        if action in ('valider', 'refuser'):
+            proposition = get_object_or_404(
+                PropositionInventaire,
+                id=proposition_id, inventaire=inventaire, statut='EN_ATTENTE',
+            )
+            if action == 'valider':
+                quantite = proposition.quantite_proposee
+                brut = str(request.POST.get('quantite_retenu', '') or '').strip()
+                if brut:
+                    try:
+                        quantite = int(brut)
+                    except ValueError:
+                        quantite = proposition.quantite_proposee
+                with transaction.atomic():
+                    _appliquer_proposition(inventaire, proposition, quantite, request.user)
+                    inventaire.calculer_statistiques()
+                if quantite != proposition.quantite_proposee:
+                    messages.success(
+                        request,
+                        f"{proposition.ligne.article.nom} : quantité {quantite} appliquée "
+                        f"(proposée : {proposition.quantite_proposee}).",
+                    )
+                else:
+                    messages.success(
+                        request,
+                        f"{proposition.ligne.article.nom} : saisie appliquée à l'inventaire.",
+                    )
+            else:
+                _refuser_proposition(
+                    proposition, request.user,
+                    request.POST.get('motif_refus', ''),
+                )
+                messages.warning(
+                    request,
+                    f"{proposition.ligne.article.nom} : saisie refusée "
+                    "(rien n'a été appliqué).",
+                )
+
+        elif action in ('valider_tout', 'refuser_tout'):
+            en_attente = list(
+                inventaire.propositions.filter(statut='EN_ATTENTE')
+                .select_related('ligne', 'ligne__article')
+            )
+            if not en_attente:
+                messages.info(request, "Aucune saisie en attente de validation.")
+            else:
+                motif = request.POST.get('motif_refus', '')
+                with transaction.atomic():
+                    for proposition in en_attente:
+                        if action == 'valider_tout':
+                            _appliquer_proposition(
+                                inventaire, proposition,
+                                proposition.quantite_proposee, request.user,
+                            )
+                        else:
+                            _refuser_proposition(proposition, request.user, motif)
+                    inventaire.calculer_statistiques()
+                if action == 'valider_tout':
+                    messages.success(
+                        request,
+                        f"{len(en_attente)} saisie(s) validée(s) et appliquée(s) à l'inventaire.",
+                    )
+                else:
+                    messages.warning(
+                        request,
+                        f"{len(en_attente)} saisie(s) refusée(s) (rien n'a été appliqué).",
+                    )
+        else:
+            messages.error(request, "Action inconnue.")
+
+        return redirect(
+            'inventory:valider_saisies_inventaire_boutique',
+            boutique_id=boutique.id, inventaire_id=inventaire.id,
+        )
+
+    en_attente = list(
+        inventaire.propositions.filter(statut='EN_ATTENTE')
+        .select_related('ligne', 'ligne__article', 'saisi_par')
+        .order_by('ligne__article__nom')
+    )
+
+    def _ligne_affichee(p):
+        ligne = p.ligne
+        article = ligne.article
+        return {
+            'proposition': p,
+            'article': article,
+            'ligne': ligne,
+            'theorique': _qte_affichee(ligne, ligne.stock_theorique),
+            'applique': _qte_affichee(ligne, ligne.stock_physique),
+            'propose': _qte_affichee(ligne, p.quantite_proposee),
+            'ecart_propose': _ecart_affiche(ligne, p.ecart_propose),
+            'ecart_classe': (
+                'success' if p.ecart_propose > 0
+                else 'danger' if p.ecart_propose < 0 else 'secondary'
+            ),
+            'date_proposition': p.date_proposition,
+        }
+
+    traitees = list(
+        inventaire.propositions.exclude(statut='EN_ATTENTE')
+        .select_related('ligne', 'ligne__article', 'traite_par', 'saisi_par')
+        .order_by('-date_traitement')[:50]
+    )
+
+    context = {
+        'boutique': boutique,
+        'inventaire': inventaire,
+        'mode_validation': validation_inventaire_requise(boutique),
+        'lignes_affichees': [_ligne_affichee(p) for p in en_attente],
+        'nb_en_attente': len(en_attente),
+        'nb_articles_en_attente': len({p.ligne_id for p in en_attente}),
+        'nb_validees': inventaire.propositions.filter(statut='VALIDEE').count(),
+        'nb_refusees': inventaire.propositions.filter(statut='REFUSEE').count(),
+        'propositions_traitees': [
+            {
+                'proposition': p,
+                'article': p.ligne.article,
+                'ligne': p.ligne,
+                'qte_proposee': _qte_affichee(p.ligne, p.quantite_proposee),
+                'qte_appliquee': _qte_affichee(
+                    p.ligne,
+                    p.quantite_appliquee if p.quantite_appliquee is not None
+                    else p.quantite_proposee,
+                ),
+                'ecart_txt': _ecart_affiche(
+                    p.ligne,
+                    (p.quantite_appliquee if p.quantite_appliquee is not None
+                     else p.quantite_proposee) - p.ligne.stock_theorique,
+                ),
+            }
+            for p in traitees
+        ],
+        'inventaire_en_cours': inventaire.statut == 'EN_COURS',
+    }
+    return render(
+        request,
+        'inventory/commercant/valider_saisies_inventaire_boutique.html',
+        context,
+    )
 
 
 @login_required

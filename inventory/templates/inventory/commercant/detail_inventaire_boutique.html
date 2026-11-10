@@ -18,6 +18,15 @@
             </nav>
         </div>
         <div>
+            {% if mode_validation %}
+            <a href="{% url 'inventory:valider_saisies_inventaire_boutique' boutique.id inventaire.id %}"
+               class="btn {% if nb_en_attente > 0 %}btn-warning{% else %}btn-outline-primary{% endif %}">
+                <i class="fas fa-user-check"></i> Valider les saisies
+                {% if nb_en_attente > 0 %}
+                <span class="badge bg-dark">{{ nb_en_attente }}</span>
+                {% endif %}
+            </a>
+            {% endif %}
             <a href="{% url 'inventory:imprimer_inventaire_boutique' boutique.id inventaire.id %}" target="_blank" class="btn btn-outline-secondary">
                 <i class="fas fa-print"></i> Imprimer le rapport
             </a>
@@ -32,6 +41,19 @@
             {% endif %}
         </div>
     </div>
+
+    {% if mode_validation and nb_en_attente > 0 %}
+    <div class="alert alert-warning d-flex align-items-center justify-content-between">
+        <div>
+            <i class="fas fa-hourglass-half me-1"></i>
+            <strong>{{ nb_en_attente }} saisie(s) de collaborateur(s) en attente de validation.</strong>
+            Elles ne sont pas encore appliquées à l'inventaire : vérifiez-les avant de terminer ou de régulariser.
+        </div>
+        <a href="{% url 'inventory:valider_saisies_inventaire_boutique' boutique.id inventaire.id %}" class="btn btn-warning btn-sm">
+            Vérifier et appliquer <i class="fas fa-arrow-right"></i>
+        </a>
+    </div>
+    {% endif %}
 
     <div class="row mb-4">
         <div class="col-md-3">
