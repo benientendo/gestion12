@@ -39,16 +39,36 @@ def accueil_collaborateur(request):
         messages.error(request, "Vous n'avez pas de profil commerçant ou collaborateur.")
         return redirect('inventory:login_commercant')
 
-    inventaire = Inventaire.objects.filter(
+    inventaires = Inventaire.objects.filter(
         boutique__commercant=collaborateur.commercant,
         statut='EN_COURS',
-    ).select_related('boutique').first()
+    ).select_related('boutique')
+
+    # « Boutiques autorisées » : le collaborateur n'atterrit jamais dans une
+    # boutique qui ne lui est pas ouverte (même s'il y a un inventaire en cours).
+    if collaborateur.boutiques_autorisees.exists():
+        inventaire = inventaires.filter(
+            boutique__in=collaborateur.boutiques_autorisees.all()
+        ).first()
+        bloquee = inventaire is None and inventaires.exists()
+    else:
+        inventaire = inventaires.first()
+        bloquee = False
 
     if inventaire:
         return redirect(
             'inventory:saisir_inventaire_boutique',
             boutique_id=inventaire.boutique.id,
             inventaire_id=inventaire.id,
+        )
+
+    if bloquee:
+        return _page_pin(
+            request,
+            notice=(
+                "L'inventaire en cours concerne une boutique qui n'est pas "
+                "ouverte pour vous. Contactez votre commerçant."
+            ),
         )
 
     return _page_pin(

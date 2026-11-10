@@ -5,7 +5,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponse, HttpResponseForbidden
 from django.db.models import Q, Sum, Count, F, Avg, Max, Min, Prefetch, ExpressionWrapper, DecimalField as OrmDecimalField, Exists, OuterRef, Subquery
 from django.db import transaction, IntegrityError
 from django.utils import timezone
@@ -176,6 +176,12 @@ def boutique_access_required(view_func):
                 from .models import Collaborateur
                 collaborateur = Collaborateur.objects.get(user=request.user, est_actif=True)
                 boutique = get_object_or_404(Boutique, id=boutique_id, commercant=collaborateur.commercant)
+                # « Boutiques autorisées » du collaborateur : liste vide = toutes
+                # les boutiques du commerçant, sinon accès limité aux seules
+                # boutiques cochées (sinon il ouvrait n'importe quel PDV du
+                # commerçant en tapant l'URL).
+                if not collaborateur.peut_acceder_boutique(boutique):
+                    return HttpResponseForbidden("Accès non autorisé à cette boutique")
                 request.boutique = boutique
                 request.collaborateur = collaborateur  # Ajouter le collaborateur à la requête
                 return view_func(request, boutique_id, *args, **kwargs)
@@ -1490,6 +1496,10 @@ def api_stats_boutique(request, boutique_id):
     try:
         commercant = commercant_utilisateur(request.user)
         boutique = get_object_or_404(Boutique, id=boutique_id, commercant=commercant)
+        # « Boutiques autorisées » d'un collaborateur (liste vide = toutes)
+        if hasattr(request.user, 'profil_collaborateur'):
+            if not request.user.profil_collaborateur.peut_acceder_boutique(boutique):
+                return HttpResponseForbidden("Accès non autorisé à cette boutique")
         
         # Statistiques d'aujourd'hui — même source que le dashboard/clôture
         from .cloture_service import resume_periode
