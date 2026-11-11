@@ -169,6 +169,12 @@
                                 <button class="btn btn-sm btn-outline-primary" onclick="ouvrirModal({{ ligne.id }}, '{{ ligne.article.nom|escapejs }}', {{ ligne.quantite_unites }}, {{ ligne.prix_achat_unitaire }}, {{ ligne.prix_vente_unitaire }})">
                                     <i class="fas fa-edit"></i>
                                 </button>
+                                {% if ligne.suppression_possible %}
+                                <button class="btn btn-sm btn-outline-danger" title="Supprimer cette ligne (article enregistré par erreur)"
+                                        onclick="supprimerLigne({{ ligne.id }}, '{{ ligne.article.nom|escapejs }}', {{ ligne.quantite_unites }})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -327,6 +333,36 @@ function afficherErreur(message) {
     
     // Masquer après 5 secondes
     setTimeout(() => { alertDiv.style.display = 'none'; }, 5000);
+}
+
+async function supprimerLigne(ligneId, articleNom, quantite) {
+    const confirme = confirm(
+        `Supprimer « ${articleNom} » (${quantite} unité(s)) de cette facture ?\n\n` +
+        'Cette ligne a été enregistrée par erreur et n\'a pas encore été ' +
+        'distribuée : le stock du dépôt sera annulé d\'autant.\n' +
+        'Cette action est irréversible.'
+    );
+    if (!confirme) return;
+
+    try {
+        const response = await fetch(`/commercant/depots/${DEPOT_ID}/factures/${FACTURE_ID}/supprimer-ligne/${ligneId}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': CSRF_TOKEN
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.error || 'Erreur inconnue');
+        }
+    } catch (error) {
+        alert('Erreur de connexion: ' + error.message);
+    }
 }
 </script>
 {% endblock %}

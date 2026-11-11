@@ -7875,13 +7875,21 @@ def detail_facture_depot(request, depot_id, facture_id):
     else:
         pourcentage_global = Decimal('0')
     
-    # État de distribution (tout / partie / rien), au niveau facture et ligne
-    afficher_distribution = False
-    if nouvelle_maquette_depot(commercant) and depot.est_depot:
-        _, etat_lignes = etat_distribution([facture])
-        afficher_distribution = getattr(facture, 'etat', None) is not None
-        for ligne in lignes_avec_benefice:
-            ligne.etat = etat_lignes.get(ligne.id)
+    # État de distribution (tout / partie / rien), au niveau facture et ligne.
+    # Calculé pour tout dépôt (pas seulement en nouvelle maquette) : il sert
+    # aussi à savoir si une ligne reste supprimable — une ligne déjà
+    # distribuée vers les PDV ne peut plus être retirée de la facture.
+    _, etat_lignes = etat_distribution([facture])
+    for ligne in lignes_avec_benefice:
+        info = etat_lignes.get(ligne.id)
+        ligne.etat = info
+        ligne.suppression_possible = bool(
+            depot.est_depot and info is not None and info['distribue'] <= 0
+        )
+    afficher_distribution = (
+        nouvelle_maquette_depot(commercant) and depot.est_depot
+        and getattr(facture, 'etat', None) is not None
+    )
     
     context = {
         'depot': depot,
@@ -7954,13 +7962,21 @@ def detail_facture_flexible(request, facture_id):
     else:
         pourcentage_global = Decimal('0')
     
-    # État de distribution (tout / partie / rien), au niveau facture et ligne
-    afficher_distribution = False
-    if nouvelle_maquette_depot(commercant) and depot.est_depot:
-        _, etat_lignes = etat_distribution([facture])
-        afficher_distribution = getattr(facture, 'etat', None) is not None
-        for ligne in lignes_avec_benefice:
-            ligne.etat = etat_lignes.get(ligne.id)
+    # État de distribution (tout / partie / rien), au niveau facture et ligne.
+    # Calculé pour tout dépôt (pas seulement en nouvelle maquette) : il sert
+    # aussi à savoir si une ligne reste supprimable — une ligne déjà
+    # distribuée vers les PDV ne peut plus être retirée de la facture.
+    _, etat_lignes = etat_distribution([facture])
+    for ligne in lignes_avec_benefice:
+        info = etat_lignes.get(ligne.id)
+        ligne.etat = info
+        ligne.suppression_possible = bool(
+            depot.est_depot and info is not None and info['distribue'] <= 0
+        )
+    afficher_distribution = (
+        nouvelle_maquette_depot(commercant) and depot.est_depot
+        and getattr(facture, 'etat', None) is not None
+    )
     
     context = {
         'depot': depot,
@@ -8089,6 +8105,87 @@ def modifier_ligne_facture(request, depot_id, facture_id, ligne_id):
         return JsonResponse({'success': False, 'error': f'Valeur invalide: {str(e)}'}, status=400)
     except Exception as e:
         return JsonResponse({'success': False, 'error': f'Erreur serveur: {str(e)}'}, status=500)
+
+
+@login_required
+@commercant_required
+def supprimer_ligne_facture(request, depot_id, facture_id, ligne_id):
+    """
+    Supprimer une ligne d'article enregistrée par erreur dans une facture
+    du dépôt (« Mes factures »).
+
+    Règles :
+    - POST JSON uniquement ;
+    - la ligne ne doit PAS avoir été distribuée vers les points de vente
+      (aucun transfert validé imputé à la ligne, cf. distribution.py) ;
+    - le stock du dépôt est annulé d'autant (mouvement SORTIE), car
+      l'enregistrement de la ligne avait crédité le stock (ENTREE) ;
+    - le montant total de la facture est recalculé.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Méthode non autorisée'}, status=405)
+
+    # Collaborateur connecté (pas de profil commerçant) → refus propre
+    try:
+        commercant = request.user.profil_commercant
+    except Commercant.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Accès non autorisé'}, status=403)
+
+    depot = get_object_or_404(Boutique, id=depot_id, commercant=commercant, est_depot=True)
+    facture = get_object_or_404(FactureApprovisionnement, id=facture_id, depot=depot)
+    ligne = get_object_or_404(LigneApprovisionnement, id=ligne_id, facture=facture)
+
+    # Une ligne déjà (même partiellement) distribuée n'est plus supprimable
+    _, etat_lignes = etat_distribution([facture])
+    info = etat_lignes.get(ligne.id)
+    if info is None or info['distribue'] > 0:
+        return JsonResponse({
+            'success': False,
+            'error': (
+                'Cet article a déjà été distribué vers les points de vente : '
+                'la ligne ne peut plus être supprimée.'
+            ),
+        }, status=409)
+
+    article = ligne.article
+    quantite = ligne.quantite_unites or 0
+
+    if article is not None and quantite > 0 and (article.quantite_stock or 0) < quantite:
+        return JsonResponse({
+            'success': False,
+            'error': (
+                f"Stock du dépôt insuffisant ({article.quantite_stock or 0}) "
+                f"pour annuler {quantite} unité(s)."
+            ),
+        }, status=409)
+
+    with transaction.atomic():
+        if article is not None and quantite > 0:
+            stock_avant = article.quantite_stock or 0
+            article.quantite_stock = stock_avant - quantite
+            article.save(update_fields=['quantite_stock'])
+            MouvementStock.objects.create(
+                article=article,
+                type_mouvement='SORTIE',
+                quantite=quantite,
+                stock_avant=stock_avant,
+                stock_apres=article.quantite_stock,
+                commentaire=(
+                    f"Suppression ligne facture {facture.numero_facture} : "
+                    "article enregistré par erreur"
+                ),
+                reference_document=f"FACT-{facture.id}",
+                utilisateur=request.user.username,
+            )
+
+        ligne.delete()
+        total = facture.calculer_montant_total()
+
+    return JsonResponse({
+        'success': True,
+        'facture_total': float(total),
+        'nb_lignes': facture.lignes.count(),
+    })
 
 
 @login_required
