@@ -38,28 +38,133 @@
         .detail-table { font-size: 0.75rem; }
         .detail-table th, .detail-table td { padding: 6px 8px; }
     }
+
+    /* ===== Impression : détail structuré d'une valeur du journal ===== */
+    .print-only { display: none; }
+    @media print {
+        @page { margin: 12mm; }
+        body { background: #fff !important; font-size: 12px; }
+
+        /* Barre de navigation, boutons, modales : jamais imprimés */
+        .topbar, footer, .loader-wrapper, .no-print,
+        .btn, button, .modal { display: none !important; }
+        .main-content, .container-fluid { padding: 0 !important; }
+
+        /* En-tête structuré réservé à l'impression */
+        .print-only { display: block !important; }
+        .print-only table { margin-bottom: 8px; }
+        .print-only th { background: #E8EAF6 !important; white-space: nowrap; }
+
+        /* Tableau : toutes les lignes, en-têtes répétés, bordures */
+        .table-responsive { max-height: none !important; overflow: visible !important; }
+        .detail-table { font-size: 11px; }
+        .detail-table thead { display: table-header-group; }
+        .detail-table tr { page-break-inside: avoid; }
+        .detail-table th, .detail-table td {
+            border: 1px solid #999 !important;
+            padding: 4px 6px !important;
+            white-space: normal !important;
+        }
+        .detail-table th {
+            position: static !important;
+            background: #3949AB !important;
+            color: #fff !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .detail-table tfoot td {
+            background: #E8EAF6 !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .card { border: none !important; box-shadow: none !important; }
+        .card-header {
+            background: #fff !important;
+            color: #000 !important;
+            border-bottom: 2px solid #3949AB !important;
+        }
+        .card-header .badge { display: none !important; }
+        .alert { border: 1px solid #bbb !important; }
+        a { color: #000 !important; text-decoration: none !important; }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <!-- En-tête -->
-    <div class="row mb-3">
+    <!-- En-tête (écran) -->
+    <div class="row mb-3 no-print">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
                     <h2 class="mb-0"><i class="fas fa-search-dollar text-primary"></i> Détail : {{ libelle }}</h2>
                     <p class="text-muted mb-0">{{ boutique.nom }} — Journal du {{ journal.date|date:"d/m/Y" }}</p>
                 </div>
-                <a href="{% url 'inventory:journal_valeur_stock_boutique' boutique.id %}?date_debut={{ journal.date|date:'Y-m-d' }}&date_fin={{ journal.date|date:'Y-m-d' }}" class="btn btn-outline-secondary">
-                    <i class="fas fa-arrow-left"></i> Retour au journal
-                </a>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-outline-primary" onclick="window.print()"
+                            title="Imprimer le détail structuré de cette valeur">
+                        <i class="fas fa-print"></i> Imprimer
+                    </button>
+                    <a href="{% url 'inventory:journal_valeur_stock_boutique' boutique.id %}?date_debut={{ journal.date|date:'Y-m-d' }}&date_fin={{ journal.date|date:'Y-m-d' }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour au journal
+                    </a>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Valeur sélectionnée -->
-    <div class="row mb-3">
+    <!-- En-tête structuré réservé à l'impression -->
+    <div class="print-only mb-3">
+        <div class="text-center mb-2">
+            <h4 class="mb-0 fw-bold">Détail : {{ libelle }}</h4>
+            <div>{{ boutique.nom }}</div>
+            <div>Journal de valeur du stock du {{ journal.date|date:"d/m/Y" }}</div>
+        </div>
+        <table class="table table-bordered" style="max-width: 640px;">
+            <tbody>
+                <tr>
+                    <th style="width: 40%;">Valeur du journal</th>
+                    <td class="text-end"><strong>{{ valeur|floatformat:0|intcomma }} FC</strong></td>
+                </tr>
+                <tr>
+                    <th>Détail totalisé</th>
+                    <td class="text-end">{{ total_lignes|floatformat:0|intcomma }} FC</td>
+                </tr>
+                {% if ecart is not None %}
+                <tr>
+                    <th>Écart</th>
+                    <td class="text-end">{{ ecart|floatformat:0|intcomma }} FC</td>
+                </tr>
+                {% endif %}
+                {% if lignes %}
+                <tr>
+                    <th>Lignes de détail</th>
+                    <td class="text-end">{{ lignes|length }}</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+        <p class="small mb-1">{{ description }}</p>
+        {% if ecart is not None %}
+            {% if ecart == 0 %}
+            <p class="small mb-1"><strong>Cohérent :</strong> le détail totalise exactement {{ total_lignes|floatformat:0|intcomma }} FC.</p>
+            {% else %}
+            <p class="small mb-1">
+                Détail = {{ total_lignes|floatformat:0|intcomma }} FC pour une valeur journal de {{ valeur|floatformat:0|intcomma }} FC
+                {% if champ == 'impact_modification_prix' %}
+                (écart {{ ecart|floatformat:0|intcomma }} FC : modifications de prix tracées avant la mise en place du détail par article).
+                {% else %}
+                (écart {{ ecart|floatformat:0|intcomma }} FC : mouvements d'initiation INIT-/REGL- et soldes initiaux exclus).
+                {% endif %}
+            </p>
+            {% endif %}
+        {% endif %}
+        <p class="small text-muted mb-0">Édité le {% now "d/m/Y à H:i" %} — Gestion Magazin</p>
+    </div>
+
+    <!-- Valeur sélectionnée (écran : masquée à l'impression, reprise dans l'en-tête structuré) -->
+    <div class="row mb-3 no-print">
         <div class="col-md-5">
             <div class="valeur-detail-card p-3 text-center">
                 <p class="mb-1"><i class="fas fa-coins me-1"></i> {{ libelle }} du {{ journal.date|date:"d/m/Y" }} (CDF)</p>
