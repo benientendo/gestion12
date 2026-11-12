@@ -148,7 +148,7 @@ if os.environ.get('DATABASE_URL'):
     DATABASES = {
         'default': dj_database_url.config(
             default=os.environ.get('DATABASE_URL'),
-            conn_max_age=int(os.environ.get('DB_CONN_MAX_AGE', 0)),
+            conn_max_age=int(os.environ.get('DB_CONN_MAX_AGE', 60)),
             conn_health_checks=True,
         )
     }
@@ -257,13 +257,30 @@ if not DEBUG:
 # OPTIMISATION PERFORMANCE
 # ============================================
 
+# ⏱️ Temps d'attente Redis
+# Sans timeout, une connexion Redis qui bloque (addon saturé, coupure
+# réseau, redémarrage) fige la requête qui l'utilise jusqu'à la mort
+# complète du socket (plusieurs minutes) : le serveur web ne répond plus
+# alors que la cause est ailleurs. Redis-py lit ces paramètres depuis
+# l'URL (cache, channel layer, celery).
+def _redis_avec_temps_attente(url):
+    """Retourne l'URL Redis complétée par des temps d'attente raisonnables."""
+    if not url or 'socket_timeout=' in url:
+        return url
+    separateur = '&' if '?' in url else '?'
+    return (
+        f'{url}{separateur}'
+        'socket_connect_timeout=5&socket_timeout=10&retry_on_timeout=1'
+    )
+
+
 # Configuration du cache
 if os.environ.get('REDIS_URL'):
     # Production Scalingo: utiliser Redis (Django 4.0+ natif)
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-            'LOCATION': os.environ.get('REDIS_URL'),
+            'LOCATION': _redis_avec_temps_attente(os.environ.get('REDIS_URL')),
             'KEY_PREFIX': 'gestion_magazin',
             'TIMEOUT': 300,  # 5 minutes par défaut
         }
@@ -296,7 +313,7 @@ if _REDIS_URL:
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
             'CONFIG': {
-                "hosts": [_REDIS_URL],
+                "hosts": [_redis_avec_temps_attente(_REDIS_URL)],
                 "capacity": 1500,
                 "expiry": 10,
             },
@@ -313,6 +330,23 @@ else:
 # Celery Configuration
 CELERY_BROKER_URL = _REDIS_URL or 'redis://127.0.0.1:6379/0'
 CELERY_RESULT_BACKEND = _REDIS_URL or 'redis://127.0.0.1:6379/0'
+# ⏱️ Mêmes temps d'attente que le cache/channel layer : un broker Redis
+# qui bloque ne doit pas figer le worker (ni la requête qui écrit un
+# résultat) plus de quelques secondes.
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'socket_connect_timeout': 5,
+    'socket_timeout': 10,
+    'retry_on_timeout': True,
+    'health_check_interval': 30,
+}
+CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
+    'socket_connect_timeout': 5,
+    'socket_timeout': 10,
+    'retry_on_timeout': True,
+}
+CELERY_REDIS_SOCKET_TIMEOUT = 10
+CELERY_REDIS_SOCKET_CONNECT_TIMEOUT = 5
+CELERY_REDIS_RETRY_ON_TIMEOUT = True
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -324,24 +358,47 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 4  # Nombre de tâches à précharger
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000  # Redémarrer worker après 1000 tâches
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
-# Logging pour identifier les requêtes lentes (en dev uniquement)
-if DEBUG:
-    LOGGING = {
-        'version': 1,
-        'disable_existing_loggers': False,
-        'handlers': {
-            'console': {
-                'class': 'logging.StreamHandler',
-            },
+# Logging : actif en DEV comme en PROD (avant, seulement si DEBUG).
+# Objectif : Scalingo doit toujours capturer la trace des erreurs 500
+# (django.request), les événements applicatifs (inventory : WebSocket,
+# FCM, backups) et les tâches celery — sinon une panne est invisible.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
         },
-        'loggers': {
-            'django.db.backends': {
-                'level': 'WARNING',  # Mettre DEBUG pour voir toutes les requêtes SQL
-                'handlers': ['console'],
-            },
-            'celery': {
-                'level': 'INFO',
-                'handlers': ['console'],
-            },
+    },
+    'loggers': {
+        # Traceback complet des réponses 500 dans les logs Scalingo
+        'django.request': {
+            'level': 'ERROR',
+            'handlers': ['console'],
+            'propagate': False,
         },
-    }
+        # Lignes « GET /x/ 200 » émises par daphne
+        'django.server': {
+            'level': 'INFO',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+        # Erreurs SQL (connexions fermées, requêtes mortes)
+        'django.db.backends': {
+            'level': 'WARNING',  # Mettre DEBUG pour voir toutes les requêtes SQL
+            'handlers': ['console'],
+            'propagate': False,
+        },
+        # Vie de l'application : notifications WebSocket, push FCM, sauvegardes
+        'inventory': {
+            'level': 'INFO',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+        'celery': {
+            'level': 'INFO',
+            'handlers': ['console'],
+            'propagate': False,
+        },
+    },
+}

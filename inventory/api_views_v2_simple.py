@@ -219,7 +219,9 @@ def test_push_fcm(request):
         if not terminal.fcm_token:
             return Response({'error': f'Terminal {serial} has no FCM token'}, status=400)
 
-        ok = envoyer_push_terminal(terminal, 'Test Push FCM', 'Test depuis le serveur!')
+        ok = envoyer_push_terminal(
+            terminal, 'Test Push FCM', 'Test depuis le serveur!', synchrone=True,
+        )
         return Response({'success': ok, 'terminal': terminal.nom_terminal})
 
     if boutique_id:
@@ -228,7 +230,10 @@ def test_push_fcm(request):
             boutique_id=boutique_id, est_actif=True
         ).exclude(fcm_token='').exclude(fcm_token__isnull=True).count()
         nb_all = ClientModel.objects.filter(boutique_id=boutique_id, est_actif=True).count()
-        nb = envoyer_push_boutique(boutique_id, 'Test push depuis le serveur', 'Test push FCM')
+        nb = envoyer_push_boutique(
+            boutique_id, 'Test push depuis le serveur', 'Test push FCM',
+            synchrone=True,
+        )
         return Response({'success': True, 'pushes_envoyes': nb, 'nb_tokens_boutique': nb_tokens, 'nb_terminaux_boutique': nb_all})
 
     return Response({'error': 'serial ou boutique_id requis'}, status=400)

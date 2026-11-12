@@ -49,7 +49,10 @@ if terminaux.count() == 0:
     print("⚠️ Aucun jeton FCM enregistré — lancez l'app Android et connectez-vous pour qu'elle s'enregistre.")
     sys.exit(0)
 
-envois = envoyer_push_boutique(boutique_id, titre, corps, data={"type": "test_notification"})
+envois = envoyer_push_boutique(
+    boutique_id, titre, corps, data={"type": "test_notification"},
+    synchrone=True,  # script terminal : on veut le résultat réel
+)
 print(f"✅ {envois} notification(s) envoyée(s) !")
 print(f"   Titre : {titre}")
 print(f"   Corps : {corps}")

@@ -20,9 +20,11 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.authtoken.views import obtain_auth_token
 from inventory.test_timezone import test_timezone
+from inventory.views_sante import healthz
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('healthz/', healthz, name='healthz'),  # monitoring / health check Scalingo
     path('', include('inventory.urls')),
     path('api/', include('inventory.api_urls')),
     path('api/v2/', include('inventory.api_urls_v2')),  # API v2 multi-boutiques avec isolation par boutique
