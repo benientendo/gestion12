@@ -195,9 +195,25 @@
                     </form>
                 </div>
                 {% elif transfert.statut == 'VALIDE' %}
-                <div class="alert alert-success mb-0">
+                <div class="alert alert-success">
                     <i class="fas fa-check-circle"></i> Ce transfert a été validé avec succès.
                 </div>
+                {% if retour_possible %}
+                <div class="d-grid gap-2">
+                    {% if retour_deja %}
+                    <div class="alert alert-secondary mb-0 py-2">
+                        <i class="fas fa-undo"></i>
+                        Déjà retourné : <strong>{{ retour_deja }}</strong> /
+                        {{ transfert.quantite }}
+                        (reste {{ retour_restante }})
+                    </div>
+                    {% endif %}
+                    <button type="button" class="btn btn-warning w-100"
+                            data-bs-toggle="modal" data-bs-target="#retourExcedentModal">
+                        <i class="fas fa-undo"></i> Retourner l'excédent au dépôt
+                    </button>
+                </div>
+                {% endif %}
                 {% elif transfert.statut == 'ANNULE' %}
                 <div class="alert alert-secondary mb-0">
                     <i class="fas fa-ban"></i> Ce transfert a été annulé.
@@ -213,4 +229,131 @@
         </div>
     </div>
 </div>
+
+{% if retour_possible %}
+<!-- Modal Retour d'excédent au dépôt (depuis le détail du transfert) -->
+<div class="modal fade" id="retourExcedentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="fas fa-undo me-2"></i>Retourner l'excédent</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <strong>{{ article_destination.nom }}</strong><br>
+                    <small>
+                        Envoyé : <span class="badge bg-primary">{{ transfert.quantite }}</span>
+                        — déjà retourné : <span class="badge bg-secondary">{{ retour_deja }}</span>
+                        — reste : <span class="badge bg-warning text-dark">{{ retour_restante }}</span>
+                    </small>
+                </div>
+                <div class="alert alert-secondary">
+                    <i class="fas fa-info-circle"></i>
+                    Renvoie la quantité <strong>envoyée en trop</strong> à ce point de vente :
+                    le dépôt récupère la marchandise et le stock d'ici diminue d'autant.
+                </div>
+
+                <form id="formRetourExcedent">
+                    {% csrf_token %}
+                    <input type="hidden" name="transfert_id" value="{{ transfert.id }}">
+                    <input type="hidden" name="article_id" value="{{ article_destination.id }}">
+                    <input type="hidden" name="boutique_id" value="{{ transfert.boutique_destination.id }}">
+
+                    <div class="mb-3">
+                        <label for="excedent_quantite" class="form-label"><i class="fas fa-hashtag"></i> Quantité à retourner</label>
+                        <input type="number" class="form-control form-control-lg" id="excedent_quantite"
+                               name="quantite" required min="1" step="1" max="{{ retour_restante }}"
+                               value="1" autofocus>
+                        <div class="form-text">Maximum : {{ retour_restante }} unité(s) restante(s).</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="excedent_depot" class="form-label"><i class="fas fa-warehouse"></i> Dépôt de destination</label>
+                        <select class="form-select" id="excedent_depot" name="depot_id" required>
+                            {% for d in depots %}
+                            <option value="{{ d.id }}" {% if d.id == transfert.depot_source_id %}selected{% endif %}>
+                                {{ d.nom }}{% if d.id == transfert.depot_source_id %} (dépôt d'origine){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-0">
+                        <label for="excedent_commentaire" class="form-label"><i class="fas fa-comment"></i> Commentaire (optionnel)</label>
+                        <textarea class="form-control" id="excedent_commentaire" name="commentaire" rows="2"
+                                  placeholder="Ex: envoyé par erreur"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Annuler
+                </button>
+                <button type="button" class="btn btn-warning" id="btnRetourExcedent">
+                    <i class="fas fa-undo"></i> Confirmer le retour
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if retour_possible %}
+<script>
+document.getElementById('btnRetourExcedent').addEventListener('click', function() {
+    const form = document.getElementById('formRetourExcedent');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    const qte = parseInt(document.getElementById('excedent_quantite').value, 10) || 0;
+    const max = {{ retour_restante|default:0 }};
+    if (qte <= 0) {
+        alert('Erreur: la quantité doit être supérieure à 0');
+        return;
+    }
+    if (qte > max) {
+        alert('Erreur: ' + qte + ' unité(s) demandée(s) mais seulement ' + max +
+              ' restante(s) sur ce transfert.');
+        return;
+    }
+    if (!confirm('Retourner ' + qte + ' x {{ article_destination.nom|escapejs }} au dépôt ?\n' +
+                 'Le stock de ce point de vente diminuera d\'autant.')) {
+        return;
+    }
+
+    const btn = this;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Retour...';
+
+    const formData = new FormData(form);
+
+    fetch('{% url "inventory:retourner_article_au_depot" transfert.boutique_destination_id %}', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Erreur: ' + (data.error || data.message || 'Une erreur est survenue'));
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-undo"></i> Confirmer le retour';
+        }
+    })
+    .catch(error => {
+        alert('Erreur réseau: ' + error);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-undo"></i> Confirmer le retour';
+    });
+});
+</script>
+{% endif %}
 {% endblock %}

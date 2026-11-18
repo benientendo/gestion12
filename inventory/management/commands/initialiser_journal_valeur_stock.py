@@ -99,13 +99,13 @@ class Command(BaseCommand):
                 cumuls[date_j]['valeur_ventes'] += valeur
 
             elif type_mouv == 'ENTREE':
-                if ref.startswith('TRANSFERT-'):
+                if ref.startswith(('TRANSFERT-', 'RETOUR-')):
                     cumuls[date_j]['valeur_transfert_entrant'] += valeur
                 else:
                     cumuls[date_j]['valeur_stock_ajoute'] += valeur
 
             elif type_mouv == 'SORTIE':
-                if ref.startswith('TRANSFERT-'):
+                if ref.startswith(('TRANSFERT-', 'RETOUR-')):
                     cumuls[date_j]['valeur_transfert_sortant'] += valeur
                 else:
                     cumuls[date_j]['valeur_stock_sorti'] += valeur

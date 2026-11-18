@@ -236,6 +236,7 @@ urlpatterns = [
     path('commercant/depots/<int:depot_id>/inventaires/<int:inventaire_id>/regulariser/', views_commercant.regulariser_inventaire, name='regulariser_inventaire'),
     
     path('commercant/transferts/<int:transfert_id>/', views_commercant.detail_transfert, name='detail_transfert'),
+    path('commercant/boutiques/<int:boutique_id>/retourner-au-depot/', views_commercant.retourner_article_au_depot, name='retourner_article_au_depot'),
     path('commercant/transferts/<int:transfert_id>/valider/', views_commercant.valider_transfert, name='valider_transfert'),
     path('commercant/transferts/<int:transfert_id>/annuler/', views_commercant.annuler_transfert, name='annuler_transfert'),
     

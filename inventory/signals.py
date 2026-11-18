@@ -127,18 +127,34 @@ def creer_notification_stock(sender, instance, created, **kwargs):
 
     ref = (instance.reference_document or '').strip()
     est_transfert = ref.startswith('TRANSFERT-')
+    # RETOUR- : retour d'un point de vente vers le dépôt. Même statut de
+    # « flux de transfert » que TRANSFERT- pour le journal et les libellés,
+    # mais sans détail de lot : _detail_transfert reste réservé à TRANSFERT-.
+    est_retour = ref.startswith('RETOUR-')
     est_validation = ref.startswith('VALIDATION-')
     qte = instance.quantite or 0
     unite = 'FC' if (article.devise or 'CDF') == 'CDF' else article.devise
 
     # Impact sur la valeur du stock (meme regle que le journal de valeur)
     impact = _impact_valeur(instance.type_mouvement, article.prix_vente, qte)
-    champ_journal = _champ_journal(instance.type_mouvement, est_transfert)
+    champ_journal = _champ_journal(
+        instance.type_mouvement, est_transfert or est_retour,
+    )
     detail_transfert = _detail_transfert(ref) if est_transfert else None
 
     # Déterminer le type de notification et le message selon le mouvement
     if instance.type_mouvement == 'ENTREE':
-        if est_transfert:
+        if est_retour:
+            type_notif = 'STOCK_TRANSFERT'
+            titre = f"Retour reçu: {article.nom}"
+            message = (
+                f"Retour d'un point de vente: '{article.nom}' ({article.code}).\n"
+                f"Quantité retournée: +{qte}\n"
+                f"Stock avant: {instance.stock_avant or 0}\n"
+                f"Stock actuel: {instance.stock_apres or article.quantite_stock}"
+            )
+            action = "retour au dépôt"
+        elif est_transfert:
             type_notif = 'STOCK_TRANSFERT'
             titre = f"Transfert reçu: {article.nom}"
             message = (
@@ -169,7 +185,17 @@ def creer_notification_stock(sender, instance, created, **kwargs):
             )
             action = "ajout"
     elif instance.type_mouvement == 'SORTIE':
-        if est_transfert:
+        if est_retour:
+            type_notif = 'STOCK_TRANSFERT'
+            titre = f"Retour au dépôt: {article.nom}"
+            message = (
+                f"Retour au dépôt: '{article.nom}' ({article.code}).\n"
+                f"Quantité retournée: {qte}\n"
+                f"Stock avant: {instance.stock_avant or 0}\n"
+                f"Stock actuel: {instance.stock_apres or article.quantite_stock}"
+            )
+            action = "retour au dépôt"
+        elif est_transfert:
             type_notif = 'STOCK_TRANSFERT'
             titre = f"Transfert envoyé: {article.nom}"
             message = (
@@ -250,7 +276,7 @@ def creer_notification_stock(sender, instance, created, **kwargs):
         'impact_valeur': _numerique(impact),
         'impact_valeur_stock': f"{signe_impact}{_montant_fc(impact)} {unite}",
         'champ_journal': champ_journal,
-        'est_transfert': bool(est_transfert or est_validation),
+        'est_transfert': bool(est_transfert or est_validation or est_retour),
         'direction': (
             'ENTREE' if instance.type_mouvement in ('ENTREE', 'RETOUR')
             else instance.type_mouvement
@@ -429,8 +455,8 @@ def notifier_ajustement_prix(sender, instance, created, **kwargs):
 def alimenter_journal_valeur_stock(sender, instance, created, **kwargs):
     """
     Met à jour le JournalValeurStock à chaque nouveau MouvementStock.
-    Distingue les transferts (reference_document commence par 'TRANSFERT-')
-    des entrées/sorties classiques.
+    Distingue les transferts (reference_document commence par 'TRANSFERT-'
+    ou 'RETOUR-') des entrées/sorties classiques.
     """
     if not created:
         return
@@ -472,13 +498,13 @@ def alimenter_journal_valeur_stock(sender, instance, created, **kwargs):
             jvs.enregistrer_vente(boutique, prix_vente * quantite, date_mouv)
 
         elif type_mouv == 'ENTREE':
-            if ref.startswith('TRANSFERT-'):
+            if ref.startswith(('TRANSFERT-', 'RETOUR-')):
                 jvs.enregistrer_transfert_entrant(boutique, valeur, date_mouv)
             else:
                 jvs.enregistrer_approvisionnement(boutique, valeur, date_mouv)
 
         elif type_mouv == 'SORTIE':
-            if ref.startswith('TRANSFERT-'):
+            if ref.startswith(('TRANSFERT-', 'RETOUR-')):
                 jvs.enregistrer_transfert_sortant(boutique, valeur, date_mouv)
             else:
                 jvs.enregistrer_sortie_manuelle(boutique, valeur, date_mouv)

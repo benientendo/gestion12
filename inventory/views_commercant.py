@@ -1211,12 +1211,26 @@ def articles_boutique(request, boutique_id):
         est_valide_client=False
     ).only('id').count()
 
+    # Retour d'excédent vers le dépôt : réservé à un point de vente
+    # (jamais un dépôt) et à un compte qui possède au moins un dépôt actif.
+    depots = []
+    if not boutique.est_depot:
+        depots = list(
+            Boutique.objects.filter(
+                commercant=boutique.commercant,
+                est_depot=True,
+                est_active=True,
+            ).order_by('nom').values('id', 'nom')
+        )
+
     context = {
         'boutique': boutique,
         'articles': articles_page,
         'categories': categories,
         'articles_stock_bas': articles_stock_bas,
         'articles_en_attente': articles_en_attente,
+        'depots': depots,
+        'retour_possible': bool(depots),
         'search': search,
         'categorie_id': int(categorie_id) if categorie_id else None,
         'stock_filter': stock_filter,
@@ -5534,13 +5548,40 @@ def detail_transfert(request, transfert_id):
         return redirect('inventory:commercant_dashboard')
     
     article_destination = None
+    retour_deja = 0
+    depots = []
     if transfert.statut == 'VALIDE':
         article_destination, _ = trouver_article_destination(
             transfert.article, transfert.boutique_destination, creer_si_absent=False)
-    
+
+        # Retour d'excédent : quantité déjà renvoyée au dépôt pour CE lot
+        # (mouvements d'entrée du dépôt portant la référence RETOUR-<id>).
+        if article_destination is not None:
+            retour_deja = (
+                MouvementStock.objects.filter(
+                    article__boutique=transfert.depot_source,
+                    reference_document=f'RETOUR-{transfert.id}',
+                    type_mouvement='ENTREE',
+                ).aggregate(total=Sum('quantite'))['total'] or 0
+            )
+        depots = list(
+            Boutique.objects.filter(
+                commercant=commercant, est_depot=True, est_active=True,
+            ).order_by('nom').values('id', 'nom')
+        )
+
     context = {
         'transfert': transfert,
         'article_destination': article_destination,
+        'retour_deja': retour_deja,
+        'retour_restante': max(transfert.quantite - retour_deja, 0),
+        'depots': depots,
+        'retour_possible': bool(
+            transfert.statut == 'VALIDE'
+            and article_destination is not None
+            and depots
+            and retour_deja < transfert.quantite
+        ),
     }
     
     return render(request, 'inventory/commercant/detail_transfert.html', context)
@@ -5605,6 +5646,252 @@ def annuler_transfert(request, transfert_id):
             messages.error(request, "Ce transfert ne peut plus être annulé")
     
     return redirect('inventory:detail_depot', depot_id=transfert.depot_source.id)
+
+@login_required
+@commercant_required
+@boutique_access_required
+@journee_non_cloturee
+def retourner_article_au_depot(request, boutique_id):
+    """
+    Retourne une quantité d'un point de vente vers le dépôt
+    (« excédent envoyé par erreur »).
+
+    Aucun modèle nouveau ni migration : tout passe par MouvementStock avec
+    la référence RETOUR-<transfert_id> ou RETOUR-<uuid> :
+      - dépôt : ENTREE +quantite  (le stock du dépôt réaugmente) ;
+      - PDV   : SORTIE -quantite  (le stock du PDV diminue) ;
+    Si la réception MAUI est toujours en attente (article.quantite_envoyee
+    > 0), cette part n'a jamais été créditée au stock du PDV : on la
+    consomme d'abord, SANS mouvement de stock côté PDV — seul le dépôt
+    est recrédité, puisque c'est lui qui avait sorti la marchandise.
+
+    POST (form-data ou JSON) : article_id, quantite, depot_id (obligatoire
+    s'il y a plusieurs dépôts), transfert_id (optionnel), commentaire.
+    """
+    if request.method != 'POST':
+        return JsonResponse(
+            {'success': False, 'error': 'Méthode non autorisée'}, status=405,
+        )
+
+    boutique = request.boutique  # chargé par boutique_access_required
+    if boutique.est_depot:
+        return JsonResponse({
+            'success': False,
+            'error': "Un dépôt ne retourne pas de stock vers lui-même.",
+        }, status=400)
+
+    if request.content_type and 'application/json' in request.content_type:
+        try:
+            data = json.loads(request.body or '{}')
+        except ValueError:
+            data = {}
+    else:
+        data = request.POST
+
+    try:
+        quantite = int(str(data.get('quantite') or 0).strip())
+    except (TypeError, ValueError):
+        quantite = 0
+    if quantite <= 0:
+        return JsonResponse({
+            'success': False, 'error': 'La quantité doit être supérieure à 0.',
+        }, status=400)
+
+    # L'article doit appartenir AU point de vente (pas un article du dépôt)
+    article_id = data.get('article_id')
+    if not article_id:
+        return JsonResponse(
+            {'success': False, 'error': "Article manquant."}, status=400,
+        )
+    article_pdv = Article.objects.filter(
+        id=article_id, boutique=boutique, est_actif=True,
+    ).first()
+    if article_pdv is None:
+        return JsonResponse({
+            'success': False,
+            'error': "Cet article n'appartient pas à ce point de vente.",
+        }, status=404)
+
+    # Dépôt de destination : celui demandé, sinon l'unique dépôt du compte
+    commercant = commercant_utilisateur(request.user)
+    depots = list(
+        Boutique.objects.filter(
+            commercant=commercant, est_depot=True, est_active=True,
+        ).order_by('nom')
+    )
+    if not depots:
+        return JsonResponse({
+            'success': False, 'error': 'Aucun dépôt configuré pour votre compte.',
+        }, status=409)
+
+    depot_id = data.get('depot_id')
+    if depot_id:
+        depot = next((d for d in depots if str(d.id) == str(depot_id)), None)
+        if depot is None:
+            return JsonResponse({
+                'success': False, 'error': 'Dépôt introuvable pour votre compte.',
+            }, status=400)
+    elif len(depots) == 1:
+        depot = depots[0]
+    else:
+        return JsonResponse({
+            'success': False,
+            'error': 'Plusieurs dépôts : précisez le dépôt de destination.',
+        }, status=409)
+
+    # L'article doit exister AU DÉPôt (pas de création silencieuse)
+    article_depot = trouver_article_destination(
+        article_pdv, depot, creer_si_absent=False,
+    )[0]
+    if article_depot is None:
+        return JsonResponse({
+            'success': False,
+            'error': (
+                f"L'article « {article_pdv.nom} » n'existe pas au dépôt "
+                f"{depot.nom} : retour impossible."
+            ),
+        }, status=409)
+
+    # Option : retour rattaché à un transfert précis (page détail transfert)
+    transfert = None
+    if data.get('transfert_id'):
+        try:
+            transfert = TransfertStock.objects.get(id=int(data['transfert_id']))
+        except (TransfertStock.DoesNotExist, TypeError, ValueError):
+            return JsonResponse(
+                {'success': False, 'error': 'Transfert introuvable.'}, status=404,
+            )
+        if transfert.boutique_destination_id != boutique.id:
+            return JsonResponse({
+                'success': False,
+                'error': "Ce transfert n'est pas destiné à ce point de vente.",
+            }, status=409)
+        if transfert.depot_source_id != depot.id:
+            return JsonResponse({
+                'success': False,
+                'error': "Ce transfert provient d'un autre dépôt.",
+            }, status=409)
+        if transfert.statut != 'VALIDE':
+            return JsonResponse({
+                'success': False,
+                'error': 'Ce transfert n’est pas validé : retour impossible.',
+            }, status=409)
+
+        reference = f"RETOUR-{transfert.id}"
+        deja_retourne = (
+            MouvementStock.objects.filter(
+                article=article_depot,
+                reference_document=reference,
+                type_mouvement='ENTREE',
+            ).aggregate(total=Sum('quantite'))['total'] or 0
+        )
+        if deja_retourne + quantite > transfert.quantite:
+            return JsonResponse({
+                'success': False,
+                'error': (
+                    f"Retour impossible : {deja_retourne} unité(s) déjà "
+                    f"retournée(s) sur {transfert.quantite} envoyée(s)."
+                ),
+            }, status=409)
+    else:
+        reference = f"RETOUR-{uuid.uuid4().hex[:8].upper()}"
+
+    commentaire = str(data.get('commentaire') or '').strip()
+    utilisateur = request.user.username
+
+    with transaction.atomic():
+        # Verrouillage des deux articles : la dispo est revérifiée ici,
+        # au plus près de l'écriture (aucun retour parallèle ne passe).
+        article_pdv = Article.objects.select_for_update().get(id=article_pdv.id)
+        article_depot = Article.objects.select_for_update().get(id=article_depot.id)
+
+        stock_pdv = article_pdv.quantite_stock or 0
+        en_attente = article_pdv.quantite_envoyee or 0
+        disponible = stock_pdv + en_attente
+        if quantite > disponible:
+            detail = (
+                f"{stock_pdv} en stock"
+                + (f" + {en_attente} en attente de réception" if en_attente else "")
+            )
+            return JsonResponse({
+                'success': False,
+                'error': (
+                    f"Stock insuffisant au point de vente : "
+                    f"{disponible} disponible(s) ({detail})."
+                ),
+            }, status=409)
+
+        # 1) Dépôt : la marchandise rentre
+        depot_avant = article_depot.quantite_stock or 0
+        article_depot.quantite_stock = depot_avant + quantite
+        article_depot.save(update_fields=['quantite_stock'])
+        MouvementStock.objects.create(
+            article=article_depot,
+            type_mouvement='ENTREE',
+            quantite=quantite,
+            stock_avant=depot_avant,
+            stock_apres=article_depot.quantite_stock,
+            commentaire=commentaire or f"Retour de {boutique.nom}",
+            reference_document=reference,
+            utilisateur=utilisateur,
+        )
+
+        # 2) Point de vente : la marchandise sort
+        #    (d'abord la part jamais créditée : quantite_envoyee)
+        a_crediter = min(quantite, en_attente)
+        a_sortir = quantite - a_crediter
+        champs = []
+        if a_crediter:
+            article_pdv.quantite_envoyee = en_attente - a_crediter
+            champs.append('quantite_envoyee')
+        pdv_avant = stock_pdv
+        if a_sortir:
+            article_pdv.quantite_stock = stock_pdv - a_sortir
+            champs.append('quantite_stock')
+        if champs:
+            article_pdv.save(update_fields=champs)
+        if a_sortir:
+            MouvementStock.objects.create(
+                article=article_pdv,
+                type_mouvement='SORTIE',
+                quantite=-a_sortir,
+                stock_avant=pdv_avant,
+                stock_apres=article_pdv.quantite_stock,
+                commentaire=commentaire or f"Retour au dépôt {depot.nom}",
+                reference_document=reference,
+                utilisateur=utilisateur,
+            )
+
+        quantite_en_attente_traitee = a_crediter
+
+    # Synchro des terminaux (best effort : le retour est déjà enregistré)
+    try:
+        from .websocket_utils import notify_stock_updated, notify_sync_required
+        notify_stock_updated(
+            boutique.id, article_pdv.id, article_pdv.quantite_stock, article_pdv.nom,
+        )
+        notify_stock_updated(
+            depot.id, article_depot.id, article_depot.quantite_stock, article_depot.nom,
+        )
+        notify_sync_required(
+            boutique.id,
+            f"{quantite} x {article_pdv.nom} retourné(s) au dépôt {depot.nom}",
+        )
+    except Exception:
+        pass
+
+    return JsonResponse({
+        'success': True,
+        'message': (
+            f"{quantite} x {article_pdv.nom} retourné(s) au dépôt {depot.nom}."
+        ),
+        'quantite': quantite,
+        'reference': reference,
+        'stock_pdv_apres': article_pdv.quantite_stock,
+        'stock_depot_apres': article_depot.quantite_stock,
+        'quantite_en_attente_traitee': quantite_en_attente_traitee,
+    })
+
 
 @login_required
 @commercant_required
@@ -11387,21 +11674,21 @@ def detail_valeur_journal(request, boutique_id, journal_id, champ):
         elif champ == 'valeur_transfert_entrant':
             qs = base_qs.filter(
                 type_mouvement='ENTREE',
-                reference_document__startswith='TRANSFERT-',
+                reference_document__startswith=('TRANSFERT-', 'RETOUR-'),
             )
         elif champ == 'valeur_stock_ajoute':
             qs = base_qs.filter(
                 type_mouvement__in=('ENTREE', 'RETOUR')
-            ).exclude(reference_document__startswith='TRANSFERT-')
+            ).exclude(reference_document__startswith=('TRANSFERT-', 'RETOUR-'))
         elif champ == 'valeur_transfert_sortant':
             qs = base_qs.filter(
                 type_mouvement='SORTIE',
-                reference_document__startswith='TRANSFERT-',
+                reference_document__startswith=('TRANSFERT-', 'RETOUR-'),
             )
         elif champ == 'valeur_stock_sorti':
             qs = base_qs.filter(
                 type_mouvement='SORTIE'
-            ).exclude(reference_document__startswith='TRANSFERT-')
+            ).exclude(reference_document__startswith=('TRANSFERT-', 'RETOUR-'))
         elif champ == 'montant_inventaire':
             qs = base_qs.filter(type_mouvement='AJUSTEMENT')
         else:

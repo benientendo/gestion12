@@ -13,7 +13,7 @@
 # non affichées), afin qu'une facture affichée n'hérite jamais des transferts
 # d'une facture plus ancienne.
 
-from .models import LigneApprovisionnement, TransfertStock
+from .models import LigneApprovisionnement, MouvementStock, TransfertStock
 
 STATUT_VIDE = 'VIDE'        # facture sans article
 STATUT_AUCUN = 'AUCUN'      # rien n'a été distribué
@@ -120,6 +120,37 @@ def etat_distribution(factures):
             reste -= prendre
             if deja + prendre >= entree['recu']:
                 index[cle] += 1
+
+    # Retours de points de vente (référence RETOUR-) : la quantité revenue
+    # au dépôt n'est plus « distribuée ». On la soustrait FIFO, dans
+    # l'ordre des lignes, exactement comme l'imputation des transferts —
+    # une ligne peut ainsi repasser de TOUT à PARTIEL et sa quantité
+    # redevient distribuable vers un autre point de vente.
+    retours = MouvementStock.objects.filter(
+        article__boutique_id__in=depot_ids,
+        article_id__in=article_ids,
+        type_mouvement='ENTREE',
+        reference_document__startswith='RETOUR-',
+    ).order_by('date_mouvement', 'id').values_list(
+        'article__boutique_id', 'article_id', 'quantite',
+    )
+
+    for retour_depot, retour_article, qte_retour in retours:
+        cle = (retour_depot, retour_article)
+        entrees = lignes_par_cle.get(cle)
+        if not entrees:
+            continue
+        reste = qte_retour or 0
+        i = 0
+        while reste > 0 and i < len(entrees):
+            deja = distribue_par_ligne.get(entrees[i]['id'], 0)
+            if deja <= 0:
+                i += 1
+                continue
+            prendre = reste if reste < deja else deja
+            distribue_par_ligne[entrees[i]['id']] = deja - prendre
+            reste -= prendre
+            i += 1
 
     # Reporting : uniquement les factures demandées
     for facture in factures:

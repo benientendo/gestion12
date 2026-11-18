@@ -284,6 +284,17 @@
                                         onclick="setArticleForStock(parseInt(this.dataset.articleId), this.dataset.articleNom, parseInt(this.dataset.articleStock), this.dataset.hasVariantes === 'true', this.dataset.conditionnements || '')" title="Stock">
                                     <i class="fas fa-boxes"></i>
                                 </button>
+                                {% if retour_possible %}
+                                <button type="button" class="btn btn-outline-secondary btn-sm"
+                                        data-bs-toggle="modal" data-bs-target="#retourDepotModal"
+                                        data-article-id="{{ article.id }}"
+                                        data-article-nom="{{ article.nom|escapejs }}"
+                                        data-article-stock="{{ article.stock_total }}"
+                                        data-article-envoyee="{{ article.quantite_envoyee|default_if_none:0 }}"
+                                        onclick="setArticleForRetour(this.dataset.articleId, this.dataset.articleNom, parseInt(this.dataset.articleStock) || 0, parseInt(this.dataset.articleEnvoyee) || 0)" title="Retourner au dépôt">
+                                    <i class="fas fa-undo"></i>
+                                </button>
+                                {% endif %}
                                 <button type="button" class="btn btn-outline-info btn-sm"
                                         data-bs-toggle="modal" data-bs-target="#modifierPrixModal"
                                         data-article-id="{{ article.id }}"
@@ -882,6 +893,69 @@
         </div>
     </div>
 </div>
+
+<!-- Modal Retour d'excédent au dépôt -->
+{% if retour_possible %}
+<div class="modal fade" id="retourDepotModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="fas fa-undo me-2"></i>Retourner au dépôt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <strong id="retourArticleName"></strong><br>
+                    <small>
+                        Stock ici : <span id="retourStockIci" class="badge bg-primary"></span> unités
+                        <span id="retourAttenteBloc">— en attente de réception : <span id="retourAttente" class="badge bg-warning text-dark"></span></span>
+                    </small>
+                </div>
+                <div class="alert alert-secondary">
+                    <i class="fas fa-info-circle"></i>
+                    Renvoie une quantité <strong>envoyée par erreur</strong> à ce point de vente :
+                    le dépôt récupère la marchandise et le stock d'ici diminue d'autant.
+                </div>
+
+                <form id="formRetourDepot">
+                    {% csrf_token %}
+                    <input type="hidden" id="retourArticleId" name="article_id">
+
+                    <div class="mb-3">
+                        <label for="retour_quantite" class="form-label"><i class="fas fa-hashtag"></i> Quantité à retourner</label>
+                        <input type="number" class="form-control form-control-lg" id="retour_quantite"
+                               name="quantite" required min="1" step="1" value="1" autofocus>
+                        <div class="form-text" id="retourDispo"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="retour_depot" class="form-label"><i class="fas fa-warehouse"></i> Dépôt de destination</label>
+                        <select class="form-select" id="retour_depot" name="depot_id" required>
+                            {% for d in depots %}
+                            <option value="{{ d.id }}">{{ d.nom }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-0">
+                        <label for="retour_commentaire" class="form-label"><i class="fas fa-comment"></i> Commentaire (optionnel)</label>
+                        <textarea class="form-control" id="retour_commentaire" name="commentaire" rows="2"
+                                  placeholder="Ex: envoyé par erreur"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Annuler
+                </button>
+                <button type="button" class="btn btn-warning" id="btnRetourDepot">
+                    <i class="fas fa-undo"></i> Confirmer le retour
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Modal Recherche Article par Code-barres + Ajout Stock/Prix -->
 <div class="modal fade" id="rechercheArticleModal" tabindex="-1">
@@ -3191,6 +3265,89 @@ document.addEventListener('DOMContentLoaded', function() {
             btn.innerHTML = '<i class="fas fa-check"></i> Confirmer l\'Ajustement';
         });
     });
+    
+    // ==================== RETOUR D'EXCÉDENT AU DÉPÔT ====================
+    // Présent seulement si la boutique a au moins un dépôt (retour_possible)
+    const btnRetourDepotEl = document.getElementById('btnRetourDepot');
+    if (btnRetourDepotEl) {
+    let currentRetourArticleId = null;
+    let currentRetourDispo = 0;
+
+    window.setArticleForRetour = function(articleId, articleNom, stock, envoyee) {
+        currentRetourArticleId = articleId;
+        currentRetourDispo = (stock || 0) + (envoyee || 0);
+
+        document.getElementById('retourArticleId').value = articleId;
+        document.getElementById('retourArticleName').textContent = articleNom;
+        document.getElementById('retourStockIci').textContent = stock || 0;
+        document.getElementById('retourAttente').textContent = envoyee || 0;
+        document.getElementById('retourAttenteBloc').style.display = envoyee ? '' : 'none';
+        document.getElementById('retourDispo').textContent =
+            currentRetourDispo > 0
+                ? 'Disponible au point de vente : ' + currentRetourDispo + ' unité(s).'
+                : 'Aucune quantité disponible à retourner.';
+        const qte = document.getElementById('retour_quantite');
+        qte.value = 1;
+        qte.max = Math.max(currentRetourDispo, 1);
+    };
+
+    btnRetourDepotEl.addEventListener('click', function() {
+        const form = document.getElementById('formRetourDepot');
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+        const qte = parseInt(document.getElementById('retour_quantite').value, 10) || 0;
+        if (qte <= 0) {
+            alert('Erreur: la quantité doit être supérieure à 0');
+            return;
+        }
+        if (qte > currentRetourDispo) {
+            alert('Erreur: ' + qte + ' unité(s) demandée(s) mais seulement ' +
+                  currentRetourDispo + ' disponible(s) au point de vente.');
+            return;
+        }
+        const nom = document.getElementById('retourArticleName').textContent;
+        if (!confirm('Retourner ' + qte + ' x ' + nom + ' au dépôt ?\n' +
+                     'Le stock de ce point de vente diminuera d\'autant.')) {
+            return;
+        }
+
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Retour...';
+
+        const formData = new FormData(form);
+        formData.append('article_id', currentRetourArticleId);
+
+        fetch('{% url "inventory:retourner_article_au_depot" boutique.id %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                try {
+                    const inst = bootstrap.Modal.getInstance(document.getElementById('retourDepotModal'));
+                    if (inst) inst.hide();
+                } catch (e) {}
+                location.reload();
+            } else {
+                alert('Erreur: ' + (data.error || data.message || 'Une erreur est survenue'));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-undo"></i> Confirmer le retour';
+            }
+        })
+        .catch(error => {
+            alert('Erreur réseau: ' + error);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-undo"></i> Confirmer le retour';
+        });
+    });
+    } // fin if (btnRetourDepotEl)
     
     // ==================== MODIFICATION PRIX RAPIDE ====================
     let currentPrixArticleId = null;
