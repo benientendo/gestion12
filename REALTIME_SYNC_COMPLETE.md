@@ -110,6 +110,7 @@
 | `price_updated` | Prix modifié | Changement de tarif |
 | `category_updated` | Catégorie modifiée | Changement de catégorie |
 | `sync_required` | Sync complète demandée | Après changements majeurs |
+| `retour_depot` | Retour d'excédent PDV → dépôt | Alerte claire côté client : part déjà validée vs réception annulée |
 | `stock_alert` | Alerte stock faible | Stock < seuil |
 | `vente_rejected` | Vente rejetée | Stock insuffisant |
 

@@ -5919,9 +5919,16 @@ def retourner_article_au_depot(request, boutique_id):
 
     # Synchro des terminaux (best effort : le retour est déjà enregistré)
     try:
-        from .websocket_utils import notify_stock_updated, notify_sync_required
+        from .websocket_utils import (
+            notify_retour_depot, notify_stock_updated, notify_sync_required,
+        )
         notify_stock_updated(
-            boutique.id, article_pdv.id, article_pdv.quantite_stock, article_pdv.nom,
+            boutique.id, article_pdv.id, article_pdv.quantite_stock,
+            article_pdv.nom,
+            # Le stock du PDV ne bouge que si la marchandise était déjà
+            # validée ici : sinon « Le stock est passé à X » serait trompeur
+            # (valeur inchangée). Le WebSocket, lui, part toujours.
+            push_fcm=bool(a_sortir),
         )
         notify_stock_updated(
             depot.id, article_depot.id, article_depot.quantite_stock, article_depot.nom,
@@ -5929,6 +5936,19 @@ def retourner_article_au_depot(request, boutique_id):
         notify_sync_required(
             boutique.id,
             f"{quantite} x {article_pdv.nom} retourné(s) au dépôt {depot.nom}",
+        )
+        # 🔔 Alerte explicite côté client : ce qui était déjà validé ici
+        # (a_sortir, stock réellement diminué) vs réception annulée (a_crediter).
+        notify_retour_depot(
+            boutique.id,
+            article_pdv.id,
+            article_pdv.nom,
+            quantite,
+            depot.nom,
+            article_pdv.quantite_stock,
+            quantite_validee=a_sortir,
+            quantite_annulee=a_crediter,
+            reference=reference,
         )
     except Exception:
         pass

@@ -310,6 +310,70 @@ def notify_sync_required(boutique_id, reason="Synchronisation demandée"):
     )
 
 
+def notify_retour_depot(boutique_id, article_id, article_nom, quantite,
+                        depot_nom, stock_apres, quantite_validee=0,
+                        quantite_annulee=0, reference=None):
+    """🔔 Retour d'excédent PDV → dépôt : alerte CLAIRE côté client.
+
+    Une « Synchronisation nécessaire » ne dit pas ce qui se passe : ici le
+    message dit explicitement
+      - ce qui était **déjà validé** au point de vente (stock réellement
+        diminué), et
+      - ce qui n'était qu'**en attente de réception** (annulé),
+    avec la référence du retour.
+
+    Diffusé en WebSocket (``retour_depot`` sur le groupe ``boutique_<id>``)
+    ET en push FCM (app fermée). Les anciennes versions de l'app, qui ne
+    connaissent pas encore ce type, tombent toujours sur ``sync_required``
+    envoyé en parallèle : elles continuent donc de se synchroniser.
+    """
+    details = []
+    if quantite_validee:
+        details.append(
+            f"{quantite_validee} unité(s) déjà validée(s) ici : "
+            f"stock passé à {stock_apres}."
+        )
+    if quantite_annulee:
+        details.append(
+            f"{quantite_annulee} unité(s) en attente de réception annulée(s)."
+        )
+
+    corps = f"{quantite} x {article_nom} retourné(s) au dépôt {depot_nom}."
+    if details:
+        corps += " " + " ".join(details)
+    if reference:
+        corps += f" Réf. {reference}."
+
+    payload = {
+        'type': 'retour_depot',
+        'reference': reference or '',
+        'article_id': article_id,
+        'article_nom': article_nom or '',
+        'quantite': quantite,
+        'quantite_validee': quantite_validee,
+        'quantite_annulee': quantite_annulee,
+        'stock_apres': stock_apres,
+        'depot_nom': depot_nom or '',
+    }
+
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(f'boutique_{boutique_id}', payload)
+        logger.info(
+            f"🔔 WebSocket: Retour au dépôt {reference or ''} "
+            f"({quantite} x {article_nom}) envoyé à boutique {boutique_id}"
+        )
+    except Exception as e:
+        logger.error(f"❌ Erreur envoi WebSocket retour_depot: {e}")
+
+    _push_fcm(
+        boutique_id,
+        f"↩️ Retour au dépôt : {article_nom or f'#{article_id}'}",
+        corps,
+        data={k: str(v) for k, v in payload.items()},
+    )
+
+
 def notify_stock_alert(boutique_id, article_id, article_nom, stock_actuel, seuil_alerte=10):
     """
     Envoyer une alerte de stock faible

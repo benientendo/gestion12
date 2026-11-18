@@ -160,6 +160,25 @@ class BoutiqueConsumer(AsyncWebsocketConsumer):
         }))
         logger.info(f"📤 Sync requise envoyée - Raison: {event.get('reason')}")
     
+    async def retour_depot(self, event):
+        """Un article est retourné du point de vente au dépôt (retour d'excédent)"""
+        await self.send(text_data=json.dumps({
+            'type': 'retour_depot',
+            'reference': event.get('reference', ''),
+            'article_id': event.get('article_id'),
+            'article_nom': event.get('article_nom', ''),
+            'quantite': event.get('quantite', 0),
+            'quantite_validee': event.get('quantite_validee', 0),
+            'quantite_annulee': event.get('quantite_annulee', 0),
+            'stock_apres': event.get('stock_apres'),
+            'depot_nom': event.get('depot_nom', ''),
+            'timestamp': self.get_timestamp(),
+        }))
+        logger.info(
+            f"📤 Retour au dépôt envoyé - {event.get('quantite')} x "
+            f"{event.get('article_nom')} ({event.get('reference')})"
+        )
+
     async def banner_created(self, event):
         """Une nouvelle bannière publicitaire est disponible"""
         await self.send(text_data=json.dumps({
