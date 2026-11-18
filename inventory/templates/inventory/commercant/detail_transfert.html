@@ -254,6 +254,26 @@
                     le dépôt récupère la marchandise et le stock d'ici diminue d'autant.
                 </div>
 
+                {% if imputation %}
+                <div class="alert alert-light border">
+                    <i class="fas fa-file-invoice me-1 text-primary"></i>
+                    <strong>Facture(s) source de ce transfert :</strong>
+                    <ul class="mb-1 small">
+                        {% for f in imputation %}
+                        <li>
+                            {{ f.numero_facture|default:"Facture sans numéro" }}
+                            {% if f.date_facture %}du {{ f.date_facture|date:"d/m/Y" }}{% endif %}
+                            — <span class="badge bg-primary">{{ f.quantite }}</span> unité(s)
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    <small class="text-muted">
+                        Ce sont ces factures qui seront recréditées par le retour
+                        (la dernière touchée d'abord).
+                    </small>
+                </div>
+                {% endif %}
+
                 <form id="formRetourExcedent">
                     {% csrf_token %}
                     <input type="hidden" name="transfert_id" value="{{ transfert.id }}">
@@ -303,6 +323,37 @@
 {% block extra_js %}
 {% if retour_possible %}
 <script>
+// Aperçu : indique QUELLES factures le retour recréditera, avant confirmation.
+function _dateFr(iso) {
+    if (!iso) return '';
+    const p = String(iso).split('-');
+    return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso;
+}
+function _texteSource(apercu) {
+    if (!apercu || !apercu.success) return '';
+    let texte = '';
+    if (apercu.factures_source && apercu.factures_source.length) {
+        texte += '\n\nFacture(s) recréditée(s) : ' + apercu.factures_source.map(function(f) {
+            return (f.numero_facture || 'Facture sans numéro') +
+                   (f.date_facture ? ' du ' + _dateFr(f.date_facture) : '') +
+                   ' (' + f.quantite + ' u.)';
+        }).join(', ');
+    }
+    if (apercu.quantite_sans_source > 0) {
+        texte += '\n' + apercu.quantite_sans_source +
+                 ' unité(s) sans facture source (non recréditée(s)).';
+    }
+    return texte;
+}
+function _apercuRetour(url, params) {
+    const qs = Object.keys(params).map(function(k) {
+        return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+    }).join('&');
+    return fetch(url + '?preview=1&' + qs, {
+        headers: {'X-Requested-With': 'XMLHttpRequest'}
+    }).then(function(r) { return r.json(); }).catch(function() { return null; });
+}
+
 document.getElementById('btnRetourExcedent').addEventListener('click', function() {
     const form = document.getElementById('formRetourExcedent');
     if (!form.checkValidity()) {
@@ -320,38 +371,55 @@ document.getElementById('btnRetourExcedent').addEventListener('click', function(
               ' restante(s) sur ce transfert.');
         return;
     }
-    if (!confirm('Retourner ' + qte + ' x {{ article_destination.nom|escapejs }} au dépôt ?\n' +
-                 'Le stock de ce point de vente diminuera d\'autant.')) {
-        return;
-    }
 
     const btn = this;
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Retour...';
+    const urlRetour = '{% url "inventory:retourner_article_au_depot" transfert.boutique_destination_id %}';
 
-    const formData = new FormData(form);
-
-    fetch('{% url "inventory:retourner_article_au_depot" transfert.boutique_destination_id %}', {
-        method: 'POST',
-        body: formData,
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
+    _apercuRetour(urlRetour, {
+        article_id: {{ article_destination.id }},
+        quantite: qte,
+        depot_id: document.getElementById('excedent_depot').value,
+        transfert_id: {{ transfert.id }}
+    }).then(function(apercu) {
+        // Mêmes refus que l'exécution : inutile de confirmer un retour
+        // qui sera de toute façon refusé.
+        if (apercu && apercu.success === false) {
+            alert('Erreur: ' + (apercu.error || 'Une erreur est survenue'));
+            return;
         }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            location.reload();
-        } else {
-            alert('Erreur: ' + (data.error || data.message || 'Une erreur est survenue'));
+        if (!confirm('Retourner ' + qte + ' x {{ article_destination.nom|escapejs }} au dépôt ?\n' +
+                     'Le stock de ce point de vente diminuera d\'autant.' +
+                     _texteSource(apercu))) {
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Retour...';
+
+        const formData = new FormData(form);
+
+        fetch(urlRetour, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Erreur: ' + (data.error || data.message || 'Une erreur est survenue'));
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-undo"></i> Confirmer le retour';
+            }
+        })
+        .catch(error => {
+            alert('Erreur réseau: ' + error);
             btn.disabled = false;
             btn.innerHTML = '<i class="fas fa-undo"></i> Confirmer le retour';
-        }
-    })
-    .catch(error => {
-        alert('Erreur réseau: ' + error);
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-undo"></i> Confirmer le retour';
+        });
     });
 });
 </script>

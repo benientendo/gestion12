@@ -915,6 +915,11 @@
                     <i class="fas fa-info-circle"></i>
                     Renvoie une quantité <strong>envoyée par erreur</strong> à ce point de vente :
                     le dépôt récupère la marchandise et le stock d'ici diminue d'autant.
+                    <div class="small mt-1">
+                        <i class="fas fa-file-invoice text-primary"></i>
+                        La facture <strong>source</strong> qui sera recréditée s'affiche
+                        avant la confirmation.
+                    </div>
                 </div>
 
                 <form id="formRetourDepot">
@@ -3273,6 +3278,37 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentRetourArticleId = null;
     let currentRetourDispo = 0;
 
+    // Aperçu : indique QUELLES factures le retour recréditera, avant confirmation.
+    function _dateFr(iso) {
+        if (!iso) return '';
+        const p = String(iso).split('-');
+        return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso;
+    }
+    function _texteSource(apercu) {
+        if (!apercu || !apercu.success) return '';
+        let texte = '';
+        if (apercu.factures_source && apercu.factures_source.length) {
+            texte += '\n\nFacture(s) recréditée(s) : ' + apercu.factures_source.map(function(f) {
+                return (f.numero_facture || 'Facture sans numéro') +
+                       (f.date_facture ? ' du ' + _dateFr(f.date_facture) : '') +
+                       ' (' + f.quantite + ' u.)';
+            }).join(', ');
+        }
+        if (apercu.quantite_sans_source > 0) {
+            texte += '\n' + apercu.quantite_sans_source +
+                     ' unité(s) sans facture source (non recréditée(s)).';
+        }
+        return texte;
+    }
+    function _apercuRetour(params) {
+        const qs = Object.keys(params).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+        }).join('&');
+        return fetch('{% url "inventory:retourner_article_au_depot" boutique.id %}?preview=1&' + qs, {
+            headers: {'X-Requested-With': 'XMLHttpRequest'}
+        }).then(function(r) { return r.json(); }).catch(function() { return null; });
+    }
+
     window.setArticleForRetour = function(articleId, articleNom, stock, envoyee) {
         currentRetourArticleId = articleId;
         currentRetourDispo = (stock || 0) + (envoyee || 0);
@@ -3308,43 +3344,59 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         const nom = document.getElementById('retourArticleName').textContent;
-        if (!confirm('Retourner ' + qte + ' x ' + nom + ' au dépôt ?\n' +
-                     'Le stock de ce point de vente diminuera d\'autant.')) {
-            return;
-        }
+        const depotId = document.getElementById('retour_depot').value;
 
         const btn = this;
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Retour...';
 
-        const formData = new FormData(form);
-        formData.append('article_id', currentRetourArticleId);
-
-        fetch('{% url "inventory:retourner_article_au_depot" boutique.id %}', {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest'
+        _apercuRetour({
+            article_id: currentRetourArticleId,
+            quantite: qte,
+            depot_id: depotId
+        }).then(function(apercu) {
+            // Mêmes refus que l'exécution : inutile de confirmer un retour
+            // qui sera de toute façon refusé.
+            if (apercu && apercu.success === false) {
+                alert('Erreur: ' + (apercu.error || 'Une erreur est survenue'));
+                return;
             }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                try {
-                    const inst = bootstrap.Modal.getInstance(document.getElementById('retourDepotModal'));
-                    if (inst) inst.hide();
-                } catch (e) {}
-                location.reload();
-            } else {
-                alert('Erreur: ' + (data.error || data.message || 'Une erreur est survenue'));
+            if (!confirm('Retourner ' + qte + ' x ' + nom + ' au dépôt ?\n' +
+                         'Le stock de ce point de vente diminuera d\'autant.' +
+                         _texteSource(apercu))) {
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Retour...';
+
+            const formData = new FormData(form);
+            formData.append('article_id', currentRetourArticleId);
+
+            fetch('{% url "inventory:retourner_article_au_depot" boutique.id %}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    try {
+                        const inst = bootstrap.Modal.getInstance(document.getElementById('retourDepotModal'));
+                        if (inst) inst.hide();
+                    } catch (e) {}
+                    location.reload();
+                } else {
+                    alert('Erreur: ' + (data.error || data.message || 'Une erreur est survenue'));
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-undo"></i> Confirmer le retour';
+                }
+            })
+            .catch(error => {
+                alert('Erreur réseau: ' + error);
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-undo"></i> Confirmer le retour';
-            }
-        })
-        .catch(error => {
-            alert('Erreur réseau: ' + error);
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-undo"></i> Confirmer le retour';
+            });
         });
     });
     } // fin if (btnRetourDepotEl)

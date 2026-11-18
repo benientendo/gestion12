@@ -24,7 +24,7 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 from .models import Commercant, Boutique, Article, Vente, LigneVente, MouvementStock, Client, RapportCaisse, ArticleNegocie, RetourArticle, VenteRejetee, TransfertStock, VarianteArticle, Fournisseur, FactureApprovisionnement, LigneApprovisionnement, Categorie, Inventaire, LigneInventaire, AlerteStock, JournalValeurStock, HistoriqueSaisieInventaire, PropositionInventaire, TelechargementRapportMensuel, trouver_article_destination, appliquer_attributs_vente_destination, CodeCloture, ClotureJournee, DemandeAnnulationVente
 from .forms import BoutiqueForm, ArticleForm, VarianteArticleForm
-from .distribution import etat_distribution
+from .distribution import etat_distribution, imputation_transfert, simuler_retour
 import json
 import io
 
@@ -5576,6 +5576,9 @@ def detail_transfert(request, transfert_id):
         'retour_deja': retour_deja,
         'retour_restante': max(transfert.quantite - retour_deja, 0),
         'depots': depots,
+        # Factures d'où la quantité de CE transfert est réellement partie
+        # (nettes des retours déjà faits) : c'est ce que le retour recréditera.
+        'imputation': imputation_transfert(transfert),
         'retour_possible': bool(
             transfert.statut == 'VALIDE'
             and article_destination is not None
@@ -5647,6 +5650,34 @@ def annuler_transfert(request, transfert_id):
     
     return redirect('inventory:detail_depot', depot_id=transfert.depot_source.id)
 
+
+def _phrase_source(apercu):
+    """« Factures recréditées : F-001 du 12/01/2026 (20 u.) » — message lisible.
+
+    Signale aussi la part du retour qui ne correspond à aucune facture, pour
+    qu'elle ne passe jamais inaperçue.
+    """
+    morceaux = []
+    for credit in apercu.get('factures_source') or []:
+        date = credit.get('date_facture')
+        morceaux.append(
+            f"{credit.get('numero_facture') or 'Facture sans numéro'}"
+            + (f" du {date:%d/%m/%Y}" if date else "")
+            + f" ({credit['quantite']} u.)"
+        )
+    phrase = (
+        " Facture(s) recréditée(s) : " + ", ".join(morceaux) + "."
+        if morceaux else ""
+    )
+    sans_source = apercu.get('quantite_sans_source') or 0
+    if sans_source:
+        phrase += (
+            f" {sans_source} unité(s) sans facture source "
+            "(non recréditée(s))."
+        )
+    return phrase
+
+
 @login_required
 @commercant_required
 @boutique_access_required
@@ -5665,10 +5696,20 @@ def retourner_article_au_depot(request, boutique_id):
     consomme d'abord, SANS mouvement de stock côté PDV — seul le dépôt
     est recrédité, puisque c'est lui qui avait sorti la marchandise.
 
+    La facture recréditée est la facture SOURCE de la quantité renvoyée
+    (cf. inventory/distribution.py) : elle figure dans la réponse
+    (``factures_source``) et dans le message, jamais devinée en silence.
+
     POST (form-data ou JSON) : article_id, quantite, depot_id (obligatoire
     s'il y a plusieurs dépôts), transfert_id (optionnel), commentaire.
+    GET ``?preview=1`` (mêmes paramètres) : aperçu des factures qui seront
+    recréditées, sans aucune écriture — affiché avant la confirmation.
     """
-    if request.method != 'POST':
+    apercu = (
+        request.method == 'GET'
+        and request.GET.get('preview') in ('1', 'true', 'yes')
+    )
+    if request.method != 'POST' and not apercu:
         return JsonResponse(
             {'success': False, 'error': 'Méthode non autorisée'}, status=405,
         )
@@ -5680,7 +5721,9 @@ def retourner_article_au_depot(request, boutique_id):
             'error': "Un dépôt ne retourne pas de stock vers lui-même.",
         }, status=400)
 
-    if request.content_type and 'application/json' in request.content_type:
+    if apercu:
+        data = request.GET
+    elif request.content_type and 'application/json' in request.content_type:
         try:
             data = json.loads(request.body or '{}')
         except ValueError:
@@ -5821,6 +5864,16 @@ def retourner_article_au_depot(request, boutique_id):
                 ),
             }, status=409)
 
+        # Factures que ce retour recréditera : calculées APRÈS les mêmes
+        # refus que l'exécution et AVANT toute écriture — l'aperçu (GET) et
+        # la réponse (POST) disent donc exactement la même chose, avec la
+        # même règle que les colonnes « distribué / restant ».
+        apercu_retour = simuler_retour(
+            depot.id, article_depot.id, reference, quantite,
+        )
+        if apercu:
+            return JsonResponse({'success': True, **apercu_retour})
+
         # 1) Dépôt : la marchandise rentre
         depot_avant = article_depot.quantite_stock or 0
         article_depot.quantite_stock = depot_avant + quantite
@@ -5884,12 +5937,16 @@ def retourner_article_au_depot(request, boutique_id):
         'success': True,
         'message': (
             f"{quantite} x {article_pdv.nom} retourné(s) au dépôt {depot.nom}."
+            + _phrase_source(apercu_retour)
         ),
         'quantite': quantite,
         'reference': reference,
         'stock_pdv_apres': article_pdv.quantite_stock,
         'stock_depot_apres': article_depot.quantite_stock,
         'quantite_en_attente_traitee': quantite_en_attente_traitee,
+        # Factures source réellement recréditées (et part sans source)
+        'factures_source': apercu_retour['factures_source'],
+        'quantite_sans_source': apercu_retour['quantite_sans_source'],
     })
 
 
