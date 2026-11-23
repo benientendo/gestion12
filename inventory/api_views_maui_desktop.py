@@ -899,13 +899,26 @@ def _serialiser_lot_transfert(transferts, boutique_courante=None):
         '',
     )
 
+    # Refus de réception : le statut de base reste VALIDÉ (la marchandise est
+    # bien partie et le retour est écrit), mais l'opérateur doit voir
+    # « Refusé » d'un coup d'œil — sinon l'historique ment.
+    refuses = [t for t in lignes if t.date_refus]
+    if refuses and len(refuses) == len(lignes):
+        statut_libelle = 'Refusé'
+    elif refuses:
+        statut_libelle = 'Refusé (partiel)'
+    else:
+        statut_libelle = STATUTS_TRANSFERT_LIBELLES.get(statut, statut)
+
     return {
         'reference_lot': reference,
         'transfert_id': premier.id if len(lignes) == 1 else None,
         'date_transfert': _date_iso(premier.date_transfert),
         'date_validation': _date_iso(premier.date_validation),
         'statut': statut,
-        'statut_libelle': STATUTS_TRANSFERT_LIBELLES.get(statut, statut),
+        'statut_libelle': statut_libelle,
+        'refuse': bool(refuses),
+        'date_refus': _date_iso(max(t.date_refus for t in refuses)) if refuses else None,
         'sens': sens,
         'sens_libelle': SENS_TRANSFERT_LIBELLES.get(sens, sens),
         'source': _boutique_vers_dict(source),
@@ -1018,10 +1031,14 @@ def historique_transferts_maui(request):
         'en_attente': 0,
         'valides': 0,
         'annules': 0,
+        'refuses': 0,
     }
     for lignes in groupes.values():
         sens_lot = 'ENVOI' if lignes[0].depot_source_id == boutique.id else 'RECEPTION'
         stats['envoyes' if sens_lot == 'ENVOI' else 'recus'] += 1
+        if any(ligne.date_refus for ligne in lignes):
+            stats['refuses'] += 1
+            continue
         statut_lot = lignes[0].statut
         if statut_lot == 'EN_ATTENTE':
             stats['en_attente'] += 1

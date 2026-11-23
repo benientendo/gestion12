@@ -1396,6 +1396,14 @@ class TransfertStock(models.Model):
     valide_par = models.CharField(max_length=100, blank=True, help_text="Utilisateur ayant validé le transfert")
     
     statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_ATTENTE')
+    # Le refus de réception côté terminal MAUI ne change PAS ``statut`` :
+    # la marchandise est bien partie (SORTIE du source déjà écrite), seul le
+    # crédit du retour la fait revenir. Sans ce marqueur, l'historique
+    # afficherait « Validé » pour un lot que la destination a refusé.
+    date_refus = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Refus de réception par la destination : la quantité est revenue à la source",
+    )
     reference_lot = models.CharField(max_length=50, blank=True, db_index=True, help_text="Référence de lot pour regrouper les transferts multiples")
     commentaire = models.TextField(blank=True)
     

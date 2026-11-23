@@ -111,6 +111,7 @@
 | `category_updated` | Catégorie modifiée | Changement de catégorie |
 | `sync_required` | Sync complète demandée | Après changements majeurs |
 | `retour_depot` | Retour d'excédent PDV → dépôt | Alerte claire côté client : part déjà validée vs réception annulée |
+| `refus_reception` | Destination refuse un transfert MAUI → MAUI | Les **deux** terminaux sont prévenus (`role` = `source` / `destination`) : l'expéditeur voit sa marchandise revenir, la destination n'a rien ajouté |
 | `stock_alert` | Alerte stock faible | Stock < seuil |
 | `vente_rejected` | Vente rejetée | Stock insuffisant |
 

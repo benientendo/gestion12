@@ -34,10 +34,20 @@
 # facture supprimée…) n'est PAS recrédité : la vue le signale explicitement
 # (« quantite_sans_source ») au lieu de le faire passer silencieusement.
 #
+# Refus de réception (terminal MAUI qui refuse un transfert reçu) : mêmes
+# références RETOUR-<transfert_id> — la quantité revient à la source, les
+# segments du lot sont annulés (LIFO) et ``deja_credite`` interdit tout
+# double recrédit, que le crédit vienne d'un refus ou d'un retour d'excédent.
+#
 # Les colonnes « distribué / restant » dérivent des MÊMES segments :
 # affichage et retour ne peuvent donc pas diverger.
 
-from .models import LigneApprovisionnement, MouvementStock, TransfertStock
+from django.db.models import Sum
+
+from .models import (
+    Article, LigneApprovisionnement, MouvementStock, TransfertStock,
+    trouver_article_destination,
+)
 
 STATUT_VIDE = 'VIDE'        # facture sans article
 STATUT_AUCUN = 'AUCUN'      # rien n'a été distribué
@@ -221,6 +231,126 @@ def _repartition(depot_ids, article_ids):
         annuler_retour(segments, ordre, reference, r_depot, r_article, quantite)
 
     return segments, ordre
+
+
+def deja_credite(transfert_ids):
+    """{transfert_id: quantité déjà recréditée à la source (référence RETOUR-…)}.
+
+    Sert à ne JAMAIS recréditer deux fois un même transfert, que le
+    recrédit vienne d'un refus de réception ou d'un retour d'excédent.
+    """
+    if not transfert_ids:
+        return {}
+    references = [f'{PREFIXE_RETOUR}{tid}' for tid in transfert_ids]
+    lignes = (
+        MouvementStock.objects.filter(
+            type_mouvement='ENTREE',
+            reference_document__in=references,
+        ).values('reference_document').annotate(total=Sum('quantite'))
+    )
+    return {
+        int(ligne['reference_document'][len(PREFIXE_RETOUR):]): ligne['total'] or 0
+        for ligne in lignes
+    }
+
+
+def _meme_article(source, destination):
+    """Pré-filtre : ``source`` peut-il se résoudre en ``destination`` ?
+
+    Reprend les deux règles de ``trouver_article_destination`` (le code,
+    puis le nom insensible à la casse) dans l'autre sens, sans requête.
+    Ce n'est qu'un filtre : la décision définitive est prise par
+    ``trouver_article_destination`` lui-même, pour ne JAMAIS imputer un lot
+    qui finirait par résoudre un autre article de la boutique.
+    """
+    if destination is None or source is None:
+        return False
+    if destination.code and source.code == destination.code:
+        return True
+    nom_destination = (destination.nom or '').strip().casefold()
+    return bool(nom_destination) and (
+        (source.nom or '').strip().casefold() == nom_destination
+    )
+
+
+def transferts_en_attente(boutique_destination, article_destination, quantite):
+    """Transferts VALIDÉS qui ont fourni la quantité encore en attente au
+    point de vente (``quantite_envoyee``), **du plus récent au plus ancien**.
+
+    La validation de réception vide TOUTE la quantité en attente d'un
+    article : ce qui reste en attente est donc toujours un suffixe continu
+    des transferts les plus récents. Le LIFO restitue exactement les
+    transferts concernés — jamais un lot déjà reçu et revendu.
+
+    Retourne ``[(transfert, quantité), …]`` totalisant au plus ``quantite``
+    (les lots déjà recrédités par un refus ou un retour sont exclus).
+
+    Les lots qui ne correspondent pas à ``article_destination`` (l'article
+    du point de vente a pu être apparié à un autre article source) sont
+    écartés par la vérification exacte, jamais devinés.
+    """
+    reste = quantite or 0
+    if reste <= 0 or article_destination is None or boutique_destination is None:
+        return []
+
+    lignes = list(
+        TransfertStock.objects.filter(
+            boutique_destination_id=boutique_destination.id,
+            statut='VALIDE',
+        ).order_by('-date_transfert', '-id').values_list(
+            'id', 'article_id', 'quantite',
+        )
+    )
+    if not lignes:
+        return []
+
+    articles = {
+        article.id: article
+        for article in Article.objects.filter(
+            id__in={article_id for _, article_id, _ in lignes}
+        )
+    }
+
+    candidats = []
+    for transfert_id, article_id, quantite_lot in lignes:
+        source = articles.get(article_id)
+        if _meme_article(source, article_destination):
+            candidats.append((transfert_id, source, quantite_lot or 0))
+    if not candidats:
+        return []
+
+    credites = deja_credite([candidat[0] for candidat in candidats])
+
+    retenus = []
+    for transfert_id, source, quantite_lot in candidats:
+        if reste <= 0:
+            break
+        dispo = quantite_lot - credites.get(transfert_id, 0)
+        if dispo <= 0:
+            continue
+        # Vérification exacte (1 à 2 requêtes) uniquement sur les lots
+        # qu'on s'apprête à retenir.
+        resolu, _ = trouver_article_destination(
+            source, boutique_destination, creer_si_absent=False,
+        )
+        if resolu is None or resolu.id != article_destination.id:
+            continue
+        prendre = dispo if dispo < reste else reste
+        retenus.append((transfert_id, prendre))
+        reste -= prendre
+
+    if not retenus:
+        return []
+
+    quantites = dict(retenus)
+    return [
+        (transfert, quantites[transfert.id])
+        for transfert in (
+            TransfertStock.objects.filter(id__in=quantites)
+            .select_related('article', 'depot_source')
+            .order_by('-date_transfert', '-id')
+        )
+    ]
 
 
 def cumul_par_ligne(segments):

@@ -374,6 +374,77 @@ def notify_retour_depot(boutique_id, article_id, article_nom, quantite,
     )
 
 
+def notify_refus_reception(source_boutique_id, source_nom, destination_boutique_id,
+                           destination_nom, article_id, article_nom, quantite,
+                           stock_source=None, reference=None):
+    """🔔 Refus de réception par un terminal : les DEUX côtés sont prévenus.
+
+    Sans ceci, l'expéditeur ne sait JAMAIS que sa marchandise est revenue
+    (l'ancien code ne notifiait que la destination) et le destinataire
+    croit avoir simplement remis un article au catalogue.
+
+    Diffusé en WebSocket (``refus_reception`` sur ``boutique_<id>``) ET en
+    push FCM (app fermée) des deux côtés. Les anciennes versions de l'app,
+    qui ne connaissent pas encore ce type, continuent de recevoir
+    ``sync_required`` envoyé en parallèle.
+    """
+    payload = {
+        'type': 'refus_reception',
+        'reference': reference or '',
+        'article_id': article_id,
+        'article_nom': article_nom or '',
+        'quantite': quantite,
+        'source_nom': source_nom or '',
+        'destination_nom': destination_nom or '',
+        'stock_source': '' if stock_source is None else stock_source,
+    }
+
+    for role, boutique_id in (
+        ('source', source_boutique_id),
+        ('destination', destination_boutique_id),
+    ):
+        if not boutique_id:
+            continue
+        message = dict(payload, role=role)
+        try:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(f'boutique_{boutique_id}', message)
+        except Exception as e:
+            logger.error(f"❌ Erreur envoi WebSocket refus_reception: {e}")
+
+    # Push FCM : le titre diffère selon le rôle, chacun doit comprendre
+    # d'un coup d'œil ce qui se passe DE SON CÔTÉ.
+    if source_boutique_id:
+        corps_source = (
+            f"{quantite} x {article_nom} refusé(s) par {destination_nom} : "
+            f"retour au point d'envoi."
+        )
+        if stock_source is not None:
+            corps_source += f" Stock source passé à {stock_source}."
+        if reference:
+            corps_source += f" Réf. {reference}."
+        _push_fcm(
+            source_boutique_id,
+            f"↩️ Retour refusé : {article_nom or f'#{article_id}'}",
+            corps_source,
+            data={**{k: str(v) for k, v in payload.items()}, 'role': 'source'},
+        )
+
+    if destination_boutique_id:
+        corps_destination = (
+            f"{quantite} x {article_nom} refusé(s) : aucun stock ajouté ici, "
+            f"retour envoyé à {source_nom}."
+        )
+        if reference:
+            corps_destination += f" Réf. {reference}."
+        _push_fcm(
+            destination_boutique_id,
+            f"❌ Réception refusée : {article_nom or f'#{article_id}'}",
+            corps_destination,
+            data={**{k: str(v) for k, v in payload.items()}, 'role': 'destination'},
+        )
+
+
 def notify_stock_alert(boutique_id, article_id, article_nom, stock_actuel, seuil_alerte=10):
     """
     Envoyer une alerte de stock faible

@@ -21,7 +21,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Prefetch
-from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner, CodeCloture, ClotureJournee, DemandeAnnulationVente, Conditionnement
+from .models import Client, Boutique, Article, Categorie, Vente, LigneVente, MouvementStock, ArticleNegocie, RetourArticle, VenteRejetee, VarianteArticle, AlerteStock, JournalValeurStock, Banner, CodeCloture, ClotureJournee, DemandeAnnulationVente, Conditionnement, TransfertStock
 from .serializers import ArticleSerializer, ArticleAvecVariantesSerializer, CategorieSerializer, VenteSerializer, ArticleNegocieSerializer, RetourArticleSerializer
 from .websocket_utils import notify_stock_updated, notify_article_updated, notify_article_created, notify_dashboard_stats
 
@@ -858,8 +858,24 @@ def valider_article(request):
 @permission_classes([AllowAny])
 def refuser_article(request):
     """
-    Refuse un article en attente de validation.
-    Remet est_valide_client=True et quantite_envoyee=0 sans ajouter de stock.
+    Refuse un article en attente de réception (terminal MAUI destinataire).
+
+    La quantité encore en attente (``quantite_envoyee``) n'a JAMAIS été
+    créditée au stock du destinataire, mais elle avait DÉJÀ quitté le point
+    d'expédition (SORTIE écrite à la création du transfert). La refuser fait
+    donc revenir la marchandise à la source :
+      - source  : stock +quantite, mouvement ENTREE « RETOUR-<transfert> » ;
+      - faits   : les segments de distribution du lot sont annulés (LIFO),
+                  la facture source est recréditée (inventory/distribution.py) ;
+      - destinataire : ``quantite_envoyee`` vidé, ``est_valide_client=True``
+                  (l'article reste au catalogue, sans ajout de stock) ;
+      - DEUX terminaux sont notifiés (l'expéditeur n'était jamais prévenu).
+
+    La part qui ne vient d'aucun transfert (stock déclaré directement
+    depuis le back-office) n'a quitté aucun point : rien à recréditer,
+    la réponse le dit explicitement (``quantite_sans_lot``).
+
+    Body JSON : ``article_id``, ``boutique_id`` (ou header X-Device-Serial).
     """
     data = request.data
     logger.info(f"❌ Refus article - raw data: {dict(data) if hasattr(data, 'items') else data}")
@@ -889,19 +905,170 @@ def refuser_article(request):
             article = Article.objects.get(id=article_id, boutique_id=boutique_id, est_actif=True)
         else:
             article = Article.objects.get(id=article_id, est_actif=True)
-        
-        logger.info(f"❌ Refus article {article.code} - {article.quantite_envoyee} unités refusées")
-        
-        article.est_valide_client = True
-        article.quantite_envoyee = 0
-        article.save()
 
-        # 🔔 WebSocket: notifier tous les POS que l'article est refusé (dispo sans stock ajouté)
-        notify_article_updated(article.boutique.id, article)
+        boutique = article.boutique
+        if boutique is None:
+            return Response({
+                'error': 'Article sans boutique',
+                'code': 'ARTICLE_SANS_BOUTIQUE'
+            }, status=status.HTTP_409_CONFLICT)
+
+        # Double clic / double refus : rien en attente et déjà au catalogue,
+        # il ne se passe RIEN — on ne renvoie ni écriture ni notification.
+        if article.est_valide_client and (article.quantite_envoyee or 0) <= 0:
+            return Response({
+                'success': True,
+                'message': f'Article "{article.nom}" déjà traité',
+                'already_refused': True,
+                'article': {
+                    'id': article.id,
+                    'nom': article.nom,
+                    'quantite_stock': article.quantite_stock,
+                }
+            })
+
+        from .distribution import transferts_en_attente
+
+        with transaction.atomic():
+            # Verrou de destination D'ABORD, puis source — le même ordre que
+            # retourner_article_au_depot : les deux opérations ne peuvent pas
+            # se mortifier et ne peuvent pas se recréditer deux fois.
+            article = Article.objects.select_for_update().get(id=article.id)
+            quantite_en_attente = article.quantite_envoyee or 0
+
+            lots = (
+                transferts_en_attente(boutique, article, quantite_en_attente)
+                if quantite_en_attente > 0 else []
+            )
+
+            article.est_valide_client = True
+            article.quantite_envoyee = 0
+            article.save()
+
+            # Verrous déterministes (articles source par id croissant, puis
+            # lignes de transfert) : l'ordre est le même à chaque exécution.
+            articles_source = {}
+            for transfert, _quantite in lots:
+                articles_source.setdefault(transfert.article_id, None)
+            for article_source_id in sorted(articles_source):
+                articles_source[article_source_id] = Article.objects.select_for_update().get(
+                    id=article_source_id,
+                )
+            ids_lots = sorted(transfert.id for transfert, _quantite in lots)
+            lignes_verrouillees = {
+                ligne.id: ligne
+                for ligne in TransfertStock.objects.select_for_update().filter(id__in=ids_lots)
+            }
+
+            maintenant = timezone.now()
+            retours = []
+            for transfert, quantite_lot in lots:
+                # La ligne verrouillée fait foi (état frais en base).
+                ligne = lignes_verrouillees.get(transfert.id, transfert)
+                article_source = articles_source[transfert.article_id]
+
+                avant = article_source.quantite_stock or 0
+                article_source.quantite_stock = avant + quantite_lot
+                article_source.save(update_fields=['quantite_stock'])
+
+                MouvementStock.objects.create(
+                    article=article_source,
+                    type_mouvement='ENTREE',
+                    quantite=quantite_lot,
+                    stock_avant=avant,
+                    stock_apres=article_source.quantite_stock,
+                    reference_document=f"RETOUR-{transfert.id}",
+                    utilisateur="MAUI-Client",
+                    commentaire=(
+                        f"Réception refusée par {boutique.nom}"
+                        + (f" (lot {ligne.reference_lot})" if ligne.reference_lot else "")
+                    ),
+                )
+
+                if ligne.date_refus is None:
+                    ligne.date_refus = maintenant
+                    ligne.save(update_fields=['date_refus'])
+
+                retours.append((ligne, quantite_lot, article_source))
+
+            quantite_returenee = sum(qte for _t, qte, _a in retours)
+            quantite_sans_lot = max(quantite_en_attente - quantite_returenee, 0)
+
+        if quantite_sans_lot:
+            logger.warning(
+                f"⚠️ Refus article {article.code} : {quantite_sans_lot} unité(s) en "
+                f"attente sans transfert correspondant (stock déclaré depuis le "
+                f"back-office ?) — aucun recrédit possible, rien n'a quitté un point."
+            )
+
+        logger.info(
+            f"❌ Refus article {article.code} - {quantite_en_attente} unité(s) refusée(s), "
+            f"{quantite_returenee} revenue(s) à la source"
+        )
+
+        # 🔔 WebSocket + push : les DEUX terminaux doivent comprendre
+        # d'un coup d'œil ce qui s'est passé (l'expéditeur, lui, n'était
+        # jamais prévenu avant cette évolution).
+        try:
+            from .websocket_utils import (
+                notify_article_updated, notify_refus_reception,
+                notify_stock_updated, notify_sync_required,
+            )
+
+            notify_article_updated(boutique.id, article)
+            notify_sync_required(
+                boutique.id,
+                f"Réception de {article.nom} refusée"
+                + (
+                    f" - {quantite_returenee} unité(s) revenue(s) à la source"
+                    if quantite_returenee else " - aucun stock ajouté"
+                ),
+            )
+
+            for ligne, quantite_lot, article_source in retours:
+                source_boutique = article_source.boutique
+                if source_boutique is None:
+                    continue
+                # WS (mise à jour du stock local) sans push redondant :
+                # notify_refus_reception porte déjà le push clair ci-dessous.
+                notify_stock_updated(
+                    source_boutique.id, article_source.id,
+                    article_source.quantite_stock, article_source.nom,
+                    push_fcm=False,
+                )
+                notify_sync_required(
+                    source_boutique.id,
+                    f"{quantite_lot} x {article_source.nom} refusé(s) par {boutique.nom} "
+                    f"- retour enregistré",
+                )
+                notify_refus_reception(
+                    source_boutique.id,
+                    source_boutique.nom,
+                    boutique.id,
+                    boutique.nom,
+                    article_source.id,
+                    article_source.nom,
+                    quantite_lot,
+                    stock_source=article_source.quantite_stock,
+                    reference=f"RETOUR-{ligne.id}",
+                )
+        except Exception:
+            logger.exception("Notification refus article échouée (écriture déjà faite)")
+
+        message = f'Article "{article.nom}" refusé - remis dans le catalogue sans ajout de stock'
+        if quantite_returenee:
+            message += (
+                f' ; {quantite_returenee} unité(s) revenue(s) à '
+                f'{retours[0][0].depot_source.nom}'
+            )
 
         return Response({
             'success': True,
-            'message': f'Article "{article.nom}" refusé - remis dans le catalogue sans ajout de stock',
+            'message': message,
+            'quantite_refusee': quantite_en_attente,
+            'quantite_returenee': quantite_returenee,
+            'quantite_sans_lot': quantite_sans_lot,
+            'source_nom': retours[0][0].depot_source.nom if retours else None,
             'article': {
                 'id': article.id,
                 'nom': article.nom,
@@ -915,7 +1082,7 @@ def refuser_article(request):
             'code': 'ARTICLE_NOT_FOUND'
         }, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
-        logger.error(f"Erreur refus article: {str(e)}")
+        logger.error(f"Erreur refus article: {str(e)}", exc_info=True)
         return Response({
             'error': 'Erreur interne du serveur',
             'code': 'INTERNAL_ERROR'

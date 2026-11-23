@@ -179,6 +179,28 @@ class BoutiqueConsumer(AsyncWebsocketConsumer):
             f"{event.get('article_nom')} ({event.get('reference')})"
         )
 
+    async def refus_reception(self, event):
+        """La destination a REFUSÉ un transfert : la marchandise revient
+        à l'expéditeur. Les DEUX terminaux reçoivent cet événement (le
+        rôle est dans ``role`` : ``source`` ou ``destination``)."""
+        await self.send(text_data=json.dumps({
+            'type': 'refus_reception',
+            'role': event.get('role', ''),
+            'reference': event.get('reference', ''),
+            'article_id': event.get('article_id'),
+            'article_nom': event.get('article_nom', ''),
+            'quantite': event.get('quantite', 0),
+            'source_nom': event.get('source_nom', ''),
+            'destination_nom': event.get('destination_nom', ''),
+            'stock_source': event.get('stock_source', ''),
+            'timestamp': self.get_timestamp(),
+        }))
+        logger.info(
+            f"📤 Refus de réception envoyé ({event.get('role')}) - "
+            f"{event.get('quantite')} x {event.get('article_nom')} "
+            f"({event.get('reference')})"
+        )
+
     async def banner_created(self, event):
         """Une nouvelle bannière publicitaire est disponible"""
         await self.send(text_data=json.dumps({
