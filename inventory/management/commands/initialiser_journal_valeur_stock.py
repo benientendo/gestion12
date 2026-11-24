@@ -18,7 +18,11 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from inventory.models import Boutique, MouvementStock, JournalValeurStock
-from inventory.journal_valeur_stock import recalculer_tout_depuis_debut
+from inventory.journal_valeur_stock import (
+    colonne_mouvement,
+    recalculer_tout_depuis_debut,
+    valeur_mouvement,
+)
 
 
 class Command(BaseCommand):
@@ -86,36 +90,12 @@ class Command(BaseCommand):
         cumuls = defaultdict(lambda: defaultdict(Decimal))
 
         for mouv in mouvements:
-            article = mouv.article
-            # ⚠️ Cohérence: valeur au PRIX DE VENTE (valeur commerciale confiée au gérant)
-            prix_vente = Decimal(str(article.prix_vente or 0))
-            quantite = abs(mouv.quantite)
-            valeur = prix_vente * quantite
-            ref = mouv.reference_document or ''
-            type_mouv = mouv.type_mouvement
             date_j = mouv.date_mouvement.date()
-
-            if type_mouv == 'VENTE':
-                cumuls[date_j]['valeur_ventes'] += valeur
-
-            elif type_mouv == 'ENTREE':
-                if ref.startswith(('TRANSFERT-', 'RETOUR-')):
-                    cumuls[date_j]['valeur_transfert_entrant'] += valeur
-                else:
-                    cumuls[date_j]['valeur_stock_ajoute'] += valeur
-
-            elif type_mouv == 'SORTIE':
-                if ref.startswith(('TRANSFERT-', 'RETOUR-')):
-                    cumuls[date_j]['valeur_transfert_sortant'] += valeur
-                else:
-                    cumuls[date_j]['valeur_stock_sorti'] += valeur
-
-            elif type_mouv == 'AJUSTEMENT':
-                impact = prix_vente * Decimal(str(mouv.quantite))
-                cumuls[date_j]['montant_inventaire'] += impact
-
-            elif type_mouv == 'RETOUR':
-                cumuls[date_j]['valeur_stock_ajoute'] += valeur
+            # Mêmes règles que l'écriture en direct (journal_valeur_stock).
+            colonne = colonne_mouvement(mouv)
+            if colonne is None:
+                continue
+            cumuls[date_j][colonne] += valeur_mouvement(mouv)
 
         # Écriture en base dans l'ordre chronologique
         dates_triees = sorted(cumuls.keys())

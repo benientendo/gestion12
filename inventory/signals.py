@@ -33,20 +33,6 @@ def _numerique(valeur):
     return str(v)
 
 
-def _champ_journal(type_mouvement, est_transfert):
-    """Colonne du journal de valeur alimentée par ce mouvement (meme regle que
-    le signal alimenter_journal_valeur_stock)."""
-    if type_mouvement == 'VENTE':
-        return 'valeur_ventes'
-    if type_mouvement == 'AJUSTEMENT':
-        return 'montant_inventaire'
-    if type_mouvement in ('ENTREE', 'RETOUR'):
-        return 'valeur_transfert_entrant' if est_transfert else 'valeur_stock_ajoute'
-    if type_mouvement == 'SORTIE':
-        return 'valeur_transfert_sortant' if est_transfert else 'valeur_stock_sorti'
-    return None
-
-
 def _detail_transfert(ref):
     """Detail d'un transfert a partir de sa reference TRANSFERT-<id>."""
     if not ref.startswith('TRANSFERT-'):
@@ -72,19 +58,16 @@ def _detail_transfert(ref):
     }
 
 
-def _impact_valeur(type_mouvement, prix_vente, quantite):
-    """Impact sur la valeur du stock en FC (meme regle que le journal de valeur) :"""
+def _impact_valeur(mouvement):
+    """Impact SIGNÉ sur la valeur du stock en FC.
+
+    Même règle que le journal de valeur (cf. ``journal_valeur_stock``) :
+    positif pour les colonnes d'entrée, négatif pour les colonnes de sortie.
+    """
     try:
-        pv = Decimal(str(prix_vente or 0))
-        qte = Decimal(str(quantite or 0))
+        return jvs.impact_valeur_mouvement(mouvement)
     except Exception:
         return Decimal('0')
-    if type_mouvement == 'AJUSTEMENT':
-        return pv * qte
-    impact = pv * abs(qte)
-    if type_mouvement in ('SORTIE', 'VENTE'):
-        return -impact
-    return impact
 
 
 @receiver(post_save, sender=MouvementStock)
@@ -136,10 +119,8 @@ def creer_notification_stock(sender, instance, created, **kwargs):
     unite = 'FC' if (article.devise or 'CDF') == 'CDF' else article.devise
 
     # Impact sur la valeur du stock (meme regle que le journal de valeur)
-    impact = _impact_valeur(instance.type_mouvement, article.prix_vente, qte)
-    champ_journal = _champ_journal(
-        instance.type_mouvement, est_transfert or est_retour,
-    )
+    impact = _impact_valeur(instance)
+    champ_journal = jvs.colonne_mouvement(instance)
     detail_transfert = _detail_transfert(ref) if est_transfert else None
 
     # Déterminer le type de notification et le message selon le mouvement
@@ -455,8 +436,11 @@ def notifier_ajustement_prix(sender, instance, created, **kwargs):
 def alimenter_journal_valeur_stock(sender, instance, created, **kwargs):
     """
     Met à jour le JournalValeurStock à chaque nouveau MouvementStock.
-    Distingue les transferts (reference_document commence par 'TRANSFERT-'
-    ou 'RETOUR-') des entrées/sorties classiques.
+
+    La colonne et la valeur viennent de ``journal_valeur_stock`` (source de
+    vérité partagée avec le détail cliquable de la page et la reconstruction
+    historique) : comptages → « Inventaire », flux entre boutiques →
+    « Transfert IN/OUT », tout le reste → « Stock ajouté » / « Stock sorti ».
     """
     if not created:
         return
@@ -465,62 +449,18 @@ def alimenter_journal_valeur_stock(sender, instance, created, **kwargs):
     if not article or not article.boutique:
         return
 
-    boutique = article.boutique
-    # ⚠️ Cohérence journal: TOUTES les valeurs sont au PRIX DE VENTE (valeur
-    #    commerciale confiée au gérant), comme exigé :
-    #    - entrée 100 u × PV 100 = 10 000 FC confiés
-    #    - vente 40 u × PV 100 = 4 000 FC retirés
-    #    - restant 60 u × PV 100 = 6 000 FC
-    prix_vente = Decimal(str(article.prix_vente or 0))
-    quantite = abs(instance.quantite)
-    valeur = prix_vente * quantite
-
-    ref = instance.reference_document or ''
-    type_mouv = instance.type_mouvement
-
-    # Regularisation d'historique (INIT-/REGL-) : mouvements de bookkeeping
-    # (ouverture de solde et correction de chaine), pas de vrais flux de valeur.
-    # Les comptabiliser en doublerait la valeur deja presente dans le journal.
-    if ref.startswith(('INIT-', 'REGL-')):
-        return
-
     try:
-        date_mouv = instance.date_mouvement.date()
-    except Exception:
-        date_mouv = None
-
-    try:
-        if type_mouv == 'VENTE':
-            # ⭐ Cohérence: on retire la valeur au PRIX DE VENTE catalogue de l'article.
-            #    Le prix NÉGOCIÉ (ex: vendu 90 au lieu de 100) ne doit PAS être utilisé ici,
-            #    sinon la formule casse : 10000 − (40×90) ≠ 60×100. Le négocié reste
-            #    tracé dans Vente/LigneVente (CA réel).
-            jvs.enregistrer_vente(boutique, prix_vente * quantite, date_mouv)
-
-        elif type_mouv == 'ENTREE':
-            if ref.startswith(('TRANSFERT-', 'RETOUR-')):
-                jvs.enregistrer_transfert_entrant(boutique, valeur, date_mouv)
-            else:
-                jvs.enregistrer_approvisionnement(boutique, valeur, date_mouv)
-
-        elif type_mouv == 'SORTIE':
-            if ref.startswith(('TRANSFERT-', 'RETOUR-')):
-                jvs.enregistrer_transfert_sortant(boutique, valeur, date_mouv)
-            else:
-                jvs.enregistrer_sortie_manuelle(boutique, valeur, date_mouv)
-
-        elif type_mouv == 'AJUSTEMENT':
-            # quantite signé : positif = ajout de valeur, négatif = retrait
-            # ⭐ Valeur au prix de vente (valeur commerciale confiée au gérant)
-            impact = prix_vente * Decimal(str(instance.quantite))
-            jvs.enregistrer_inventaire(boutique, impact, date_mouv)
-
-        elif type_mouv == 'RETOUR':
-            # Retour client = réentrée de stock
-            jvs.enregistrer_approvisionnement(boutique, valeur, date_mouv)
-
+        colonne = jvs.enregistrer_mouvement(article.boutique, instance)
     except Exception as e:
         logger.error(f"[JournalValeurStock] Erreur lors de l'enregistrement du mouvement {instance.pk}: {e}")
+        return
+
+    if colonne is None:
+        # Régularisation d'historique (INIT-/REGL-) : bookkeeping, pas de flux.
+        logger.debug(
+            f"[JournalValeurStock] Mouvement {instance.pk} hors journal "
+            f"({instance.reference_document})"
+        )
 
 
 @receiver(post_save, sender=MouvementStock)

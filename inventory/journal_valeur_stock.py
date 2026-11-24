@@ -313,3 +313,217 @@ def recalculer_tout_depuis_debut(boutique):
         ])
         # Le stock restant de ce jour devient le stock précédent du lendemain
         valeur_precedente = ligne.valeur_stock_restant
+
+
+# ──────────────────────────────────────────────────────────────
+# Classification d'un MouvementStock → colonne du journal
+# ──────────────────────────────────────────────────────────────
+#
+# SOURCE DE VÉRITÉ unique : le signal d'écriture, le détail cliquable de la
+# page du journal et la reconstruction historique passent tous par les deux
+# fonctions ci-dessous. Règles :
+#
+#   « Inventaire »   = comptages : régularisation d'un inventaire (INV-…) et
+#                      instantanés envoyés par MAUI Windows (source
+#                      « inventaire » / « stock »). Impact NET signé valorisé
+#                      au prix de vente : (compté − théorique) × prix de vente.
+#   « Transfert IN » = UNIQUEMENT des flux entre boutiques : TRANSFERT-…,
+#                      TRANSFERT-BTQ-… et les transferts dépôt→PDV confirmés
+#                      par validation MAUI (réécrits TRANSFERT-… grâce au
+#                      marqueur Article.date_envoi posé par valider_transfert).
+#   « Stock ajouté » = tout le reste en entrée : régulations du back-office
+#                      (REGUL-, AJUST-…), factures, retours clients et retours
+#                      de refus de réception (RETOUR-…).
+#
+# Les références INIT-/REGL- sont des régularisations d'historique : pas de flux.
+
+# Références d'inventaire (régularisation d'un modèle Inventaire).
+PREFIXES_INVENTAIRE = ('INV-',)
+# Sources MAUI Windows comptées comme instantané de stock.
+SOURCES_INVENTAIRE_MAUI = ('inventaire', 'stock')
+# Régularisations d'historique : bookkeeping, pas de vrais flux de valeur.
+PREFIXES_HORS_JOURNAL = ('INIT-', 'REGL-')
+# Flux entre boutiques.
+PREFIXES_TRANSFERT = ('TRANSFERT-',)
+
+# Colonnes alimentées par les MouvementStock. Les autres (Ventes, Modif. prix,
+# Réduction) ont des sources propres et ne sont jamais réécrites par ici.
+COLONNES_MOUVEMENTS = (
+    'montant_inventaire',
+    'valeur_stock_ajoute',
+    'valeur_transfert_entrant',
+    'valeur_transfert_sortant',
+    'valeur_stock_sorti',
+)
+
+
+def ecart_ajustement(mouvement):
+    """Écart SIGNÉ d'un AJUSTEMENT : stock_apres − stock_avant.
+
+    Repli sur ``quantite`` quand les stocks n'ont pas été renseignés. On préfère
+    les stocks parce que certaines origines (MAUI Windows) enregistrent la
+    quantité en valeur absolue, ce qui fausserait le signe de la colonne.
+    """
+    avant = mouvement.stock_avant or 0
+    apres = mouvement.stock_apres or 0
+    if avant or apres:
+        return apres - avant
+    return mouvement.quantite or 0
+
+
+def est_inventaire(mouvement):
+    """True si ce mouvement est un comptage (colonne « Inventaire »)."""
+    ref = mouvement.reference_document or ''
+    if ref.startswith(PREFIXES_INVENTAIRE):
+        return True
+    return (
+        mouvement.type_mouvement == 'AJUSTEMENT'
+        and ref in SOURCES_INVENTAIRE_MAUI
+    )
+
+
+def colonne_mouvement(mouvement):
+    """Colonne du journal de valeur alimentée par ``mouvement`` (ou None)."""
+    ref = mouvement.reference_document or ''
+    if ref.startswith(PREFIXES_HORS_JOURNAL):
+        return None
+    if mouvement.type_mouvement == 'VENTE':
+        return 'valeur_ventes'
+    if mouvement.type_mouvement == 'RETOUR':
+        # Retour client : réentrée de stock, pas un transfert entre boutiques.
+        return 'valeur_stock_ajoute'
+    if est_inventaire(mouvement):
+        return 'montant_inventaire'
+    if mouvement.type_mouvement == 'AJUSTEMENT':
+        # Régulation saisie dans le back-office : un ajout est un ajout,
+        # une diminution est une sortie — jamais l'inverse.
+        return (
+            'valeur_stock_ajoute' if ecart_ajustement(mouvement) >= 0
+            else 'valeur_stock_sorti'
+        )
+    if mouvement.type_mouvement == 'ENTREE':
+        return (
+            'valeur_transfert_entrant'
+            if ref.startswith(PREFIXES_TRANSFERT) else 'valeur_stock_ajoute'
+        )
+    if mouvement.type_mouvement == 'SORTIE':
+        return (
+            'valeur_transfert_sortant'
+            if ref.startswith(PREFIXES_TRANSFERT) else 'valeur_stock_sorti'
+        )
+    return None
+
+
+def valeur_mouvement(mouvement):
+    """Valeur au prix de vente portée par la colonne de ``mouvement``.
+
+    Positive pour les colonnes d'entrée/sortie ; SIGNÉE pour
+    « montant_inventaire » (un manque ajoute de la valeur, un excédent retire).
+    """
+    article = mouvement.article
+    prix_vente = Decimal(str(article.prix_vente or 0)) if article else Decimal('0')
+    colonne = colonne_mouvement(mouvement)
+    if colonne is None:
+        return Decimal('0')
+
+    quantite = Decimal(str(abs(mouvement.quantite or 0)))
+
+    if colonne == 'montant_inventaire':
+        if mouvement.type_mouvement == 'AJUSTEMENT':
+            return prix_vente * Decimal(str(ecart_ajustement(mouvement)))
+        # Régularisation d'inventaire : ENTREE = écart positif, SORTIE = négatif.
+        signe = Decimal('1') if mouvement.type_mouvement == 'ENTREE' else Decimal('-1')
+        return prix_vente * quantite * signe
+
+    return prix_vente * quantite
+
+
+# Colonnes qui RETIRENT de la valeur (négatives dans la formule de cohérence).
+COLONNES_SORTANTES = (
+    'valeur_stock_sorti',
+    'valeur_transfert_sortant',
+    'valeur_ventes',
+)
+
+
+def impact_valeur_mouvement(mouvement):
+    """Impact SIGNÉ sur la valeur du stock (colonne du journal).
+
+    Positif pour « Inventaire », « Stock ajouté » et « Transfert IN » ;
+    négatif pour « Stock sorti », « Transfert OUT » et « Ventes ».
+    """
+    colonne = colonne_mouvement(mouvement)
+    if colonne is None:
+        return Decimal('0')
+    valeur = valeur_mouvement(mouvement)
+    return -valeur if colonne in COLONNES_SORTANTES else valeur
+
+
+def enregistrer_mouvement(boutique, mouvement, date=None):
+    """Incrémente la colonne du journal correspondant à ``mouvement``.
+
+    Retourne la colonne écrite, ou None si le mouvement est hors journal
+    (régularisation d'historique INIT-/REGL-, type inconnu).
+    """
+    colonne = colonne_mouvement(mouvement)
+    if colonne is None:
+        return None
+    if date is None:
+        try:
+            date = mouvement.date_mouvement.date()
+        except Exception:
+            date = None
+    _incrementer(boutique, colonne, valeur_mouvement(mouvement), date)
+    return colonne
+
+
+def reclasser_colonnes_depuis_mouvements(boutique, date_debut=None, date_fin=None):
+    """Réécrit les colonnes de flux du journal de ``boutique`` depuis les
+    MouvementStock, avec les règles ci-dessus.
+
+    Seules les colonnes de ``COLONNES_MOUVEMENTS`` sont réécrites : « Ventes »
+    (dont les annulations « article défectueux » retraitées hors CA), « Modif.
+    prix » et « Réduction » ont des sources propres. Recalcule ensuite la chaîne
+    valeur_stock_precedent → valeur_stock_restant. Retourne le nombre de lignes
+    réécrites.
+    """
+    from collections import defaultdict
+    from .models import JournalValeurStock, MouvementStock
+
+    mouvements = MouvementStock.objects.filter(
+        article__boutique=boutique,
+    ).select_related('article')
+    if date_debut:
+        mouvements = mouvements.filter(date_mouvement__date__gte=date_debut)
+    if date_fin:
+        mouvements = mouvements.filter(date_mouvement__date__lte=date_fin)
+
+    cumuls = defaultdict(
+        lambda: {colonne: Decimal('0') for colonne in COLONNES_MOUVEMENTS}
+    )
+    for mouvement in mouvements.order_by('date_mouvement'):
+        colonne = colonne_mouvement(mouvement)
+        if colonne in COLONNES_MOUVEMENTS:
+            cumuls[mouvement.date_mouvement.date()][colonne] += valeur_mouvement(mouvement)
+
+    lignes = JournalValeurStock.objects.filter(boutique=boutique)
+    if date_debut:
+        lignes = lignes.filter(date__gte=date_debut)
+    if date_fin:
+        lignes = lignes.filter(date__lte=date_fin)
+
+    reecrites = 0
+    with transaction.atomic():
+        for ligne in lignes.order_by('date'):
+            # Journée sans mouvement : ces colonnes sont forcément à zéro.
+            data = cumuls.get(
+                ligne.date,
+                {colonne: Decimal('0') for colonne in COLONNES_MOUVEMENTS},
+            )
+            for colonne in COLONNES_MOUVEMENTS:
+                setattr(ligne, colonne, data[colonne])
+            ligne.save()
+            reecrites += 1
+        recalculer_tout_depuis_debut(boutique)
+
+    return reecrites

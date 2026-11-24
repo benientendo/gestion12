@@ -698,6 +698,34 @@ def articles_pending_validation(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+def _reference_transfert_recu(article):
+    """Référence du mouvement d'entrée créé par la réception d'un transfert.
+
+    ``Article.date_envoi`` n'est posé que par ``TransfertStock.valider_transfert`` :
+    sa présence signale une quantité envoyée par le dépôt. On remonte la ligne de
+    transfert correspondante (même boutique, même article, validée la plus
+    récente) pour lier le mouvement à son lot ; à défaut, une référence dédiée —
+    jamais de devinette sur un autre transfert.
+    """
+    from django.db.models import Q
+    from .models import TransfertStock
+
+    transfert = (
+        TransfertStock.objects
+        .filter(
+            boutique_destination=article.boutique,
+            statut='VALIDE',
+            date_validation__isnull=False,
+        )
+        .filter(Q(article__code=article.code) | Q(article__nom=article.nom))
+        .order_by('-date_validation', '-id')
+        .first()
+    )
+    if transfert is not None:
+        return f"TRANSFERT-{transfert.id}"
+    return f"TRANSFERT-REC-{article.id}"
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def valider_article(request):
@@ -805,9 +833,17 @@ def valider_article(request):
         # Ajouter la quantité en attente au stock (pas la valeur MAUI)
         article.quantite_stock += qte_a_ajouter
         
+        # ⭐ Marqueur « envoi par transfert » : Article.date_envoi n'est posé
+        #    que par TransfertStock.valider_transfert. La quantité en attente
+        #    vient donc du dépôt : le mouvement entrera dans la colonne
+        #    « Transfert IN » du journal de valeur (référence TRANSFERT-…)
+        #    et non dans « Stock ajouté ». Le marqueur est consommé ici.
+        envoi_transfert = bool(article.date_envoi)
+
         article.est_valide_client = True
         article.quantite_envoyee = 0
         article.date_validation = timezone.now()
+        article.date_envoi = None
         article.save()
         
         # Créer un mouvement de stock pour traçabilité
@@ -818,7 +854,10 @@ def valider_article(request):
                 quantite=qte_a_ajouter,
                 stock_avant=stock_avant,
                 stock_apres=article.quantite_stock,
-                reference_document=f"VALIDATION-{article.boutique.code_boutique}-{article.id}",
+                reference_document=(
+                    _reference_transfert_recu(article) if envoi_transfert
+                    else f"VALIDATION-{article.boutique.code_boutique}-{article.id}"
+                ),
                 utilisateur="MAUI-Client",
                 commentaire=f"Validation client: {qte_a_ajouter} unités reçues"
             )
@@ -943,6 +982,9 @@ def refuser_article(request):
 
             article.est_valide_client = True
             article.quantite_envoyee = 0
+            # La quantité en attente (envoi du dépôt) est annulée : le marqueur
+            # « envoi par transfert » ne doit pas survivre à un refus.
+            article.date_envoi = None
             article.save()
 
             # Verrous déterministes (articles source par id croissant, puis

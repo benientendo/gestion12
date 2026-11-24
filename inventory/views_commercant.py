@@ -3146,6 +3146,10 @@ def modifier_article_existant(request, boutique_id):
         article.est_valide_client = False
         #  ACCUMULER (pas d'écrasement) : préserver un ajout déjà en attente
         article.quantite_envoyee = (article.quantite_envoyee or 0) + quantite
+        # Ajout saisi dans le back-office : ce n'est PAS un envoi du dépôt →
+        # le marqueur « envoi par transfert » est effacé (sinon la validation
+        # MAUI serait comptée en « Transfert IN » dans le journal de valeur).
+        article.date_envoi = None
         modifications.append(f"Stock: +{quantite} envoyé pour validation client")
     
     for cond, prix in changements_unites:
@@ -3329,6 +3333,8 @@ def ajouter_article_boutique(request, boutique_id):
                             #  ACCUMULER (pas d'écrasement) : préserver un ajout déjà en attente
                             article_existant.est_valide_client = False
                             article_existant.quantite_envoyee = (article_existant.quantite_envoyee or 0) + quantite_ajout
+                            # Ajout saisi ici (back-office) : pas un envoi du dépôt.
+                            article_existant.date_envoi = None
                             article_existant.save()
                             
                             # 🔔 Notifier le(s) terminal(aux) MAUI : stock en attente de validation
@@ -3502,6 +3508,8 @@ def ajouter_article_boutique(request, boutique_id):
                         article_existant.est_valide_client = False
                         #  ACCUMULER (pas d'écrasement) : préserver un ajout déjà en attente
                         article_existant.quantite_envoyee = (article_existant.quantite_envoyee or 0) + quantite_ajout
+                        # Ajout saisi ici (back-office) : pas un envoi du dépôt.
+                        article_existant.date_envoi = None
                         article_existant.save()
                         
                         # 🔔 Notifier le(s) terminal(aux) MAUI : quantité en attente de validation
@@ -4410,7 +4418,11 @@ def ajuster_stock_article(request, boutique_id, article_id):
                 # le premier (ex: +40 puis re-confirmation par erreur → 41, pas 1)
                 article.est_valide_client = False
                 article.quantite_envoyee = (article.quantite_envoyee or 0) + quantite_base
-                article.save(update_fields=['est_valide_client', 'quantite_envoyee'])
+                # Régulation saisie dans le back-office : pas un envoi du dépôt.
+                article.date_envoi = None
+                article.save(update_fields=[
+                    'est_valide_client', 'quantite_envoyee', 'date_envoi',
+                ])
                 
                 from .websocket_utils import notify_stock_updated, notify_sync_required
                 notify_stock_updated(boutique.id, article.id, stock_avant, article_nom=article.nom)
@@ -5897,6 +5909,12 @@ def retourner_article_au_depot(request, boutique_id):
         if a_crediter:
             article_pdv.quantite_envoyee = en_attente - a_crediter
             champs.append('quantite_envoyee')
+            if not article_pdv.quantite_envoyee:
+                # Plus rien en attente : ce retour annule l'envoi du dépôt →
+                # le marqueur « envoi par transfert » ne doit pas survivre et
+                # fausser la prochaine validation MAUI du journal de valeur.
+                article_pdv.date_envoi = None
+                champs.append('date_envoi')
         pdv_avant = stock_pdv
         if a_sortir:
             article_pdv.quantite_stock = stock_pdv - a_sortir
@@ -11578,15 +11596,22 @@ LIBELLES_DETAIL_JOURNAL = {
     ),
     'montant_inventaire': (
         'Inventaire',
-        "Impact des régularisations d'inventaire (mouvements AJUSTEMENT) sur la journée.",
+        "Écart net des comptages valorisé au prix de vente : "
+        "(quantité comptée − stock théorique) × prix de vente, après "
+        "régularisation de l'inventaire. Un manque ajoute de la valeur, "
+        "un excédent en retire.",
     ),
     'valeur_stock_ajoute': (
         'Stock ajouté',
-        'Entrées de stock, retours clients et validations de transfert reçues ce jour.',
+        "Entrées de stock HORS transfert : régulations saisies dans le "
+        "back-office, factures, retours clients et retours de refus de "
+        "réception.",
     ),
     'valeur_transfert_entrant': (
         'Transfert IN',
-        'Entrées de transfert provenant d\'un autre point de vente (référence TRANSFERT-).',
+        "Transferts reçus d'une autre boutique (référence TRANSFERT-…, "
+        "TRANSFERT-BTQ-…, transferts confirmés par validation MAUI). "
+        "Cette colonne ne contient QUE des transferts entre boutiques.",
     ),
     'impact_modification_prix': (
         'Modif. prix',
@@ -11595,11 +11620,12 @@ LIBELLES_DETAIL_JOURNAL = {
     ),
     'valeur_transfert_sortant': (
         'Transfert OUT',
-        'Sorties de transfert envoyées vers un autre point de vente (référence TRANSFERT-).',
+        'Transferts envoyés vers une autre boutique (référence TRANSFERT-…). '
+        "Les retours de refus de réception figurent dans « Stock ajouté ».",
     ),
     'valeur_stock_sorti': (
         'Stock sorti',
-        'Sorties manuelles, pertes et casse hors transfert.',
+        'Sorties HORS transfert : régulations, sorties manuelles, pertes et casse.',
     ),
     'valeur_ventes': (
         'Ventes',
@@ -11746,37 +11772,15 @@ def detail_valeur_journal(request, boutique_id, journal_id, champ):
             .order_by('date_mouvement')
         )
 
-        if champ == 'valeur_ventes':
-            qs = base_qs.filter(type_mouvement='VENTE')
-        elif champ == 'valeur_transfert_entrant':
-            qs = base_qs.filter(
-                type_mouvement='ENTREE',
-                reference_document__startswith=('TRANSFERT-', 'RETOUR-'),
-            )
-        elif champ == 'valeur_stock_ajoute':
-            qs = base_qs.filter(
-                type_mouvement__in=('ENTREE', 'RETOUR')
-            ).exclude(reference_document__startswith=('TRANSFERT-', 'RETOUR-'))
-        elif champ == 'valeur_transfert_sortant':
-            qs = base_qs.filter(
-                type_mouvement='SORTIE',
-                reference_document__startswith=('TRANSFERT-', 'RETOUR-'),
-            )
-        elif champ == 'valeur_stock_sorti':
-            qs = base_qs.filter(
-                type_mouvement='SORTIE'
-            ).exclude(reference_document__startswith=('TRANSFERT-', 'RETOUR-'))
-        elif champ == 'montant_inventaire':
-            qs = base_qs.filter(type_mouvement='AJUSTEMENT')
-        else:
-            qs = base_qs.none()
+        # Même source de vérité que l'écriture du journal : la colonne et la
+        # valeur du mouvement viennent de journal_valeur_stock, donc le détail
+        # totalise EXACTEMENT la valeur affichée dans le tableau.
+        from .journal_valeur_stock import colonne_mouvement, valeur_mouvement
 
-        for m in qs:
-            pv = Decimal(str(m.article.prix_vente or 0))
-            if m.type_mouvement == 'AJUSTEMENT':
-                val = pv * Decimal(str(m.quantite))
-            else:
-                val = pv * Decimal(str(abs(m.quantite)))
+        for m in base_qs:
+            if colonne_mouvement(m) != champ:
+                continue
+            val = valeur_mouvement(m)
             lignes.append({
                 'heure': m.date_mouvement,
                 'nom': m.article.nom,
