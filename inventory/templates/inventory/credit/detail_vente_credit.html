@@ -113,7 +113,10 @@
                                 <th>Désignation</th>
                                 <th class="text-center">Qté</th>
                                 <th class="text-end">P.U.</th>
-                                {% if remise_totale > 0 %}<th class="text-end">Remise</th>{% endif %}
+                                {% if remise_totale > 0 %}
+                                <th class="text-end">Avant remise</th>
+                                <th class="text-end">Remise</th>
+                                {% endif %}
                                 <th class="text-end">Total</th>
                             </tr>
                         </thead>
@@ -124,6 +127,11 @@
                                 <td class="text-center">{{ ligne.quantite }}</td>
                                 <td class="text-end">{{ ligne.prix_unitaire|floatformat:0 }} FC</td>
                                 {% if remise_totale > 0 %}
+                                <td class="text-end text-muted">
+                                    {% if ligne.remise > 0 %}
+                                    <s>{{ ligne.prix_avant_remise|floatformat:0 }} FC</s>
+                                    {% else %}<span class="text-muted">—</span>{% endif %}
+                                </td>
                                 <td class="text-end">
                                     {% if ligne.remise > 0 %}
                                     <span class="badge bg-warning text-dark">−{{ ligne.remise|floatformat:0 }} FC</span>
@@ -137,11 +145,17 @@
                         {% if remise_totale > 0 %}
                         <tfoot>
                             <tr class="table-light">
-                                <td colspan="4" class="text-end small text-muted">
-                                    Remise totale accordée
+                                <td colspan="3" class="text-end small text-muted">
+                                    Prix avant remise (prix catalogue)
+                                </td>
+                                <td class="text-end small fw-bold">
+                                    {{ prix_avant_remise|floatformat:0 }} FC
                                 </td>
                                 <td class="text-end small fw-bold text-warning">
                                     −{{ remise_totale|floatformat:0 }} FC
+                                </td>
+                                <td class="text-end small fw-bold">
+                                    {{ vente.prix_total|floatformat:0 }} FC
                                 </td>
                             </tr>
                         </tfoot>
@@ -158,6 +172,13 @@
                             <div class="info-block">
                                 <div class="lbl">Prix total</div>
                                 <div class="val text-dark">{{ vente.prix_total|floatformat:0 }} FC</div>
+                                {% if remise_totale > 0 %}
+                                <div class="small text-muted mt-1">
+                                    Prix avant remise :
+                                    <s>{{ prix_avant_remise|floatformat:0 }} FC</s>
+                                    <span class="badge bg-warning text-dark ms-1">−{{ remise_totale|floatformat:0 }} FC</span>
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -221,6 +242,11 @@
                         <div class="col-4">
                             <div class="text-muted small">Total</div>
                             <div class="fw-bold">{{ vente.prix_total|floatformat:0 }} FC</div>
+                            {% if remise_totale > 0 %}
+                            <div class="text-muted" style="font-size:.72rem;">
+                                avant remise <s>{{ prix_avant_remise|floatformat:0 }} FC</s>
+                            </div>
+                            {% endif %}
                         </div>
                         <div class="col-4">
                             <div class="text-success small">Payé</div>

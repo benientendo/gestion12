@@ -2508,6 +2508,16 @@ class LigneVenteAcompte(models.Model):
     )
     date_creation = models.DateTimeField(auto_now_add=True)
 
+    @property
+    def prix_avant_remise(self):
+        """Prix catalogue de la ligne, avant remise (prix payé + remise)."""
+        from decimal import Decimal as D
+        return (self.prix_total or D('0')) + (self.remise or D('0'))
+
+    @property
+    def a_une_remise(self):
+        return (self.remise or 0) > 0
+
     def __str__(self):
         return f"{self.article_nom} × {self.quantite}"
 

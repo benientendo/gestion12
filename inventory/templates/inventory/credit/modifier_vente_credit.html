@@ -73,7 +73,12 @@
                             <tr>
                                 <th>Désignation</th>
                                 <th class="text-end">P.U. vendu</th>
+                                {% if remise_totale > 0 %}
+                                <th class="text-end">Avant remise</th>
                                 <th class="text-end">Remise</th>
+                                {% else %}
+                                <th class="text-end">Remise</th>
+                                {% endif %}
                                 <th class="text-center">Stock</th>
                                 <th class="text-center" style="width:130px;">Nouvelle qté</th>
                                 <th class="text-center" style="width:90px;">Retirer</th>
@@ -91,6 +96,13 @@
                                     {% endif %}
                                 </td>
                                 <td class="text-end">{{ ligne.prix_unitaire|floatformat:0 }} FC</td>
+                                {% if remise_totale > 0 %}
+                                <td class="text-end text-muted">
+                                    {% if ligne.remise > 0 %}
+                                    <s>{{ ligne.prix_avant_remise|floatformat:0 }} FC</s>
+                                    {% else %}<span class="text-muted">—</span>{% endif %}
+                                </td>
+                                {% endif %}
                                 <td class="text-end">
                                     {% if ligne.remise > 0 %}
                                     <span class="badge badge-remise">−{{ ligne.remise|floatformat:0 }} FC</span>
@@ -118,7 +130,7 @@
                             </tr>
                             {% endwith %}
                             {% empty %}
-                            <tr><td colspan="7" class="text-center text-muted py-4">Aucun article sur cette facture.</td></tr>
+                            <tr><td colspan="{% if remise_totale > 0 %}8{% else %}7{% endif %}" class="text-center text-muted py-4">Aucun article sur cette facture.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -226,7 +238,9 @@
             </div>
             {% if remise_totale > 0 %}
             <div class="text-center small text-muted mt-2">
-                Remise déjà accordée sur cette facture : <strong>−{{ remise_totale|floatformat:0 }} FC</strong>
+                Prix avant remise (prix catalogue) : <strong><s>{{ prix_avant_remise|floatformat:0 }} FC</s></strong>
+                — Remise accordée : <strong class="text-warning">−{{ remise_totale|floatformat:0 }} FC</strong>
+                — Prix payable : <strong>{{ vente.prix_total|floatformat:0 }} FC</strong>
             </div>
             {% endif %}
         </div>

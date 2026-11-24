@@ -134,7 +134,15 @@
                                 <span class="badge bg-dark">×{{ v.quantite }}</span>
                                 {% endif %}
                             </td>
-                            <td class="fw-bold">{{ v.prix_total|floatformat:0 }} FC</td>
+                            <td class="fw-bold">
+                                {{ v.prix_total|floatformat:0 }} FC
+                                {% if v.remise_totale > 0 %}
+                                <br><small class="text-muted" style="font-size:.72rem;">
+                                    avant remise <s>{{ v.prix_avant_remise|floatformat:0 }} FC</s>
+                                    <span class="badge bg-warning text-dark">−{{ v.remise_totale|floatformat:0 }} FC</span>
+                                </small>
+                                {% endif %}
+                            </td>
                             <td class="text-success">{{ v.montant_paye|floatformat:0 }} FC</td>
                             <td class="text-danger">{{ v.montant_restant|floatformat:0 }} FC</td>
                             <td style="min-width:100px;">

@@ -287,3 +287,127 @@ class RemiseLigneCreditApiTestCase(BaseCreditTestCase):
         _, ligne = self._recharger()
         self.assertEqual(ligne.remise, Decimal('5000.00'))    # 10 % de 50 000
         self.assertEqual(ligne.prix_total, Decimal('45000.00'))
+
+
+class PrixAvantRemiseBackofficeTestCase(BaseCreditTestCase):
+    """Le back-office affiche le prix AVANT remise (prix catalogue) partout."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.user)
+        self.vente = self._creer_vente(
+            articles=self._lignes((self.article, 2)))       # catalogue 60 000
+        self.ligne = self.vente.lignes.get()
+        self._post({'montant': 10000})                      # paye 50 000
+        self.vente.refresh_from_db()
+        self.ligne.refresh_from_db()
+
+    def _post(self, payload, url=None, headers=None):
+        return self.api.post(
+            url if url is not None else reverse(
+                'inventory:api_credit_reduire_ligne',
+                args=[self.vente.id, self.ligne.id]),
+            data=payload, content_type='application/json',
+            **(self.entete if headers is None else headers),
+        )
+
+    # -- Detail ----------------------------------------------------------
+
+    def test_detail_expose_prix_avant_remise(self):
+        resp = self.client.get(reverse('inventory:detail_vente_credit',
+                                       args=[self.boutique.id, self.vente.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['remise_totale'], Decimal('10000.00'))
+        self.assertEqual(resp.context['prix_avant_remise'], Decimal('60000.00'))
+
+    def test_detail_affiche_prix_avant_remise_en_html(self):
+        resp = self.client.get(reverse('inventory:detail_vente_credit',
+                                       args=[self.boutique.id, self.vente.id]))
+        html = resp.content.decode('utf-8')
+        self.assertIn('Avant remise', html)
+        self.assertIn('Prix avant remise (prix catalogue)', html)
+        # Prix catalogue 60 000 affiche (espaces insécables ou non)
+        self.assertIn('60000', html.replace('\xa0', '').replace(' ', ''))
+
+    def test_detail_sans_remise_n_affiche_pas_avant_remise(self):
+        vente = self._creer_vente(nom='SANSREMISE', telephone='0833333333',
+                                  articles=self._lignes((self.article2, 1)))
+        resp = self.client.get(reverse('inventory:detail_vente_credit',
+                                       args=[self.boutique.id, vente.id]))
+        html = resp.content.decode('utf-8')
+        self.assertNotIn('Avant remise', html)
+        self.assertNotIn('Prix avant remise (prix catalogue)', html)
+
+    # -- Liste -----------------------------------------------------------
+
+    def test_liste_annotee_remise_et_prix_avant_remise(self):
+        resp = self.client.get(reverse('inventory:liste_ventes_credit',
+                                       args=[self.boutique.id]))
+        self.assertEqual(resp.status_code, 200)
+        lignes = {v.id: v for v in resp.context['ventes']}
+        vente = lignes[self.vente.id]
+        self.assertEqual(vente.remise_totale, Decimal('10000.00'))
+        self.assertEqual(vente.prix_avant_remise, Decimal('60000.00'))
+
+        html = resp.content.decode('utf-8')
+        self.assertIn('avant remise', html)
+
+    def test_liste_sans_remise_n_annotepas_avant_remise(self):
+        plain = self._creer_vente(nom='PLAIN', telephone='0844444444',
+                                  articles=self._lignes((self.article2, 1)))
+        resp = self.client.get(reverse('inventory:liste_ventes_credit',
+                                       args=[self.boutique.id]))
+        ventes = {v.id: v for v in resp.context['ventes']}
+        v = ventes[plain.id]
+        self.assertEqual(v.remise_totale, Decimal('0'))
+        self.assertEqual(v.prix_avant_remise, v.prix_total)
+
+    def test_liste_recherche_filtre_garde_les_annotations(self):
+        resp = self.client.get(
+            reverse('inventory:liste_ventes_credit', args=[self.boutique.id]),
+            {'q': self.vente.reference},
+        )
+        ventes = list(resp.context['ventes'])
+        self.assertEqual(len(ventes), 1)
+        self.assertEqual(ventes[0].remise_totale, Decimal('10000.00'))
+        self.assertEqual(ventes[0].prix_avant_remise, Decimal('60000.00'))
+
+    # -- Correction ------------------------------------------------------
+
+    def test_page_correction_affiche_prix_avant_remise(self):
+        resp = self.client.get(reverse('inventory:modifier_vente_credit',
+                                       args=[self.boutique.id, self.vente.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['prix_avant_remise'], Decimal('60000.00'))
+        html = resp.content.decode('utf-8')
+        self.assertIn('Avant remise', html)
+        self.assertIn('60000', html.replace('\xa0', '').replace(' ', ''))
+
+    def test_ligne_editable_transport_prix_avant_remise(self):
+        from inventory.views_credit import _lignes_editables
+        lignes = _lignes_editables(self.vente)
+        self.assertEqual(len(lignes), 1)
+        self.assertEqual(lignes[0]['remise'], Decimal('10000.00'))
+        self.assertEqual(lignes[0]['prix_avant_remise'], Decimal('60000.00'))
+
+    # -- Recu ------------------------------------------------------------
+
+    def test_recu_affiche_prix_avant_remise(self):
+        paiement = self._encaisser(self.vente, 5000)
+        resp = self.client.get(reverse('inventory:recu_paiement',
+                                       args=[self.boutique.id, paiement.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context['prix_avant_remise'], Decimal('60000.00'))
+        html = resp.content.decode('utf-8')
+        self.assertIn('Prix avant remise', html)
+
+    # -- Propriete modele ------------------------------------------------
+
+    def test_propriete_prix_avant_remise_de_la_ligne(self):
+        self.assertEqual(self.ligne.prix_avant_remise, Decimal('60000.00'))
+        self.assertTrue(self.ligne.a_une_remise)
+
+        self._post({'reset': True})
+        self.ligne.refresh_from_db()
+        self.assertEqual(self.ligne.prix_avant_remise, Decimal('60000.00'))
+        self.assertFalse(self.ligne.a_une_remise)

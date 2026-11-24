@@ -2,7 +2,8 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Sum, Q, Count
+from django.db.models import Sum, Q, Count, Value, F, DecimalField, ExpressionWrapper
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -83,6 +84,16 @@ def liste_ventes_credit(request, boutique_id):
             Q(article_nom__icontains=search)    |
             Q(reference__icontains=search)
         )
+    # Remise cumulée par facture → permet d'afficher le prix AVANT remise
+    # dans le tableau (prix_total + remise = prix catalogue).
+    ventes = ventes.annotate(
+        remise_totale=Coalesce(Sum('lignes__remise'), Value(Decimal('0'))),
+    ).annotate(
+        prix_avant_remise=ExpressionWrapper(
+            F('prix_total') + F('remise_totale'),
+            output_field=DecimalField(max_digits=15, decimal_places=2),
+        ),
+    )
 
     # Liste des clients pour le formulaire de création et la gestion
     clients = ClientAcompte.objects.filter(boutique=boutique).annotate(
@@ -217,12 +228,15 @@ def detail_vente_credit(request, boutique_id, vente_id):
     boutique = _boutique_commercant(request, boutique_id)
     vente    = get_object_or_404(VenteAcompte, id=vente_id, boutique=boutique)
     paiements = vente.paiements.all()
+    remise    = remise_totale_vente(vente)
 
     context = {
         'boutique':  boutique,
         'vente':     vente,
         'paiements': paiements,
-        'remise_totale': remise_totale_vente(vente),
+        'remise_totale': remise,
+        # Prix catalogue (avant remise) : prix payé + remise accordée
+        'prix_avant_remise': (vente.prix_total or Decimal('0')) + remise,
         # Correction : tant que l'article n'est pas parti et la vente pas annulée
         'peut_corriger': _motif_non_modifiable(vente) is None,
         # Suppression : rien d'encaissé, rien de remis → la saisie peut être
@@ -346,6 +360,7 @@ def _lignes_editables(vente):
         'prix_unitaire': ligne.prix_unitaire,
         'prix_total':    ligne.prix_total,
         'remise':        ligne.remise or Decimal('0'),
+        'prix_avant_remise': ligne.prix_avant_remise,
     } for ligne in vente.lignes.all()]
 
     if lignes:
@@ -376,6 +391,7 @@ def _lignes_editables(vente):
             'prix_unitaire': (prix_total / quantite) if quantite else prix_total,
             'prix_total':    prix_total,
             'remise':        remise,
+            'prix_avant_remise': prix_total + remise,
             'stock':         article.quantite_stock if article else None,
             'prix_catalogue': article.prix_vente if article else None,
         }]
@@ -419,6 +435,7 @@ def modifier_vente_credit(request, boutique_id, vente_id):
     vente    = get_object_or_404(VenteAcompte, id=vente_id, boutique=boutique)
 
     if request.method == 'GET':
+        remise = remise_totale_vente(vente)
         return render(request, 'inventory/credit/modifier_vente_credit.html', {
             'boutique':      boutique,
             'vente':         vente,
@@ -426,7 +443,8 @@ def modifier_vente_credit(request, boutique_id, vente_id):
             'paiements':     list(vente.paiements.all()),
             'articles_dispo': boutique.articles.filter(est_actif=True).order_by('nom'),
             'nb_ajout':      _NB_LIGNES_AJOUT,
-            'remise_totale': remise_totale_vente(vente),
+            'remise_totale': remise,
+            'prix_avant_remise': (vente.prix_total or Decimal('0')) + remise,
             'modifiable':    _motif_non_modifiable(vente),
         })
 
@@ -910,12 +928,15 @@ def recu_paiement(request, boutique_id, paiement_id):
     boutique  = _boutique_commercant(request, boutique_id)
     paiement  = get_object_or_404(PaiementAcompte, id=paiement_id, vente__boutique=boutique)
     vente     = paiement.vente
+    remise    = remise_totale_vente(vente)
 
     context = {
         'boutique': boutique,
         'paiement': paiement,
         'vente':    vente,
         'client':   vente.client,
+        'remise_totale': remise,
+        'prix_avant_remise': (vente.prix_total or Decimal('0')) + remise,
     }
     return render(request, 'inventory/credit/recu_paiement.html', context)
 

@@ -104,6 +104,12 @@
             <span class="key">Prix total</span>
             <span class="val">{{ vente.prix_total|floatformat:0 }} FC</span>
         </div>
+        {% if remise_totale > 0 %}
+        <div class="info-row">
+            <span class="key">Prix avant remise</span>
+            <span class="val"><s>{{ prix_avant_remise|floatformat:0 }} FC</s> − {{ remise_totale|floatformat:0 }} FC</span>
+        </div>
+        {% endif %}
         <div class="info-row">
             <span class="key">Référence vente</span>
             <span class="val"><code>{{ vente.reference }}</code></span>
