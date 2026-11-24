@@ -55,6 +55,16 @@
                 <i class="fas fa-ban"></i> Annuler
             </button>
             {% endif %}
+            {% if peut_corriger %}
+            <a href="{% url 'inventory:modifier_vente_credit' boutique.id vente.id %}" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-pen"></i> Corriger
+            </a>
+            {% endif %}
+            {% if peut_supprimer %}
+            <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#modalSupprimer">
+                <i class="fas fa-trash"></i> Supprimer
+            </button>
+            {% endif %}
             <a href="{% url 'inventory:liste_ventes_credit' boutique.id %}" class="btn btn-outline-secondary btn-sm">
                 <i class="fas fa-arrow-left"></i> Retour
             </a>
@@ -103,6 +113,7 @@
                                 <th>Désignation</th>
                                 <th class="text-center">Qté</th>
                                 <th class="text-end">P.U.</th>
+                                {% if remise_totale > 0 %}<th class="text-end">Remise</th>{% endif %}
                                 <th class="text-end">Total</th>
                             </tr>
                         </thead>
@@ -112,10 +123,29 @@
                                 <td>{{ ligne.article_nom }}</td>
                                 <td class="text-center">{{ ligne.quantite }}</td>
                                 <td class="text-end">{{ ligne.prix_unitaire|floatformat:0 }} FC</td>
+                                {% if remise_totale > 0 %}
+                                <td class="text-end">
+                                    {% if ligne.remise > 0 %}
+                                    <span class="badge bg-warning text-dark">−{{ ligne.remise|floatformat:0 }} FC</span>
+                                    {% else %}<span class="text-muted">—</span>{% endif %}
+                                </td>
+                                {% endif %}
                                 <td class="text-end fw-bold">{{ ligne.prix_total|floatformat:0 }} FC</td>
                             </tr>
                             {% endfor %}
                         </tbody>
+                        {% if remise_totale > 0 %}
+                        <tfoot>
+                            <tr class="table-light">
+                                <td colspan="4" class="text-end small text-muted">
+                                    Remise totale accordée
+                                </td>
+                                <td class="text-end small fw-bold text-warning">
+                                    −{{ remise_totale|floatformat:0 }} FC
+                                </td>
+                            </tr>
+                        </tfoot>
+                        {% endif %}
                     </table>
                     {% else %}
                     <div class="info-block">
@@ -333,6 +363,42 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Non</button>
                     <button type="submit" class="btn btn-danger"><i class="fas fa-ban"></i> Oui, annuler</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ===== MODAL : Supprimer la vente ===== -->
+<div class="modal fade" id="modalSupprimer" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="post" action="{% url 'inventory:supprimer_vente_credit' boutique.id vente.id %}">
+                {% csrf_token %}
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="fas fa-trash"></i> Supprimer la vente</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Supprimer définitivement <strong>{{ vente.reference }}</strong>
+                        ({{ vente.client.nom_complet }}) ?<br>
+                        <small>
+                            Aucun acompte n'a été enregistré : la facture disparaît complètement
+                            et les articles repartent en stock. À utiliser si la vente a été
+                            saisie en erreur.
+                        </small>
+                    </div>
+                    <div class="alert alert-light border py-2 mb-0 small">
+                        <i class="fas fa-info-circle text-primary"></i>
+                        Pour conserver la trace d'une vente déjà (partiellement) payée,
+                        utilisez plutôt <strong>Annuler</strong>.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Non</button>
+                    <button type="submit" class="btn btn-danger"><i class="fas fa-trash"></i> Oui, supprimer</button>
                 </div>
             </form>
         </div>

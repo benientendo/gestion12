@@ -1,6 +1,7 @@
 """
 Vente à crédit (API Android) :
-- article_id + quantite : lien vers le catalogue, prix toujours = prix_vente × quantité
+- article_id + quantite : lien vers le catalogue, prix ≤ prix_vente × quantité
+  (surcharge interdite, remise possible et tracée dans LigneVenteAcompte.remise)
 - quantite stockée sur VenteAcompte, article FK renseigné, réponses JSON complètes
 - compatibilité : ancien payload (article_nom + prix_total libre) toujours accepté
 """
@@ -97,18 +98,18 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
         self.assertEqual(vente.statut, 'EN_COURS')
         self.assertEqual(resp.json()['quantite'], 2)
 
-    def test_prix_total_faux_rejete(self):
-        """Un prix total qui ne correspond pas au catalogue est refusé."""
+    def test_prix_superieur_au_catalogue_rejete(self):
+        """Surcharge impossible : un prix total au-dessus du catalogue est refusé."""
         resp = self.api.post(
             self.url_creer,
             data=self._payload(
                 article_id=self.article.id, quantite=2,
-                prix_total=10000,
+                prix_total=100000,          # catalogue 60 000
             ),
             content_type='application/json', **self.entete,
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn('prix catalogue', resp.json()['error'].lower())
+        self.assertIn('surcharge', resp.json()['error'].lower())
         self.assertFalse(VenteAcompte.objects.exists())
 
     def test_ancien_seuil_ignore_force_au_prix_total(self):
@@ -224,13 +225,13 @@ class CreditCreerVenteCatalogueTestCase(TestCase):
 
     def test_multi_articles_prix_catalogue_rejete(self):
         articles = self._articles_payload((self.article, 2), (self.article2, 1))
-        articles[1]['prix_total'] = 1
+        articles[1]['prix_total'] = 99999   # catalogue 10 000 → surcharge
         resp = self.api.post(
             self.url_creer, data=self._payload(articles=articles),
             content_type='application/json', **self.entete,
         )
         self.assertEqual(resp.status_code, 400)
-        self.assertIn('prix catalogue', resp.json()['error'].lower())
+        self.assertIn('surcharge', resp.json()['error'].lower())
         self.assertFalse(VenteAcompte.objects.exists())
 
     def test_liste_et_detail_incluent_lignes(self):

@@ -1,0 +1,279 @@
+{% extends 'inventory/base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Corriger {{ vente.reference }} — Crédit{% endblock %}
+
+{% block extra_css %}
+<style>
+    .info-block { background:#f8f9fa; border-radius:10px; padding:12px 14px; }
+    .info-block .lbl { font-size:.75rem; text-transform:uppercase; color:#6c757d; letter-spacing:.05em; }
+    .info-block .val { font-size:1rem; font-weight:600; }
+    .badge-en-cours { background:#ffc107; color:#000; }
+    .badge-solde    { background:#28a745; color:#fff; }
+    .badge-annule   { background:#6c757d; color:#fff; }
+    .ligne-qte { max-width:110px; }
+    .pay-qte   { max-width:160px; }
+    .badge-remise { background:#FFF3CD; color:#856404; border:1px solid #FFEEBA; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width:1000px;">
+
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'inventory:liste_ventes_credit' boutique.id %}">Ventes à Crédit</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'inventory:detail_vente_credit' boutique.id vente.id %}">{{ vente.reference }}</a></li>
+            <li class="breadcrumb-item active">Corriger</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div>
+            <h4 class="mb-0">
+                <i class="fas fa-pen text-primary"></i> Corriger <code>{{ vente.reference }}</code>
+                <span class="badge badge-{{ vente.statut|lower }} ms-2">{{ vente.get_statut_display }}</span>
+            </h4>
+            <small class="text-muted">
+                {{ vente.client.nom_complet }} — créée le {{ vente.date_creation|date:"d/m/Y à H:i" }}
+            </small>
+        </div>
+        <a href="{% url 'inventory:detail_vente_credit' boutique.id vente.id %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left"></i> Retour au détail
+        </a>
+    </div>
+
+    {% if modifiable %}
+    <div class="alert alert-danger">
+        <i class="fas fa-ban"></i> <strong>Correction impossible.</strong> {{ modifiable }}
+        <a href="{% url 'inventory:detail_vente_credit' boutique.id vente.id %}" class="alert-link">Retour au détail</a>
+    </div>
+    {% else %}
+
+    <div class="alert alert-info py-2">
+        <i class="fas fa-info-circle"></i>
+        Corrigez les <strong>quantités</strong>, retirez un article ou ajoutez le bon, et rectifiez les
+        <strong>acomptes saisis en erreur</strong>. Le stock et les totaux sont réajustés automatiquement.
+    </div>
+
+    <form method="post" id="formCorrection">
+        {% csrf_token %}
+
+        <!-- ══ ARTICLES ══ -->
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-warning text-dark py-2 d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-box"></i> Articles de la facture</span>
+                <span class="badge bg-dark">{{ lignes|length }} ligne{{ lignes|length|pluralize:"s" }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Désignation</th>
+                                <th class="text-end">P.U. vendu</th>
+                                <th class="text-end">Remise</th>
+                                <th class="text-center">Stock</th>
+                                <th class="text-center" style="width:130px;">Nouvelle qté</th>
+                                <th class="text-center" style="width:90px;">Retirer</th>
+                                <th class="text-end">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for ligne in lignes %}
+                            {% with cle=ligne.id|default:"legacy" %}
+                            <tr>
+                                <td>
+                                    <strong>{{ ligne.article_nom }}</strong>
+                                    {% if not ligne.id %}
+                                    <br><small class="text-muted">ancien format — sera converti en ligne</small>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">{{ ligne.prix_unitaire|floatformat:0 }} FC</td>
+                                <td class="text-end">
+                                    {% if ligne.remise > 0 %}
+                                    <span class="badge badge-remise">−{{ ligne.remise|floatformat:0 }} FC</span>
+                                    {% else %}<span class="text-muted">—</span>{% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if ligne.stock is not None %}
+                                    <span class="badge {% if ligne.stock <= 0 %}bg-danger{% else %}bg-success{% endif %}">
+                                        {{ ligne.stock }}
+                                    </span>
+                                    {% else %}—{% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <input type="number" name="qte_{{ cle }}" class="form-control form-control-sm ligne-qte mx-auto text-center"
+                                           value="{{ ligne.quantite }}" min="1" data-pu="{{ ligne.prix_unitaire }}">
+                                </td>
+                                <td class="text-center">
+                                    <div class="form-check d-flex justify-content-center">
+                                        <input class="form-check-input" type="checkbox" name="suppr_{{ cle }}" value="1"
+                                               id="suppr_{{ cle }}" onchange="ToggleQte(this)">
+                                    </div>
+                                </td>
+                                <td class="text-end fw-bold ligne-total"
+                                    data-base="{{ ligne.prix_total }}">{{ ligne.prix_total|floatformat:0 }} FC</td>
+                            </tr>
+                            {% endwith %}
+                            {% empty %}
+                            <tr><td colspan="7" class="text-center text-muted py-4">Aucun article sur cette facture.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ AJOUTER UN ARTICLE ══ -->
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-primary text-white py-2">
+                <i class="fas fa-plus-circle"></i> Ajouter l'article manquant
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    L'article ajouté est facturé au <strong>prix catalogue</strong> et débité du stock.
+                </p>
+                {% for i in "12345" %}
+                {% if forloop.counter <= nb_ajout %}
+                <div class="row g-2 mb-2 align-items-end">
+                    <div class="col-md-8">
+                        {% if forloop.first %}
+                        <label class="form-label mb-1 small text-muted">Article</label>
+                        {% else %}<label class="form-label mb-1 small text-muted invisible">Article</label>{% endif %}
+                        <select name="add_article" class="form-select form-select-sm">
+                            <option value="">— Aucun —</option>
+                            {% for a in articles_dispo %}
+                            <option value="{{ a.id }}">{{ a.nom }} (stock {{ a.quantite_stock }} — {{ a.prix_vente|floatformat:0 }} FC)</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        {% if forloop.first %}
+                        <label class="form-label mb-1 small text-muted">Quantité</label>
+                        {% else %}<label class="form-label mb-1 small text-muted invisible">Quantité</label>{% endif %}
+                        <input type="number" name="add_qte" class="form-control form-control-sm" min="1" placeholder="1">
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- ══ ACOMPTES ══ -->
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                <span><i class="fas fa-money-bill-wave"></i> Acomptes enregistrés</span>
+                <span class="badge bg-secondary">{{ paiements|length }}</span>
+            </div>
+            <div class="card-body p-0">
+                {% if paiements %}
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Reçu</th>
+                                <th>Date</th>
+                                <th class="text-center" style="width:170px;">Montant corrigé (FC)</th>
+                                <th class="text-center" style="width:90px;">Supprimer</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in paiements %}
+                            <tr>
+                                <td><code>{{ p.reference_recu }}</code></td>
+                                <td>{{ p.date_paiement|date:"d/m/Y H:i" }}</td>
+                                <td class="text-center">
+                                    <input type="number" name="pay_{{ p.id }}" class="form-control form-control-sm pay-qte mx-auto text-center"
+                                           value="{{ p.montant|floatformat:0 }}" min="1">
+                                </td>
+                                <td class="text-center">
+                                    <div class="form-check d-flex justify-content-center">
+                                        <input class="form-check-input" type="checkbox" name="pay_suppr_{{ p.id }}" value="1"
+                                               id="pay_suppr_{{ p.id }}">
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4 text-muted">
+                    <i class="fas fa-inbox fa-2x mb-2 d-block opacity-25"></i>
+                    Aucun acompte enregistré
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- ══ RÉCAPITULATIF ══ -->
+        <div class="border rounded p-3 mb-3 bg-light">
+            <div class="row text-center">
+                <div class="col-4">
+                    <div class="text-muted small">Total actuel</div>
+                    <div class="fw-bold">{{ vente.prix_total|floatformat:0 }} FC</div>
+                </div>
+                <div class="col-4">
+                    <div class="text-primary small">Nouveau total</div>
+                    <div class="fw-bold text-primary" id="recapTotal">{{ vente.prix_total|floatformat:0 }} FC</div>
+                </div>
+                <div class="col-4">
+                    <div class="text-success small">Déjà versé</div>
+                    <div class="fw-bold text-success">{{ vente.montant_paye|floatformat:0 }} FC</div>
+                </div>
+            </div>
+            {% if remise_totale > 0 %}
+            <div class="text-center small text-muted mt-2">
+                Remise déjà accordée sur cette facture : <strong>−{{ remise_totale|floatformat:0 }} FC</strong>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-save"></i> Enregistrer la correction
+            </button>
+            <a href="{% url 'inventory:detail_vente_credit' boutique.id vente.id %}" class="btn btn-outline-secondary">
+                <i class="fas fa-times"></i> Annuler
+            </a>
+        </div>
+    </form>
+    {% endif %}
+</div>
+
+<script>
+function ToggleQte(case_) {
+    var ligne = case_.closest('tr');
+    var input = ligne.querySelector('.ligne-qte');
+    if (input) input.disabled = case_.checked;
+}
+
+function RecalculerRecap() {
+    var total = 0;
+    document.querySelectorAll('#formCorrection .ligne-total').forEach(function (cell) {
+        var tr = cell.closest('tr');
+        var coche = tr.querySelector('.form-check-input');
+        if (coche && coche.checked) return;   // ligne retirée
+        var input = tr.querySelector('.ligne-qte');
+        var pu = parseFloat(input.dataset.pu || '0');
+        var qte = parseInt(input.value, 10);
+        if (isNaN(qte) || qte < 1) qte = 0;
+        total += pu * qte;
+    });
+    document.getElementById('recapTotal').textContent =
+        Math.round(total).toLocaleString('fr-FR') + ' FC';
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('#formCorrection .ligne-qte').forEach(function (i) {
+        i.addEventListener('input', RecalculerRecap);
+    });
+    document.querySelectorAll('#formCorrection .form-check-input').forEach(function (c) {
+        c.addEventListener('change', RecalculerRecap);
+    });
+    RecalculerRecap();
+});
+</script>
+{% endblock %}

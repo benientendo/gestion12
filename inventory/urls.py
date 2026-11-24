@@ -286,6 +286,8 @@ urlpatterns = [
     path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/paiement/', views_credit.enregistrer_paiement, name='enregistrer_paiement'),
     path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/retrait/', views_credit.marquer_retrait, name='marquer_retrait'),
     path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/annuler/', views_credit.annuler_vente_credit, name='annuler_vente_credit'),
+    path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/modifier/', views_credit.modifier_vente_credit, name='modifier_vente_credit'),
+    path('commercant/boutiques/<int:boutique_id>/credit/<int:vente_id>/supprimer/', views_credit.supprimer_vente_credit, name='supprimer_vente_credit'),
     path('commercant/boutiques/<int:boutique_id>/credit/recu/<int:paiement_id>/', views_credit.recu_paiement, name='recu_paiement'),
 
     # API Android / MAUI
@@ -294,5 +296,6 @@ urlpatterns = [
     path('api/credit/boutique/<int:boutique_id>/clients/', views_credit.api_credit_clients, name='api_credit_clients'),
     path('api/credit/vente/<int:vente_id>/', views_credit.api_credit_detail_vente, name='api_credit_detail_vente'),
     path('api/credit/vente/<int:vente_id>/paiement/', views_credit.api_credit_enregistrer_paiement, name='api_credit_enregistrer_paiement'),
+    path('api/credit/vente/<int:vente_id>/lignes/<int:ligne_id>/remise/', views_credit.api_credit_reduire_ligne, name='api_credit_reduire_ligne'),
     path('api/credit/boutique/<int:boutique_id>/paiements-jour/', views_credit.api_credit_paiements_jour, name='api_credit_paiements_jour'),
 ]

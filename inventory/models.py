@@ -2501,6 +2501,11 @@ class LigneVenteAcompte(models.Model):
     prix_total = models.DecimalField(
         max_digits=15, decimal_places=2, default=0
     )
+    remise = models.DecimalField(
+        max_digits=15, decimal_places=2, default=0,
+        help_text="Remise totale accordée sur la ligne : prix catalogue "
+                  "− prix réellement vendu (0 = prix catalogue plein).",
+    )
     date_creation = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
