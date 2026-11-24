@@ -72,28 +72,101 @@
             padding: 6px 8px;
         }
     }
+
+    /* ===== Impression : journal de valeur du stock ===== */
+    .print-only { display: none; }
+    @media print {
+        @page { margin: 12mm; }
+        body { background: #fff !important; font-size: 12px; }
+
+        /* Barre de navigation, boutons, modales : jamais imprimés */
+        .topbar, footer, .loader-wrapper, .no-print,
+        .btn, button, .modal { display: none !important; }
+        .main-content, .container-fluid { padding: 0 !important; }
+
+        /* En-tête structuré réservé à l'impression */
+        .print-only { display: block !important; }
+        .print-only table { margin-bottom: 8px; }
+        .print-only th { background: #E8EAF6 !important; white-space: nowrap; }
+
+        /* Tableau : toutes les lignes, en-têtes répétés, bordures */
+        .table-responsive { max-height: none !important; overflow: visible !important; }
+        .journal-table { font-size: 11px; }
+        .journal-table thead { display: table-header-group; }
+        .journal-table tr { page-break-inside: avoid; }
+        .journal-table th, .journal-table td {
+            border: 1px solid #999 !important;
+            padding: 4px 6px !important;
+            white-space: normal !important;
+        }
+        .journal-table th {
+            position: static !important;
+            background: #3949AB !important;
+            color: #fff !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .card { border: none !important; box-shadow: none !important; }
+        .card-header {
+            background: #fff !important;
+            color: #000 !important;
+            border-bottom: 2px solid #3949AB !important;
+        }
+        /* Badges d'aide (« Cliquez sur une valeur », nombre de lignes) */
+        .card-header .badge { display: none !important; }
+        a { color: #000 !important; text-decoration: none !important; }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <!-- En-tête -->
-    <div class="row mb-3">
+    <!-- En-tête (écran) -->
+    <div class="row mb-3 no-print">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <div>
                     <h2 class="mb-0"><i class="fas fa-book-open text-primary"></i> Journal de valeur du stock</h2>
                     <p class="text-muted mb-0">{{ boutique.nom }} — Suivi quotidien des mouvements de valeur</p>
                 </div>
-                <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary">
-                    <i class="fas fa-arrow-left"></i> Retour au dashboard
-                </a>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-outline-primary" onclick="window.print()"
+                            title="Imprimer le journal de valeur du stock">
+                        <i class="fas fa-print"></i> Imprimer
+                    </button>
+                    <a href="{% url 'inventory:entrer_boutique' boutique.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Retour au dashboard
+                    </a>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Valeur stock actuelle -->
-    <div class="row mb-3">
+    <!-- En-tête structuré réservé à l'impression -->
+    <div class="print-only mb-3">
+        <div class="text-center mb-2">
+            <h4 class="mb-0 fw-bold">Journal de valeur du stock</h4>
+            <div>{{ boutique.nom }}</div>
+            <div>Période du {{ date_debut|date:"d/m/Y" }} au {{ date_fin|date:"d/m/Y" }}</div>
+        </div>
+        <table class="table table-bordered" style="max-width: 640px;">
+            <tbody>
+                <tr>
+                    <th style="width: 40%;">Valeur stock actuelle</th>
+                    <td class="text-end"><strong>{{ valeur_stock_actuelle|floatformat:0|intcomma }} FC</strong></td>
+                </tr>
+                <tr>
+                    <th>Jours renseignés</th>
+                    <td class="text-end">{{ lignes|length }}</td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="small text-muted mb-0">Édité le {% now "d/m/Y à H:i" %} — Gestion Magazin</p>
+    </div>
+
+    <!-- Valeur stock actuelle (écran : reprise dans l'en-tête structuré) -->
+    <div class="row mb-3 no-print">
         <div class="col-md-4">
             <div class="valeur-actuelle-card p-3 text-center">
                 <p class="mb-1"><i class="fas fa-coins me-1"></i> Valeur stock actuelle (CDF)</p>
